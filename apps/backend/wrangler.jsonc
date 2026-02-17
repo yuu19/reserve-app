@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "reserve-app-backend",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-02-04",
+  "compatibility_flags": ["nodejs_compat", "nodejs_als"],
+  "workers_dev": true,
+  "preview_urls": true,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
+  },
+  "triggers": {
+    "crons": ["10 18 * * *"]
+  },
+  "images": {
+    "binding": "IMAGES"
+  },
+  "r2_buckets": [
+    {
+      "binding": "ORG_LOGO_BUCKET",
+      "bucket_name": "reserve-app-org-logos"
+    }
+  ],
+  // Set these for Cloudflare deploy (or move to secrets/CI vars).
+  "vars": {
+    "BETTER_AUTH_URL": "https://reserve-app-backend.yusuke-kusi1028.workers.dev",
+    "BETTER_AUTH_TRUSTED_ORIGINS": "https://reserve-app-web.yusuke-kusi1028.workers.dev,https://reserve-app-backend.yusuke-kusi1028.workers.dev,http://localhost:5173",
+    "INVITATION_ACCEPT_URL_BASE": "https://reserve-app-web.yusuke-kusi1028.workers.dev/invitations/accept",
+    "PARTICIPANT_INVITATION_ACCEPT_URL_BASE": "https://reserve-app-web.yusuke-kusi1028.workers.dev/participants/invitations/accept",
+    "WEB_BASE_URL": "https://reserve-app-web.yusuke-kusi1028.workers.dev",
+    "ORG_LOGO_MAX_UPLOAD_BYTES": "5242880",
+    "ORG_LOGO_PUBLIC_BASE_URL": "",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "reserve-app",
+      "database_id": "56657cf9-bafb-4c30-917f-069318c2349e",
+      "migrations_dir": "drizzle",
+    },
+  ],
+}

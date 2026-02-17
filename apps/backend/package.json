@@ -1,0 +1,48 @@
+{
+  "name": "@apps/backend",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 3000",
+    "cf:dev": "wrangler dev --local --port 3000",
+    "cf:deploy": "wrangler deploy",
+    "cf:tail": "wrangler tail",
+    "cf:types": "wrangler types",
+    "d1:migrate:local": "wrangler d1 migrations apply reserve-app --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply reserve-app --remote",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "auth:generate": "better-auth generate --output src/db/schema.ts",
+    "db:generate": "drizzle-kit generate",
+    "clean": "rm -rf dist .turbo",
+    "start": "wrangler dev --local --port 3000"
+  },
+  "dependencies": {
+    "@better-auth/expo": "^1.4.18",
+    "@hono/swagger-ui": "^0.5.3",
+    "@hono/zod-openapi": "^1.2.1",
+    "@react-email/components": "^1.0.7",
+    "@react-email/render": "^2.0.4",
+    "better-auth": "^1.4.18",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.11.7",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@better-auth/cli": "^1.4.18",
+    "@cloudflare/workers-types": "^4.20260203.0",
+    "@types/node": "^20.11.17",
+    "@types/react": "~19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "drizzle-kit": "^0.31.8",
+    "miniflare": "^4.20260131.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.62.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "better-auth-organization-demo",
+  "private": true,
+  "packageManager": "pnpm@10.27.0",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch --parallel",
+    "format": "turbo run format",
+    "format:check": "turbo run format:check",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
+    "deploy:backend": "pnpm --filter @apps/backend run cf:deploy",
+    "deploy:web": "pnpm --filter @apps/web run cf:deploy",
+    "deploy:workers": "pnpm deploy:backend && pnpm deploy:web"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.3.0",
+    "prettier": "^3.8.1",
+    "turbo": "^2.5.8",
+    "typescript-eslint": "^8.54.0",
+    "vitest": "^4.0.18"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1770207430369,
+      "tag": "0000_melodic_captain_universe",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1771331666375,
+      "tag": "0001_sloppy_vertigo",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1771334641622,
+      "tag": "0002_sudden_jigsaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1771341809777,
+      "tag": "0003_quick_fenris",
+      "breakpoints": true
+    }
+  ]
+}

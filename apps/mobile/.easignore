@@ -1,0 +1,7 @@
+node_modules
+.expo
+dist
+dist-web
+dist-test
+.turbo
+.DS_Store

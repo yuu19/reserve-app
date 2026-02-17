@@ -1,0 +1,14 @@
+node_modules
+.pnpm-store
+.turbo
+coverage
+dist
+build
+.svelte-kit
+.expo
+
+apps/backend/dist
+apps/mobile/dist
+apps/mobile/.expo
+apps/web/.svelte-kit
+apps/web/build

@@ -1,0 +1,14 @@
+BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_SECRET=replace-with-at-least-32-characters
+BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://localhost:5173,mobile://
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=onboarding@resend.dev
+INVITATION_ACCEPT_URL_BASE=http://localhost:5173/invitations/accept
+PARTICIPANT_INVITATION_ACCEPT_URL_BASE=http://localhost:5173/participants/invitations/accept
+WEB_BASE_URL=http://localhost:5173
+ORG_LOGO_MAX_UPLOAD_BYTES=5242880
+# Optional: direct public base URL for logos (e.g. https://assets.example.com)
+# If empty, backend logo proxy URL is stored in organization.logo
+ORG_LOGO_PUBLIC_BASE_URL=

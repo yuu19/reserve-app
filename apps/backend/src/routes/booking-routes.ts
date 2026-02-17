@@ -1,0 +1,2672 @@
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import type { AuthInstance, AuthRuntimeDatabase } from '../auth-runtime.js';
+import {
+  findParticipantByUserAndOrganization,
+  getSessionIdentity,
+  hasAdminOrOwnerAccess,
+  resolveOrganizationId,
+} from '../booking/authorization.js';
+import { writeBookingAuditLog } from '../booking/audit.js';
+import {
+  BOOKING_STATUS,
+  DEFAULT_CANCELLATION_DEADLINE_MINUTES,
+  DEFAULT_TIMEZONE,
+  SLOT_STATUS,
+  TICKET_LEDGER_ACTION,
+  TICKET_PACK_STATUS,
+} from '../booking/constants.js';
+import {
+  defaultRecurringRange,
+  isSupportedTimezone,
+  syncRecurringScheduleSlots,
+} from '../booking/recurring.js';
+import * as dbSchema from '../db/schema.js';
+
+type AuthRouteBindings = {
+  Variables: {
+    user: Record<string, unknown> | null;
+    session: Record<string, unknown> | null;
+  };
+};
+
+const isoDateTimeSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid ISO datetime');
+
+const dateOnlySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)');
+
+const localTimeSchema = z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid local time (HH:mm)');
+
+const serviceKindSchema = z.enum(['single', 'recurring']);
+const slotStatusSchema = z.enum([SLOT_STATUS.OPEN, SLOT_STATUS.CANCELED, SLOT_STATUS.COMPLETED]);
+const bookingStatusSchema = z.enum([
+  BOOKING_STATUS.CONFIRMED,
+  BOOKING_STATUS.CANCELED_BY_PARTICIPANT,
+  BOOKING_STATUS.CANCELED_BY_STAFF,
+  BOOKING_STATUS.NO_SHOW,
+]);
+
+const boolStringSchema = z
+  .enum(['true', 'false'])
+  .optional()
+  .transform((value) => (value === undefined ? undefined : value === 'true'));
+
+const orgQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+});
+
+const serviceCreateBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  name: z.string().trim().min(1).max(120),
+  kind: serviceKindSchema,
+  durationMinutes: z.int().min(1).max(24 * 60),
+  capacity: z.int().min(1).max(500),
+  bookingOpenMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
+  bookingCloseMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
+  cancellationDeadlineMinutes: z.int().min(0).max(365 * 24 * 60).optional(),
+  timezone: z.string().optional(),
+  requiresTicket: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const serviceListQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  includeArchived: boolStringSchema,
+});
+
+const serviceUpdateBodySchema = z.object({
+  serviceId: z.string().min(1),
+  name: z.string().trim().min(1).max(120).optional(),
+  kind: serviceKindSchema.optional(),
+  durationMinutes: z.int().min(1).max(24 * 60).optional(),
+  capacity: z.int().min(1).max(500).optional(),
+  bookingOpenMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
+  bookingCloseMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
+  cancellationDeadlineMinutes: z.int().min(0).max(365 * 24 * 60).optional(),
+  timezone: z.string().optional(),
+  requiresTicket: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const serviceArchiveBodySchema = z.object({
+  serviceId: z.string().min(1),
+});
+
+const slotCreateBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  serviceId: z.string().min(1),
+  startAt: isoDateTimeSchema,
+  endAt: isoDateTimeSchema,
+  capacity: z.int().min(1).max(500).optional(),
+  staffLabel: z.string().trim().max(120).optional(),
+  locationLabel: z.string().trim().max(120).optional(),
+});
+
+const slotListQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  serviceId: z.string().min(1).optional(),
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+  status: slotStatusSchema.optional(),
+});
+
+const slotAvailableQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  serviceId: z.string().min(1).optional(),
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
+});
+
+const slotCancelBodySchema = z.object({
+  slotId: z.string().min(1),
+  reason: z.string().trim().max(500).optional(),
+});
+
+const recurringCreateBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  serviceId: z.string().min(1),
+  timezone: z.string().optional(),
+  frequency: z.enum(['weekly', 'monthly']),
+  interval: z.int().min(1).max(52),
+  byWeekday: z.array(z.int().min(1).max(7)).optional(),
+  byMonthday: z.int().min(1).max(31).optional(),
+  startDate: dateOnlySchema,
+  endDate: dateOnlySchema.optional(),
+  startTimeLocal: localTimeSchema,
+  durationMinutes: z.int().min(1).max(24 * 60).optional(),
+  capacityOverride: z.int().min(1).max(500).optional(),
+});
+
+const recurringListQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  serviceId: z.string().min(1).optional(),
+  isActive: boolStringSchema,
+});
+
+const recurringUpdateBodySchema = z.object({
+  recurringScheduleId: z.string().min(1),
+  timezone: z.string().optional(),
+  frequency: z.enum(['weekly', 'monthly']).optional(),
+  interval: z.int().min(1).max(52).optional(),
+  byWeekday: z.array(z.int().min(1).max(7)).optional(),
+  byMonthday: z.int().min(1).max(31).optional(),
+  startDate: dateOnlySchema.optional(),
+  endDate: dateOnlySchema.optional(),
+  startTimeLocal: localTimeSchema.optional(),
+  durationMinutes: z.int().min(1).max(24 * 60).optional(),
+  capacityOverride: z.int().min(1).max(500).optional(),
+  isActive: z.boolean().optional(),
+});
+
+const recurringExceptionBodySchema = z.object({
+  recurringScheduleId: z.string().min(1),
+  date: dateOnlySchema,
+  action: z.enum(['skip', 'override']),
+  overrideStartTimeLocal: localTimeSchema.optional(),
+  overrideDurationMinutes: z.int().min(1).max(24 * 60).optional(),
+  overrideCapacity: z.int().min(1).max(500).optional(),
+});
+
+const recurringGenerateBodySchema = z.object({
+  recurringScheduleId: z.string().min(1),
+  from: isoDateTimeSchema.optional(),
+  to: isoDateTimeSchema.optional(),
+});
+
+const bookingCreateBodySchema = z.object({
+  slotId: z.string().min(1),
+  participantsCount: z.int().min(1).max(20).optional(),
+});
+
+const bookingMineQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  from: isoDateTimeSchema.optional(),
+  to: isoDateTimeSchema.optional(),
+  status: bookingStatusSchema.optional(),
+});
+
+const bookingListQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  serviceId: z.string().min(1).optional(),
+  from: isoDateTimeSchema.optional(),
+  to: isoDateTimeSchema.optional(),
+  participantId: z.string().min(1).optional(),
+  status: bookingStatusSchema.optional(),
+});
+
+const bookingActionBodySchema = z.object({
+  bookingId: z.string().min(1),
+  reason: z.string().trim().max(500).optional(),
+});
+
+const bookingNoShowBodySchema = z.object({
+  bookingId: z.string().min(1),
+});
+
+const ticketTypeCreateBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  name: z.string().trim().min(1).max(120),
+  serviceIds: z.array(z.string().min(1)).optional(),
+  totalCount: z.int().min(1).max(1000),
+  expiresInDays: z.int().min(1).max(3650).optional(),
+  isActive: z.boolean().optional(),
+});
+
+const ticketTypeListQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  isActive: boolStringSchema,
+});
+
+const ticketPackGrantBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  participantId: z.string().min(1),
+  ticketTypeId: z.string().min(1),
+  count: z.int().min(1).max(1000).optional(),
+  expiresAt: isoDateTimeSchema.optional(),
+});
+
+const ticketPackMineQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+});
+
+const createServiceRoute = createRoute({
+  method: 'post',
+  path: '/organizations/services',
+  tags: ['Services'],
+  summary: 'Create service',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: serviceCreateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Service created' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const listServicesRoute = createRoute({
+  method: 'get',
+  path: '/organizations/services',
+  tags: ['Services'],
+  summary: 'List services',
+  request: {
+    query: serviceListQuerySchema,
+  },
+  responses: {
+    200: { description: 'Service list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const updateServiceRoute = createRoute({
+  method: 'post',
+  path: '/organizations/services/update',
+  tags: ['Services'],
+  summary: 'Update service',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: serviceUpdateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Service updated' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const archiveServiceRoute = createRoute({
+  method: 'post',
+  path: '/organizations/services/archive',
+  tags: ['Services'],
+  summary: 'Archive service',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: serviceArchiveBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Service archived' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+  },
+});
+
+const createSlotRoute = createRoute({
+  method: 'post',
+  path: '/organizations/slots',
+  tags: ['Slots'],
+  summary: 'Create slot',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: slotCreateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Slot created' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const listSlotsRoute = createRoute({
+  method: 'get',
+  path: '/organizations/slots',
+  tags: ['Slots'],
+  summary: 'List slots for staff',
+  request: {
+    query: slotListQuerySchema,
+  },
+  responses: {
+    200: { description: 'Slot list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const listAvailableSlotsRoute = createRoute({
+  method: 'get',
+  path: '/organizations/slots/available',
+  tags: ['Slots'],
+  summary: 'List available slots for participant',
+  request: {
+    query: slotAvailableQuerySchema,
+  },
+  responses: {
+    200: { description: 'Available slot list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const cancelSlotRoute = createRoute({
+  method: 'post',
+  path: '/organizations/slots/cancel',
+  tags: ['Slots'],
+  summary: 'Cancel slot',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: slotCancelBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Slot canceled' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+const createRecurringScheduleRoute = createRoute({
+  method: 'post',
+  path: '/organizations/recurring-schedules',
+  tags: ['Recurring Schedules'],
+  summary: 'Create recurring schedule',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: recurringCreateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Recurring schedule created' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const listRecurringSchedulesRoute = createRoute({
+  method: 'get',
+  path: '/organizations/recurring-schedules',
+  tags: ['Recurring Schedules'],
+  summary: 'List recurring schedules',
+  request: {
+    query: recurringListQuerySchema,
+  },
+  responses: {
+    200: { description: 'Recurring schedule list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const updateRecurringScheduleRoute = createRoute({
+  method: 'post',
+  path: '/organizations/recurring-schedules/update',
+  tags: ['Recurring Schedules'],
+  summary: 'Update recurring schedule',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: recurringUpdateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Recurring schedule updated' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const upsertRecurringExceptionRoute = createRoute({
+  method: 'post',
+  path: '/organizations/recurring-schedules/exceptions',
+  tags: ['Recurring Schedules'],
+  summary: 'Create or update recurring schedule exception',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: recurringExceptionBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Recurring schedule exception updated' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const generateRecurringSlotsRoute = createRoute({
+  method: 'post',
+  path: '/organizations/recurring-schedules/generate',
+  tags: ['Recurring Schedules'],
+  summary: 'Generate recurring slots manually',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: recurringGenerateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Recurring slots generated' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const createBookingRoute = createRoute({
+  method: 'post',
+  path: '/organizations/bookings',
+  tags: ['Bookings'],
+  summary: 'Create booking',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: bookingCreateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Booking created' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+const listMyBookingsRoute = createRoute({
+  method: 'get',
+  path: '/organizations/bookings/mine',
+  tags: ['Bookings'],
+  summary: 'List my bookings',
+  request: {
+    query: bookingMineQuerySchema,
+  },
+  responses: {
+    200: { description: 'Booking list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const cancelBookingRoute = createRoute({
+  method: 'post',
+  path: '/organizations/bookings/cancel',
+  tags: ['Bookings'],
+  summary: 'Cancel booking by participant',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: bookingActionBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Booking canceled' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+const listBookingsRoute = createRoute({
+  method: 'get',
+  path: '/organizations/bookings',
+  tags: ['Bookings'],
+  summary: 'List bookings for staff',
+  request: {
+    query: bookingListQuerySchema,
+  },
+  responses: {
+    200: { description: 'Booking list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const cancelBookingByStaffRoute = createRoute({
+  method: 'post',
+  path: '/organizations/bookings/cancel-by-staff',
+  tags: ['Bookings'],
+  summary: 'Cancel booking by staff',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: bookingActionBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Booking canceled' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+const markNoShowRoute = createRoute({
+  method: 'post',
+  path: '/organizations/bookings/no-show',
+  tags: ['Bookings'],
+  summary: 'Mark booking as no show',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: bookingNoShowBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Booking marked as no-show' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+const createTicketTypeRoute = createRoute({
+  method: 'post',
+  path: '/organizations/ticket-types',
+  tags: ['Tickets'],
+  summary: 'Create ticket type',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: ticketTypeCreateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Ticket type created' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const listTicketTypesRoute = createRoute({
+  method: 'get',
+  path: '/organizations/ticket-types',
+  tags: ['Tickets'],
+  summary: 'List ticket types',
+  request: {
+    query: ticketTypeListQuerySchema,
+  },
+  responses: {
+    200: { description: 'Ticket type list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const grantTicketPackRoute = createRoute({
+  method: 'post',
+  path: '/organizations/ticket-packs/grant',
+  tags: ['Tickets'],
+  summary: 'Grant ticket pack',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: ticketPackGrantBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Ticket pack granted' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const listMyTicketPacksRoute = createRoute({
+  method: 'get',
+  path: '/organizations/ticket-packs/mine',
+  tags: ['Tickets'],
+  summary: 'List my ticket packs',
+  request: {
+    query: ticketPackMineQuerySchema,
+  },
+  responses: {
+    200: { description: 'Ticket pack list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const parseIsoDateOrNull = (value: string | undefined): Date | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const toIsoDate = (value: unknown): string | null => {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === 'number') {
+    return new Date(value).toISOString();
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return null;
+};
+
+const isUniqueConstraintError = (error: unknown): boolean => {
+  const queue: unknown[] = [error];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!(current instanceof Error)) {
+      continue;
+    }
+    if (
+      current.message.includes('UNIQUE constraint failed') ||
+      current.message.includes('SQLITE_CONSTRAINT')
+    ) {
+      return true;
+    }
+    const nestedCause = (current as Error & { cause?: unknown }).cause;
+    if (nestedCause) {
+      queue.push(nestedCause);
+    }
+  }
+  return false;
+};
+
+const assertSupportedTimezone = (timezone: string | undefined): string | null => {
+  const resolved = timezone ?? DEFAULT_TIMEZONE;
+  return isSupportedTimezone(resolved) ? resolved : null;
+};
+
+const parseDateParts = (value: string): { year: number; month: number; day: number } | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return null;
+  }
+
+  return { year, month, day };
+};
+
+const resolveEndDate = (ticketTypeExpiresInDays: number | null, explicitExpiresAt?: string): Date | null => {
+  if (explicitExpiresAt) {
+    const parsed = parseIsoDateOrNull(explicitExpiresAt);
+    return parsed;
+  }
+  if (typeof ticketTypeExpiresInDays === 'number' && ticketTypeExpiresInDays > 0) {
+    return new Date(Date.now() + ticketTypeExpiresInDays * 24 * 60 * 60 * 1000);
+  }
+  return null;
+};
+
+const normalizePackStatus = ({
+  remainingCount,
+  expiresAt,
+}: {
+  remainingCount: number;
+  expiresAt: Date | null;
+}): string => {
+  if (expiresAt && expiresAt.getTime() <= Date.now()) {
+    return TICKET_PACK_STATUS.EXPIRED;
+  }
+  if (remainingCount <= 0) {
+    return TICKET_PACK_STATUS.EXHAUSTED;
+  }
+  return TICKET_PACK_STATUS.ACTIVE;
+};
+
+const dateToComparable = (value: Date | null): number => {
+  return value ? value.getTime() : Number.MAX_SAFE_INTEGER;
+};
+
+export const registerBookingRoutes = ({
+  authRoutes,
+  auth,
+  database,
+}: {
+  authRoutes: OpenAPIHono<AuthRouteBindings>;
+  auth: AuthInstance;
+  database: AuthRuntimeDatabase;
+}) => {
+  const requireIdentity = async (headers: Headers) => {
+    return getSessionIdentity(auth, headers);
+  };
+
+  const requireAdmin = async ({
+    headers,
+    organizationId,
+  }: {
+    headers: Headers;
+    organizationId: string;
+  }) => {
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return { response: new Response(JSON.stringify({ message: 'Forbidden' }), { status: 403 }) };
+    }
+
+    return { identity, response: null as Response | null };
+  };
+
+  authRoutes.openapi(createServiceRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const timezone = assertSupportedTimezone(body.timezone);
+    if (!timezone) {
+      return c.json({ message: `Only ${DEFAULT_TIMEZONE} is supported in MVP.` }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const createdId = crypto.randomUUID();
+    await database.insert(dbSchema.service).values({
+      id: createdId,
+      organizationId,
+      name: body.name,
+      kind: body.kind,
+      durationMinutes: body.durationMinutes,
+      capacity: body.capacity,
+      bookingOpenMinutesBefore: body.bookingOpenMinutesBefore,
+      bookingCloseMinutesBefore: body.bookingCloseMinutesBefore,
+      cancellationDeadlineMinutes: body.cancellationDeadlineMinutes,
+      timezone,
+      requiresTicket: body.requiresTicket ?? false,
+      isActive: body.isActive ?? true,
+    });
+
+    const rows = await database
+      .select()
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, createdId))
+      .limit(1);
+
+    const service = rows[0];
+    return c.json(
+      {
+        ...service,
+        createdAt: toIsoDate(service?.createdAt),
+        updatedAt: toIsoDate(service?.updatedAt),
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(listServicesRoute, async (c) => {
+    const query = c.req.valid('query');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const filters = [eq(dbSchema.service.organizationId, organizationId)];
+    if (!query.includeArchived) {
+      filters.push(eq(dbSchema.service.isActive, true));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.service)
+      .where(and(...filters))
+      .orderBy(desc(dbSchema.service.createdAt));
+
+    return c.json(
+      rows.map((row: any) => ({
+        ...row,
+        createdAt: toIsoDate(row.createdAt),
+        updatedAt: toIsoDate(row.updatedAt),
+      })),
+      200,
+    );
+  });
+
+  authRoutes.openapi(updateServiceRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const currentRows = await database
+      .select({
+        id: dbSchema.service.id,
+        organizationId: dbSchema.service.organizationId,
+      })
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, body.serviceId))
+      .limit(1);
+    const current = currentRows[0];
+    if (!current) {
+      return c.json({ message: 'Service not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: current.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (body.timezone && !isSupportedTimezone(body.timezone)) {
+      return c.json({ message: `Only ${DEFAULT_TIMEZONE} is supported in MVP.` }, 422);
+    }
+
+    await database
+      .update(dbSchema.service)
+      .set({
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.kind !== undefined ? { kind: body.kind } : {}),
+        ...(body.durationMinutes !== undefined ? { durationMinutes: body.durationMinutes } : {}),
+        ...(body.capacity !== undefined ? { capacity: body.capacity } : {}),
+        ...(body.bookingOpenMinutesBefore !== undefined
+          ? { bookingOpenMinutesBefore: body.bookingOpenMinutesBefore }
+          : {}),
+        ...(body.bookingCloseMinutesBefore !== undefined
+          ? { bookingCloseMinutesBefore: body.bookingCloseMinutesBefore }
+          : {}),
+        ...(body.cancellationDeadlineMinutes !== undefined
+          ? { cancellationDeadlineMinutes: body.cancellationDeadlineMinutes }
+          : {}),
+        ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+        ...(body.requiresTicket !== undefined ? { requiresTicket: body.requiresTicket } : {}),
+        ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+      })
+      .where(eq(dbSchema.service.id, body.serviceId));
+
+    const rows = await database
+      .select()
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, body.serviceId))
+      .limit(1);
+    const service = rows[0];
+    return c.json(
+      {
+        ...service,
+        createdAt: toIsoDate(service?.createdAt),
+        updatedAt: toIsoDate(service?.updatedAt),
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(archiveServiceRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const serviceRows = await database
+      .select({
+        id: dbSchema.service.id,
+        organizationId: dbSchema.service.organizationId,
+      })
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, body.serviceId))
+      .limit(1);
+    const service = serviceRows[0];
+    if (!service) {
+      return c.json({ message: 'Service not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: service.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    await database
+      .update(dbSchema.service)
+      .set({
+        isActive: false,
+      })
+      .where(eq(dbSchema.service.id, service.id));
+
+    return c.json({ ok: true }, 200);
+  });
+
+  authRoutes.openapi(createSlotRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const startAt = parseIsoDateOrNull(body.startAt);
+    const endAt = parseIsoDateOrNull(body.endAt);
+    if (!startAt || !endAt || startAt.getTime() >= endAt.getTime()) {
+      return c.json({ message: 'Invalid slot startAt/endAt.' }, 422);
+    }
+
+    const serviceRows = await database
+      .select()
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, body.serviceId))
+      .limit(1);
+    const service = serviceRows[0];
+    if (!service) {
+      return c.json({ message: 'Service not found.' }, 404);
+    }
+
+    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    if (!organizationId || organizationId !== service.organizationId) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const bookingOpenAt =
+      typeof service.bookingOpenMinutesBefore === 'number'
+        ? new Date(startAt.getTime() - service.bookingOpenMinutesBefore * 60 * 1000)
+        : new Date();
+    const bookingCloseAt =
+      typeof service.bookingCloseMinutesBefore === 'number'
+        ? new Date(startAt.getTime() - service.bookingCloseMinutesBefore * 60 * 1000)
+        : startAt;
+    const finalBookingOpenAt =
+      bookingOpenAt.getTime() <= bookingCloseAt.getTime() ? bookingOpenAt : bookingCloseAt;
+
+    const slotId = crypto.randomUUID();
+    await database.insert(dbSchema.slot).values({
+      id: slotId,
+      organizationId,
+      serviceId: service.id,
+      recurringScheduleId: null,
+      startAt,
+      endAt,
+      capacity: body.capacity ?? service.capacity,
+      reservedCount: 0,
+      status: SLOT_STATUS.OPEN,
+      staffLabel: body.staffLabel ?? null,
+      locationLabel: body.locationLabel ?? null,
+      bookingOpenAt: finalBookingOpenAt,
+      bookingCloseAt,
+    });
+
+    const rows = await database
+      .select()
+      .from(dbSchema.slot)
+      .where(eq(dbSchema.slot.id, slotId))
+      .limit(1);
+    const slot = rows[0];
+
+    return c.json(
+      {
+        ...slot,
+        startAt: toIsoDate(slot?.startAt),
+        endAt: toIsoDate(slot?.endAt),
+        bookingOpenAt: toIsoDate(slot?.bookingOpenAt),
+        bookingCloseAt: toIsoDate(slot?.bookingCloseAt),
+        createdAt: toIsoDate(slot?.createdAt),
+        updatedAt: toIsoDate(slot?.updatedAt),
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(listSlotsRoute, async (c) => {
+    const query = c.req.valid('query');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const from = parseIsoDateOrNull(query.from);
+    const to = parseIsoDateOrNull(query.to);
+    if (!from || !to || from.getTime() > to.getTime()) {
+      return c.json({ message: 'Invalid from/to.' }, 422);
+    }
+
+    const filters = [
+      eq(dbSchema.slot.organizationId, organizationId),
+      gte(dbSchema.slot.startAt, from),
+      lte(dbSchema.slot.startAt, to),
+    ];
+    if (query.serviceId) {
+      filters.push(eq(dbSchema.slot.serviceId, query.serviceId));
+    }
+    if (query.status) {
+      filters.push(eq(dbSchema.slot.status, query.status));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.slot)
+      .where(and(...filters))
+      .orderBy(asc(dbSchema.slot.startAt));
+
+    return c.json(
+      rows.map((row: any) => ({
+        ...row,
+        startAt: toIsoDate(row.startAt),
+        endAt: toIsoDate(row.endAt),
+        bookingOpenAt: toIsoDate(row.bookingOpenAt),
+        bookingCloseAt: toIsoDate(row.bookingCloseAt),
+        createdAt: toIsoDate(row.createdAt),
+        updatedAt: toIsoDate(row.updatedAt),
+      })),
+      200,
+    );
+  });
+
+  authRoutes.openapi(listAvailableSlotsRoute, async (c) => {
+    const query = c.req.valid('query');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!participant) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const from = parseIsoDateOrNull(query.from);
+    const to = parseIsoDateOrNull(query.to);
+    if (!from || !to || from.getTime() > to.getTime()) {
+      return c.json({ message: 'Invalid from/to.' }, 422);
+    }
+
+    const now = new Date();
+    const filters = [
+      eq(dbSchema.slot.organizationId, organizationId),
+      eq(dbSchema.slot.status, SLOT_STATUS.OPEN),
+      gte(dbSchema.slot.startAt, from),
+      lte(dbSchema.slot.startAt, to),
+      lte(dbSchema.slot.bookingOpenAt, now),
+      gte(dbSchema.slot.bookingCloseAt, now),
+      sql`${dbSchema.slot.reservedCount} < ${dbSchema.slot.capacity}`,
+    ];
+    if (query.serviceId) {
+      filters.push(eq(dbSchema.slot.serviceId, query.serviceId));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.slot)
+      .where(and(...filters))
+      .orderBy(asc(dbSchema.slot.startAt));
+
+    return c.json(
+      rows.map((row: any) => ({
+        ...row,
+        startAt: toIsoDate(row.startAt),
+        endAt: toIsoDate(row.endAt),
+        bookingOpenAt: toIsoDate(row.bookingOpenAt),
+        bookingCloseAt: toIsoDate(row.bookingCloseAt),
+        createdAt: toIsoDate(row.createdAt),
+        updatedAt: toIsoDate(row.updatedAt),
+      })),
+      200,
+    );
+  });
+
+  authRoutes.openapi(cancelSlotRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const slotRows = await database
+      .select({
+        id: dbSchema.slot.id,
+        organizationId: dbSchema.slot.organizationId,
+        status: dbSchema.slot.status,
+      })
+      .from(dbSchema.slot)
+      .where(eq(dbSchema.slot.id, body.slotId))
+      .limit(1);
+    const slot = slotRows[0];
+    if (!slot) {
+      return c.json({ message: 'Slot not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: slot.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (slot.status !== SLOT_STATUS.OPEN) {
+      return c.json({ message: 'Slot is not open.' }, 409);
+    }
+
+    await database
+      .update(dbSchema.slot)
+      .set({
+        status: SLOT_STATUS.CANCELED,
+      })
+      .where(eq(dbSchema.slot.id, slot.id));
+
+    await database
+      .update(dbSchema.booking)
+      .set({
+        status: BOOKING_STATUS.CANCELED_BY_STAFF,
+        cancelReason: body.reason ?? 'slot-canceled',
+        cancelledAt: new Date(),
+        cancelledByUserId: identity.userId,
+      })
+      .where(
+        and(
+          eq(dbSchema.booking.slotId, slot.id),
+          eq(dbSchema.booking.status, BOOKING_STATUS.CONFIRMED),
+        ),
+      );
+
+    return c.json({ ok: true }, 200);
+  });
+
+  authRoutes.openapi(createRecurringScheduleRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const timezone = assertSupportedTimezone(body.timezone);
+    if (!timezone) {
+      return c.json({ message: `Only ${DEFAULT_TIMEZONE} is supported in MVP.` }, 422);
+    }
+
+    const serviceRows = await database
+      .select({
+        id: dbSchema.service.id,
+        organizationId: dbSchema.service.organizationId,
+      })
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, body.serviceId))
+      .limit(1);
+    const service = serviceRows[0];
+    if (!service) {
+      return c.json({ message: 'Service not found.' }, 404);
+    }
+
+    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    if (!organizationId || organizationId !== service.organizationId) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (body.frequency === 'weekly' && body.byWeekday && body.byWeekday.length === 0) {
+      return c.json({ message: 'byWeekday must not be empty for weekly frequency.' }, 422);
+    }
+
+    const startDateParts = parseDateParts(body.startDate);
+    if (!startDateParts) {
+      return c.json({ message: 'Invalid startDate.' }, 422);
+    }
+
+    if (body.endDate) {
+      const endDateParts = parseDateParts(body.endDate);
+      if (!endDateParts) {
+        return c.json({ message: 'Invalid endDate.' }, 422);
+      }
+      if (new Date(body.endDate).getTime() < new Date(body.startDate).getTime()) {
+        return c.json({ message: 'endDate must be >= startDate.' }, 422);
+      }
+    }
+
+    const recurringScheduleId = crypto.randomUUID();
+    await database.insert(dbSchema.recurringSchedule).values({
+      id: recurringScheduleId,
+      organizationId,
+      serviceId: body.serviceId,
+      timezone,
+      frequency: body.frequency,
+      interval: body.interval,
+      byWeekdayJson: body.byWeekday ? JSON.stringify(body.byWeekday) : null,
+      byMonthday: body.byMonthday ?? null,
+      startDate: body.startDate,
+      endDate: body.endDate ?? null,
+      startTimeLocal: body.startTimeLocal,
+      durationMinutes: body.durationMinutes ?? null,
+      capacityOverride: body.capacityOverride ?? null,
+      isActive: true,
+    });
+
+    const { from, to } = defaultRecurringRange();
+    const generated = await syncRecurringScheduleSlots({
+      database,
+      scheduleId: recurringScheduleId,
+      from,
+      to,
+    });
+
+    const rows = await database
+      .select()
+      .from(dbSchema.recurringSchedule)
+      .where(eq(dbSchema.recurringSchedule.id, recurringScheduleId))
+      .limit(1);
+    const schedule = rows[0];
+
+    return c.json(
+      {
+        ...schedule,
+        byWeekday: schedule?.byWeekdayJson ? JSON.parse(schedule.byWeekdayJson) : [],
+        createdAt: toIsoDate(schedule?.createdAt),
+        updatedAt: toIsoDate(schedule?.updatedAt),
+        lastGeneratedAt: toIsoDate(schedule?.lastGeneratedAt),
+        generated,
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(listRecurringSchedulesRoute, async (c) => {
+    const query = c.req.valid('query');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const filters = [eq(dbSchema.recurringSchedule.organizationId, organizationId)];
+    if (query.serviceId) {
+      filters.push(eq(dbSchema.recurringSchedule.serviceId, query.serviceId));
+    }
+    if (query.isActive !== undefined) {
+      filters.push(eq(dbSchema.recurringSchedule.isActive, query.isActive));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.recurringSchedule)
+      .where(and(...filters))
+      .orderBy(desc(dbSchema.recurringSchedule.createdAt));
+
+    return c.json(
+      rows.map((row: any) => ({
+        ...row,
+        byWeekday: row.byWeekdayJson ? JSON.parse(row.byWeekdayJson) : [],
+        createdAt: toIsoDate(row.createdAt),
+        updatedAt: toIsoDate(row.updatedAt),
+        lastGeneratedAt: toIsoDate(row.lastGeneratedAt),
+      })),
+      200,
+    );
+  });
+
+  authRoutes.openapi(updateRecurringScheduleRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const scheduleRows = await database
+      .select({
+        id: dbSchema.recurringSchedule.id,
+        organizationId: dbSchema.recurringSchedule.organizationId,
+      })
+      .from(dbSchema.recurringSchedule)
+      .where(eq(dbSchema.recurringSchedule.id, body.recurringScheduleId))
+      .limit(1);
+    const schedule = scheduleRows[0];
+    if (!schedule) {
+      return c.json({ message: 'Recurring schedule not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: schedule.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (body.timezone && !isSupportedTimezone(body.timezone)) {
+      return c.json({ message: `Only ${DEFAULT_TIMEZONE} is supported in MVP.` }, 422);
+    }
+    if (body.startDate && !parseDateParts(body.startDate)) {
+      return c.json({ message: 'Invalid startDate.' }, 422);
+    }
+    if (body.endDate && !parseDateParts(body.endDate)) {
+      return c.json({ message: 'Invalid endDate.' }, 422);
+    }
+
+    await database
+      .update(dbSchema.recurringSchedule)
+      .set({
+        ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+        ...(body.frequency !== undefined ? { frequency: body.frequency } : {}),
+        ...(body.interval !== undefined ? { interval: body.interval } : {}),
+        ...(body.byWeekday !== undefined ? { byWeekdayJson: JSON.stringify(body.byWeekday) } : {}),
+        ...(body.byMonthday !== undefined ? { byMonthday: body.byMonthday } : {}),
+        ...(body.startDate !== undefined ? { startDate: body.startDate } : {}),
+        ...(body.endDate !== undefined ? { endDate: body.endDate } : {}),
+        ...(body.startTimeLocal !== undefined ? { startTimeLocal: body.startTimeLocal } : {}),
+        ...(body.durationMinutes !== undefined ? { durationMinutes: body.durationMinutes } : {}),
+        ...(body.capacityOverride !== undefined ? { capacityOverride: body.capacityOverride } : {}),
+        ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+      })
+      .where(eq(dbSchema.recurringSchedule.id, schedule.id));
+
+    const { from, to } = defaultRecurringRange();
+    const generated = await syncRecurringScheduleSlots({
+      database,
+      scheduleId: schedule.id,
+      from,
+      to,
+    });
+
+    const rows = await database
+      .select()
+      .from(dbSchema.recurringSchedule)
+      .where(eq(dbSchema.recurringSchedule.id, schedule.id))
+      .limit(1);
+    const updated = rows[0];
+
+    return c.json(
+      {
+        ...updated,
+        byWeekday: updated?.byWeekdayJson ? JSON.parse(updated.byWeekdayJson) : [],
+        createdAt: toIsoDate(updated?.createdAt),
+        updatedAt: toIsoDate(updated?.updatedAt),
+        lastGeneratedAt: toIsoDate(updated?.lastGeneratedAt),
+        generated,
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(upsertRecurringExceptionRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    if (body.action === 'override') {
+      const hasAnyOverride =
+        body.overrideStartTimeLocal !== undefined ||
+        body.overrideDurationMinutes !== undefined ||
+        body.overrideCapacity !== undefined;
+      if (!hasAnyOverride) {
+        return c.json({ message: 'Override action requires at least one override field.' }, 422);
+      }
+    }
+
+    const scheduleRows = await database
+      .select({
+        id: dbSchema.recurringSchedule.id,
+        organizationId: dbSchema.recurringSchedule.organizationId,
+      })
+      .from(dbSchema.recurringSchedule)
+      .where(eq(dbSchema.recurringSchedule.id, body.recurringScheduleId))
+      .limit(1);
+    const schedule = scheduleRows[0];
+    if (!schedule) {
+      return c.json({ message: 'Recurring schedule not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: schedule.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const existingRows = await database
+      .select({
+        id: dbSchema.recurringScheduleException.id,
+      })
+      .from(dbSchema.recurringScheduleException)
+      .where(
+        and(
+          eq(dbSchema.recurringScheduleException.recurringScheduleId, body.recurringScheduleId),
+          eq(dbSchema.recurringScheduleException.date, body.date),
+        ),
+      )
+      .limit(1);
+
+    if (existingRows[0]) {
+      await database
+        .update(dbSchema.recurringScheduleException)
+        .set({
+          action: body.action,
+          overrideStartTimeLocal: body.overrideStartTimeLocal ?? null,
+          overrideDurationMinutes: body.overrideDurationMinutes ?? null,
+          overrideCapacity: body.overrideCapacity ?? null,
+        })
+        .where(eq(dbSchema.recurringScheduleException.id, existingRows[0].id));
+    } else {
+      await database.insert(dbSchema.recurringScheduleException).values({
+        id: crypto.randomUUID(),
+        recurringScheduleId: body.recurringScheduleId,
+        organizationId: schedule.organizationId,
+        date: body.date,
+        action: body.action,
+        overrideStartTimeLocal: body.overrideStartTimeLocal ?? null,
+        overrideDurationMinutes: body.overrideDurationMinutes ?? null,
+        overrideCapacity: body.overrideCapacity ?? null,
+      });
+    }
+
+    const { from, to } = defaultRecurringRange();
+    const generated = await syncRecurringScheduleSlots({
+      database,
+      scheduleId: body.recurringScheduleId,
+      from,
+      to,
+    });
+
+    const rows = await database
+      .select()
+      .from(dbSchema.recurringScheduleException)
+      .where(
+        and(
+          eq(dbSchema.recurringScheduleException.recurringScheduleId, body.recurringScheduleId),
+          eq(dbSchema.recurringScheduleException.date, body.date),
+        ),
+      )
+      .limit(1);
+    const exception = rows[0];
+
+    return c.json(
+      {
+        ...exception,
+        createdAt: toIsoDate(exception?.createdAt),
+        updatedAt: toIsoDate(exception?.updatedAt),
+        generated,
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(generateRecurringSlotsRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const scheduleRows = await database
+      .select({
+        id: dbSchema.recurringSchedule.id,
+        organizationId: dbSchema.recurringSchedule.organizationId,
+      })
+      .from(dbSchema.recurringSchedule)
+      .where(eq(dbSchema.recurringSchedule.id, body.recurringScheduleId))
+      .limit(1);
+    const schedule = scheduleRows[0];
+    if (!schedule) {
+      return c.json({ message: 'Recurring schedule not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: schedule.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const defaultRange = defaultRecurringRange();
+    const from = parseIsoDateOrNull(body.from) ?? defaultRange.from;
+    const to = parseIsoDateOrNull(body.to) ?? defaultRange.to;
+    if (from.getTime() > to.getTime()) {
+      return c.json({ message: 'Invalid from/to.' }, 422);
+    }
+
+    const generated = await syncRecurringScheduleSlots({
+      database,
+      scheduleId: body.recurringScheduleId,
+      from,
+      to,
+    });
+
+    return c.json(
+      {
+        recurringScheduleId: body.recurringScheduleId,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        ...generated,
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(createBookingRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const participantsCount = body.participantsCount ?? 1;
+    const slotRows = await database
+      .select({
+        id: dbSchema.slot.id,
+        organizationId: dbSchema.slot.organizationId,
+        serviceId: dbSchema.slot.serviceId,
+        startAt: dbSchema.slot.startAt,
+        status: dbSchema.slot.status,
+        bookingOpenAt: dbSchema.slot.bookingOpenAt,
+        bookingCloseAt: dbSchema.slot.bookingCloseAt,
+      })
+      .from(dbSchema.slot)
+      .where(eq(dbSchema.slot.id, body.slotId))
+      .limit(1);
+    const slot = slotRows[0];
+    if (!slot) {
+      return c.json({ message: 'Slot not found.' }, 404);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId: slot.organizationId,
+      userId: identity.userId,
+    });
+    if (!participant) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const serviceRows = await database
+      .select({
+        id: dbSchema.service.id,
+        requiresTicket: dbSchema.service.requiresTicket,
+      })
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, slot.serviceId))
+      .limit(1);
+    const service = serviceRows[0];
+    if (!service) {
+      return c.json({ message: 'Service not found.' }, 404);
+    }
+
+    const now = new Date();
+    if (
+      slot.status !== SLOT_STATUS.OPEN ||
+      now.getTime() < new Date(slot.bookingOpenAt).getTime() ||
+      now.getTime() > new Date(slot.bookingCloseAt).getTime()
+    ) {
+      return c.json({ message: 'Slot is not bookable.' }, 409);
+    }
+
+    let capacityReserved = false;
+    let consumedTicketPackId: string | null = null;
+    let bookingCreated = false;
+
+    const releaseReservedCapacity = async () => {
+      if (!capacityReserved) {
+        return;
+      }
+      await database
+        .update(dbSchema.slot)
+        .set({
+          reservedCount: sql`case
+            when ${dbSchema.slot.reservedCount} >= ${participantsCount}
+            then ${dbSchema.slot.reservedCount} - ${participantsCount}
+            else 0
+          end`,
+        })
+        .where(eq(dbSchema.slot.id, slot.id));
+      capacityReserved = false;
+    };
+
+    const restoreConsumedTicket = async () => {
+      if (!consumedTicketPackId) {
+        return;
+      }
+      const restoredRows = await database
+        .update(dbSchema.ticketPack)
+        .set({
+          remainingCount: sql`${dbSchema.ticketPack.remainingCount} + ${participantsCount}`,
+        })
+        .where(eq(dbSchema.ticketPack.id, consumedTicketPackId))
+        .returning({
+          id: dbSchema.ticketPack.id,
+          remainingCount: dbSchema.ticketPack.remainingCount,
+          expiresAt: dbSchema.ticketPack.expiresAt,
+        });
+      const restoredPack = restoredRows[0];
+      if (restoredPack) {
+        const packStatus = normalizePackStatus({
+          remainingCount: restoredPack.remainingCount,
+          expiresAt: restoredPack.expiresAt,
+        });
+        await database
+          .update(dbSchema.ticketPack)
+          .set({
+            status: packStatus,
+          })
+          .where(eq(dbSchema.ticketPack.id, restoredPack.id));
+      }
+      consumedTicketPackId = null;
+    };
+
+    try {
+      const capacityRows = await database
+        .update(dbSchema.slot)
+        .set({
+          reservedCount: sql`${dbSchema.slot.reservedCount} + ${participantsCount}`,
+        })
+        .where(
+          and(
+            eq(dbSchema.slot.id, slot.id),
+            eq(dbSchema.slot.status, SLOT_STATUS.OPEN),
+            lte(dbSchema.slot.bookingOpenAt, now),
+            gte(dbSchema.slot.bookingCloseAt, now),
+            sql`${dbSchema.slot.reservedCount} + ${participantsCount} <= ${dbSchema.slot.capacity}`,
+          ),
+        )
+        .returning({ id: dbSchema.slot.id });
+      if (capacityRows.length === 0) {
+        throw new Error('CAPACITY_OR_TIME_CONFLICT');
+      }
+      capacityReserved = true;
+
+      let consumedBalanceAfter: number | null = null;
+      if (service.requiresTicket) {
+        const ticketRows = await database
+          .select({
+            id: dbSchema.ticketPack.id,
+            remainingCount: dbSchema.ticketPack.remainingCount,
+            expiresAt: dbSchema.ticketPack.expiresAt,
+            status: dbSchema.ticketPack.status,
+            createdAt: dbSchema.ticketPack.createdAt,
+          })
+          .from(dbSchema.ticketPack)
+          .where(
+            and(
+              eq(dbSchema.ticketPack.organizationId, slot.organizationId),
+              eq(dbSchema.ticketPack.participantId, participant.id),
+              eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
+              gte(dbSchema.ticketPack.remainingCount, participantsCount),
+            ),
+          );
+
+        const candidate = ticketRows
+          .filter(
+            (row: { expiresAt: Date | null }) =>
+              !row.expiresAt || row.expiresAt.getTime() > now.getTime(),
+          )
+          .sort(
+            (
+              left: { expiresAt: Date | null; createdAt: Date },
+              right: { expiresAt: Date | null; createdAt: Date },
+            ) => {
+              const exp = dateToComparable(left.expiresAt) - dateToComparable(right.expiresAt);
+              if (exp !== 0) {
+                return exp;
+              }
+              return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+            },
+          )
+          .at(0);
+
+        if (!candidate) {
+          throw new Error('TICKET_REQUIRED');
+        }
+
+        const updatedPackRows = await database
+          .update(dbSchema.ticketPack)
+          .set({
+            remainingCount: sql`${dbSchema.ticketPack.remainingCount} - ${participantsCount}`,
+          })
+          .where(
+            and(
+              eq(dbSchema.ticketPack.id, candidate.id),
+              eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
+              gte(dbSchema.ticketPack.remainingCount, participantsCount),
+            ),
+          )
+          .returning({
+            id: dbSchema.ticketPack.id,
+            remainingCount: dbSchema.ticketPack.remainingCount,
+            expiresAt: dbSchema.ticketPack.expiresAt,
+          });
+
+        const updatedPack = updatedPackRows[0];
+        if (!updatedPack) {
+          throw new Error('TICKET_CONFLICT');
+        }
+
+        const packStatus = normalizePackStatus({
+          remainingCount: updatedPack.remainingCount,
+          expiresAt: updatedPack.expiresAt,
+        });
+        await database
+          .update(dbSchema.ticketPack)
+          .set({
+            status: packStatus,
+          })
+          .where(eq(dbSchema.ticketPack.id, updatedPack.id));
+
+        consumedTicketPackId = updatedPack.id;
+        consumedBalanceAfter = updatedPack.remainingCount;
+      }
+
+      const bookingId = crypto.randomUUID();
+      await database.insert(dbSchema.booking).values({
+        id: bookingId,
+        organizationId: slot.organizationId,
+        slotId: slot.id,
+        serviceId: slot.serviceId,
+        participantId: participant.id,
+        participantsCount,
+        status: BOOKING_STATUS.CONFIRMED,
+        ticketPackId: consumedTicketPackId,
+      });
+      bookingCreated = true;
+
+      if (consumedTicketPackId) {
+        await database.insert(dbSchema.ticketLedger).values({
+          id: crypto.randomUUID(),
+          organizationId: slot.organizationId,
+          ticketPackId: consumedTicketPackId,
+          bookingId,
+          action: TICKET_LEDGER_ACTION.CONSUME,
+          delta: participantsCount * -1,
+          balanceAfter: consumedBalanceAfter ?? 0,
+          actorUserId: identity.userId,
+          reason: 'booking-created',
+        });
+      }
+
+      await database.insert(dbSchema.bookingAuditLog).values({
+        id: crypto.randomUUID(),
+        bookingId,
+        organizationId: slot.organizationId,
+        actorUserId: identity.userId,
+        action: 'booking.created',
+        metadata: JSON.stringify({
+          participantsCount,
+        }),
+        ipAddress: headers.get('cf-connecting-ip') ?? null,
+        userAgent: headers.get('user-agent'),
+      });
+
+      const rows = await database
+        .select()
+        .from(dbSchema.booking)
+        .where(eq(dbSchema.booking.id, bookingId))
+        .limit(1);
+      const booking = rows[0];
+
+      return c.json(
+        {
+          ...booking,
+          cancelledAt: toIsoDate(booking?.cancelledAt),
+          noShowMarkedAt: toIsoDate(booking?.noShowMarkedAt),
+          createdAt: toIsoDate(booking?.createdAt),
+          updatedAt: toIsoDate(booking?.updatedAt),
+        },
+        200,
+      );
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        if (!bookingCreated) {
+          await restoreConsumedTicket();
+          await releaseReservedCapacity();
+        }
+        return c.json({ message: 'Duplicate booking is not allowed.' }, 409);
+      }
+      if (error instanceof Error && error.message === 'CAPACITY_OR_TIME_CONFLICT') {
+        return c.json({ message: 'Slot is full or not bookable.' }, 409);
+      }
+      if (error instanceof Error && (error.message === 'TICKET_REQUIRED' || error.message === 'TICKET_CONFLICT')) {
+        await restoreConsumedTicket();
+        await releaseReservedCapacity();
+        return c.json({ message: 'No available ticket pack for booking.' }, 409);
+      }
+      if (!bookingCreated) {
+        await restoreConsumedTicket();
+        await releaseReservedCapacity();
+      }
+      throw error;
+    }
+  });
+
+  authRoutes.openapi(listMyBookingsRoute, async (c) => {
+    const query = c.req.valid('query');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!participant) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const filters = [
+      eq(dbSchema.booking.organizationId, organizationId),
+      eq(dbSchema.booking.participantId, participant.id),
+    ];
+    if (query.status) {
+      filters.push(eq(dbSchema.booking.status, query.status));
+    }
+
+    const from = parseIsoDateOrNull(query.from);
+    const to = parseIsoDateOrNull(query.to);
+    if (from) {
+      filters.push(gte(dbSchema.booking.createdAt, from));
+    }
+    if (to) {
+      filters.push(lte(dbSchema.booking.createdAt, to));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.booking)
+      .where(and(...filters))
+      .orderBy(desc(dbSchema.booking.createdAt));
+
+    return c.json(
+      rows.map((row: any) => ({
+        ...row,
+        cancelledAt: toIsoDate(row.cancelledAt),
+        noShowMarkedAt: toIsoDate(row.noShowMarkedAt),
+        createdAt: toIsoDate(row.createdAt),
+        updatedAt: toIsoDate(row.updatedAt),
+      })),
+      200,
+    );
+  });
+
+  authRoutes.openapi(cancelBookingRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const bookingRows = await database
+      .select({
+        id: dbSchema.booking.id,
+        organizationId: dbSchema.booking.organizationId,
+        participantId: dbSchema.booking.participantId,
+        status: dbSchema.booking.status,
+        participantsCount: dbSchema.booking.participantsCount,
+        ticketPackId: dbSchema.booking.ticketPackId,
+        slotId: dbSchema.booking.slotId,
+        serviceId: dbSchema.booking.serviceId,
+      })
+      .from(dbSchema.booking)
+      .where(eq(dbSchema.booking.id, body.bookingId))
+      .limit(1);
+    const booking = bookingRows[0];
+    if (!booking) {
+      return c.json({ message: 'Booking not found.' }, 404);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId: booking.organizationId,
+      userId: identity.userId,
+    });
+    if (!participant || participant.id !== booking.participantId) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (booking.status !== BOOKING_STATUS.CONFIRMED) {
+      return c.json({ message: 'Booking cannot be canceled.' }, 409);
+    }
+
+    const slotRows = await database
+      .select({
+        id: dbSchema.slot.id,
+        startAt: dbSchema.slot.startAt,
+      })
+      .from(dbSchema.slot)
+      .where(eq(dbSchema.slot.id, booking.slotId))
+      .limit(1);
+    const slot = slotRows[0];
+    if (!slot) {
+      return c.json({ message: 'Slot not found.' }, 404);
+    }
+
+    const serviceRows = await database
+      .select({
+        cancellationDeadlineMinutes: dbSchema.service.cancellationDeadlineMinutes,
+      })
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, booking.serviceId))
+      .limit(1);
+    const service = serviceRows[0];
+    const cancellationDeadlineMinutes =
+      service?.cancellationDeadlineMinutes ?? DEFAULT_CANCELLATION_DEADLINE_MINUTES;
+    const deadlineAt = new Date(
+      new Date(slot.startAt).getTime() - cancellationDeadlineMinutes * 60 * 1000,
+    );
+    if (Date.now() > deadlineAt.getTime()) {
+      return c.json({ message: 'Cancellation deadline has passed.' }, 409);
+    }
+
+    await database
+      .update(dbSchema.booking)
+      .set({
+        status: BOOKING_STATUS.CANCELED_BY_PARTICIPANT,
+        cancelReason: body.reason ?? null,
+        cancelledAt: new Date(),
+        cancelledByUserId: identity.userId,
+      })
+      .where(eq(dbSchema.booking.id, booking.id));
+
+    await database
+      .update(dbSchema.slot)
+      .set({
+        reservedCount: sql`${dbSchema.slot.reservedCount} - ${booking.participantsCount}`,
+      })
+      .where(
+        and(
+          eq(dbSchema.slot.id, booking.slotId),
+          gte(dbSchema.slot.reservedCount, booking.participantsCount),
+        ),
+      );
+
+    if (booking.ticketPackId) {
+      await database
+        .update(dbSchema.ticketPack)
+        .set({
+          remainingCount: sql`${dbSchema.ticketPack.remainingCount} + ${booking.participantsCount}`,
+          status: TICKET_PACK_STATUS.ACTIVE,
+        })
+        .where(eq(dbSchema.ticketPack.id, booking.ticketPackId));
+
+      const packRows = await database
+        .select({
+          remainingCount: dbSchema.ticketPack.remainingCount,
+        })
+        .from(dbSchema.ticketPack)
+        .where(eq(dbSchema.ticketPack.id, booking.ticketPackId))
+        .limit(1);
+      const pack = packRows[0];
+
+      await database.insert(dbSchema.ticketLedger).values({
+        id: crypto.randomUUID(),
+        organizationId: booking.organizationId,
+        ticketPackId: booking.ticketPackId,
+        bookingId: booking.id,
+        action: TICKET_LEDGER_ACTION.RESTORE,
+        delta: booking.participantsCount,
+        balanceAfter: pack?.remainingCount ?? 0,
+        actorUserId: identity.userId,
+        reason: 'booking-canceled-by-participant',
+      });
+    }
+
+    await writeBookingAuditLog({
+      database,
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      actorUserId: identity.userId,
+      action: 'booking.cancelled_by_participant',
+      metadata: {
+        reason: body.reason ?? null,
+      },
+      headers,
+    });
+
+    return c.json({ ok: true }, 200);
+  });
+
+  authRoutes.openapi(listBookingsRoute, async (c) => {
+    const query = c.req.valid('query');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const filters = [eq(dbSchema.booking.organizationId, organizationId)];
+    if (query.serviceId) {
+      filters.push(eq(dbSchema.booking.serviceId, query.serviceId));
+    }
+    if (query.participantId) {
+      filters.push(eq(dbSchema.booking.participantId, query.participantId));
+    }
+    if (query.status) {
+      filters.push(eq(dbSchema.booking.status, query.status));
+    }
+
+    const from = parseIsoDateOrNull(query.from);
+    const to = parseIsoDateOrNull(query.to);
+    if (from) {
+      filters.push(gte(dbSchema.booking.createdAt, from));
+    }
+    if (to) {
+      filters.push(lte(dbSchema.booking.createdAt, to));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.booking)
+      .where(and(...filters))
+      .orderBy(desc(dbSchema.booking.createdAt));
+
+    return c.json(
+      rows.map((row: any) => ({
+        ...row,
+        cancelledAt: toIsoDate(row.cancelledAt),
+        noShowMarkedAt: toIsoDate(row.noShowMarkedAt),
+        createdAt: toIsoDate(row.createdAt),
+        updatedAt: toIsoDate(row.updatedAt),
+      })),
+      200,
+    );
+  });
+
+  authRoutes.openapi(cancelBookingByStaffRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const bookingRows = await database
+      .select({
+        id: dbSchema.booking.id,
+        organizationId: dbSchema.booking.organizationId,
+        slotId: dbSchema.booking.slotId,
+        participantsCount: dbSchema.booking.participantsCount,
+        status: dbSchema.booking.status,
+      })
+      .from(dbSchema.booking)
+      .where(eq(dbSchema.booking.id, body.bookingId))
+      .limit(1);
+    const booking = bookingRows[0];
+    if (!booking) {
+      return c.json({ message: 'Booking not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: booking.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (booking.status !== BOOKING_STATUS.CONFIRMED) {
+      return c.json({ message: 'Booking cannot be canceled.' }, 409);
+    }
+
+    await database
+      .update(dbSchema.booking)
+      .set({
+        status: BOOKING_STATUS.CANCELED_BY_STAFF,
+        cancelReason: body.reason ?? null,
+        cancelledAt: new Date(),
+        cancelledByUserId: identity.userId,
+      })
+      .where(eq(dbSchema.booking.id, booking.id));
+
+    await database
+      .update(dbSchema.slot)
+      .set({
+        reservedCount: sql`${dbSchema.slot.reservedCount} - ${booking.participantsCount}`,
+      })
+      .where(
+        and(
+          eq(dbSchema.slot.id, booking.slotId),
+          gte(dbSchema.slot.reservedCount, booking.participantsCount),
+        ),
+      );
+
+    await writeBookingAuditLog({
+      database,
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      actorUserId: identity.userId,
+      action: 'booking.cancelled_by_staff',
+      metadata: {
+        reason: body.reason ?? null,
+      },
+      headers,
+    });
+
+    return c.json({ ok: true }, 200);
+  });
+
+  authRoutes.openapi(markNoShowRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const bookingRows = await database
+      .select({
+        id: dbSchema.booking.id,
+        organizationId: dbSchema.booking.organizationId,
+        status: dbSchema.booking.status,
+      })
+      .from(dbSchema.booking)
+      .where(eq(dbSchema.booking.id, body.bookingId))
+      .limit(1);
+    const booking = bookingRows[0];
+    if (!booking) {
+      return c.json({ message: 'Booking not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: booking.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (booking.status !== BOOKING_STATUS.CONFIRMED) {
+      return c.json({ message: 'Only confirmed booking can be marked as no-show.' }, 409);
+    }
+
+    await database
+      .update(dbSchema.booking)
+      .set({
+        status: BOOKING_STATUS.NO_SHOW,
+        noShowMarkedAt: new Date(),
+      })
+      .where(eq(dbSchema.booking.id, booking.id));
+
+    await writeBookingAuditLog({
+      database,
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      actorUserId: identity.userId,
+      action: 'booking.no_show',
+      headers,
+    });
+
+    return c.json({ ok: true }, 200);
+  });
+
+  authRoutes.openapi(createTicketTypeRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (body.serviceIds && body.serviceIds.length > 0) {
+      const serviceCount = await database
+        .select({
+          value: sql<number>`count(*)`,
+        })
+        .from(dbSchema.service)
+        .where(
+          and(
+            eq(dbSchema.service.organizationId, organizationId),
+            sql`${dbSchema.service.id} in (${sql.join(
+              body.serviceIds.map((id) => sql`${id}`),
+              sql`,`,
+            )})`,
+          ),
+        );
+
+      if (Number(serviceCount[0]?.value ?? 0) !== body.serviceIds.length) {
+        return c.json({ message: 'serviceIds includes unknown service.' }, 422);
+      }
+    }
+
+    const ticketTypeId = crypto.randomUUID();
+    await database.insert(dbSchema.ticketType).values({
+      id: ticketTypeId,
+      organizationId,
+      name: body.name,
+      serviceIdsJson: body.serviceIds ? JSON.stringify(body.serviceIds) : null,
+      totalCount: body.totalCount,
+      expiresInDays: body.expiresInDays ?? null,
+      isActive: body.isActive ?? true,
+    });
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketType)
+      .where(eq(dbSchema.ticketType.id, ticketTypeId))
+      .limit(1);
+    const ticketType = rows[0];
+
+    return c.json(
+      {
+        ...ticketType,
+        serviceIds: ticketType?.serviceIdsJson ? JSON.parse(ticketType.serviceIdsJson) : [],
+        createdAt: toIsoDate(ticketType?.createdAt),
+        updatedAt: toIsoDate(ticketType?.updatedAt),
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(listTicketTypesRoute, async (c) => {
+    const query = c.req.valid('query');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const filters = [eq(dbSchema.ticketType.organizationId, organizationId)];
+    if (query.isActive !== undefined) {
+      filters.push(eq(dbSchema.ticketType.isActive, query.isActive));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketType)
+      .where(and(...filters))
+      .orderBy(desc(dbSchema.ticketType.createdAt));
+
+    return c.json(
+      rows.map((row: any) => ({
+        ...row,
+        serviceIds: row.serviceIdsJson ? JSON.parse(row.serviceIdsJson) : [],
+        createdAt: toIsoDate(row.createdAt),
+        updatedAt: toIsoDate(row.updatedAt),
+      })),
+      200,
+    );
+  });
+
+  authRoutes.openapi(grantTicketPackRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const participantRows = await database
+      .select({
+        id: dbSchema.participant.id,
+      })
+      .from(dbSchema.participant)
+      .where(
+        and(
+          eq(dbSchema.participant.id, body.participantId),
+          eq(dbSchema.participant.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+    const participant = participantRows[0];
+    if (!participant) {
+      return c.json({ message: 'Participant not found.' }, 404);
+    }
+
+    const ticketTypeRows = await database
+      .select({
+        id: dbSchema.ticketType.id,
+        totalCount: dbSchema.ticketType.totalCount,
+        expiresInDays: dbSchema.ticketType.expiresInDays,
+      })
+      .from(dbSchema.ticketType)
+      .where(
+        and(
+          eq(dbSchema.ticketType.id, body.ticketTypeId),
+          eq(dbSchema.ticketType.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+    const ticketType = ticketTypeRows[0];
+    if (!ticketType) {
+      return c.json({ message: 'Ticket type not found.' }, 404);
+    }
+
+    const count = body.count ?? ticketType.totalCount;
+    const expiresAt = resolveEndDate(ticketType.expiresInDays, body.expiresAt);
+    if (body.expiresAt && !expiresAt) {
+      return c.json({ message: 'Invalid expiresAt.' }, 422);
+    }
+
+    const status = normalizePackStatus({
+      remainingCount: count,
+      expiresAt,
+    });
+    const ticketPackId = crypto.randomUUID();
+
+    await database.insert(dbSchema.ticketPack).values({
+      id: ticketPackId,
+      organizationId,
+      participantId: participant.id,
+      ticketTypeId: ticketType.id,
+      initialCount: count,
+      remainingCount: count,
+      expiresAt,
+      status,
+    });
+
+    await database.insert(dbSchema.ticketLedger).values({
+      id: crypto.randomUUID(),
+      organizationId,
+      ticketPackId,
+      bookingId: null,
+      action: TICKET_LEDGER_ACTION.GRANT,
+      delta: count,
+      balanceAfter: count,
+      actorUserId: identity.userId,
+      reason: 'staff-grant',
+    });
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPack)
+      .where(eq(dbSchema.ticketPack.id, ticketPackId))
+      .limit(1);
+    const ticketPack = rows[0];
+
+    return c.json(
+      {
+        ...ticketPack,
+        expiresAt: toIsoDate(ticketPack?.expiresAt),
+        createdAt: toIsoDate(ticketPack?.createdAt),
+        updatedAt: toIsoDate(ticketPack?.updatedAt),
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(listMyTicketPacksRoute, async (c) => {
+    const query = c.req.valid('query');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!participant) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const now = new Date();
+    await database
+      .update(dbSchema.ticketPack)
+      .set({
+        status: TICKET_PACK_STATUS.EXPIRED,
+      })
+      .where(
+        and(
+          eq(dbSchema.ticketPack.organizationId, organizationId),
+          eq(dbSchema.ticketPack.participantId, participant.id),
+          eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
+          lte(dbSchema.ticketPack.expiresAt, now),
+        ),
+      );
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPack)
+      .where(
+        and(
+          eq(dbSchema.ticketPack.organizationId, organizationId),
+          eq(dbSchema.ticketPack.participantId, participant.id),
+        ),
+      )
+      .orderBy(asc(dbSchema.ticketPack.createdAt));
+
+    return c.json(
+      rows.map((row: any) => ({
+        ...row,
+        expiresAt: toIsoDate(row.expiresAt),
+        createdAt: toIsoDate(row.createdAt),
+        updatedAt: toIsoDate(row.updatedAt),
+      })),
+      200,
+    );
+  });
+};
