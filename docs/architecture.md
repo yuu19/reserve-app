@@ -119,7 +119,10 @@
 - `/bookings`:
   - 予約タブ（運営 / 参加者）
   - 運営: Service 作成、単発 Slot 作成、定期 RecurringSchedule 作成
-  - 参加者: 空き枠検索、申込、マイ予約一覧、マイ予約キャンセル
+  - 参加者: 月次予約カレンダー、申込、マイ予約キャンセル
+  - 閲覧権限:
+    - `owner` / `admin` かつ `participant` 未所属: カレンダー閲覧のみ可（全 slot 表示）
+    - `member` かつ `participant` 未所属: カレンダー閲覧不可
 - `/participants`:
   - 参加者一覧
   - 参加者招待作成（メール + 氏名）
@@ -363,7 +366,12 @@
 - `owner` / `admin`: Service/Slot/RecurringSchedule/TicketType/TicketPack付与/運営向けBooking操作
 - `member`: 管理系API禁止
 - `participant`: `slots/available`, `bookings` 作成, `bookings/mine`, `bookings/cancel`, `ticket-packs/mine` のみ
-- 全予約系APIで `organizationId` 一致 + 参加者所属一致を必須とする
+- 予約操作系API（`slots/available`, `bookings`, `bookings/mine`, `bookings/cancel`）は `organizationId` 一致 + 参加者所属一致を必須とする
+- `slots` 一覧は `owner` / `admin` が閲覧可能（参加者未所属でも可）
+- Webの予約カレンダーは以下のモードで制御する
+  - interactive: `participant` 所属あり（申込/キャンセル可）
+  - view-only: `owner` / `admin` かつ `participant` 未所属（閲覧のみ）
+  - no-access: `member` かつ `participant` 未所属（閲覧不可）
 - 参加者予約作成時は `participant.userId == session.user.id` を必須とする
 - 参加者は本ドキュメントの招待仕様（`participant_invitation`）で作成された所属を前提とする
 
@@ -430,7 +438,7 @@
 - キャンセル期限デフォルト: 24時間前
 - 予約作成時状態: `confirmed`（pending paymentなし）
 
-### 8.11 Web実装状況（2026-02-18時点）
+### 8.11 Web実装状況（2026-02-19時点）
 
 - 実装済み画面:
   - `/`（認証LP）
@@ -448,6 +456,9 @@
 - 実装済み操作:
   - 運営: `createService`, `createSlot`, `createRecurringSchedule`
   - 参加者: `listAvailableSlots`, `createBooking`, `listMyBookings`, `cancelBooking`
+  - 参加者タブ表示制御:
+    - `owner` / `admin` 未所属時は `listSlots` 結果で閲覧のみ表示
+    - `participant` 所属時は `listAvailableSlots` + `listMyBookings` で操作可能表示
 - 今回未実装（次フェーズ）:
   - 例外編集（skip/override）のUI
   - 手動generateのUI

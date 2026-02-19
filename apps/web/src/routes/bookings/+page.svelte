@@ -8,15 +8,21 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
+	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import {
+		buildCalendarDays,
 		cancelBooking,
 		createBooking,
 		createRecurringSchedule,
 		createService,
 		createSlot,
-		defaultDate,
+		formatMonthLabel,
+		formatTimeLabel,
+		getMonthDateRange,
 		loadBookingData,
 		parseNumberInput,
+		toDateKey,
+		toDateKeyFromIso,
 		toDayBoundaryIso,
 		toIsoFromDateTime
 	} from '$lib/features/bookings.svelte';
@@ -31,6 +37,8 @@
 	let busy = $state(false);
 	let tab = $state<'operations' | 'participant'>('operations');
 	let canManage = $state(false);
+	let canViewParticipantCalendar = $state(false);
+	let canUseParticipantBooking = $state(true);
 	let activeOrganizationId = $state<string | null>(null);
 
 	let services = $state<ServicePayload[]>([]);
@@ -70,10 +78,15 @@
 		capacityOverride: ''
 	});
 	let slotSearchForm = $state({ serviceId: '', fromDate: '', toDate: '' });
+	let visibleMonth = $state(new Date());
+	const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+	const maxCellItems = 3;
 
 	const confirmedBookingCount = $derived(
 		myBookings.filter((booking) => booking.status === 'confirmed').length
 	);
+	const calendarDays = $derived(buildCalendarDays(visibleMonth));
+	const monthLabel = $derived(formatMonthLabel(visibleMonth));
 
 	const parseByWeekday = (value: string): number[] | undefined => {
 		if (!value.trim()) {
@@ -94,6 +107,95 @@
 		return service?.name ?? serviceId;
 	};
 
+	type CalendarItem = {
+		slot: SlotPayload;
+		booking?: BookingPayload;
+	};
+
+	const statusLabelMap: Record<SlotPayload['status'], string> = {
+		open: '受付中',
+		canceled: '停止',
+		completed: '終了'
+	};
+
+	const isViewOnlyCalendar = $derived(canViewParticipantCalendar && !canUseParticipantBooking);
+
+	const isCurrentMonthDay = (date: Date): boolean =>
+		date.getFullYear() === visibleMonth.getFullYear() && date.getMonth() === visibleMonth.getMonth();
+
+	const toMonthRangeIso = () => {
+		const { fromDate, toDate } = getMonthDateRange(visibleMonth);
+		slotSearchForm.fromDate = fromDate;
+		slotSearchForm.toDate = toDate;
+		const from = toDayBoundaryIso(fromDate, false);
+		const to = toDayBoundaryIso(toDate, true);
+		return { from, to };
+	};
+
+	const slotMapById = $derived.by(() => {
+		const map = new Map<string, SlotPayload>();
+		for (const slot of slots) {
+			map.set(slot.id, slot);
+		}
+		return map;
+	});
+
+	const calendarItemsByDate = $derived.by(() => {
+		const map = new Map<string, CalendarItem[]>();
+		const mapBySlotId = new Map<string, CalendarItem>();
+		const addItem = (item: CalendarItem) => {
+			const key = toDateKeyFromIso(item.slot.startAt);
+			if (!key) {
+				return;
+			}
+			const list = map.get(key) ?? [];
+			list.push(item);
+			map.set(key, list);
+			mapBySlotId.set(item.slot.id, item);
+		};
+
+		if (isViewOnlyCalendar) {
+			for (const slot of slots) {
+				addItem({ slot });
+			}
+		} else if (canUseParticipantBooking) {
+			for (const slot of availableSlots) {
+				addItem({ slot });
+			}
+
+			for (const booking of myBookings) {
+				const slot = slotMapById.get(booking.slotId);
+				if (!slot) {
+					continue;
+				}
+				const found = mapBySlotId.get(slot.id);
+				if (found) {
+					found.booking = booking;
+					continue;
+				}
+				addItem({ slot, booking });
+			}
+		}
+
+		for (const [key, list] of map.entries()) {
+			list.sort((a, b) => a.slot.startAt.localeCompare(b.slot.startAt));
+			map.set(key, list);
+		}
+		return map;
+	});
+
+	const getItemsForDay = (date: Date): CalendarItem[] => calendarItemsByDate.get(toDateKey(date)) ?? [];
+
+	const shiftVisibleMonth = async (delta: number) => {
+		visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + delta, 1);
+		busy = true;
+		try {
+			await refresh();
+		} finally {
+			busy = false;
+		}
+	};
+
 	const refresh = async () => {
 		const { session } = await loadSession();
 		if (!session) {
@@ -108,10 +210,11 @@
 			recurringSchedules = [];
 			availableSlots = [];
 			myBookings = [];
+			canViewParticipantCalendar = false;
+			canUseParticipantBooking = false;
 			return;
 		}
-		if (!slotSearchForm.fromDate) slotSearchForm.fromDate = defaultDate(0);
-		if (!slotSearchForm.toDate) slotSearchForm.toDate = defaultDate(14);
+		const { from, to } = toMonthRangeIso();
 
 		const [adminData, participantData] = await Promise.all([
 			loadAdminInvitations(activeOrganizationId),
@@ -119,8 +222,6 @@
 		]);
 		canManage = adminData.canManage || participantData.canManage;
 
-		const from = toDayBoundaryIso(slotSearchForm.fromDate, false);
-		const to = toDayBoundaryIso(slotSearchForm.toDate, true);
 		if (!from || !to) {
 			toast.error('検索期間の日付形式が正しくありません。');
 			return;
@@ -131,6 +232,8 @@
 		recurringSchedules = bookingData.recurringSchedules;
 		availableSlots = bookingData.availableSlots;
 		myBookings = bookingData.myBookings;
+		canUseParticipantBooking = !bookingData.participantAccessDenied;
+		canViewParticipantCalendar = canUseParticipantBooking || (canManage && bookingData.participantAccessDenied);
 		if (bookingData.errors.length > 0) {
 			toast.error(bookingData.errors[0]);
 		}
@@ -196,6 +299,21 @@
 	const submitCreateRecurringSchedule = async (event: SubmitEvent) => {
 		event.preventDefault();
 		if (!activeOrganizationId || !canManage) return;
+		if (!recurringForm.serviceId) {
+			toast.error('サービスを選択してください。');
+			return;
+		}
+		if (!recurringForm.startDate) {
+			toast.error('開始日を選択してください。');
+			return;
+		}
+		if (recurringForm.frequency === 'weekly' && recurringForm.byWeekday.trim()) {
+			const parsedWeekday = parseByWeekday(recurringForm.byWeekday);
+			if (!parsedWeekday) {
+				toast.error('曜日は 1-7 の数値をカンマ区切りで入力してください。');
+				return;
+			}
+		}
 		busy = true;
 		try {
 			const result = await createRecurringSchedule({
@@ -223,17 +341,11 @@
 		}
 	};
 
-	const submitSearch = async (event: SubmitEvent) => {
-		event.preventDefault();
-		busy = true;
-		try {
-			await refresh();
-		} finally {
-			busy = false;
-		}
-	};
-
 	const submitCreateBooking = async (slotId: string) => {
+		if (!canUseParticipantBooking) {
+			toast.error('予約申込には参加者としての所属が必要です。');
+			return;
+		}
 		busy = true;
 		try {
 			const result = await createBooking(slotId);
@@ -249,6 +361,10 @@
 	};
 
 	const submitCancelBooking = async (bookingId: string) => {
+		if (!canUseParticipantBooking) {
+			toast.error('予約キャンセルには参加者としての所属が必要です。');
+			return;
+		}
 		if (!confirm('この予約をキャンセルしますか？')) {
 			return;
 		}
@@ -365,55 +481,146 @@
 
 			<TabsContent value="participant" class="space-y-4">
 				<Card class="surface-panel border-slate-200/80 shadow-lg">
-					<CardHeader><h2 class="text-lg font-semibold">空き枠検索</h2><CardDescription>検索後に申込できます。</CardDescription></CardHeader>
-					<CardContent>
-						<form class="grid gap-3 md:grid-cols-4" onsubmit={submitSearch}>
-							<DatePicker id="available-from" name="available_from" label="検索開始日" required bind:value={slotSearchForm.fromDate} />
-							<DatePicker id="available-to" name="available_to" label="検索終了日" required bind:value={slotSearchForm.toDate} />
-							<div class="space-y-2"><Label for="available-service">サービス（任意）</Label><Select.Root type="single" bind:value={slotSearchForm.serviceId}><Select.Trigger id="available-service" class="w-full">{slotSearchForm.serviceId ? getServiceName(slotSearchForm.serviceId) : 'すべて'}</Select.Trigger><Select.Content>{#each services as service (service.id)}<Select.Item value={service.id} label={service.name} />{/each}</Select.Content></Select.Root></div>
-							<div class="flex items-end"><Button type="submit" class="w-full" disabled={busy}>検索</Button></div>
-						</form>
+					<CardHeader class="space-y-3">
+						<div class="flex flex-wrap items-center justify-between gap-3">
+							<div>
+								<h2 class="text-lg font-semibold">予約カレンダー</h2>
+								<CardDescription>空き枠と自分の予約を月表示で確認できます。</CardDescription>
+							</div>
+							<div class="flex items-center gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									size="icon"
+									aria-label="前月へ移動"
+									onclick={() => shiftVisibleMonth(-1)}
+									disabled={busy}
+								>
+									<ChevronLeft class="size-4" />
+								</Button>
+								<p class="min-w-32 text-center text-lg font-semibold text-slate-900">{monthLabel}</p>
+								<Button
+									type="button"
+									variant="outline"
+									size="icon"
+									aria-label="次月へ移動"
+									onclick={() => shiftVisibleMonth(1)}
+									disabled={busy}
+								>
+									<ChevronRight class="size-4" />
+								</Button>
+							</div>
+						</div>
+						<div class="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+							<Badge variant="outline">空き枠</Badge>
+							<Badge variant="secondary">自分の予約</Badge>
+							<span>確定予約: {confirmedBookingCount}件</span>
+						</div>
+						{#if isViewOnlyCalendar}
+							<p class="text-sm text-muted-foreground">
+								管理者として閲覧のみ可能です。予約操作には参加者としての所属が必要です。
+							</p>
+						{:else if !canViewParticipantCalendar}
+							<p class="text-sm text-muted-foreground">
+								この組織の予約カレンダー閲覧には参加者としての所属が必要です。
+							</p>
+						{:else if !canUseParticipantBooking}
+							<p class="text-sm text-muted-foreground">
+								この組織で予約申込するには、管理者権限に加えて参加者として所属している必要があります。
+							</p>
+						{/if}
+					</CardHeader>
+					<CardContent class="space-y-3">
+						<div class="grid grid-cols-7 gap-1 rounded-lg border border-slate-200/80 bg-slate-50/60 p-2 text-center text-xs font-semibold text-slate-600">
+							{#each weekdayLabels as dayLabel (dayLabel)}
+								<div>{dayLabel}</div>
+							{/each}
+						</div>
+
+						{#if !canViewParticipantCalendar}
+							<p class="text-sm text-muted-foreground">表示できる予定がありません。</p>
+						{:else}
+							<div class="grid grid-cols-7 gap-1">
+								{#each calendarDays as day (`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`)}
+									{@const dayItems = getItemsForDay(day)}
+									{@const visibleItems = dayItems.slice(0, maxCellItems)}
+									{@const hiddenCount = Math.max(0, dayItems.length - visibleItems.length)}
+									<div
+										class={`min-h-40 rounded-lg border p-2 ${
+											isCurrentMonthDay(day)
+												? 'border-slate-200/80 bg-white'
+												: 'border-slate-100 bg-slate-50 text-slate-400'
+										}`}
+									>
+										<p class="mb-2 text-sm font-semibold">{day.getDate()}</p>
+										<div class="space-y-2">
+											{#each visibleItems as item (item.slot.id)}
+												{@const isConfirmed = item.booking?.status === 'confirmed'}
+												{@const bookingId = item.booking?.id}
+												{@const canApply =
+													item.slot.status === 'open' &&
+													item.slot.reservedCount < item.slot.capacity &&
+													!isConfirmed}
+												<div
+													class={`rounded-md border p-2 ${
+														isConfirmed
+															? 'border-sky-200 bg-sky-50'
+															: item.slot.status === 'canceled'
+																? 'border-rose-200 bg-rose-50'
+																: item.slot.status === 'completed'
+																	? 'border-slate-300 bg-slate-100'
+																	: 'border-slate-200 bg-slate-50'
+													}`}
+												>
+													<p class="text-[11px] text-slate-600">
+														{formatTimeLabel(item.slot.startAt)} - {formatTimeLabel(item.slot.endAt)}
+													</p>
+													<p class="truncate text-xs font-semibold text-slate-900">
+														{getServiceName(item.slot.serviceId)}
+													</p>
+													<p class="text-[11px] text-slate-600">
+														({item.slot.reservedCount}/{item.slot.capacity})
+													</p>
+													{#if isViewOnlyCalendar}
+														<p class="mt-1 text-[11px] text-slate-500">
+															{statusLabelMap[item.slot.status]} / 閲覧のみ
+														</p>
+													{:else if isConfirmed && item.booking}
+														<Button
+															type="button"
+															variant="destructive"
+															size="sm"
+															class="mt-1 h-7 text-[11px]"
+															onclick={() => bookingId && submitCancelBooking(bookingId)}
+															disabled={busy || !bookingId || !canUseParticipantBooking}
+														>
+															キャンセル
+														</Button>
+													{:else if canApply}
+														<Button
+															type="button"
+															size="sm"
+															class="mt-1 h-7 text-[11px]"
+															onclick={() => submitCreateBooking(item.slot.id)}
+															disabled={busy || !canUseParticipantBooking}
+														>
+															申し込む
+														</Button>
+													{:else}
+														<p class="mt-1 text-[11px] text-slate-500">受付不可</p>
+													{/if}
+												</div>
+											{/each}
+											{#if hiddenCount > 0}
+												<p class="text-[11px] text-slate-500">+{hiddenCount}件</p>
+											{/if}
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</CardContent>
 				</Card>
-
-				<section class="space-y-2">
-					<h2 class="text-lg font-semibold">空き枠一覧</h2>
-					{#if availableSlots.length === 0}
-						<p class="text-sm text-muted-foreground">空き枠は見つかりませんでした。</p>
-					{:else}
-						<div class="space-y-2">
-							{#each availableSlots as slot (slot.id)}
-								<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3">
-									<div>
-										<p class="text-sm font-semibold text-slate-900">{getServiceName(slot.serviceId)}</p>
-										<p class="text-xs text-muted-foreground">{slot.startAt} 〜 {slot.endAt}</p>
-									</div>
-									<Button type="button" onclick={() => submitCreateBooking(slot.id)} disabled={busy || slot.status !== 'open'}>申し込む</Button>
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</section>
-
-				<section class="space-y-2">
-					<h2 class="text-lg font-semibold">マイ予約一覧</h2>
-					<p class="text-xs text-muted-foreground">確定予約: {confirmedBookingCount}件</p>
-					{#if myBookings.length === 0}
-						<p class="text-sm text-muted-foreground">予約はまだありません。</p>
-					{:else}
-						<div class="space-y-2">
-							{#each myBookings as booking (booking.id)}
-								<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3">
-									<div>
-										<p class="text-sm font-semibold text-slate-900">{getServiceName(booking.serviceId)}</p>
-										<p class="text-xs text-muted-foreground">status: {booking.status}</p>
-									</div>
-									<Button type="button" variant="destructive" onclick={() => submitCancelBooking(booking.id)} disabled={busy || booking.status !== 'confirmed'}>キャンセル</Button>
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</section>
 			</TabsContent>
 		</Tabs>
 	{/if}

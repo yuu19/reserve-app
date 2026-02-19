@@ -4,6 +4,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '$lib/components/ui/card';
+	import { formatJaDateTime } from '$lib/date/format';
 	import { authRpc, type AuthSessionPayload } from '$lib/rpc-client';
 
 	type JsonRecord = Record<string, unknown>;
@@ -84,19 +85,7 @@
 		if (typeof value !== 'string') {
 			return '-';
 		}
-
-		const date = new Date(value);
-		if (Number.isNaN(date.getTime())) {
-			return value;
-		}
-
-		return new Intl.DateTimeFormat('ja-JP', {
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit',
-			hour: '2-digit',
-			minute: '2-digit'
-		}).format(date);
+		return formatJaDateTime(value, value);
 	};
 
 	const getOrganizationName = (payload: JsonRecord | null): string => {

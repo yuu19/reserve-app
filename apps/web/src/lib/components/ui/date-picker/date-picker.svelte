@@ -3,6 +3,7 @@
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
 	import { Button } from '$lib/components/ui/button';
 	import { Calendar } from '$lib/components/ui/calendar';
+	import { formatJaDate } from '$lib/date/format';
 	import { Label } from '$lib/components/ui/label';
 	import * as Popover from '$lib/components/ui/popover';
 
@@ -46,17 +47,7 @@
 		if (!value) {
 			return placeholder;
 		}
-
-		const parsed = new Date(`${value}T00:00:00`);
-		if (Number.isNaN(parsed.getTime())) {
-			return value;
-		}
-
-		return new Intl.DateTimeFormat('ja-JP', {
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit'
-		}).format(parsed);
+		return formatJaDate(value, value);
 	});
 
 	const onDateChange = (next: DateValue | undefined) => {

@@ -226,6 +226,9 @@ importers:
 
   apps/web:
     dependencies:
+      dayjs:
+        specifier: ^1.11.19
+        version: 1.11.19
       hono:
         specifier: ^4.11.7
         version: 4.11.7
@@ -11408,8 +11411,7 @@ snapshots:
 
   csstype@3.2.3: {}
 
-  dayjs@1.11.19:
-    optional: true
+  dayjs@1.11.19: {}
 
   debug@2.6.9:
     dependencies:
