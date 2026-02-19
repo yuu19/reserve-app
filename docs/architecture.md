@@ -119,7 +119,12 @@
 - `/bookings`:
   - 予約タブ（運営 / 参加者）
   - 運営: Service 作成、単発 Slot 作成、定期 RecurringSchedule 作成
-  - 参加者: 月次予約カレンダー、申込、マイ予約キャンセル
+  - 参加者:
+    - 予約カレンダー（週グリッドの月表示、申込、マイ予約キャンセル）
+    - 日程表（表示月ベースの一覧表示）
+      - 切替: `今後の日程` / `過去の日程`
+      - 列: 時間帯 / サービス / 状態 / 定員 / 承認待ち / 確定 / 残席
+      - 承認待ちは現行APIに値がないため `0` 固定
   - 閲覧権限:
     - `owner` / `admin` かつ `participant` 未所属: カレンダー閲覧のみ可（全 slot 表示）
     - `member` かつ `participant` 未所属: カレンダー閲覧不可
@@ -456,6 +461,11 @@
 - 実装済み操作:
   - 運営: `createService`, `createSlot`, `createRecurringSchedule`
   - 参加者: `listAvailableSlots`, `createBooking`, `listMyBookings`, `cancelBooking`
+  - 参加者ビュー:
+    - `予約カレンダー` と `日程表` の2ビュー切替
+    - 日程表は `calendarItemsByDate` を再利用して日付グルーピング表示
+    - 今後/過去は `slot.startAt` と現在時刻で判定
+    - 集計値は `capacity` / `reservedCount` から算出（`remaining = max(capacity - reservedCount, 0)`）
   - 参加者タブ表示制御:
     - `owner` / `admin` 未所属時は `listSlots` 結果で閲覧のみ表示
     - `participant` 所属時は `listAvailableSlots` + `listMyBookings` で操作可能表示

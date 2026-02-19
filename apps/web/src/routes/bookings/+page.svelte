@@ -35,7 +35,10 @@
 
 	let loading = $state(true);
 	let busy = $state(false);
+	let bookingAction = $state<{ kind: 'create' | 'cancel'; id: string } | null>(null);
 	let tab = $state<'operations' | 'participant'>('operations');
+	let participantView = $state<'calendar' | 'schedule'>('calendar');
+	let schedulePeriod = $state<'upcoming' | 'past'>('upcoming');
 	let canManage = $state(false);
 	let canViewParticipantCalendar = $state(false);
 	let canUseParticipantBooking = $state(true);
@@ -81,6 +84,11 @@
 	let visibleMonth = $state(new Date());
 	const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
 	const maxCellItems = 3;
+	const scheduleDateFormatter = new Intl.DateTimeFormat('ja-JP', {
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric'
+	});
 
 	const confirmedBookingCount = $derived(
 		myBookings.filter((booking) => booking.status === 'confirmed').length
@@ -110,6 +118,22 @@
 	type CalendarItem = {
 		slot: SlotPayload;
 		booking?: BookingPayload;
+	};
+	type ScheduleGroup = {
+		dateKey: string;
+		dateLabel: string;
+		rows: Array<{
+			slotId: string;
+			startAt: string;
+			endAt: string;
+			serviceName: string;
+			status: SlotPayload['status'];
+			statusLabel: string;
+			capacity: number;
+			pendingCount: number;
+			confirmedCount: number;
+			remainingCount: number;
+		}>;
 	};
 
 	const statusLabelMap: Record<SlotPayload['status'], string> = {
@@ -185,6 +209,61 @@
 	});
 
 	const getItemsForDay = (date: Date): CalendarItem[] => calendarItemsByDate.get(toDateKey(date)) ?? [];
+	const isBookingCreateInProgress = (slotId: string): boolean =>
+		bookingAction?.kind === 'create' && bookingAction.id === slotId;
+	const isBookingCancelInProgress = (bookingId: string | undefined): boolean =>
+		typeof bookingId === 'string' && bookingAction?.kind === 'cancel' && bookingAction.id === bookingId;
+	const formatScheduleDateLabel = (dateKey: string): string => {
+		const parsed = new Date(`${dateKey}T00:00:00`);
+		if (Number.isNaN(parsed.getTime())) {
+			return dateKey;
+		}
+		return scheduleDateFormatter.format(parsed);
+	};
+	const scheduleGroups = $derived.by(() => {
+		const nowIso = new Date().toISOString();
+		const groups: ScheduleGroup[] = [];
+
+		for (const [dateKey, items] of calendarItemsByDate.entries()) {
+			const rows = items
+				.filter((item) =>
+					schedulePeriod === 'upcoming' ? item.slot.startAt >= nowIso : item.slot.startAt < nowIso
+				)
+				.map((item) => {
+					const confirmedCount = item.slot.reservedCount;
+					return {
+						slotId: item.slot.id,
+						startAt: item.slot.startAt,
+						endAt: item.slot.endAt,
+						serviceName: getServiceName(item.slot.serviceId),
+						status: item.slot.status,
+						statusLabel: statusLabelMap[item.slot.status],
+						capacity: item.slot.capacity,
+						pendingCount: 0,
+						confirmedCount,
+						remainingCount: Math.max(item.slot.capacity - confirmedCount, 0)
+					};
+				})
+				.sort((a, b) => a.startAt.localeCompare(b.startAt));
+
+			if (rows.length === 0) {
+				continue;
+			}
+
+			groups.push({
+				dateKey,
+				dateLabel: formatScheduleDateLabel(dateKey),
+				rows
+			});
+		}
+
+		groups.sort((a, b) =>
+			schedulePeriod === 'upcoming'
+				? a.dateKey.localeCompare(b.dateKey)
+				: b.dateKey.localeCompare(a.dateKey)
+		);
+		return groups;
+	});
 
 	const shiftVisibleMonth = async (delta: number) => {
 		visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + delta, 1);
@@ -342,11 +421,14 @@
 	};
 
 	const submitCreateBooking = async (slotId: string) => {
+		if (bookingAction) {
+			return;
+		}
 		if (!canUseParticipantBooking) {
 			toast.error('予約申込には参加者としての所属が必要です。');
 			return;
 		}
-		busy = true;
+		bookingAction = { kind: 'create', id: slotId };
 		try {
 			const result = await createBooking(slotId);
 			if (!result.ok) {
@@ -356,11 +438,14 @@
 			toast.success(result.message);
 			await refresh();
 		} finally {
-			busy = false;
+			bookingAction = null;
 		}
 	};
 
 	const submitCancelBooking = async (bookingId: string) => {
+		if (bookingAction) {
+			return;
+		}
 		if (!canUseParticipantBooking) {
 			toast.error('予約キャンセルには参加者としての所属が必要です。');
 			return;
@@ -368,7 +453,7 @@
 		if (!confirm('この予約をキャンセルしますか？')) {
 			return;
 		}
-		busy = true;
+		bookingAction = { kind: 'cancel', id: bookingId };
 		try {
 			const result = await cancelBooking(bookingId);
 			if (!result.ok) {
@@ -378,7 +463,7 @@
 			toast.success(result.message);
 			await refresh();
 		} finally {
-			busy = false;
+			bookingAction = null;
 		}
 	};
 
@@ -484,8 +569,12 @@
 					<CardHeader class="space-y-3">
 						<div class="flex flex-wrap items-center justify-between gap-3">
 							<div>
-								<h2 class="text-lg font-semibold">予約カレンダー</h2>
-								<CardDescription>空き枠と自分の予約を月表示で確認できます。</CardDescription>
+								<h2 class="text-lg font-semibold">{participantView === 'calendar' ? '予約カレンダー' : '日程表'}</h2>
+								<CardDescription>
+									{participantView === 'calendar'
+										? '空き枠と自分の予約を月表示で確認できます。'
+										: '表示月の予定を日付単位で一覧表示します。'}
+								</CardDescription>
 							</div>
 							<div class="flex items-center gap-2">
 								<Button
@@ -511,11 +600,6 @@
 								</Button>
 							</div>
 						</div>
-						<div class="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-							<Badge variant="outline">空き枠</Badge>
-							<Badge variant="secondary">自分の予約</Badge>
-							<span>確定予約: {confirmedBookingCount}件</span>
-						</div>
 						{#if isViewOnlyCalendar}
 							<p class="text-sm text-muted-foreground">
 								管理者として閲覧のみ可能です。予約操作には参加者としての所属が必要です。
@@ -528,100 +612,198 @@
 							<p class="text-sm text-muted-foreground">
 								この組織で予約申込するには、管理者権限に加えて参加者として所属している必要があります。
 							</p>
-						{/if}
-					</CardHeader>
-					<CardContent class="space-y-3">
-						<div class="grid grid-cols-7 gap-1 rounded-lg border border-slate-200/80 bg-slate-50/60 p-2 text-center text-xs font-semibold text-slate-600">
-							{#each weekdayLabels as dayLabel (dayLabel)}
-								<div>{dayLabel}</div>
-							{/each}
-						</div>
+							{/if}
+						</CardHeader>
+						<CardContent class="space-y-3">
+							<Tabs bind:value={participantView} class="space-y-4">
+								<TabsList class="grid w-full max-w-sm grid-cols-2">
+									<TabsTrigger value="calendar">予約カレンダー</TabsTrigger>
+									<TabsTrigger value="schedule">日程表</TabsTrigger>
+								</TabsList>
 
-						{#if !canViewParticipantCalendar}
-							<p class="text-sm text-muted-foreground">表示できる予定がありません。</p>
-						{:else}
-							<div class="grid grid-cols-7 gap-1">
-								{#each calendarDays as day (`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`)}
-									{@const dayItems = getItemsForDay(day)}
-									{@const visibleItems = dayItems.slice(0, maxCellItems)}
-									{@const hiddenCount = Math.max(0, dayItems.length - visibleItems.length)}
-									<div
-										class={`min-h-40 rounded-lg border p-2 ${
-											isCurrentMonthDay(day)
-												? 'border-slate-200/80 bg-white'
-												: 'border-slate-100 bg-slate-50 text-slate-400'
-										}`}
-									>
-										<p class="mb-2 text-sm font-semibold">{day.getDate()}</p>
-										<div class="space-y-2">
-											{#each visibleItems as item (item.slot.id)}
-												{@const isConfirmed = item.booking?.status === 'confirmed'}
-												{@const bookingId = item.booking?.id}
-												{@const canApply =
-													item.slot.status === 'open' &&
-													item.slot.reservedCount < item.slot.capacity &&
-													!isConfirmed}
+								<TabsContent value="calendar" class="space-y-3">
+									<div class="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+										<Badge variant="outline">空き枠</Badge>
+										<Badge variant="secondary">自分の予約</Badge>
+										<span>確定予約: {confirmedBookingCount}件</span>
+									</div>
+
+									<div class="grid grid-cols-7 gap-1 rounded-lg border border-slate-200/80 bg-slate-50/60 p-2 text-center text-xs font-semibold text-slate-600">
+										{#each weekdayLabels as dayLabel (dayLabel)}
+											<div>{dayLabel}</div>
+										{/each}
+									</div>
+
+									{#if !canViewParticipantCalendar}
+										<p class="text-sm text-muted-foreground">表示できる予定がありません。</p>
+									{:else}
+										<div class="grid grid-cols-7 gap-1">
+											{#each calendarDays as day (`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`)}
+												{@const dayItems = getItemsForDay(day)}
+												{@const visibleItems = dayItems.slice(0, maxCellItems)}
+												{@const hiddenCount = Math.max(0, dayItems.length - visibleItems.length)}
 												<div
-													class={`rounded-md border p-2 ${
-														isConfirmed
-															? 'border-sky-200 bg-sky-50'
-															: item.slot.status === 'canceled'
-																? 'border-rose-200 bg-rose-50'
-																: item.slot.status === 'completed'
-																	? 'border-slate-300 bg-slate-100'
-																	: 'border-slate-200 bg-slate-50'
+													class={`min-h-40 rounded-lg border p-2 ${
+														isCurrentMonthDay(day)
+															? 'border-slate-200/80 bg-white'
+															: 'border-slate-100 bg-slate-50 text-slate-400'
 													}`}
 												>
-													<p class="text-[11px] text-slate-600">
-														{formatTimeLabel(item.slot.startAt)} - {formatTimeLabel(item.slot.endAt)}
-													</p>
-													<p class="truncate text-xs font-semibold text-slate-900">
-														{getServiceName(item.slot.serviceId)}
-													</p>
-													<p class="text-[11px] text-slate-600">
-														({item.slot.reservedCount}/{item.slot.capacity})
-													</p>
-													{#if isViewOnlyCalendar}
-														<p class="mt-1 text-[11px] text-slate-500">
-															{statusLabelMap[item.slot.status]} / 閲覧のみ
-														</p>
-													{:else if isConfirmed && item.booking}
-														<Button
-															type="button"
-															variant="destructive"
-															size="sm"
-															class="mt-1 h-7 text-[11px]"
-															onclick={() => bookingId && submitCancelBooking(bookingId)}
-															disabled={busy || !bookingId || !canUseParticipantBooking}
-														>
-															キャンセル
-														</Button>
-													{:else if canApply}
-														<Button
-															type="button"
-															size="sm"
-															class="mt-1 h-7 text-[11px]"
-															onclick={() => submitCreateBooking(item.slot.id)}
-															disabled={busy || !canUseParticipantBooking}
-														>
-															申し込む
-														</Button>
-													{:else}
-														<p class="mt-1 text-[11px] text-slate-500">受付不可</p>
-													{/if}
+													<p class="mb-2 text-sm font-semibold">{day.getDate()}</p>
+													<div class="space-y-2">
+														{#each visibleItems as item (item.slot.id)}
+															{@const isConfirmed = item.booking?.status === 'confirmed'}
+															{@const bookingId = item.booking?.id}
+															{@const canApply =
+																item.slot.status === 'open' &&
+																item.slot.reservedCount < item.slot.capacity &&
+																!isConfirmed}
+															<div
+																class={`rounded-md border p-2 ${
+																	isConfirmed
+																		? 'border-sky-200 bg-sky-50'
+																		: item.slot.status === 'canceled'
+																			? 'border-rose-200 bg-rose-50'
+																			: item.slot.status === 'completed'
+																				? 'border-slate-300 bg-slate-100'
+																				: 'border-slate-200 bg-slate-50'
+																}`}
+															>
+																<p class="text-[11px] text-slate-600">
+																	{formatTimeLabel(item.slot.startAt)} - {formatTimeLabel(item.slot.endAt)}
+																</p>
+																<p class="truncate text-xs font-semibold text-slate-900">
+																	{getServiceName(item.slot.serviceId)}
+																</p>
+																<p class="text-[11px] text-slate-600">
+																	({item.slot.reservedCount}/{item.slot.capacity})
+																</p>
+																{#if isViewOnlyCalendar}
+																	<p class="mt-1 text-[11px] text-slate-500">
+																		{statusLabelMap[item.slot.status]} / 閲覧のみ
+																	</p>
+																{:else if isConfirmed && item.booking}
+																<Button
+																	type="button"
+																	variant="destructive"
+																	size="sm"
+																	class="mt-1 h-7 text-[11px]"
+																	onclick={() => bookingId && submitCancelBooking(bookingId)}
+																	disabled={busy || !bookingId || !canUseParticipantBooking || isBookingCancelInProgress(bookingId)}
+																>
+																	{isBookingCancelInProgress(bookingId) ? 'キャンセル中…' : 'キャンセル'}
+																</Button>
+															{:else if canApply}
+																<Button
+																	type="button"
+																	size="sm"
+																	class="mt-1 h-7 text-[11px]"
+																	onclick={() => submitCreateBooking(item.slot.id)}
+																	disabled={busy || !canUseParticipantBooking || isBookingCreateInProgress(item.slot.id)}
+																>
+																	{isBookingCreateInProgress(item.slot.id) ? '申込中…' : '申し込む'}
+																</Button>
+															{:else}
+																	<p class="mt-1 text-[11px] text-slate-500">受付不可</p>
+																{/if}
+															</div>
+														{/each}
+														{#if hiddenCount > 0}
+															<p class="text-[11px] text-slate-500">+{hiddenCount}件</p>
+														{/if}
+													</div>
 												</div>
 											{/each}
-											{#if hiddenCount > 0}
-												<p class="text-[11px] text-slate-500">+{hiddenCount}件</p>
-											{/if}
 										</div>
+									{/if}
+								</TabsContent>
+
+								<TabsContent value="schedule" class="space-y-4">
+									<div class="flex items-center gap-3 border-b border-slate-200 pb-2">
+										<button
+											type="button"
+											class={`border-b-2 px-1 pb-1 text-base font-semibold transition-colors ${
+												schedulePeriod === 'upcoming'
+													? 'border-teal-500 text-slate-900'
+													: 'border-transparent text-slate-500 hover:text-slate-700'
+											}`}
+											onclick={() => (schedulePeriod = 'upcoming')}
+											aria-pressed={schedulePeriod === 'upcoming'}
+										>
+											今後の日程
+										</button>
+										<button
+											type="button"
+											class={`border-b-2 px-1 pb-1 text-base font-semibold transition-colors ${
+												schedulePeriod === 'past'
+													? 'border-teal-500 text-slate-900'
+													: 'border-transparent text-slate-500 hover:text-slate-700'
+											}`}
+											onclick={() => (schedulePeriod = 'past')}
+											aria-pressed={schedulePeriod === 'past'}
+										>
+											過去の日程
+										</button>
 									</div>
-								{/each}
-							</div>
-						{/if}
-					</CardContent>
-				</Card>
-			</TabsContent>
+
+									{#if !canViewParticipantCalendar}
+										<p class="text-sm text-muted-foreground">表示できる予定がありません。</p>
+									{:else if scheduleGroups.length === 0}
+										<p class="text-sm text-muted-foreground">該当する日程はありません。</p>
+									{:else}
+										<div class="space-y-4">
+											{#each scheduleGroups as group (group.dateKey)}
+												<section class="overflow-hidden rounded-lg border border-slate-200/80 bg-white">
+													<div class="bg-cyan-100/70 px-3 py-2 text-sm font-semibold text-slate-800">{group.dateLabel}</div>
+													<div class="overflow-x-auto">
+														<table class="w-full min-w-[760px] text-sm">
+															<thead class="bg-slate-50 text-slate-600">
+																<tr>
+																	<th class="px-3 py-2 text-left font-medium">時間帯</th>
+																	<th class="px-3 py-2 text-left font-medium">サービス</th>
+																	<th class="px-3 py-2 text-left font-medium">状態</th>
+																	<th class="px-3 py-2 text-right font-medium">定員</th>
+																	<th class="px-3 py-2 text-right font-medium">承認待ち</th>
+																	<th class="px-3 py-2 text-right font-medium">確定</th>
+																	<th class="px-3 py-2 text-right font-medium">残席</th>
+																</tr>
+															</thead>
+															<tbody>
+																{#each group.rows as row (row.slotId)}
+																	<tr class="border-t border-slate-200/70">
+																		<td class="px-3 py-3 font-medium tabular-nums whitespace-nowrap">
+																			{formatTimeLabel(row.startAt)} ～ {formatTimeLabel(row.endAt)}
+																		</td>
+																		<td class="px-3 py-3">{row.serviceName}</td>
+																		<td class="px-3 py-3">
+																			<Badge
+																				variant={row.status === 'canceled'
+																					? 'destructive'
+																					: row.status === 'completed'
+																						? 'secondary'
+																						: 'outline'}
+																			>
+																				{row.statusLabel}
+																			</Badge>
+																		</td>
+																		<td class="px-3 py-3 text-right tabular-nums">{row.capacity}</td>
+																		<td class="px-3 py-3 text-right tabular-nums">{row.pendingCount}</td>
+																		<td class="px-3 py-3 text-right tabular-nums">{row.confirmedCount}</td>
+																		<td class="px-3 py-3 text-right tabular-nums">{row.remainingCount}</td>
+																	</tr>
+																{/each}
+															</tbody>
+														</table>
+													</div>
+												</section>
+											{/each}
+										</div>
+									{/if}
+								</TabsContent>
+							</Tabs>
+						</CardContent>
+					</Card>
+				</TabsContent>
 		</Tabs>
 	{/if}
 </main>
