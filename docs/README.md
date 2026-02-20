@@ -91,6 +91,23 @@ pnpm test:watch
 - `web`: Vitest（server project）
 - `mobile`: テスト未設定（要件どおり）
 
+## GitHub Actions によるテストCI
+
+`pull_request` と `main` への push で、backend + web(server) のテストを実行します。  
+ワークフロー: `.github/workflows/ci-tests.yml`
+
+- 実行対象:
+  - `pnpm --filter @apps/backend test`
+  - `pnpm --filter @apps/web test`
+- web client/browser（Playwright）テストは対象外（次フェーズ）
+
+ブランチ保護で必須チェックにする手順:
+
+1. GitHub の `Settings > Branches > Branch protection rules` を開く
+2. 対象ブランチ（例: `main`）のルールを編集
+3. `Require status checks to pass before merging` を有効化
+4. `CI Tests / test` を Required status checks に追加
+
 ## Cloudflare Workers デプロイ
 
 ```bash

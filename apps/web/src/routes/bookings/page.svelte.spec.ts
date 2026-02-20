@@ -13,7 +13,26 @@ describe('/bookings/+page.svelte', () => {
 			.element(page.getByRole('heading', { level: 2, name: '運営予約一覧' }))
 			.toBeInTheDocument();
 		await expect
-			.element(page.getByText('承認待ちは「承認 / 却下」、予約確定は「運営キャンセル / No-show」を実行できます。'))
+			.element(page.getByRole('heading', { level: 2, name: 'サービス管理' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '単発Slot管理' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '定期Schedule管理' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 3, name: '例外登録' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 3, name: '枠を再生成' }))
+			.toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'承認待ちは「承認 / 却下」、予約確定は「運営キャンセル / No-show」を実行できます。'
+				)
+			)
 			.toBeInTheDocument();
 		await expect.element(page.getByRole('tab', { name: '参加者' })).toBeInTheDocument();
 		await page.getByRole('tab', { name: '参加者' }).click();

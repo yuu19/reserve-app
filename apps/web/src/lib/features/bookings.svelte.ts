@@ -76,18 +76,24 @@ const asServices = (value: unknown) => (Array.isArray(value) ? value.filter(isSe
 const asSlots = (value: unknown) => (Array.isArray(value) ? value.filter(isSlot) : []);
 const asRecurring = (value: unknown) => (Array.isArray(value) ? value.filter(isRecurring) : []);
 const asBookings = (value: unknown) => (Array.isArray(value) ? value.filter(isBooking) : []);
-const asParticipants = (value: unknown) => (Array.isArray(value) ? value.filter(isParticipant) : []);
+const asParticipants = (value: unknown) =>
+	Array.isArray(value) ? value.filter(isParticipant) : [];
 const asTicketPacks = (value: unknown) => (Array.isArray(value) ? value.filter(isTicketPack) : []);
 
 export const toReservationErrorMessage = (status: number, payload: unknown, fallback: string) => {
+	const message = extractMessage(payload);
 	if (status === 401) {
 		return 'セッションの有効期限が切れました。再ログインしてください。';
 	}
 	if (status === 403) {
 		return 'この操作には参加者所属または管理権限が必要です。';
 	}
+	if (status === 404) {
+		if (message === 'Recurring schedule not found.') {
+			return '定期スケジュールが見つかりません。最新状態を読み直してください。';
+		}
+	}
 	if (status === 409) {
-		const message = extractMessage(payload);
 		if (message === 'Duplicate booking is not allowed.') {
 			return 'この枠にはすでに予約履歴があります。別の枠を選択してください。';
 		}
@@ -109,7 +115,18 @@ export const toReservationErrorMessage = (status: number, payload: unknown, fall
 		if (message === 'Only pending approval booking can be rejected.') {
 			return '却下できるのは承認待ち予約のみです。';
 		}
+		if (message === 'Slot is not open.') {
+			return 'この枠はすでに停止されているため操作できません。';
+		}
 		return '予約状態が更新されました。満席・重複・受付時間を確認して再試行してください。';
+	}
+	if (status === 422) {
+		if (message === 'Override action requires at least one override field.') {
+			return 'override を選択した場合は、上書き項目を1つ以上入力してください。';
+		}
+		if (message === 'Invalid from/to.') {
+			return '生成期間の開始・終了日時が不正です。';
+		}
 	}
 	const validationError = extractValidationErrorMessage(payload);
 	if (validationError) {
@@ -212,7 +229,9 @@ export const loadBookingData = async (
 		myBookingsResponse,
 		myTicketPacksResponse,
 		staffBookingsResponse,
-		staffParticipantsResponse
+		staffParticipantsResponse,
+		staffServicesResponse,
+		staffRecurringSchedulesResponse
 	] = await Promise.all([
 		authRpc.listServices({ organizationId }),
 		authRpc.listRecurringSchedules({ organizationId, isActive: true }),
@@ -221,7 +240,11 @@ export const loadBookingData = async (
 		authRpc.listMyBookings({ organizationId }),
 		authRpc.listMyTicketPacks(organizationId),
 		includeStaffData ? authRpc.listBookings({ organizationId }) : Promise.resolve(null),
-		includeStaffData ? authRpc.listParticipants(organizationId) : Promise.resolve(null)
+		includeStaffData ? authRpc.listParticipants(organizationId) : Promise.resolve(null),
+		includeStaffData
+			? authRpc.listServices({ organizationId, includeArchived: true })
+			: Promise.resolve(null),
+		includeStaffData ? authRpc.listRecurringSchedules({ organizationId }) : Promise.resolve(null)
 	]);
 
 	const [
@@ -232,7 +255,9 @@ export const loadBookingData = async (
 		myPayload,
 		myTicketPacksPayload,
 		staffBookingsPayload,
-		staffParticipantsPayload
+		staffParticipantsPayload,
+		staffServicesPayload,
+		staffRecurringSchedulesPayload
 	] = await Promise.all([
 		parseResponseBody(servicesResponse),
 		parseResponseBody(recurringResponse),
@@ -241,7 +266,13 @@ export const loadBookingData = async (
 		parseResponseBody(myBookingsResponse),
 		parseResponseBody(myTicketPacksResponse),
 		staffBookingsResponse ? parseResponseBody(staffBookingsResponse) : Promise.resolve(null),
-		staffParticipantsResponse ? parseResponseBody(staffParticipantsResponse) : Promise.resolve(null)
+		staffParticipantsResponse
+			? parseResponseBody(staffParticipantsResponse)
+			: Promise.resolve(null),
+		staffServicesResponse ? parseResponseBody(staffServicesResponse) : Promise.resolve(null),
+		staffRecurringSchedulesResponse
+			? parseResponseBody(staffRecurringSchedulesResponse)
+			: Promise.resolve(null)
 	]);
 
 	const participantAccessDenied =
@@ -263,6 +294,14 @@ export const loadBookingData = async (
 		staffParticipants:
 			includeStaffData && staffParticipantsResponse && staffParticipantsResponse.ok
 				? asParticipants(staffParticipantsPayload)
+				: [],
+		staffServices:
+			includeStaffData && staffServicesResponse && staffServicesResponse.ok
+				? asServices(staffServicesPayload)
+				: [],
+		staffRecurringSchedules:
+			includeStaffData && staffRecurringSchedulesResponse && staffRecurringSchedulesResponse.ok
+				? asRecurring(staffRecurringSchedulesPayload)
 				: [],
 		participantAccessDenied,
 		errors: [
@@ -320,6 +359,20 @@ export const loadBookingData = async (
 						staffParticipantsResponse.status,
 						staffParticipantsPayload,
 						'参加者一覧の取得に失敗しました。'
+					)
+				: null,
+			includeStaffData && staffServicesResponse && !staffServicesResponse.ok
+				? toReservationErrorMessage(
+						staffServicesResponse.status,
+						staffServicesPayload,
+						'運営サービス一覧の取得に失敗しました。'
+					)
+				: null,
+			includeStaffData && staffRecurringSchedulesResponse && !staffRecurringSchedulesResponse.ok
+				? toReservationErrorMessage(
+						staffRecurringSchedulesResponse.status,
+						staffRecurringSchedulesPayload,
+						'運営定期スケジュール一覧の取得に失敗しました。'
 					)
 				: null
 		].filter((msg): msg is string => msg !== null)
@@ -385,6 +438,110 @@ export const createRecurringSchedule = async (input: {
 		message: response.ok
 			? '定期スケジュールを作成しました。'
 			: toReservationErrorMessage(response.status, payload, '定期スケジュール作成に失敗しました。')
+	};
+};
+
+export const updateServiceByStaff = async (input: {
+	serviceId: string;
+	name?: string;
+	kind?: 'single' | 'recurring';
+	bookingPolicy?: 'instant' | 'approval';
+	durationMinutes?: number;
+	capacity?: number;
+	cancellationDeadlineMinutes?: number;
+	requiresTicket?: boolean;
+	isActive?: boolean;
+}) => {
+	const response = await authRpc.updateService(input);
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? 'サービスを更新しました。'
+			: toReservationErrorMessage(response.status, payload, 'サービス更新に失敗しました。')
+	};
+};
+
+export const archiveServiceByStaff = async (serviceId: string) => {
+	const response = await authRpc.archiveService({ serviceId });
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? 'サービスを停止しました。'
+			: toReservationErrorMessage(response.status, payload, 'サービス停止に失敗しました。')
+	};
+};
+
+export const cancelSlotByStaff = async (slotId: string, reason?: string) => {
+	const normalizedReason = reason?.trim() ? reason.trim() : undefined;
+	const response = await authRpc.cancelSlot({ slotId, reason: normalizedReason });
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? '単発枠を停止しました。'
+			: toReservationErrorMessage(response.status, payload, '単発枠の停止に失敗しました。')
+	};
+};
+
+export const updateRecurringScheduleByStaff = async (input: {
+	recurringScheduleId: string;
+	frequency?: 'weekly' | 'monthly';
+	interval?: number;
+	byWeekday?: number[];
+	byMonthday?: number;
+	startDate?: string;
+	endDate?: string;
+	startTimeLocal?: string;
+	durationMinutes?: number;
+	capacityOverride?: number;
+	isActive?: boolean;
+}) => {
+	const response = await authRpc.updateRecurringSchedule(input);
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? '定期スケジュールを更新しました。'
+			: toReservationErrorMessage(response.status, payload, '定期スケジュール更新に失敗しました。')
+	};
+};
+
+export const upsertRecurringExceptionByStaff = async (input: {
+	recurringScheduleId: string;
+	date: string;
+	action: 'skip' | 'override';
+	overrideStartTimeLocal?: string;
+	overrideDurationMinutes?: number;
+	overrideCapacity?: number;
+}) => {
+	const response = await authRpc.upsertRecurringScheduleException(input);
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? '定期スケジュール例外を登録しました。'
+			: toReservationErrorMessage(
+					response.status,
+					payload,
+					'定期スケジュール例外登録に失敗しました。'
+				)
+	};
+};
+
+export const generateRecurringSlotsByStaff = async (input: {
+	recurringScheduleId: string;
+	from?: string;
+	to?: string;
+}) => {
+	const response = await authRpc.generateRecurringSlots(input);
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? '定期スロットを再生成しました。'
+			: toReservationErrorMessage(response.status, payload, '定期スロット再生成に失敗しました。')
 	};
 };
 

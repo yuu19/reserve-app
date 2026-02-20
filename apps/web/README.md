@@ -44,6 +44,14 @@ Sentry 連携用 public 変数:
 
 - サービス作成フォームに `requiresTicket` チェックボックスを追加
 - 回数券必須サービスを UI から設定可能
+- リソース管理セクションを追加（Service / Slot / Recurring）
+- 接続済み API:
+  - `updateService` / `archiveService`
+  - `cancelSlot`（表示月の slot を対象）
+  - `updateRecurringSchedule`
+  - `upsertRecurringScheduleException`
+  - `generateRecurringSlots`
+- 一覧選択 + 行操作で更新・停止を実行
 
 ### 補足
 

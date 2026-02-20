@@ -11,24 +11,30 @@
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import {
 		approveBooking,
+		archiveServiceByStaff,
 		buildCalendarDays,
 		cancelBooking,
 		cancelBookingByStaff,
+		cancelSlotByStaff,
 		createBooking,
 		createRecurringSchedule,
 		createService,
 		createSlot,
 		formatMonthLabel,
 		formatTimeLabel,
+		generateRecurringSlotsByStaff,
 		getMonthDateRange,
 		loadBookingData,
-		rejectBooking,
 		markBookingNoShow,
 		parseNumberInput,
+		rejectBooking,
 		toDateKey,
 		toDateKeyFromIso,
 		toDayBoundaryIso,
-		toIsoFromDateTime
+		toIsoFromDateTime,
+		updateRecurringScheduleByStaff,
+		updateServiceByStaff,
+		upsertRecurringExceptionByStaff
 	} from '$lib/features/bookings.svelte';
 	import {
 		getCurrentPathWithSearch,
@@ -66,9 +72,21 @@
 	let myTicketPacks = $state<TicketPackPayload[]>([]);
 	let staffBookings = $state<BookingPayload[]>([]);
 	let staffParticipants = $state<ParticipantPayload[]>([]);
-	let staffAction = $state<
-		{ kind: 'approve' | 'reject' | 'cancel' | 'no_show'; id: string } | null
-	>(null);
+	let staffServices = $state<ServicePayload[]>([]);
+	let staffRecurringSchedules = $state<RecurringSchedulePayload[]>([]);
+	let staffAction = $state<{
+		kind: 'approve' | 'reject' | 'cancel' | 'no_show';
+		id: string;
+	} | null>(null);
+	type ResourceActionKind =
+		| 'service_update'
+		| 'service_archive'
+		| 'slot_cancel'
+		| 'recurring_update'
+		| 'recurring_stop'
+		| 'recurring_exception'
+		| 'recurring_generate';
+	let resourceAction = $state<{ kind: ResourceActionKind; id: string } | null>(null);
 	let operationsFilter = $state({
 		status: 'all' as 'all' | BookingPayload['status'],
 		serviceId: '',
@@ -106,6 +124,42 @@
 		durationMinutes: '',
 		capacityOverride: ''
 	});
+	let serviceEditTargetId = $state('');
+	let serviceEditForm = $state({
+		name: '',
+		kind: 'single' as 'single' | 'recurring',
+		bookingPolicy: 'instant' as 'instant' | 'approval',
+		durationMinutes: '60',
+		capacity: '10',
+		cancellationDeadlineMinutes: '',
+		requiresTicket: false,
+		isActive: true
+	});
+	let recurringEditTargetId = $state('');
+	let recurringEditForm = $state({
+		frequency: 'weekly' as 'weekly' | 'monthly',
+		interval: '1',
+		byWeekday: '1',
+		byMonthday: '',
+		startDate: '',
+		endDate: '',
+		startTimeLocal: '10:00',
+		durationMinutes: '',
+		capacityOverride: '',
+		isActive: true
+	});
+	let selectedRecurringScheduleId = $state('');
+	let recurringExceptionForm = $state({
+		action: 'skip' as 'skip' | 'override',
+		date: '',
+		overrideStartTimeLocal: '',
+		overrideDurationMinutes: '',
+		overrideCapacity: ''
+	});
+	let recurringGenerateForm = $state({
+		fromDate: '',
+		toDate: ''
+	});
 	let slotSearchForm = $state({ serviceId: '', fromDate: '', toDate: '' });
 	let visibleMonth = $state(new Date());
 	const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
@@ -137,8 +191,21 @@
 	};
 
 	const getServiceName = (serviceId: string): string => {
-		const service = services.find((item) => item.id === serviceId);
+		const service =
+			staffServices.find((item) => item.id === serviceId) ??
+			services.find((item) => item.id === serviceId);
 		return service?.name ?? serviceId;
+	};
+	const formatServiceKind = (kind: ServicePayload['kind']): string =>
+		kind === 'single' ? '単発' : '定期';
+	const formatBookingPolicy = (bookingPolicy: ServicePayload['bookingPolicy']): string =>
+		bookingPolicy === 'approval' ? '承認制' : '先着確定';
+	const formatRecurringPattern = (schedule: RecurringSchedulePayload): string => {
+		if (schedule.frequency === 'weekly') {
+			const byWeekday = (schedule.byWeekday ?? []).join(',');
+			return `weekly / ${byWeekday || '-'}`;
+		}
+		return `monthly / ${schedule.byMonthday ?? '-'}`;
 	};
 
 	type CalendarItem = {
@@ -252,12 +319,30 @@
 			if (operationsFilter.serviceId && row.booking.serviceId !== operationsFilter.serviceId) {
 				return false;
 			}
-			if (operationsFilter.participantId && row.booking.participantId !== operationsFilter.participantId) {
+			if (
+				operationsFilter.participantId &&
+				row.booking.participantId !== operationsFilter.participantId
+			) {
 				return false;
 			}
 			return true;
 		});
 	});
+	const operationServiceOptions = $derived.by(() => {
+		const source = staffServices.length > 0 ? staffServices : services;
+		return [...source].sort((left, right) => left.name.localeCompare(right.name));
+	});
+	const staffServiceRows = $derived.by(() =>
+		[...staffServices].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+	);
+	const slotManagementRows = $derived.by(() =>
+		[...slots].sort((left, right) => left.startAt.localeCompare(right.startAt))
+	);
+	const staffRecurringRows = $derived.by(() =>
+		[...staffRecurringSchedules].sort((left, right) =>
+			right.updatedAt.localeCompare(left.updatedAt)
+		)
+	);
 
 	const calendarItemsByDate = $derived.by(() => {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -335,12 +420,17 @@
 	};
 	const formatBookingIdShort = (bookingId: string): string => bookingId.slice(0, 8);
 	const getParticipantLabel = (row: OperationRow): string =>
-		row.participant ? `${row.participant.name} / ${row.participant.email}` : row.booking.participantId;
+		row.participant
+			? `${row.participant.name} / ${row.participant.email}`
+			: row.booking.participantId;
 	const isStaffActionInProgress = (
 		kind: 'approve' | 'reject' | 'cancel' | 'no_show',
 		bookingId: string
 	): boolean => staffAction?.kind === kind && staffAction.id === bookingId;
 	const formatTicketTypeShort = (ticketTypeId: string): string => ticketTypeId.slice(0, 8);
+	const formatSlotIdShort = (slotId: string): string => slotId.slice(0, 8);
+	const formatRecurringIdShort = (recurringScheduleId: string): string =>
+		recurringScheduleId.slice(0, 8);
 	const formatOptionalDateTime = (value?: string | null): string => {
 		if (!value) {
 			return '無期限';
@@ -356,6 +446,39 @@
 			hour: '2-digit',
 			minute: '2-digit'
 		});
+	};
+	const isResourceActionInProgress = (kind: ResourceActionKind, id: string): boolean =>
+		resourceAction?.kind === kind && resourceAction.id === id;
+	const selectServiceForEdit = (service: ServicePayload) => {
+		serviceEditTargetId = service.id;
+		serviceEditForm.name = service.name;
+		serviceEditForm.kind = service.kind;
+		serviceEditForm.bookingPolicy = service.bookingPolicy;
+		serviceEditForm.durationMinutes = String(service.durationMinutes);
+		serviceEditForm.capacity = String(service.capacity);
+		serviceEditForm.cancellationDeadlineMinutes =
+			typeof service.cancellationDeadlineMinutes === 'number'
+				? String(service.cancellationDeadlineMinutes)
+				: '';
+		serviceEditForm.requiresTicket = service.requiresTicket;
+		serviceEditForm.isActive = service.isActive;
+	};
+	const selectRecurringForEdit = (schedule: RecurringSchedulePayload) => {
+		recurringEditTargetId = schedule.id;
+		selectedRecurringScheduleId = schedule.id;
+		recurringEditForm.frequency = schedule.frequency;
+		recurringEditForm.interval = String(schedule.interval);
+		recurringEditForm.byWeekday = (schedule.byWeekday ?? []).join(',');
+		recurringEditForm.byMonthday =
+			typeof schedule.byMonthday === 'number' ? String(schedule.byMonthday) : '';
+		recurringEditForm.startDate = schedule.startDate;
+		recurringEditForm.endDate = schedule.endDate ?? '';
+		recurringEditForm.startTimeLocal = schedule.startTimeLocal;
+		recurringEditForm.durationMinutes =
+			typeof schedule.durationMinutes === 'number' ? String(schedule.durationMinutes) : '';
+		recurringEditForm.capacityOverride =
+			typeof schedule.capacityOverride === 'number' ? String(schedule.capacityOverride) : '';
+		recurringEditForm.isActive = schedule.isActive;
 	};
 	const scheduleGroups = $derived.by(() => {
 		const nowIso = new Date().toISOString();
@@ -431,6 +554,11 @@
 			myTicketPacks = [];
 			staffBookings = [];
 			staffParticipants = [];
+			staffServices = [];
+			staffRecurringSchedules = [];
+			serviceEditTargetId = '';
+			recurringEditTargetId = '';
+			selectedRecurringScheduleId = '';
 			canViewParticipantCalendar = false;
 			canUseParticipantBooking = false;
 			return;
@@ -462,9 +590,33 @@
 		myTicketPacks = bookingData.myTicketPacks;
 		staffBookings = bookingData.staffBookings;
 		staffParticipants = bookingData.staffParticipants;
+		staffServices = bookingData.staffServices;
+		staffRecurringSchedules = bookingData.staffRecurringSchedules;
+		if (
+			serviceEditTargetId &&
+			!staffServices.some((service) => service.id === serviceEditTargetId)
+		) {
+			serviceEditTargetId = '';
+		}
+		if (
+			recurringEditTargetId &&
+			!staffRecurringSchedules.some((schedule) => schedule.id === recurringEditTargetId)
+		) {
+			recurringEditTargetId = '';
+		}
 		canUseParticipantBooking = !bookingData.participantAccessDenied;
 		canViewParticipantCalendar =
 			canUseParticipantBooking || (canManage && bookingData.participantAccessDenied);
+		if (
+			staffRecurringSchedules.length > 0 &&
+			!staffRecurringSchedules.some((item) => item.id === selectedRecurringScheduleId)
+		) {
+			selectedRecurringScheduleId = staffRecurringSchedules[0].id;
+		}
+		if (staffRecurringSchedules.length === 0) {
+			selectedRecurringScheduleId = '';
+			recurringEditTargetId = '';
+		}
 		if (bookingData.errors.length > 0) {
 			toast.error(bookingData.errors[0]);
 		}
@@ -577,6 +729,254 @@
 			await refresh();
 		} finally {
 			busy = false;
+		}
+	};
+	const submitUpdateServiceByStaff = async (event: SubmitEvent) => {
+		event.preventDefault();
+		if (!canManage || !serviceEditTargetId || resourceAction) {
+			return;
+		}
+		const durationMinutes = parseNumberInput(serviceEditForm.durationMinutes);
+		const capacity = parseNumberInput(serviceEditForm.capacity);
+		if (!durationMinutes || !capacity) {
+			toast.error('所要時間と定員を正しく入力してください。');
+			return;
+		}
+		resourceAction = { kind: 'service_update', id: serviceEditTargetId };
+		try {
+			const result = await updateServiceByStaff({
+				serviceId: serviceEditTargetId,
+				name: serviceEditForm.name,
+				kind: serviceEditForm.kind,
+				bookingPolicy: serviceEditForm.bookingPolicy,
+				durationMinutes,
+				capacity,
+				cancellationDeadlineMinutes: parseNumberInput(serviceEditForm.cancellationDeadlineMinutes),
+				requiresTicket: serviceEditForm.requiresTicket,
+				isActive: serviceEditForm.isActive
+			});
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+			const updated = staffServices.find((service) => service.id === serviceEditTargetId);
+			if (updated) {
+				selectServiceForEdit(updated);
+			}
+		} finally {
+			resourceAction = null;
+		}
+	};
+	const submitArchiveServiceByStaff = async (serviceId: string) => {
+		if (!canManage || resourceAction) {
+			return;
+		}
+		if (!confirm('このサービスを停止しますか？')) {
+			return;
+		}
+		resourceAction = { kind: 'service_archive', id: serviceId };
+		try {
+			const result = await archiveServiceByStaff(serviceId);
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			if (serviceEditTargetId === serviceId) {
+				serviceEditTargetId = '';
+			}
+			await refresh();
+		} finally {
+			resourceAction = null;
+		}
+	};
+	const submitCancelSlotByStaff = async (slotId: string) => {
+		if (!canManage || resourceAction) {
+			return;
+		}
+		if (!confirm('この単発枠を停止しますか？')) {
+			return;
+		}
+		const reasonInput = prompt('停止理由を入力してください（任意）', '');
+		if (reasonInput === null) {
+			return;
+		}
+		resourceAction = { kind: 'slot_cancel', id: slotId };
+		try {
+			const result = await cancelSlotByStaff(slotId, reasonInput);
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			resourceAction = null;
+		}
+	};
+	const submitUpdateRecurringScheduleByStaff = async (event: SubmitEvent) => {
+		event.preventDefault();
+		if (!canManage || !recurringEditTargetId || resourceAction) {
+			return;
+		}
+		const interval = parseNumberInput(recurringEditForm.interval);
+		if (!interval) {
+			toast.error('間隔を正しく入力してください。');
+			return;
+		}
+		if (recurringEditForm.frequency === 'weekly' && recurringEditForm.byWeekday.trim()) {
+			const parsedWeekday = parseByWeekday(recurringEditForm.byWeekday);
+			if (!parsedWeekday) {
+				toast.error('曜日は 1-7 の数値をカンマ区切りで入力してください。');
+				return;
+			}
+		}
+		resourceAction = { kind: 'recurring_update', id: recurringEditTargetId };
+		try {
+			const result = await updateRecurringScheduleByStaff({
+				recurringScheduleId: recurringEditTargetId,
+				frequency: recurringEditForm.frequency,
+				interval,
+				byWeekday:
+					recurringEditForm.frequency === 'weekly'
+						? parseByWeekday(recurringEditForm.byWeekday)
+						: undefined,
+				byMonthday:
+					recurringEditForm.frequency === 'monthly'
+						? parseNumberInput(recurringEditForm.byMonthday)
+						: undefined,
+				startDate: recurringEditForm.startDate || undefined,
+				endDate: recurringEditForm.endDate || undefined,
+				startTimeLocal: recurringEditForm.startTimeLocal || undefined,
+				durationMinutes: parseNumberInput(recurringEditForm.durationMinutes),
+				capacityOverride: parseNumberInput(recurringEditForm.capacityOverride),
+				isActive: recurringEditForm.isActive
+			});
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+			const updated = staffRecurringSchedules.find((item) => item.id === recurringEditTargetId);
+			if (updated) {
+				selectRecurringForEdit(updated);
+			}
+		} finally {
+			resourceAction = null;
+		}
+	};
+	const submitStopRecurringScheduleByStaff = async (recurringScheduleId: string) => {
+		if (!canManage || resourceAction) {
+			return;
+		}
+		if (!confirm('この定期スケジュールを停止しますか？')) {
+			return;
+		}
+		resourceAction = { kind: 'recurring_stop', id: recurringScheduleId };
+		try {
+			const result = await updateRecurringScheduleByStaff({
+				recurringScheduleId,
+				isActive: false
+			});
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			resourceAction = null;
+		}
+	};
+	const submitUpsertRecurringExceptionByStaff = async (event: SubmitEvent) => {
+		event.preventDefault();
+		if (!canManage || !selectedRecurringScheduleId || resourceAction) {
+			return;
+		}
+		if (!recurringExceptionForm.date) {
+			toast.error('例外対象日を選択してください。');
+			return;
+		}
+		const isOverride = recurringExceptionForm.action === 'override';
+		const overrideDurationMinutes = parseNumberInput(
+			recurringExceptionForm.overrideDurationMinutes
+		);
+		const overrideCapacity = parseNumberInput(recurringExceptionForm.overrideCapacity);
+		if (
+			isOverride &&
+			!recurringExceptionForm.overrideStartTimeLocal &&
+			overrideDurationMinutes === undefined &&
+			overrideCapacity === undefined
+		) {
+			toast.error('override を選択した場合は上書き項目を1つ以上入力してください。');
+			return;
+		}
+
+		resourceAction = { kind: 'recurring_exception', id: selectedRecurringScheduleId };
+		try {
+			const result = await upsertRecurringExceptionByStaff({
+				recurringScheduleId: selectedRecurringScheduleId,
+				date: recurringExceptionForm.date,
+				action: recurringExceptionForm.action,
+				overrideStartTimeLocal:
+					isOverride && recurringExceptionForm.overrideStartTimeLocal
+						? recurringExceptionForm.overrideStartTimeLocal
+						: undefined,
+				overrideDurationMinutes: isOverride ? overrideDurationMinutes : undefined,
+				overrideCapacity: isOverride ? overrideCapacity : undefined
+			});
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			resourceAction = null;
+		}
+	};
+	const submitGenerateRecurringSlotsByStaff = async (event: SubmitEvent) => {
+		event.preventDefault();
+		if (!canManage || !selectedRecurringScheduleId || resourceAction) {
+			return;
+		}
+		const from = recurringGenerateForm.fromDate
+			? toDayBoundaryIso(recurringGenerateForm.fromDate, false)
+			: null;
+		const to = recurringGenerateForm.toDate
+			? toDayBoundaryIso(recurringGenerateForm.toDate, true)
+			: null;
+		if (recurringGenerateForm.fromDate && !from) {
+			toast.error('生成開始日を正しく入力してください。');
+			return;
+		}
+		if (recurringGenerateForm.toDate && !to) {
+			toast.error('生成終了日を正しく入力してください。');
+			return;
+		}
+		if (from && to && new Date(from).getTime() > new Date(to).getTime()) {
+			toast.error('生成開始日は生成終了日以前にしてください。');
+			return;
+		}
+
+		resourceAction = { kind: 'recurring_generate', id: selectedRecurringScheduleId };
+		try {
+			const result = await generateRecurringSlotsByStaff({
+				recurringScheduleId: selectedRecurringScheduleId,
+				from: from ?? undefined,
+				to: to ?? undefined
+			});
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			resourceAction = null;
 		}
 	};
 
@@ -974,14 +1374,16 @@
 							</CardContent>
 						</Card>
 					</section>
-					{/if}
+				{/if}
 
+				{#if canManage}
 					<section>
 						<Card class="surface-panel border-slate-200/80 shadow-lg">
 							<CardHeader>
 								<h2 class="text-lg font-semibold">運営予約一覧</h2>
 								<CardDescription>
-									表示月の枠に紐づく予約を一覧表示し、承認・却下・運営キャンセル・No-show を実行できます。
+									表示月の枠に紐づく予約を一覧表示し、承認・却下・運営キャンセル・No-show
+									を実行できます。
 								</CardDescription>
 							</CardHeader>
 							<CardContent class="space-y-4">
@@ -1003,9 +1405,7 @@
 												<option value="confirmed">confirmed</option>
 												<option value="pending_approval">pending_approval</option>
 												<option value="rejected_by_staff">rejected_by_staff</option>
-												<option value="cancelled_by_participant">
-													cancelled_by_participant
-												</option>
+												<option value="cancelled_by_participant"> cancelled_by_participant </option>
 												<option value="cancelled_by_staff">cancelled_by_staff</option>
 												<option value="no_show">no_show</option>
 											</select>
@@ -1019,7 +1419,7 @@
 												bind:value={operationsFilter.serviceId}
 											>
 												<option value="">すべて</option>
-												{#each services as service (service.id)}
+												{#each operationServiceOptions as service (service.id)}
 													<option value={service.id}>{service.name}</option>
 												{/each}
 											</select>
@@ -1042,13 +1442,12 @@
 										</div>
 									</div>
 									<p class="text-xs text-slate-600">
-										承認待ちは「承認 / 却下」、予約確定は「運営キャンセル / No-show」を実行できます。
+										承認待ちは「承認 / 却下」、予約確定は「運営キャンセル /
+										No-show」を実行できます。
 									</p>
 
 									{#if filteredOperationRows.length === 0}
-										<p class="text-sm text-muted-foreground">
-											表示月に該当する予約はありません。
-										</p>
+										<p class="text-sm text-muted-foreground">表示月に該当する予約はありません。</p>
 									{:else}
 										<div class="overflow-x-auto rounded-lg border border-slate-200/80 bg-white/80">
 											<table class="w-full min-w-[1040px] text-sm">
@@ -1067,8 +1466,7 @@
 												<tbody>
 													{#each filteredOperationRows as row (row.booking.id)}
 														{@const isConfirmed = row.booking.status === 'confirmed'}
-														{@const isPendingApproval =
-															row.booking.status === 'pending_approval'}
+														{@const isPendingApproval = row.booking.status === 'pending_approval'}
 														<tr class="border-t border-slate-200/70 align-top">
 															<td class="px-3 py-3">
 																<span class="font-mono text-xs text-slate-700">
@@ -1170,9 +1568,620 @@
 						</Card>
 					</section>
 
-					<section class="grid gap-3 md:grid-cols-3">
-						<Card
-							><CardContent class="py-4"
+					<section>
+						<Card class="surface-panel border-slate-200/80 shadow-lg">
+							<CardHeader>
+								<h2 class="text-lg font-semibold">サービス管理</h2>
+								<CardDescription>
+									サービス一覧から編集・停止を実行できます。停止は archive API を使用します。
+								</CardDescription>
+							</CardHeader>
+							<CardContent class="space-y-4">
+								{#if staffServiceRows.length === 0}
+									<p class="text-sm text-muted-foreground">管理対象のサービスがありません。</p>
+								{:else}
+									<div class="overflow-x-auto rounded-lg border border-slate-200/80 bg-white/80">
+										<table class="w-full min-w-[980px] text-sm">
+											<thead class="bg-slate-50 text-slate-600">
+												<tr>
+													<th class="px-3 py-2 text-left font-medium">サービス名</th>
+													<th class="px-3 py-2 text-left font-medium">種別</th>
+													<th class="px-3 py-2 text-left font-medium">予約方式</th>
+													<th class="px-3 py-2 text-right font-medium">所要時間</th>
+													<th class="px-3 py-2 text-right font-medium">定員</th>
+													<th class="px-3 py-2 text-left font-medium">回数券必須</th>
+													<th class="px-3 py-2 text-left font-medium">状態</th>
+													<th class="px-3 py-2 text-left font-medium">更新日時</th>
+													<th class="px-3 py-2 text-left font-medium">操作</th>
+												</tr>
+											</thead>
+											<tbody>
+												{#each staffServiceRows as service (service.id)}
+													<tr class="border-t border-slate-200/70 align-top">
+														<td class="px-3 py-3">{service.name}</td>
+														<td class="px-3 py-3">{formatServiceKind(service.kind)}</td>
+														<td class="px-3 py-3">{formatBookingPolicy(service.bookingPolicy)}</td>
+														<td class="px-3 py-3 text-right tabular-nums"
+															>{service.durationMinutes}</td
+														>
+														<td class="px-3 py-3 text-right tabular-nums">{service.capacity}</td>
+														<td class="px-3 py-3">
+															{service.requiresTicket ? 'あり' : 'なし'}
+														</td>
+														<td class="px-3 py-3">
+															<Badge variant={service.isActive ? 'outline' : 'secondary'}>
+																{service.isActive ? '稼働中' : '停止'}
+															</Badge>
+														</td>
+														<td class="px-3 py-3">{formatDateTime(service.updatedAt)}</td>
+														<td class="px-3 py-3">
+															<div class="flex flex-wrap gap-2">
+																<Button
+																	type="button"
+																	variant="outline"
+																	size="sm"
+																	disabled={busy || !!resourceAction}
+																	onclick={() => selectServiceForEdit(service)}
+																>
+																	編集
+																</Button>
+																<Button
+																	type="button"
+																	size="sm"
+																	variant="destructive"
+																	disabled={busy || !!resourceAction || !service.isActive}
+																	onclick={() => submitArchiveServiceByStaff(service.id)}
+																>
+																	{isResourceActionInProgress('service_archive', service.id)
+																		? '停止中…'
+																		: '停止'}
+																</Button>
+															</div>
+														</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+								{/if}
+								<div class="rounded-lg border border-slate-200/80 bg-slate-50/60 p-4">
+									<h3 class="mb-3 text-base font-semibold text-slate-900">サービス更新</h3>
+									{#if serviceEditTargetId}
+										<form class="grid gap-3 md:grid-cols-2" onsubmit={submitUpdateServiceByStaff}>
+											<div class="space-y-2">
+												<Label for="service-edit-name">サービス名</Label>
+												<Input
+													id="service-edit-name"
+													name="service_edit_name"
+													bind:value={serviceEditForm.name}
+													required
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="service-edit-kind">種別</Label>
+												<select
+													id="service-edit-kind"
+													name="service_edit_kind"
+													class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+													bind:value={serviceEditForm.kind}
+												>
+													<option value="single">single</option>
+													<option value="recurring">recurring</option>
+												</select>
+											</div>
+											<div class="space-y-2">
+												<Label for="service-edit-booking-policy">予約方式</Label>
+												<select
+													id="service-edit-booking-policy"
+													name="service_edit_booking_policy"
+													class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+													bind:value={serviceEditForm.bookingPolicy}
+												>
+													<option value="instant">先着確定</option>
+													<option value="approval">承認制</option>
+												</select>
+											</div>
+											<div class="space-y-2">
+												<Label for="service-edit-duration">所要時間（分）</Label>
+												<Input
+													id="service-edit-duration"
+													name="service_edit_duration"
+													type="number"
+													min="1"
+													bind:value={serviceEditForm.durationMinutes}
+													required
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="service-edit-capacity">定員</Label>
+												<Input
+													id="service-edit-capacity"
+													name="service_edit_capacity"
+													type="number"
+													min="1"
+													bind:value={serviceEditForm.capacity}
+													required
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="service-edit-deadline">キャンセル期限（分）</Label>
+												<Input
+													id="service-edit-deadline"
+													name="service_edit_deadline"
+													type="number"
+													min="0"
+													bind:value={serviceEditForm.cancellationDeadlineMinutes}
+												/>
+											</div>
+											<div
+												class="flex items-center gap-2 rounded-md border border-slate-200/80 bg-white px-3 py-2"
+											>
+												<input
+													id="service-edit-requires-ticket"
+													name="service_edit_requires_ticket"
+													type="checkbox"
+													bind:checked={serviceEditForm.requiresTicket}
+												/>
+												<Label for="service-edit-requires-ticket">回数券必須</Label>
+											</div>
+											<div
+												class="flex items-center gap-2 rounded-md border border-slate-200/80 bg-white px-3 py-2"
+											>
+												<input
+													id="service-edit-is-active"
+													name="service_edit_is_active"
+													type="checkbox"
+													bind:checked={serviceEditForm.isActive}
+												/>
+												<Label for="service-edit-is-active">稼働中にする</Label>
+											</div>
+											<div class="md:col-span-2">
+												<Button
+													type="submit"
+													disabled={busy || !!resourceAction || !serviceEditTargetId}
+												>
+													{isResourceActionInProgress('service_update', serviceEditTargetId)
+														? '更新中…'
+														: '更新'}
+												</Button>
+											</div>
+										</form>
+									{:else}
+										<p class="text-sm text-muted-foreground">
+											一覧から「編集」を押すと更新フォームを表示します。
+										</p>
+									{/if}
+								</div>
+							</CardContent>
+						</Card>
+					</section>
+
+					<section>
+						<Card class="surface-panel border-slate-200/80 shadow-lg">
+							<CardHeader>
+								<h2 class="text-lg font-semibold">単発Slot管理</h2>
+								<CardDescription>
+									表示月に含まれる枠を表示します。open 状態の枠のみ停止できます。
+								</CardDescription>
+							</CardHeader>
+							<CardContent>
+								{#if slotManagementRows.length === 0}
+									<p class="text-sm text-muted-foreground">表示月に管理対象の枠はありません。</p>
+								{:else}
+									<div class="overflow-x-auto rounded-lg border border-slate-200/80 bg-white/80">
+										<table class="w-full min-w-[1080px] text-sm">
+											<thead class="bg-slate-50 text-slate-600">
+												<tr>
+													<th class="px-3 py-2 text-left font-medium">枠ID</th>
+													<th class="px-3 py-2 text-left font-medium">日時</th>
+													<th class="px-3 py-2 text-left font-medium">サービス</th>
+													<th class="px-3 py-2 text-right font-medium">定員</th>
+													<th class="px-3 py-2 text-right font-medium">予約済</th>
+													<th class="px-3 py-2 text-left font-medium">ステータス</th>
+													<th class="px-3 py-2 text-left font-medium">担当</th>
+													<th class="px-3 py-2 text-left font-medium">場所</th>
+													<th class="px-3 py-2 text-left font-medium">操作</th>
+												</tr>
+											</thead>
+											<tbody>
+												{#each slotManagementRows as slot (slot.id)}
+													<tr class="border-t border-slate-200/70 align-top">
+														<td class="px-3 py-3 font-mono text-xs">{formatSlotIdShort(slot.id)}</td
+														>
+														<td class="px-3 py-3">
+															<p class="font-medium text-slate-900">
+																{formatDateTime(slot.startAt)}
+															</p>
+															<p class="text-xs text-slate-600">
+																〜 {formatTimeLabel(slot.endAt)}
+															</p>
+														</td>
+														<td class="px-3 py-3">{getServiceName(slot.serviceId)}</td>
+														<td class="px-3 py-3 text-right tabular-nums">{slot.capacity}</td>
+														<td class="px-3 py-3 text-right tabular-nums">{slot.reservedCount}</td>
+														<td class="px-3 py-3">
+															<Badge variant={slot.status === 'open' ? 'outline' : 'secondary'}>
+																{statusLabelMap[slot.status]}
+															</Badge>
+														</td>
+														<td class="px-3 py-3">{slot.staffLabel || '-'}</td>
+														<td class="px-3 py-3">{slot.locationLabel || '-'}</td>
+														<td class="px-3 py-3">
+															{#if slot.status === 'open'}
+																<Button
+																	type="button"
+																	size="sm"
+																	variant="destructive"
+																	disabled={busy || !!resourceAction}
+																	onclick={() => submitCancelSlotByStaff(slot.id)}
+																>
+																	{isResourceActionInProgress('slot_cancel', slot.id)
+																		? '停止中…'
+																		: '停止'}
+																</Button>
+															{:else}
+																<span class="text-xs text-slate-500">操作不可</span>
+															{/if}
+														</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+								{/if}
+							</CardContent>
+						</Card>
+					</section>
+				{/if}
+
+				<section>
+					<Card class="surface-panel border-slate-200/80 shadow-lg">
+						<CardHeader>
+							<h2 class="text-lg font-semibold">定期Schedule管理</h2>
+							<CardDescription>
+								定期スケジュールの更新・停止、例外登録、枠再生成を実行できます。
+							</CardDescription>
+						</CardHeader>
+						<CardContent class="space-y-4">
+							{#if staffRecurringRows.length === 0}
+								<p class="text-sm text-muted-foreground">
+									管理対象の定期スケジュールがありません。
+								</p>
+							{:else}
+								<div class="overflow-x-auto rounded-lg border border-slate-200/80 bg-white/80">
+									<table class="w-full min-w-[1120px] text-sm">
+										<thead class="bg-slate-50 text-slate-600">
+											<tr>
+												<th class="px-3 py-2 text-left font-medium">Schedule ID</th>
+												<th class="px-3 py-2 text-left font-medium">サービス</th>
+												<th class="px-3 py-2 text-left font-medium">パターン</th>
+												<th class="px-3 py-2 text-left font-medium">期間</th>
+												<th class="px-3 py-2 text-left font-medium">開始時刻</th>
+												<th class="px-3 py-2 text-left font-medium">状態</th>
+												<th class="px-3 py-2 text-left font-medium">更新日時</th>
+												<th class="px-3 py-2 text-left font-medium">操作</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each staffRecurringRows as schedule (schedule.id)}
+												<tr class="border-t border-slate-200/70 align-top">
+													<td class="px-3 py-3 font-mono text-xs">
+														{formatRecurringIdShort(schedule.id)}
+													</td>
+													<td class="px-3 py-3">{getServiceName(schedule.serviceId)}</td>
+													<td class="px-3 py-3">{formatRecurringPattern(schedule)}</td>
+													<td class="px-3 py-3">
+														{schedule.startDate} 〜 {schedule.endDate || '無期限'}
+													</td>
+													<td class="px-3 py-3">{schedule.startTimeLocal}</td>
+													<td class="px-3 py-3">
+														<Badge variant={schedule.isActive ? 'outline' : 'secondary'}>
+															{schedule.isActive ? '稼働中' : '停止'}
+														</Badge>
+													</td>
+													<td class="px-3 py-3">{formatDateTime(schedule.updatedAt)}</td>
+													<td class="px-3 py-3">
+														<div class="flex flex-wrap gap-2">
+															<Button
+																type="button"
+																size="sm"
+																variant="outline"
+																disabled={busy || !!resourceAction}
+																onclick={() => selectRecurringForEdit(schedule)}
+															>
+																編集
+															</Button>
+															<Button
+																type="button"
+																size="sm"
+																variant="destructive"
+																disabled={busy || !!resourceAction || !schedule.isActive}
+																onclick={() => submitStopRecurringScheduleByStaff(schedule.id)}
+															>
+																{isResourceActionInProgress('recurring_stop', schedule.id)
+																	? '停止中…'
+																	: '停止'}
+															</Button>
+														</div>
+													</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+
+							<div class="grid gap-4 xl:grid-cols-2">
+								<div class="rounded-lg border border-slate-200/80 bg-slate-50/60 p-4">
+									<h3 class="mb-3 text-base font-semibold text-slate-900">定期Schedule更新</h3>
+									{#if recurringEditTargetId}
+										<form
+											class="grid gap-3 md:grid-cols-2"
+											onsubmit={submitUpdateRecurringScheduleByStaff}
+										>
+											<div class="space-y-2">
+												<Label for="recurring-edit-frequency">頻度</Label>
+												<select
+													id="recurring-edit-frequency"
+													name="recurring_edit_frequency"
+													class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+													bind:value={recurringEditForm.frequency}
+												>
+													<option value="weekly">weekly</option>
+													<option value="monthly">monthly</option>
+												</select>
+											</div>
+											<div class="space-y-2">
+												<Label for="recurring-edit-interval">間隔</Label>
+												<Input
+													id="recurring-edit-interval"
+													name="recurring_edit_interval"
+													type="number"
+													min="1"
+													bind:value={recurringEditForm.interval}
+													required
+												/>
+											</div>
+											{#if recurringEditForm.frequency === 'weekly'}
+												<div class="space-y-2 md:col-span-2">
+													<Label for="recurring-edit-weekday">曜日（1-7）</Label>
+													<Input
+														id="recurring-edit-weekday"
+														name="recurring_edit_weekday"
+														bind:value={recurringEditForm.byWeekday}
+													/>
+												</div>
+											{:else}
+												<div class="space-y-2 md:col-span-2">
+													<Label for="recurring-edit-monthday">日付（1-31）</Label>
+													<Input
+														id="recurring-edit-monthday"
+														name="recurring_edit_monthday"
+														type="number"
+														min="1"
+														max="31"
+														bind:value={recurringEditForm.byMonthday}
+													/>
+												</div>
+											{/if}
+											<div class="space-y-2">
+												<Label for="recurring-edit-start-date">開始日</Label>
+												<Input
+													id="recurring-edit-start-date"
+													name="recurring_edit_start_date"
+													type="date"
+													bind:value={recurringEditForm.startDate}
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="recurring-edit-end-date">終了日</Label>
+												<Input
+													id="recurring-edit-end-date"
+													name="recurring_edit_end_date"
+													type="date"
+													bind:value={recurringEditForm.endDate}
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="recurring-edit-start-time">開始時刻</Label>
+												<Input
+													id="recurring-edit-start-time"
+													name="recurring_edit_start_time"
+													type="time"
+													bind:value={recurringEditForm.startTimeLocal}
+													required
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="recurring-edit-duration">所要時間（分）</Label>
+												<Input
+													id="recurring-edit-duration"
+													name="recurring_edit_duration"
+													type="number"
+													min="1"
+													bind:value={recurringEditForm.durationMinutes}
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="recurring-edit-capacity-override">定員上書き</Label>
+												<Input
+													id="recurring-edit-capacity-override"
+													name="recurring_edit_capacity_override"
+													type="number"
+													min="1"
+													bind:value={recurringEditForm.capacityOverride}
+												/>
+											</div>
+											<div
+												class="flex items-center gap-2 rounded-md border border-slate-200/80 bg-white px-3 py-2"
+											>
+												<input
+													id="recurring-edit-is-active"
+													name="recurring_edit_is_active"
+													type="checkbox"
+													bind:checked={recurringEditForm.isActive}
+												/>
+												<Label for="recurring-edit-is-active">稼働中にする</Label>
+											</div>
+											<div class="md:col-span-2">
+												<Button
+													type="submit"
+													disabled={busy || !!resourceAction || !recurringEditTargetId}
+												>
+													{isResourceActionInProgress('recurring_update', recurringEditTargetId)
+														? '更新中…'
+														: '更新'}
+												</Button>
+											</div>
+										</form>
+									{:else}
+										<p class="text-sm text-muted-foreground">
+											一覧から「編集」を押すと更新フォームを表示します。
+										</p>
+									{/if}
+								</div>
+
+								<div class="space-y-4 rounded-lg border border-slate-200/80 bg-slate-50/60 p-4">
+									<div class="space-y-2">
+										<Label for="recurring-target-select">対象定期スケジュール</Label>
+										<select
+											id="recurring-target-select"
+											name="recurring_target_select"
+											class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											bind:value={selectedRecurringScheduleId}
+										>
+											<option value="">選択してください</option>
+											{#each staffRecurringRows as schedule (schedule.id)}
+												<option value={schedule.id}
+													>{formatRecurringIdShort(schedule.id)} / {getServiceName(
+														schedule.serviceId
+													)}</option
+												>
+											{/each}
+										</select>
+									</div>
+									<div class="space-y-3">
+										<h3 class="text-base font-semibold text-slate-900">例外登録</h3>
+										<form
+											class="grid gap-3 md:grid-cols-2"
+											onsubmit={submitUpsertRecurringExceptionByStaff}
+										>
+											<div class="space-y-2">
+												<Label for="recurring-exception-date">対象日</Label>
+												<Input
+													id="recurring-exception-date"
+													name="recurring_exception_date"
+													type="date"
+													bind:value={recurringExceptionForm.date}
+													required
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="recurring-exception-action">アクション</Label>
+												<select
+													id="recurring-exception-action"
+													name="recurring_exception_action"
+													class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+													bind:value={recurringExceptionForm.action}
+												>
+													<option value="skip">skip</option>
+													<option value="override">override</option>
+												</select>
+											</div>
+											{#if recurringExceptionForm.action === 'override'}
+												<div class="space-y-2">
+													<Label for="recurring-exception-start-time">開始時刻上書き</Label>
+													<Input
+														id="recurring-exception-start-time"
+														name="recurring_exception_start_time"
+														type="time"
+														bind:value={recurringExceptionForm.overrideStartTimeLocal}
+													/>
+												</div>
+												<div class="space-y-2">
+													<Label for="recurring-exception-duration">所要時間上書き（分）</Label>
+													<Input
+														id="recurring-exception-duration"
+														name="recurring_exception_duration"
+														type="number"
+														min="1"
+														bind:value={recurringExceptionForm.overrideDurationMinutes}
+													/>
+												</div>
+												<div class="space-y-2 md:col-span-2">
+													<Label for="recurring-exception-capacity">定員上書き</Label>
+													<Input
+														id="recurring-exception-capacity"
+														name="recurring_exception_capacity"
+														type="number"
+														min="1"
+														bind:value={recurringExceptionForm.overrideCapacity}
+													/>
+												</div>
+											{/if}
+											<div class="md:col-span-2">
+												<Button
+													type="submit"
+													disabled={busy || !!resourceAction || !selectedRecurringScheduleId}
+												>
+													{isResourceActionInProgress(
+														'recurring_exception',
+														selectedRecurringScheduleId
+													)
+														? '登録中…'
+														: '登録'}
+												</Button>
+											</div>
+										</form>
+									</div>
+									<div class="space-y-3">
+										<h3 class="text-base font-semibold text-slate-900">枠を再生成</h3>
+										<form
+											class="grid gap-3 md:grid-cols-2"
+											onsubmit={submitGenerateRecurringSlotsByStaff}
+										>
+											<div class="space-y-2">
+												<Label for="recurring-generate-from">開始日（任意）</Label>
+												<Input
+													id="recurring-generate-from"
+													name="recurring_generate_from"
+													type="date"
+													bind:value={recurringGenerateForm.fromDate}
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="recurring-generate-to">終了日（任意）</Label>
+												<Input
+													id="recurring-generate-to"
+													name="recurring_generate_to"
+													type="date"
+													bind:value={recurringGenerateForm.toDate}
+												/>
+											</div>
+											<div class="md:col-span-2">
+												<Button
+													type="submit"
+													disabled={busy || !!resourceAction || !selectedRecurringScheduleId}
+												>
+													{isResourceActionInProgress(
+														'recurring_generate',
+														selectedRecurringScheduleId
+													)
+														? '再生成中…'
+														: '実行'}
+												</Button>
+											</div>
+										</form>
+									</div>
+								</div>
+							</div>
+						</CardContent>
+					</Card>
+				</section>
+
+				<section class="grid gap-3 md:grid-cols-3">
+					<Card
+						><CardContent class="py-4"
 							><p class="text-xs text-muted-foreground">サービス</p>
 							<p class="metric-value text-2xl font-semibold">{services.length}</p></CardContent
 						></Card
