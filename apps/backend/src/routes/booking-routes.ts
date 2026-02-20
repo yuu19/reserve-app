@@ -1,6 +1,6 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
-import type { AuthInstance, AuthRuntimeDatabase } from '../auth-runtime.js';
+import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import {
   findParticipantByUserAndOrganization,
   getSessionIdentity,
@@ -22,6 +22,10 @@ import {
   syncRecurringScheduleSlots,
 } from '../booking/recurring.js';
 import * as dbSchema from '../db/schema.js';
+import {
+  sendBookingNotificationEmail,
+  type BookingNotificationEvent,
+} from '../email/resend.js';
 
 type AuthRouteBindings = {
   Variables: {
@@ -42,11 +46,14 @@ const dateOnlySchema = z
 const localTimeSchema = z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid local time (HH:mm)');
 
 const serviceKindSchema = z.enum(['single', 'recurring']);
+const bookingPolicySchema = z.enum(['instant', 'approval']);
 const slotStatusSchema = z.enum([SLOT_STATUS.OPEN, SLOT_STATUS.CANCELED, SLOT_STATUS.COMPLETED]);
 const bookingStatusSchema = z.enum([
   BOOKING_STATUS.CONFIRMED,
+  BOOKING_STATUS.PENDING_APPROVAL,
   BOOKING_STATUS.CANCELED_BY_PARTICIPANT,
   BOOKING_STATUS.CANCELED_BY_STAFF,
+  BOOKING_STATUS.REJECTED_BY_STAFF,
   BOOKING_STATUS.NO_SHOW,
 ]);
 
@@ -69,6 +76,7 @@ const serviceCreateBodySchema = z.object({
   bookingCloseMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
   cancellationDeadlineMinutes: z.int().min(0).max(365 * 24 * 60).optional(),
   timezone: z.string().optional(),
+  bookingPolicy: bookingPolicySchema.optional(),
   requiresTicket: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
@@ -88,6 +96,7 @@ const serviceUpdateBodySchema = z.object({
   bookingCloseMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
   cancellationDeadlineMinutes: z.int().min(0).max(365 * 24 * 60).optional(),
   timezone: z.string().optional(),
+  bookingPolicy: bookingPolicySchema.optional(),
   requiresTicket: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
@@ -204,6 +213,10 @@ const bookingActionBodySchema = z.object({
 });
 
 const bookingNoShowBodySchema = z.object({
+  bookingId: z.string().min(1),
+});
+
+const bookingApproveBodySchema = z.object({
   bookingId: z.string().min(1),
 });
 
@@ -608,6 +621,54 @@ const cancelBookingByStaffRoute = createRoute({
   },
 });
 
+const approveBookingByStaffRoute = createRoute({
+  method: 'post',
+  path: '/organizations/bookings/approve',
+  tags: ['Bookings'],
+  summary: 'Approve booking by staff',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: bookingApproveBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Booking approved' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+const rejectBookingByStaffRoute = createRoute({
+  method: 'post',
+  path: '/organizations/bookings/reject',
+  tags: ['Bookings'],
+  summary: 'Reject booking by staff',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: bookingActionBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Booking rejected' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
 const markNoShowRoute = createRoute({
   method: 'post',
   path: '/organizations/bookings/no-show',
@@ -803,17 +864,195 @@ const dateToComparable = (value: Date | null): number => {
   return value ? value.getTime() : Number.MAX_SAFE_INTEGER;
 };
 
+const resolveBookingPolicy = (value: string | null | undefined): 'instant' | 'approval' => {
+  return value === 'approval' ? 'approval' : 'instant';
+};
+
 export const registerBookingRoutes = ({
   authRoutes,
   auth,
   database,
+  env,
 }: {
   authRoutes: OpenAPIHono<AuthRouteBindings>;
   auth: AuthInstance;
   database: AuthRuntimeDatabase;
+  env: AuthRuntimeEnv;
 }) => {
   const requireIdentity = async (headers: Headers) => {
     return getSessionIdentity(auth, headers);
+  };
+
+  const formatDateTimeLabel = (value: Date, timezone: string) => {
+    try {
+      return new Intl.DateTimeFormat('ja-JP', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(value);
+    } catch {
+      return value.toISOString();
+    }
+  };
+
+  const getBookingNotificationContext = async (bookingId: string) => {
+    const rows = await database
+      .select({
+        bookingId: dbSchema.booking.id,
+        organizationName: dbSchema.organization.name,
+        participantEmail: dbSchema.participant.email,
+        participantName: dbSchema.participant.name,
+        serviceName: dbSchema.service.name,
+        serviceTimezone: dbSchema.service.timezone,
+        participantsCount: dbSchema.booking.participantsCount,
+        slotStartAt: dbSchema.slot.startAt,
+        slotEndAt: dbSchema.slot.endAt,
+      })
+      .from(dbSchema.booking)
+      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.booking.organizationId))
+      .innerJoin(dbSchema.participant, eq(dbSchema.participant.id, dbSchema.booking.participantId))
+      .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.booking.serviceId))
+      .innerJoin(dbSchema.slot, eq(dbSchema.slot.id, dbSchema.booking.slotId))
+      .where(eq(dbSchema.booking.id, bookingId))
+      .limit(1);
+
+    return rows[0] ?? null;
+  };
+
+  const notifyBookingEmailBestEffort = async ({
+    bookingId,
+    event,
+    reason,
+  }: {
+    bookingId: string;
+    event: BookingNotificationEvent;
+    reason?: string | null;
+  }) => {
+    try {
+      const context = await getBookingNotificationContext(bookingId);
+      if (!context) {
+        console.warn(
+          `[booking-email] Booking notification context not found. bookingId=${bookingId}`,
+        );
+        return;
+      }
+
+      const timezone = assertSupportedTimezone(context.serviceTimezone ?? undefined) ?? DEFAULT_TIMEZONE;
+      await sendBookingNotificationEmail({
+        env,
+        inviteeEmail: context.participantEmail,
+        organizationName: context.organizationName,
+        participantName: context.participantName,
+        serviceName: context.serviceName,
+        participantsCount: context.participantsCount,
+        slotStartLabel: formatDateTimeLabel(context.slotStartAt, timezone),
+        slotEndLabel: formatDateTimeLabel(context.slotEndAt, timezone),
+        event,
+        reason,
+        bookingId,
+      });
+    } catch (error) {
+      console.warn(
+        `[booking-email] Failed to send booking notification. bookingId=${bookingId}`,
+        error,
+      );
+    }
+  };
+
+  const consumeTicketPackForParticipant = async ({
+    organizationId,
+    participantId,
+    participantsCount,
+    now,
+  }: {
+    organizationId: string;
+    participantId: string;
+    participantsCount: number;
+    now: Date;
+  }): Promise<{ ticketPackId: string; balanceAfter: number }> => {
+    const ticketRows = await database
+      .select({
+        id: dbSchema.ticketPack.id,
+        remainingCount: dbSchema.ticketPack.remainingCount,
+        expiresAt: dbSchema.ticketPack.expiresAt,
+        status: dbSchema.ticketPack.status,
+        createdAt: dbSchema.ticketPack.createdAt,
+      })
+      .from(dbSchema.ticketPack)
+      .where(
+        and(
+          eq(dbSchema.ticketPack.organizationId, organizationId),
+          eq(dbSchema.ticketPack.participantId, participantId),
+          eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
+          gte(dbSchema.ticketPack.remainingCount, participantsCount),
+        ),
+      );
+
+    const candidate = ticketRows
+      .filter(
+        (row: { expiresAt: Date | null }) =>
+          !row.expiresAt || row.expiresAt.getTime() > now.getTime(),
+      )
+      .sort(
+        (
+          left: { expiresAt: Date | null; createdAt: Date },
+          right: { expiresAt: Date | null; createdAt: Date },
+        ) => {
+          const exp = dateToComparable(left.expiresAt) - dateToComparable(right.expiresAt);
+          if (exp !== 0) {
+            return exp;
+          }
+          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+        },
+      )
+      .at(0);
+
+    if (!candidate) {
+      throw new Error('TICKET_REQUIRED');
+    }
+
+    const updatedPackRows = await database
+      .update(dbSchema.ticketPack)
+      .set({
+        remainingCount: sql`${dbSchema.ticketPack.remainingCount} - ${participantsCount}`,
+      })
+      .where(
+        and(
+          eq(dbSchema.ticketPack.id, candidate.id),
+          eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
+          gte(dbSchema.ticketPack.remainingCount, participantsCount),
+        ),
+      )
+      .returning({
+        id: dbSchema.ticketPack.id,
+        remainingCount: dbSchema.ticketPack.remainingCount,
+        expiresAt: dbSchema.ticketPack.expiresAt,
+      });
+
+    const updatedPack = updatedPackRows[0];
+    if (!updatedPack) {
+      throw new Error('TICKET_CONFLICT');
+    }
+
+    const packStatus = normalizePackStatus({
+      remainingCount: updatedPack.remainingCount,
+      expiresAt: updatedPack.expiresAt,
+    });
+    await database
+      .update(dbSchema.ticketPack)
+      .set({
+        status: packStatus,
+      })
+      .where(eq(dbSchema.ticketPack.id, updatedPack.id));
+
+    return {
+      ticketPackId: updatedPack.id,
+      balanceAfter: updatedPack.remainingCount,
+    };
   };
 
   const requireAdmin = async ({
@@ -878,6 +1117,7 @@ export const registerBookingRoutes = ({
       bookingCloseMinutesBefore: body.bookingCloseMinutesBefore,
       cancellationDeadlineMinutes: body.cancellationDeadlineMinutes,
       timezone,
+      bookingPolicy: body.bookingPolicy ?? 'instant',
       requiresTicket: body.requiresTicket ?? false,
       isActive: body.isActive ?? true,
     });
@@ -991,6 +1231,7 @@ export const registerBookingRoutes = ({
           ? { cancellationDeadlineMinutes: body.cancellationDeadlineMinutes }
           : {}),
         ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+        ...(body.bookingPolicy !== undefined ? { bookingPolicy: body.bookingPolicy } : {}),
         ...(body.requiresTicket !== undefined ? { requiresTicket: body.requiresTicket } : {}),
         ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
       })
@@ -1751,6 +1992,7 @@ export const registerBookingRoutes = ({
     const serviceRows = await database
       .select({
         id: dbSchema.service.id,
+        bookingPolicy: dbSchema.service.bookingPolicy,
         requiresTicket: dbSchema.service.requiresTicket,
       })
       .from(dbSchema.service)
@@ -1768,6 +2010,64 @@ export const registerBookingRoutes = ({
       now.getTime() > new Date(slot.bookingCloseAt).getTime()
     ) {
       return c.json({ message: 'Slot is not bookable.' }, 409);
+    }
+
+    const bookingPolicy = resolveBookingPolicy(service.bookingPolicy);
+    if (bookingPolicy === 'approval') {
+      try {
+        const bookingId = crypto.randomUUID();
+        await database.insert(dbSchema.booking).values({
+          id: bookingId,
+          organizationId: slot.organizationId,
+          slotId: slot.id,
+          serviceId: slot.serviceId,
+          participantId: participant.id,
+          participantsCount,
+          status: BOOKING_STATUS.PENDING_APPROVAL,
+          ticketPackId: null,
+        });
+
+        await database.insert(dbSchema.bookingAuditLog).values({
+          id: crypto.randomUUID(),
+          bookingId,
+          organizationId: slot.organizationId,
+          actorUserId: identity.userId,
+          action: 'booking.application_received',
+          metadata: JSON.stringify({
+            participantsCount,
+          }),
+          ipAddress: headers.get('cf-connecting-ip') ?? null,
+          userAgent: headers.get('user-agent'),
+        });
+
+        const rows = await database
+          .select()
+          .from(dbSchema.booking)
+          .where(eq(dbSchema.booking.id, bookingId))
+          .limit(1);
+        const booking = rows[0];
+
+        await notifyBookingEmailBestEffort({
+          bookingId,
+          event: 'booking_application_received',
+        });
+
+        return c.json(
+          {
+            ...booking,
+            cancelledAt: toIsoDate(booking?.cancelledAt),
+            noShowMarkedAt: toIsoDate(booking?.noShowMarkedAt),
+            createdAt: toIsoDate(booking?.createdAt),
+            updatedAt: toIsoDate(booking?.updatedAt),
+          },
+          200,
+        );
+      } catch (error) {
+        if (isUniqueConstraintError(error)) {
+          return c.json({ message: 'Duplicate booking is not allowed.' }, 409);
+        }
+        throw error;
+      }
     }
 
     let capacityReserved = false;
@@ -1845,83 +2145,14 @@ export const registerBookingRoutes = ({
 
       let consumedBalanceAfter: number | null = null;
       if (service.requiresTicket) {
-        const ticketRows = await database
-          .select({
-            id: dbSchema.ticketPack.id,
-            remainingCount: dbSchema.ticketPack.remainingCount,
-            expiresAt: dbSchema.ticketPack.expiresAt,
-            status: dbSchema.ticketPack.status,
-            createdAt: dbSchema.ticketPack.createdAt,
-          })
-          .from(dbSchema.ticketPack)
-          .where(
-            and(
-              eq(dbSchema.ticketPack.organizationId, slot.organizationId),
-              eq(dbSchema.ticketPack.participantId, participant.id),
-              eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
-              gte(dbSchema.ticketPack.remainingCount, participantsCount),
-            ),
-          );
-
-        const candidate = ticketRows
-          .filter(
-            (row: { expiresAt: Date | null }) =>
-              !row.expiresAt || row.expiresAt.getTime() > now.getTime(),
-          )
-          .sort(
-            (
-              left: { expiresAt: Date | null; createdAt: Date },
-              right: { expiresAt: Date | null; createdAt: Date },
-            ) => {
-              const exp = dateToComparable(left.expiresAt) - dateToComparable(right.expiresAt);
-              if (exp !== 0) {
-                return exp;
-              }
-              return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
-            },
-          )
-          .at(0);
-
-        if (!candidate) {
-          throw new Error('TICKET_REQUIRED');
-        }
-
-        const updatedPackRows = await database
-          .update(dbSchema.ticketPack)
-          .set({
-            remainingCount: sql`${dbSchema.ticketPack.remainingCount} - ${participantsCount}`,
-          })
-          .where(
-            and(
-              eq(dbSchema.ticketPack.id, candidate.id),
-              eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
-              gte(dbSchema.ticketPack.remainingCount, participantsCount),
-            ),
-          )
-          .returning({
-            id: dbSchema.ticketPack.id,
-            remainingCount: dbSchema.ticketPack.remainingCount,
-            expiresAt: dbSchema.ticketPack.expiresAt,
-          });
-
-        const updatedPack = updatedPackRows[0];
-        if (!updatedPack) {
-          throw new Error('TICKET_CONFLICT');
-        }
-
-        const packStatus = normalizePackStatus({
-          remainingCount: updatedPack.remainingCount,
-          expiresAt: updatedPack.expiresAt,
+        const consumed = await consumeTicketPackForParticipant({
+          organizationId: slot.organizationId,
+          participantId: participant.id,
+          participantsCount,
+          now,
         });
-        await database
-          .update(dbSchema.ticketPack)
-          .set({
-            status: packStatus,
-          })
-          .where(eq(dbSchema.ticketPack.id, updatedPack.id));
-
-        consumedTicketPackId = updatedPack.id;
-        consumedBalanceAfter = updatedPack.remainingCount;
+        consumedTicketPackId = consumed.ticketPackId;
+        consumedBalanceAfter = consumed.balanceAfter;
       }
 
       const bookingId = crypto.randomUUID();
@@ -1970,6 +2201,11 @@ export const registerBookingRoutes = ({
         .where(eq(dbSchema.booking.id, bookingId))
         .limit(1);
       const booking = rows[0];
+
+      await notifyBookingEmailBestEffort({
+        bookingId,
+        event: 'booking_confirmed',
+      });
 
       return c.json(
         {
@@ -2097,38 +2333,41 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    if (booking.status !== BOOKING_STATUS.CONFIRMED) {
+    const isPendingApproval = booking.status === BOOKING_STATUS.PENDING_APPROVAL;
+    if (!isPendingApproval && booking.status !== BOOKING_STATUS.CONFIRMED) {
       return c.json({ message: 'Booking cannot be canceled.' }, 409);
     }
 
-    const slotRows = await database
-      .select({
-        id: dbSchema.slot.id,
-        startAt: dbSchema.slot.startAt,
-      })
-      .from(dbSchema.slot)
-      .where(eq(dbSchema.slot.id, booking.slotId))
-      .limit(1);
-    const slot = slotRows[0];
-    if (!slot) {
-      return c.json({ message: 'Slot not found.' }, 404);
-    }
+    if (!isPendingApproval) {
+      const slotRows = await database
+        .select({
+          id: dbSchema.slot.id,
+          startAt: dbSchema.slot.startAt,
+        })
+        .from(dbSchema.slot)
+        .where(eq(dbSchema.slot.id, booking.slotId))
+        .limit(1);
+      const slot = slotRows[0];
+      if (!slot) {
+        return c.json({ message: 'Slot not found.' }, 404);
+      }
 
-    const serviceRows = await database
-      .select({
-        cancellationDeadlineMinutes: dbSchema.service.cancellationDeadlineMinutes,
-      })
-      .from(dbSchema.service)
-      .where(eq(dbSchema.service.id, booking.serviceId))
-      .limit(1);
-    const service = serviceRows[0];
-    const cancellationDeadlineMinutes =
-      service?.cancellationDeadlineMinutes ?? DEFAULT_CANCELLATION_DEADLINE_MINUTES;
-    const deadlineAt = new Date(
-      new Date(slot.startAt).getTime() - cancellationDeadlineMinutes * 60 * 1000,
-    );
-    if (Date.now() > deadlineAt.getTime()) {
-      return c.json({ message: 'Cancellation deadline has passed.' }, 409);
+      const serviceRows = await database
+        .select({
+          cancellationDeadlineMinutes: dbSchema.service.cancellationDeadlineMinutes,
+        })
+        .from(dbSchema.service)
+        .where(eq(dbSchema.service.id, booking.serviceId))
+        .limit(1);
+      const service = serviceRows[0];
+      const cancellationDeadlineMinutes =
+        service?.cancellationDeadlineMinutes ?? DEFAULT_CANCELLATION_DEADLINE_MINUTES;
+      const deadlineAt = new Date(
+        new Date(slot.startAt).getTime() - cancellationDeadlineMinutes * 60 * 1000,
+      );
+      if (Date.now() > deadlineAt.getTime()) {
+        return c.json({ message: 'Cancellation deadline has passed.' }, 409);
+      }
     }
 
     await database
@@ -2141,47 +2380,49 @@ export const registerBookingRoutes = ({
       })
       .where(eq(dbSchema.booking.id, booking.id));
 
-    await database
-      .update(dbSchema.slot)
-      .set({
-        reservedCount: sql`${dbSchema.slot.reservedCount} - ${booking.participantsCount}`,
-      })
-      .where(
-        and(
-          eq(dbSchema.slot.id, booking.slotId),
-          gte(dbSchema.slot.reservedCount, booking.participantsCount),
-        ),
-      );
-
-    if (booking.ticketPackId) {
+    if (!isPendingApproval) {
       await database
-        .update(dbSchema.ticketPack)
+        .update(dbSchema.slot)
         .set({
-          remainingCount: sql`${dbSchema.ticketPack.remainingCount} + ${booking.participantsCount}`,
-          status: TICKET_PACK_STATUS.ACTIVE,
+          reservedCount: sql`${dbSchema.slot.reservedCount} - ${booking.participantsCount}`,
         })
-        .where(eq(dbSchema.ticketPack.id, booking.ticketPackId));
+        .where(
+          and(
+            eq(dbSchema.slot.id, booking.slotId),
+            gte(dbSchema.slot.reservedCount, booking.participantsCount),
+          ),
+        );
 
-      const packRows = await database
-        .select({
-          remainingCount: dbSchema.ticketPack.remainingCount,
-        })
-        .from(dbSchema.ticketPack)
-        .where(eq(dbSchema.ticketPack.id, booking.ticketPackId))
-        .limit(1);
-      const pack = packRows[0];
+      if (booking.ticketPackId) {
+        await database
+          .update(dbSchema.ticketPack)
+          .set({
+            remainingCount: sql`${dbSchema.ticketPack.remainingCount} + ${booking.participantsCount}`,
+            status: TICKET_PACK_STATUS.ACTIVE,
+          })
+          .where(eq(dbSchema.ticketPack.id, booking.ticketPackId));
 
-      await database.insert(dbSchema.ticketLedger).values({
-        id: crypto.randomUUID(),
-        organizationId: booking.organizationId,
-        ticketPackId: booking.ticketPackId,
-        bookingId: booking.id,
-        action: TICKET_LEDGER_ACTION.RESTORE,
-        delta: booking.participantsCount,
-        balanceAfter: pack?.remainingCount ?? 0,
-        actorUserId: identity.userId,
-        reason: 'booking-canceled-by-participant',
-      });
+        const packRows = await database
+          .select({
+            remainingCount: dbSchema.ticketPack.remainingCount,
+          })
+          .from(dbSchema.ticketPack)
+          .where(eq(dbSchema.ticketPack.id, booking.ticketPackId))
+          .limit(1);
+        const pack = packRows[0];
+
+        await database.insert(dbSchema.ticketLedger).values({
+          id: crypto.randomUUID(),
+          organizationId: booking.organizationId,
+          ticketPackId: booking.ticketPackId,
+          bookingId: booking.id,
+          action: TICKET_LEDGER_ACTION.RESTORE,
+          delta: booking.participantsCount,
+          balanceAfter: pack?.remainingCount ?? 0,
+          actorUserId: identity.userId,
+          reason: 'booking-canceled-by-participant',
+        });
+      }
     }
 
     await writeBookingAuditLog({
@@ -2194,6 +2435,12 @@ export const registerBookingRoutes = ({
         reason: body.reason ?? null,
       },
       headers,
+    });
+
+    await notifyBookingEmailBestEffort({
+      bookingId: booking.id,
+      event: 'booking_cancelled_by_participant',
+      reason: body.reason ?? null,
     });
 
     return c.json({ ok: true }, 200);
@@ -2329,6 +2576,291 @@ export const registerBookingRoutes = ({
       headers,
     });
 
+    await notifyBookingEmailBestEffort({
+      bookingId: booking.id,
+      event: 'booking_cancelled_by_staff',
+      reason: body.reason ?? null,
+    });
+
+    return c.json({ ok: true }, 200);
+  });
+
+  authRoutes.openapi(approveBookingByStaffRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const bookingRows = await database
+      .select({
+        id: dbSchema.booking.id,
+        organizationId: dbSchema.booking.organizationId,
+        participantId: dbSchema.booking.participantId,
+        serviceId: dbSchema.booking.serviceId,
+        slotId: dbSchema.booking.slotId,
+        participantsCount: dbSchema.booking.participantsCount,
+        status: dbSchema.booking.status,
+      })
+      .from(dbSchema.booking)
+      .where(eq(dbSchema.booking.id, body.bookingId))
+      .limit(1);
+    const booking = bookingRows[0];
+    if (!booking) {
+      return c.json({ message: 'Booking not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: booking.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (booking.status !== BOOKING_STATUS.PENDING_APPROVAL) {
+      return c.json({ message: 'Only pending approval booking can be approved.' }, 409);
+    }
+
+    const serviceRows = await database
+      .select({
+        requiresTicket: dbSchema.service.requiresTicket,
+      })
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, booking.serviceId))
+      .limit(1);
+    const service = serviceRows[0];
+    if (!service) {
+      return c.json({ message: 'Service not found.' }, 404);
+    }
+
+    const now = new Date();
+    let capacityReserved = false;
+    let consumedTicketPackId: string | null = null;
+    let consumedBalanceAfter: number | null = null;
+
+    const releaseReservedCapacity = async () => {
+      if (!capacityReserved) {
+        return;
+      }
+      await database
+        .update(dbSchema.slot)
+        .set({
+          reservedCount: sql`case
+            when ${dbSchema.slot.reservedCount} >= ${booking.participantsCount}
+            then ${dbSchema.slot.reservedCount} - ${booking.participantsCount}
+            else 0
+          end`,
+        })
+        .where(eq(dbSchema.slot.id, booking.slotId));
+      capacityReserved = false;
+    };
+
+    const restoreConsumedTicket = async () => {
+      if (!consumedTicketPackId) {
+        return;
+      }
+      const restoredRows = await database
+        .update(dbSchema.ticketPack)
+        .set({
+          remainingCount: sql`${dbSchema.ticketPack.remainingCount} + ${booking.participantsCount}`,
+        })
+        .where(eq(dbSchema.ticketPack.id, consumedTicketPackId))
+        .returning({
+          id: dbSchema.ticketPack.id,
+          remainingCount: dbSchema.ticketPack.remainingCount,
+          expiresAt: dbSchema.ticketPack.expiresAt,
+        });
+      const restoredPack = restoredRows[0];
+      if (restoredPack) {
+        const packStatus = normalizePackStatus({
+          remainingCount: restoredPack.remainingCount,
+          expiresAt: restoredPack.expiresAt,
+        });
+        await database
+          .update(dbSchema.ticketPack)
+          .set({
+            status: packStatus,
+          })
+          .where(eq(dbSchema.ticketPack.id, restoredPack.id));
+      }
+      consumedTicketPackId = null;
+      consumedBalanceAfter = null;
+    };
+
+    try {
+      const capacityRows = await database
+        .update(dbSchema.slot)
+        .set({
+          reservedCount: sql`${dbSchema.slot.reservedCount} + ${booking.participantsCount}`,
+        })
+        .where(
+          and(
+            eq(dbSchema.slot.id, booking.slotId),
+            eq(dbSchema.slot.status, SLOT_STATUS.OPEN),
+            sql`${dbSchema.slot.reservedCount} + ${booking.participantsCount} <= ${dbSchema.slot.capacity}`,
+          ),
+        )
+        .returning({ id: dbSchema.slot.id });
+      if (capacityRows.length === 0) {
+        throw new Error('CAPACITY_OR_SLOT_CONFLICT');
+      }
+      capacityReserved = true;
+
+      if (service.requiresTicket) {
+        const consumed = await consumeTicketPackForParticipant({
+          organizationId: booking.organizationId,
+          participantId: booking.participantId,
+          participantsCount: booking.participantsCount,
+          now,
+        });
+        consumedTicketPackId = consumed.ticketPackId;
+        consumedBalanceAfter = consumed.balanceAfter;
+      }
+
+      const updatedRows = await database
+        .update(dbSchema.booking)
+        .set({
+          status: BOOKING_STATUS.CONFIRMED,
+          ticketPackId: consumedTicketPackId,
+        })
+        .where(
+          and(
+            eq(dbSchema.booking.id, booking.id),
+            eq(dbSchema.booking.status, BOOKING_STATUS.PENDING_APPROVAL),
+          ),
+        )
+        .returning({ id: dbSchema.booking.id });
+      if (updatedRows.length === 0) {
+        throw new Error('BOOKING_STATE_CONFLICT');
+      }
+
+      if (consumedTicketPackId) {
+        await database.insert(dbSchema.ticketLedger).values({
+          id: crypto.randomUUID(),
+          organizationId: booking.organizationId,
+          ticketPackId: consumedTicketPackId,
+          bookingId: booking.id,
+          action: TICKET_LEDGER_ACTION.CONSUME,
+          delta: booking.participantsCount * -1,
+          balanceAfter: consumedBalanceAfter ?? 0,
+          actorUserId: identity.userId,
+          reason: 'booking-approved',
+        });
+      }
+
+      await writeBookingAuditLog({
+        database,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        actorUserId: identity.userId,
+        action: 'booking.approved',
+        metadata: {
+          ticketPackId: consumedTicketPackId,
+        },
+        headers,
+      });
+
+      await notifyBookingEmailBestEffort({
+        bookingId: booking.id,
+        event: 'booking_approved',
+      });
+
+      return c.json({ ok: true }, 200);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'CAPACITY_OR_SLOT_CONFLICT') {
+        return c.json({ message: 'Slot is full or not bookable.' }, 409);
+      }
+      if (error instanceof Error && (error.message === 'TICKET_REQUIRED' || error.message === 'TICKET_CONFLICT')) {
+        await releaseReservedCapacity();
+        await restoreConsumedTicket();
+        return c.json({ message: 'No available ticket pack for booking.' }, 409);
+      }
+      if (error instanceof Error && error.message === 'BOOKING_STATE_CONFLICT') {
+        await releaseReservedCapacity();
+        await restoreConsumedTicket();
+        return c.json({ message: 'Only pending approval booking can be approved.' }, 409);
+      }
+      await releaseReservedCapacity();
+      await restoreConsumedTicket();
+      throw error;
+    }
+  });
+
+  authRoutes.openapi(rejectBookingByStaffRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const bookingRows = await database
+      .select({
+        id: dbSchema.booking.id,
+        organizationId: dbSchema.booking.organizationId,
+        status: dbSchema.booking.status,
+      })
+      .from(dbSchema.booking)
+      .where(eq(dbSchema.booking.id, body.bookingId))
+      .limit(1);
+    const booking = bookingRows[0];
+    if (!booking) {
+      return c.json({ message: 'Booking not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: booking.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (booking.status !== BOOKING_STATUS.PENDING_APPROVAL) {
+      return c.json({ message: 'Only pending approval booking can be rejected.' }, 409);
+    }
+
+    const updatedRows = await database
+      .update(dbSchema.booking)
+      .set({
+        status: BOOKING_STATUS.REJECTED_BY_STAFF,
+        cancelReason: body.reason ?? null,
+        cancelledAt: new Date(),
+        cancelledByUserId: identity.userId,
+      })
+      .where(
+        and(
+          eq(dbSchema.booking.id, booking.id),
+          eq(dbSchema.booking.status, BOOKING_STATUS.PENDING_APPROVAL),
+        ),
+      )
+      .returning({ id: dbSchema.booking.id });
+    if (updatedRows.length === 0) {
+      return c.json({ message: 'Only pending approval booking can be rejected.' }, 409);
+    }
+
+    await writeBookingAuditLog({
+      database,
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      actorUserId: identity.userId,
+      action: 'booking.rejected_by_staff',
+      metadata: {
+        reason: body.reason ?? null,
+      },
+      headers,
+    });
+
+    await notifyBookingEmailBestEffort({
+      bookingId: booking.id,
+      event: 'booking_rejected',
+      reason: body.reason ?? null,
+    });
+
     return c.json({ ok: true }, 200);
   });
 
@@ -2382,6 +2914,11 @@ export const registerBookingRoutes = ({
       actorUserId: identity.userId,
       action: 'booking.no_show',
       headers,
+    });
+
+    await notifyBookingEmailBestEffort({
+      bookingId: booking.id,
+      event: 'booking_no_show',
     });
 
     return c.json({ ok: true }, 200);

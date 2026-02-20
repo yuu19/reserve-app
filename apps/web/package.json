@@ -25,6 +25,7 @@
 		"test": "vitest run --project server"
 	},
 	"dependencies": {
+		"@sentry/sveltekit": "^10.39.0",
 		"dayjs": "^1.11.19",
 		"hono": "^4.11.7",
 		"svelte-sonner": "^1.0.7"

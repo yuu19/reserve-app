@@ -7,8 +7,18 @@ describe('/bookings/+page.svelte', () => {
 	it('should render bookings heading and schedule table tabs', async () => {
 		render(BookingsPage);
 		await expect.element(page.getByRole('heading', { level: 1, name: '予約' })).toBeInTheDocument();
+		await expect.element(page.getByText('予約方式')).toBeInTheDocument();
+		await expect.element(page.getByLabelText('回数券必須サービスにする')).toBeInTheDocument();
 		await expect
-			.element(page.getByRole('tab', { name: '参加者' }))
+			.element(page.getByRole('heading', { level: 2, name: '運営予約一覧' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('承認待ちは「承認 / 却下」、予約確定は「運営キャンセル / No-show」を実行できます。'))
+			.toBeInTheDocument();
+		await expect.element(page.getByRole('tab', { name: '参加者' })).toBeInTheDocument();
+		await page.getByRole('tab', { name: '参加者' }).click();
+		await expect
+			.element(page.getByRole('heading', { level: 3, name: 'マイ回数券' }))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('heading', { level: 2, name: '予約カレンダー' }))

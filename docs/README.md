@@ -6,6 +6,9 @@
 
 - `apps/backend`: Hono（Cloudflare Workers + D1 / ローカル Miniflare）
 - `apps/web`: SvelteKit（Cloudflare Workers）
+  - 参加者管理画面で回数券種別作成・回数券付与に対応
+  - 予約画面でマイ回数券表示（active/exhausted/expired）に対応
+  - サービス作成時の `requiresTicket` UI 設定に対応
 - `apps/mobile`: React Native (Expo)
   - EAS Build による実機インストール対応
 
@@ -25,6 +28,8 @@
   - `hono/client`（RPC 接続）
   - `shadcn-svelte`
   - `svelte-sonner`
+- 監視:
+  - `Sentry`（Web / Backend 分離運用、低サンプルTracing）
 - モバイル:
   - `React Native`, `Expo`
   - `Better Auth` + `@better-auth/expo`
@@ -109,16 +114,24 @@ GitHub シークレット:
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 - `BETTER_AUTH_SECRET`
+- `SENTRY_AUTH_TOKEN`（Web sourcemap upload 用）
+- `SENTRY_DSN_BACKEND`
 
 GitHub 変数:
 
 - `BETTER_AUTH_URL`
 - `BETTER_AUTH_TRUSTED_ORIGINS`
 - `PUBLIC_BACKEND_URL`
+- `SENTRY_ORG`
+- `SENTRY_PROJECT_WEB`
+- `PUBLIC_SENTRY_DSN_WEB`
+- `PUBLIC_SENTRY_ENVIRONMENT`
+- `SENTRY_ENVIRONMENT`
 
 補足:
 
 - backend デプロイ時に `wrangler d1 migrations apply --remote` を実行します。
+- web デプロイ前ビルドで Sentry sourcemap upload を実行します（`SENTRY_RELEASE=${{ github.sha }}`）。
 - backend の `database_id` は、事前に `apps/backend/wrangler.jsonc` に設定してください。
 
 詳細な設定手順:

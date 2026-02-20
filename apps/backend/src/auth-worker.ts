@@ -64,6 +64,9 @@ export type BackendWorkerEnv = AuthRuntimeEnv & {
   IMAGES?: ImagesBinding;
   ORG_LOGO_PUBLIC_BASE_URL?: string;
   ORG_LOGO_MAX_UPLOAD_BYTES?: string;
+  SENTRY_DSN_BACKEND?: string;
+  SENTRY_ENVIRONMENT?: string;
+  SENTRY_RELEASE?: string;
 };
 
 export const createWorkerAuthRuntime = (env: BackendWorkerEnv) => {

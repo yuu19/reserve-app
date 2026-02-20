@@ -2022,6 +2022,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     authRoutes,
     auth,
     database,
+    env,
   });
 
   return authRoutes;

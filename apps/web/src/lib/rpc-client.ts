@@ -63,6 +63,7 @@ export type ServicePayload = {
 	organizationId: string;
 	name: string;
 	kind: 'single' | 'recurring';
+	bookingPolicy: 'instant' | 'approval';
 	durationMinutes: number;
 	capacity: number;
 	bookingOpenMinutesBefore?: number | null;
@@ -123,7 +124,13 @@ export type BookingPayload = {
 	serviceId: string;
 	participantId: string;
 	participantsCount: number;
-	status: 'confirmed' | 'cancelled_by_participant' | 'cancelled_by_staff' | 'no_show';
+	status:
+		| 'confirmed'
+		| 'pending_approval'
+		| 'rejected_by_staff'
+		| 'cancelled_by_participant'
+		| 'cancelled_by_staff'
+		| 'no_show';
 	cancelReason?: string | null;
 	cancelledAt?: string | null;
 	cancelledByUserId?: string | null;
@@ -215,6 +222,7 @@ type CreateServiceInput = {
 	organizationId?: string;
 	name: string;
 	kind: 'single' | 'recurring';
+	bookingPolicy?: 'instant' | 'approval';
 	durationMinutes: number;
 	capacity: number;
 	bookingOpenMinutesBefore?: number;
@@ -229,6 +237,7 @@ type UpdateServiceInput = {
 	serviceId: string;
 	name?: string;
 	kind?: 'single' | 'recurring';
+	bookingPolicy?: 'instant' | 'approval';
 	durationMinutes?: number;
 	capacity?: number;
 	bookingOpenMinutesBefore?: number;
@@ -342,7 +351,13 @@ type ListBookingsQuery = {
 	from?: string;
 	to?: string;
 	participantId?: string;
-	status?: 'confirmed' | 'cancelled_by_participant' | 'cancelled_by_staff' | 'no_show';
+	status?:
+		| 'confirmed'
+		| 'pending_approval'
+		| 'rejected_by_staff'
+		| 'cancelled_by_participant'
+		| 'cancelled_by_staff'
+		| 'no_show';
 };
 
 type CreateTicketTypeInput = {
@@ -493,6 +508,12 @@ type AuthRpcClient = {
 						'cancel-by-staff': {
 							$post: (args: { json: BookingActionInput }) => Promise<Response>;
 						};
+						approve: {
+							$post: (args: { json: { bookingId: string } }) => Promise<Response>;
+						};
+						reject: {
+							$post: (args: { json: BookingActionInput }) => Promise<Response>;
+						};
 						'no-show': {
 							$post: (args: { json: BookingNoShowInput }) => Promise<Response>;
 						};
@@ -631,6 +652,10 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations.bookings.$get(query ? { query } : undefined),
 	cancelBookingByStaff: (json: BookingActionInput) =>
 		rpcClient.api.v1.auth.organizations.bookings['cancel-by-staff'].$post({ json }),
+	approveBooking: (bookingId: string) =>
+		rpcClient.api.v1.auth.organizations.bookings.approve.$post({ json: { bookingId } }),
+	rejectBooking: (json: BookingActionInput) =>
+		rpcClient.api.v1.auth.organizations.bookings.reject.$post({ json }),
 	markBookingNoShow: (json: BookingNoShowInput) =>
 		rpcClient.api.v1.auth.organizations.bookings['no-show'].$post({ json }),
 	createTicketType: (json: CreateTicketTypeInput) =>

@@ -279,6 +279,7 @@ export const service = sqliteTable(
     bookingCloseMinutesBefore: integer('booking_close_minutes_before'),
     cancellationDeadlineMinutes: integer('cancellation_deadline_minutes'),
     timezone: text('timezone').default('Asia/Tokyo').notNull(),
+    bookingPolicy: text('booking_policy').default('instant').notNull(),
     requiresTicket: integer('requires_ticket', { mode: 'boolean' }).default(false).notNull(),
     isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })

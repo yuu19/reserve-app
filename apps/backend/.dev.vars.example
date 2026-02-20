@@ -12,3 +12,6 @@ ORG_LOGO_MAX_UPLOAD_BYTES=5242880
 # Optional: direct public base URL for logos (e.g. https://assets.example.com)
 # If empty, backend logo proxy URL is stored in organization.logo
 ORG_LOGO_PUBLIC_BASE_URL=
+SENTRY_DSN_BACKEND=
+SENTRY_ENVIRONMENT=production
+SENTRY_RELEASE=

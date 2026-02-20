@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare';
 import { createWorkerAuthRuntime, type BackendWorkerEnv } from './auth-worker.js';
 import { runDailyBookingMaintenance } from './booking/scheduler.js';
 import { createApp } from './app.js';
@@ -27,7 +28,7 @@ const getWorkerApp = (env: BackendWorkerEnv) => {
   return workerApp;
 };
 
-export default {
+const handler = {
   fetch(request: Request, env: BackendWorkerEnv) {
     return getWorkerApp(env).fetch(request, env);
   },
@@ -44,3 +45,20 @@ export default {
     );
   },
 };
+
+export default Sentry.withSentry(
+  (env: BackendWorkerEnv) => {
+    if (!env.SENTRY_DSN_BACKEND) {
+      return undefined;
+    }
+
+    return {
+      dsn: env.SENTRY_DSN_BACKEND,
+      environment: env.SENTRY_ENVIRONMENT ?? 'production',
+      release: env.SENTRY_RELEASE,
+      tracesSampleRate: 0.05,
+      sendDefaultPii: false,
+    };
+  },
+  handler,
+);

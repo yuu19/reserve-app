@@ -30,10 +30,19 @@ pnpm --filter @apps/backend run dev
 - `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` (例: `https://your-web.example.com/participants/invitations/accept`)
 - `WEB_BASE_URL` (`INVITATION_ACCEPT_URL_BASE` / `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` 未指定時のフォールバック)
 
+予約通知メールも同じ `RESEND_API_KEY` / `RESEND_FROM_EMAIL` を利用します。  
+通知メール内の予約一覧リンクは `WEB_BASE_URL` を使って `/bookings` を生成します。
+
 任意 (organization ロゴアップロード):
 
 - `ORG_LOGO_MAX_UPLOAD_BYTES` (デフォルト: `5242880` = 5MB)
 - `ORG_LOGO_PUBLIC_BASE_URL` (R2 カスタムドメインで直接配信する場合)
+
+任意 (Sentry):
+
+- `SENTRY_DSN_BACKEND`
+- `SENTRY_ENVIRONMENT` (default: `production`)
+- `SENTRY_RELEASE`
 
 ## API endpoints
 
@@ -46,6 +55,17 @@ pnpm --filter @apps/backend run dev
   - Organization logo delivery endpoint: `GET /api/v1/auth/organizations/logo/:key`
 
 `@better-auth/expo` server plugin を有効化しているため、Expo クライアントからの認証にも対応しています。
+
+## 予約通知メール
+
+予約ライフサイクルの以下イベントで、参加者に即時メール通知を送信します。
+
+- 予約確定 (`booking_confirmed`)
+- 参加者キャンセル (`booking_cancelled_by_participant`)
+- 運営キャンセル (`booking_cancelled_by_staff`)
+- No-show (`booking_no_show`)
+
+送信失敗時はベストエフォートです。予約 API 自体は成功のまま、Worker ログに警告を出します。
 
 ## Cloudflare Workers deploy setup
 
@@ -75,6 +95,7 @@ pnpm --filter @apps/backend run d1:migrate:remote
 ```bash
 pnpm --filter @apps/backend exec wrangler secret put BETTER_AUTH_SECRET
 pnpm --filter @apps/backend exec wrangler secret put RESEND_API_KEY
+pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
 ```
 
 7. 必要に応じて `wrangler.jsonc` の `vars` を更新:
@@ -87,6 +108,8 @@ pnpm --filter @apps/backend exec wrangler secret put RESEND_API_KEY
 - `RESEND_FROM_EMAIL`
 - `ORG_LOGO_MAX_UPLOAD_BYTES`
 - `ORG_LOGO_PUBLIC_BASE_URL`
+- `SENTRY_ENVIRONMENT`
+- `SENTRY_RELEASE`
 
 8. デプロイ:
 
@@ -100,6 +123,7 @@ pnpm --filter @apps/backend run cf:deploy
 workflow 内では次を実行します。
 
 1. `wrangler secret put BETTER_AUTH_SECRET`
-2. `wrangler secret put RESEND_API_KEY` (招待メールを使う場合)
-2. `wrangler d1 migrations apply ... --remote`
-3. `wrangler deploy`
+2. `wrangler secret put SENTRY_DSN_BACKEND`
+3. `wrangler secret put RESEND_API_KEY` (招待メールを使う場合)
+4. `wrangler d1 migrations apply ... --remote`
+5. `wrangler deploy` (`SENTRY_ENVIRONMENT` / `SENTRY_RELEASE` を `--var` で注入)

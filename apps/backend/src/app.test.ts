@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { drizzle } from 'drizzle-orm/d1';
 import { Miniflare } from 'miniflare';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from './app.js';
 import { createAuthRuntime } from './auth-runtime.js';
 
@@ -890,6 +890,41 @@ describe('backend app', () => {
         },
       },
       { path: '/api/v1/auth/organizations/bookings/mine', method: 'GET' },
+      {
+        path: '/api/v1/auth/organizations/bookings/cancel',
+        method: 'POST',
+        body: {
+          bookingId: 'dummy-booking',
+        },
+      },
+      {
+        path: '/api/v1/auth/organizations/bookings/cancel-by-staff',
+        method: 'POST',
+        body: {
+          bookingId: 'dummy-booking',
+        },
+      },
+      {
+        path: '/api/v1/auth/organizations/bookings/approve',
+        method: 'POST',
+        body: {
+          bookingId: 'dummy-booking',
+        },
+      },
+      {
+        path: '/api/v1/auth/organizations/bookings/reject',
+        method: 'POST',
+        body: {
+          bookingId: 'dummy-booking',
+        },
+      },
+      {
+        path: '/api/v1/auth/organizations/bookings/no-show',
+        method: 'POST',
+        body: {
+          bookingId: 'dummy-booking',
+        },
+      },
       { path: '/api/v1/auth/organizations/ticket-types', method: 'GET' },
       { path: '/api/v1/auth/organizations/ticket-packs/mine', method: 'GET' },
       { path: '/api/v1/auth/organizations/recurring-schedules', method: 'GET' },
@@ -1211,6 +1246,735 @@ describe('backend app', () => {
     expect(noShowTwiceResponse.status).toBe(409);
   });
 
+  it('handles approval booking policy flows', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Approval Owner',
+      email: 'approval-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Approval Org',
+      slug: 'approval-org',
+    });
+
+    const participantInvite1 = await createParticipantInvitation({
+      agent: owner,
+      email: 'approval-participant-1@example.com',
+      participantName: 'Approval Participant 1',
+      organizationId,
+    });
+    expect(participantInvite1.response.status).toBe(200);
+    const participantInvite2 = await createParticipantInvitation({
+      agent: owner,
+      email: 'approval-participant-2@example.com',
+      participantName: 'Approval Participant 2',
+      organizationId,
+    });
+    expect(participantInvite2.response.status).toBe(200);
+
+    const participantUser1 = createAuthAgent(app);
+    await signUpUser({
+      agent: participantUser1,
+      name: 'Approval Participant 1',
+      email: 'approval-participant-1@example.com',
+    });
+    const participantAcceptResponse1 = await participantUser1.request(
+      '/api/v1/auth/organizations/participants/invitations/accept',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          invitationId: participantInvite1.payload?.id,
+        }),
+      },
+    );
+    expect(participantAcceptResponse1.status).toBe(200);
+
+    const participantUser2 = createAuthAgent(app);
+    await signUpUser({
+      agent: participantUser2,
+      name: 'Approval Participant 2',
+      email: 'approval-participant-2@example.com',
+    });
+    const participantAcceptResponse2 = await participantUser2.request(
+      '/api/v1/auth/organizations/participants/invitations/accept',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          invitationId: participantInvite2.payload?.id,
+        }),
+      },
+    );
+    expect(participantAcceptResponse2.status).toBe(200);
+
+    const approvalServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Approval Ticket Service',
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 2,
+        cancellationDeadlineMinutes: 60,
+        bookingPolicy: 'approval',
+        requiresTicket: true,
+      }),
+    });
+    expect(approvalServiceResponse.status).toBe(200);
+    const approvalServicePayload = (await toJson(approvalServiceResponse)) as Record<string, unknown>;
+    const approvalServiceId = approvalServicePayload.id as string;
+
+    const ticketTypeCreateResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Approval Tickets',
+        totalCount: 2,
+        serviceIds: [approvalServiceId],
+      }),
+    });
+    expect(ticketTypeCreateResponse.status).toBe(200);
+    const ticketTypePayload = (await toJson(ticketTypeCreateResponse)) as Record<string, unknown>;
+    const ticketTypeId = ticketTypePayload.id as string;
+
+    const participantId1 = await selectParticipantIdByEmail(
+      organizationId,
+      'approval-participant-1@example.com',
+    );
+    expect(participantId1).toBeTruthy();
+
+    const grantTicketResponse = await owner.request('/api/v1/auth/organizations/ticket-packs/grant', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        participantId: participantId1,
+        ticketTypeId,
+        count: 2,
+      }),
+    });
+    expect(grantTicketResponse.status).toBe(200);
+    const grantPayload = (await toJson(grantTicketResponse)) as Record<string, unknown>;
+    const ticketPackId = grantPayload.id as string;
+
+    const makeSlot = async (serviceId: string, offsetMs: number) => {
+      const startAt = new Date(Date.now() + offsetMs);
+      const endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
+      const slotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          serviceId,
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+        }),
+      });
+      expect(slotResponse.status).toBe(200);
+      const slotPayload = (await toJson(slotResponse)) as Record<string, unknown>;
+      return slotPayload.id as string;
+    };
+
+    const approvalSlotId = await makeSlot(approvalServiceId, 3 * 24 * 60 * 60 * 1000);
+    const pendingCreateResponse = await participantUser1.request('/api/v1/auth/organizations/bookings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: approvalSlotId,
+      }),
+    });
+    expect(pendingCreateResponse.status).toBe(200);
+    const pendingCreatePayload = (await toJson(pendingCreateResponse)) as Record<string, unknown>;
+    const pendingBookingId = pendingCreatePayload.id as string;
+    expect(pendingCreatePayload.status).toBe('pending_approval');
+    expect(await selectBookingStatus(pendingBookingId)).toBe('pending_approval');
+    expect(await selectSlotReservedCount(approvalSlotId)).toBe(0);
+    expect(await selectTicketPackRemaining(ticketPackId)).toBe(2);
+
+    const approveResponse = await owner.request('/api/v1/auth/organizations/bookings/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: pendingBookingId,
+      }),
+    });
+    expect(approveResponse.status).toBe(200);
+    expect(await selectBookingStatus(pendingBookingId)).toBe('confirmed');
+    expect(await selectSlotReservedCount(approvalSlotId)).toBe(1);
+    expect(await selectTicketPackRemaining(ticketPackId)).toBe(1);
+    expect(await selectTicketLedgerActionCount(ticketPackId, 'consume')).toBe(1);
+    expect(await selectBookingAuditActionCount(pendingBookingId, 'booking.approved')).toBe(1);
+
+    const approveAgainResponse = await owner.request('/api/v1/auth/organizations/bookings/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: pendingBookingId,
+      }),
+    });
+    expect(approveAgainResponse.status).toBe(409);
+    const rejectConfirmedResponse = await owner.request('/api/v1/auth/organizations/bookings/reject', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: pendingBookingId,
+      }),
+    });
+    expect(rejectConfirmedResponse.status).toBe(409);
+
+    const nearSlotId = await makeSlot(approvalServiceId, 10 * 60 * 1000);
+    const nearPendingResponse = await participantUser1.request('/api/v1/auth/organizations/bookings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: nearSlotId,
+      }),
+    });
+    expect(nearPendingResponse.status).toBe(200);
+    const nearPendingPayload = (await toJson(nearPendingResponse)) as Record<string, unknown>;
+    const nearPendingBookingId = nearPendingPayload.id as string;
+    expect(nearPendingPayload.status).toBe('pending_approval');
+
+    const cancelPendingResponse = await participantUser1.request('/api/v1/auth/organizations/bookings/cancel', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: nearPendingBookingId,
+      }),
+    });
+    expect(cancelPendingResponse.status).toBe(200);
+    expect(await selectBookingStatus(nearPendingBookingId)).toBe('cancelled_by_participant');
+    expect(await selectSlotReservedCount(nearSlotId)).toBe(0);
+    expect(await selectTicketPackRemaining(ticketPackId)).toBe(1);
+
+    const rejectSlotId = await makeSlot(approvalServiceId, 4 * 24 * 60 * 60 * 1000);
+    const rejectPendingResponse = await participantUser1.request('/api/v1/auth/organizations/bookings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: rejectSlotId,
+      }),
+    });
+    expect(rejectPendingResponse.status).toBe(200);
+    const rejectPendingPayload = (await toJson(rejectPendingResponse)) as Record<string, unknown>;
+    const rejectPendingBookingId = rejectPendingPayload.id as string;
+    expect(rejectPendingPayload.status).toBe('pending_approval');
+
+    const rejectResponse = await owner.request('/api/v1/auth/organizations/bookings/reject', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: rejectPendingBookingId,
+        reason: '運営都合',
+      }),
+    });
+    expect(rejectResponse.status).toBe(200);
+    expect(await selectBookingStatus(rejectPendingBookingId)).toBe('rejected_by_staff');
+    expect(await selectBookingAuditActionCount(rejectPendingBookingId, 'booking.rejected_by_staff')).toBe(1);
+
+    const rejectAgainResponse = await owner.request('/api/v1/auth/organizations/bookings/reject', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: rejectPendingBookingId,
+      }),
+    });
+    expect(rejectAgainResponse.status).toBe(409);
+
+    const approvalCapacityServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Approval Capacity Service',
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 1,
+        bookingPolicy: 'approval',
+        requiresTicket: false,
+      }),
+    });
+    expect(approvalCapacityServiceResponse.status).toBe(200);
+    const approvalCapacityServicePayload = (await toJson(
+      approvalCapacityServiceResponse,
+    )) as Record<string, unknown>;
+    const approvalCapacityServiceId = approvalCapacityServicePayload.id as string;
+
+    const capacitySlotId = await makeSlot(approvalCapacityServiceId, 5 * 24 * 60 * 60 * 1000);
+    const capacityPendingResponse1 = await participantUser1.request('/api/v1/auth/organizations/bookings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: capacitySlotId,
+      }),
+    });
+    expect(capacityPendingResponse1.status).toBe(200);
+    const capacityPendingPayload1 = (await toJson(capacityPendingResponse1)) as Record<string, unknown>;
+    const capacityBookingId1 = capacityPendingPayload1.id as string;
+    expect(capacityPendingPayload1.status).toBe('pending_approval');
+
+    const capacityPendingResponse2 = await participantUser2.request('/api/v1/auth/organizations/bookings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: capacitySlotId,
+      }),
+    });
+    expect(capacityPendingResponse2.status).toBe(200);
+    const capacityPendingPayload2 = (await toJson(capacityPendingResponse2)) as Record<string, unknown>;
+    const capacityBookingId2 = capacityPendingPayload2.id as string;
+    expect(capacityPendingPayload2.status).toBe('pending_approval');
+
+    const approveCapacityFirst = await owner.request('/api/v1/auth/organizations/bookings/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: capacityBookingId1,
+      }),
+    });
+    expect(approveCapacityFirst.status).toBe(200);
+    expect(await selectBookingStatus(capacityBookingId1)).toBe('confirmed');
+    expect(await selectSlotReservedCount(capacitySlotId)).toBe(1);
+
+    const approveCapacitySecond = await owner.request('/api/v1/auth/organizations/bookings/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: capacityBookingId2,
+      }),
+    });
+    expect(approveCapacitySecond.status).toBe(409);
+    expect(await selectBookingStatus(capacityBookingId2)).toBe('pending_approval');
+  });
+
+  it('sends booking notification emails for booking lifecycle events', async () => {
+    const authRuntimeWithEmail = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithEmail = createApp(authRuntimeWithEmail);
+
+    const resendRequests: Array<{ to: string[]; subject: string }> = [];
+    let shouldFailResend = false;
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url === 'https://api.resend.com/emails') {
+        const payloadText =
+          typeof init?.body === 'string'
+            ? init.body
+            : init?.body
+              ? String(init.body)
+              : '{}';
+        const payload = JSON.parse(payloadText) as { to?: unknown; subject?: unknown };
+        const to = Array.isArray(payload.to)
+          ? payload.to.filter((value): value is string => typeof value === 'string')
+          : [];
+        const subject = typeof payload.subject === 'string' ? payload.subject : '';
+
+        resendRequests.push({ to, subject });
+
+        if (shouldFailResend) {
+          return new Response('failed', { status: 500 });
+        }
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithEmail);
+      await signUpUser({
+        agent: owner,
+        name: 'Booking Email Owner',
+        email: 'booking-email-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Booking Email Org',
+        slug: 'booking-email-org',
+      });
+
+      const participantInvite = await createParticipantInvitation({
+        agent: owner,
+        email: 'booking-email-participant@example.com',
+        participantName: 'Booking Email Participant',
+        organizationId,
+      });
+      expect(participantInvite.response.status).toBe(200);
+
+      const participantUser = createAuthAgent(appWithEmail);
+      await signUpUser({
+        agent: participantUser,
+        name: 'Booking Email Participant',
+        email: 'booking-email-participant@example.com',
+      });
+      const participantAcceptResponse = await participantUser.request(
+        '/api/v1/auth/organizations/participants/invitations/accept',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            invitationId: participantInvite.payload?.id,
+          }),
+        },
+      );
+      expect(participantAcceptResponse.status).toBe(200);
+
+      const serviceCreateResponse = await owner.request('/api/v1/auth/organizations/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          name: 'Email Notify Service',
+          kind: 'single',
+          durationMinutes: 60,
+          capacity: 5,
+          cancellationDeadlineMinutes: 30,
+          requiresTicket: false,
+        }),
+      });
+      expect(serviceCreateResponse.status).toBe(200);
+      const servicePayload = (await toJson(serviceCreateResponse)) as Record<string, unknown>;
+      const serviceId = servicePayload.id as string;
+
+      const makeSlot = async (offsetDays: number) => {
+        const startAt = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
+        const endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
+        const slotCreateResponse = await owner.request('/api/v1/auth/organizations/slots', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            organizationId,
+            serviceId,
+            startAt: startAt.toISOString(),
+            endAt: endAt.toISOString(),
+          }),
+        });
+        expect(slotCreateResponse.status).toBe(200);
+        const slotPayload = (await toJson(slotCreateResponse)) as Record<string, unknown>;
+        return slotPayload.id as string;
+      };
+
+      const firstSlotId = await makeSlot(4);
+      const firstBookingResponse = await participantUser.request('/api/v1/auth/organizations/bookings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: firstSlotId,
+        }),
+      });
+      expect(firstBookingResponse.status).toBe(200);
+      const firstBookingPayload = (await toJson(firstBookingResponse)) as Record<string, unknown>;
+      const firstBookingId = firstBookingPayload.id as string;
+
+      const participantCancelResponse = await participantUser.request(
+        '/api/v1/auth/organizations/bookings/cancel',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            bookingId: firstBookingId,
+            reason: '都合が悪くなったため',
+          }),
+        },
+      );
+      expect(participantCancelResponse.status).toBe(200);
+
+      const secondSlotId = await makeSlot(5);
+      const secondBookingResponse = await participantUser.request('/api/v1/auth/organizations/bookings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: secondSlotId,
+        }),
+      });
+      expect(secondBookingResponse.status).toBe(200);
+      const secondBookingPayload = (await toJson(secondBookingResponse)) as Record<string, unknown>;
+      const secondBookingId = secondBookingPayload.id as string;
+
+      const staffCancelResponse = await owner.request('/api/v1/auth/organizations/bookings/cancel-by-staff', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: secondBookingId,
+          reason: '設備メンテナンス',
+        }),
+      });
+      expect(staffCancelResponse.status).toBe(200);
+
+      const thirdSlotId = await makeSlot(6);
+      const thirdBookingResponse = await participantUser.request('/api/v1/auth/organizations/bookings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: thirdSlotId,
+        }),
+      });
+      expect(thirdBookingResponse.status).toBe(200);
+      const thirdBookingPayload = (await toJson(thirdBookingResponse)) as Record<string, unknown>;
+      const thirdBookingId = thirdBookingPayload.id as string;
+
+      const noShowResponse = await owner.request('/api/v1/auth/organizations/bookings/no-show', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: thirdBookingId,
+        }),
+      });
+      expect(noShowResponse.status).toBe(200);
+
+      const bookingNotificationRequests = resendRequests.filter((request) =>
+        request.subject.startsWith('【予約通知】'),
+      );
+      const uniqueSubjects = Array.from(
+        new Set(bookingNotificationRequests.map((request) => request.subject)),
+      );
+      expect(uniqueSubjects).toHaveLength(4);
+      expect(uniqueSubjects).toContain('【予約通知】予約が確定しました');
+      expect(uniqueSubjects).toContain('【予約通知】予約をキャンセルしました');
+      expect(uniqueSubjects).toContain('【予約通知】運営により予約がキャンセルされました');
+      expect(uniqueSubjects).toContain('【予約通知】予約がNo-showとして記録されました');
+      expect(
+        bookingNotificationRequests.every((request) =>
+          request.to.includes('booking-email-participant@example.com'),
+        ),
+      ).toBe(true);
+
+      shouldFailResend = true;
+      const fourthSlotId = await makeSlot(7);
+      const fourthBookingResponse = await participantUser.request('/api/v1/auth/organizations/bookings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: fourthSlotId,
+        }),
+      });
+      expect(fourthBookingResponse.status).toBe(200);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('sends booking notification emails for approval lifecycle events', async () => {
+    const authRuntimeWithEmail = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithEmail = createApp(authRuntimeWithEmail);
+
+    const resendRequests: Array<{ to: string[]; subject: string }> = [];
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url === 'https://api.resend.com/emails') {
+        const payloadText =
+          typeof init?.body === 'string'
+            ? init.body
+            : init?.body
+              ? String(init.body)
+              : '{}';
+        const payload = JSON.parse(payloadText) as { to?: unknown; subject?: unknown };
+        const to = Array.isArray(payload.to)
+          ? payload.to.filter((value): value is string => typeof value === 'string')
+          : [];
+        const subject = typeof payload.subject === 'string' ? payload.subject : '';
+
+        resendRequests.push({ to, subject });
+
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithEmail);
+      await signUpUser({
+        agent: owner,
+        name: 'Booking Approval Email Owner',
+        email: 'booking-approval-email-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Booking Approval Email Org',
+        slug: 'booking-approval-email-org',
+      });
+
+      const participantInvite = await createParticipantInvitation({
+        agent: owner,
+        email: 'booking-approval-email-participant@example.com',
+        participantName: 'Booking Approval Email Participant',
+        organizationId,
+      });
+      expect(participantInvite.response.status).toBe(200);
+
+      const participantUser = createAuthAgent(appWithEmail);
+      await signUpUser({
+        agent: participantUser,
+        name: 'Booking Approval Email Participant',
+        email: 'booking-approval-email-participant@example.com',
+      });
+      const participantAcceptResponse = await participantUser.request(
+        '/api/v1/auth/organizations/participants/invitations/accept',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            invitationId: participantInvite.payload?.id,
+          }),
+        },
+      );
+      expect(participantAcceptResponse.status).toBe(200);
+
+      const serviceCreateResponse = await owner.request('/api/v1/auth/organizations/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          name: 'Approval Email Notify Service',
+          kind: 'single',
+          durationMinutes: 60,
+          capacity: 5,
+          bookingPolicy: 'approval',
+          requiresTicket: false,
+        }),
+      });
+      expect(serviceCreateResponse.status).toBe(200);
+      const servicePayload = (await toJson(serviceCreateResponse)) as Record<string, unknown>;
+      const serviceId = servicePayload.id as string;
+
+      const makeSlot = async (offsetDays: number) => {
+        const startAt = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
+        const endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
+        const slotCreateResponse = await owner.request('/api/v1/auth/organizations/slots', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            organizationId,
+            serviceId,
+            startAt: startAt.toISOString(),
+            endAt: endAt.toISOString(),
+          }),
+        });
+        expect(slotCreateResponse.status).toBe(200);
+        const slotPayload = (await toJson(slotCreateResponse)) as Record<string, unknown>;
+        return slotPayload.id as string;
+      };
+
+      const slotId1 = await makeSlot(4);
+      const bookingResponse1 = await participantUser.request('/api/v1/auth/organizations/bookings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: slotId1,
+        }),
+      });
+      expect(bookingResponse1.status).toBe(200);
+      const bookingPayload1 = (await toJson(bookingResponse1)) as Record<string, unknown>;
+      const bookingId1 = bookingPayload1.id as string;
+
+      const approveResponse = await owner.request('/api/v1/auth/organizations/bookings/approve', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: bookingId1,
+        }),
+      });
+      expect(approveResponse.status).toBe(200);
+
+      const slotId2 = await makeSlot(5);
+      const bookingResponse2 = await participantUser.request('/api/v1/auth/organizations/bookings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: slotId2,
+        }),
+      });
+      expect(bookingResponse2.status).toBe(200);
+      const bookingPayload2 = (await toJson(bookingResponse2)) as Record<string, unknown>;
+      const bookingId2 = bookingPayload2.id as string;
+
+      const rejectResponse = await owner.request('/api/v1/auth/organizations/bookings/reject', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: bookingId2,
+          reason: '運営都合',
+        }),
+      });
+      expect(rejectResponse.status).toBe(200);
+
+      const bookingNotificationRequests = resendRequests.filter((request) =>
+        request.subject.startsWith('【予約通知】'),
+      );
+      expect(
+        bookingNotificationRequests.some(
+          (request) => request.subject === '【予約通知】予約申請を受け付けました',
+        ),
+      ).toBe(true);
+      expect(
+        bookingNotificationRequests.some(
+          (request) => request.subject === '【予約通知】予約が承認されました',
+        ),
+      ).toBe(true);
+      expect(
+        bookingNotificationRequests.some(
+          (request) => request.subject === '【予約通知】予約が却下されました',
+        ),
+      ).toBe(true);
+      expect(
+        bookingNotificationRequests.every((request) =>
+          request.to.includes('booking-approval-email-participant@example.com'),
+        ),
+      ).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('generates recurring slots and applies skip exception', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
@@ -1372,6 +2136,8 @@ describe('backend app', () => {
     expect(body.paths['/api/v1/auth/organizations/bookings/mine']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/cancel']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/cancel-by-staff']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/bookings/approve']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/bookings/reject']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/no-show']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-types']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-packs/grant']).toBeDefined();

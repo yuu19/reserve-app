@@ -61,12 +61,18 @@ jobs:
           test -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" || (echo "Missing secret: CLOUDFLARE_ACCOUNT_ID" && exit 1)
           test -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" || (echo "Missing secret: CLOUDFLARE_API_TOKEN" && exit 1)
           test -n "${{ secrets.BETTER_AUTH_SECRET }}" || (echo "Missing secret: BETTER_AUTH_SECRET" && exit 1)
+          test -n "${{ secrets.SENTRY_DSN_BACKEND }}" || (echo "Missing secret: SENTRY_DSN_BACKEND" && exit 1)
           test -n "${{ vars.BETTER_AUTH_URL }}" || (echo "Missing variable: BETTER_AUTH_URL" && exit 1)
           test -n "${{ vars.BETTER_AUTH_TRUSTED_ORIGINS }}" || (echo "Missing variable: BETTER_AUTH_TRUSTED_ORIGINS" && exit 1)
+          test -n "${{ vars.SENTRY_ENVIRONMENT }}" || (echo "Missing variable: SENTRY_ENVIRONMENT" && exit 1)
 
       - name: Sync BETTER_AUTH_SECRET
         run: |
           printf '%s' "${{ secrets.BETTER_AUTH_SECRET }}" | pnpm --filter @apps/backend exec wrangler secret put BETTER_AUTH_SECRET
+
+      - name: Sync SENTRY_DSN_BACKEND
+        run: |
+          printf '%s' "${{ secrets.SENTRY_DSN_BACKEND }}" | pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
 
       - name: Run D1 migrations (remote)
         run: pnpm --filter @apps/backend run d1:migrate:remote
@@ -76,7 +82,9 @@ jobs:
           pnpm --filter @apps/backend exec wrangler deploy \
             --keep-vars \
             --var "BETTER_AUTH_URL:${{ vars.BETTER_AUTH_URL }}" \
-            --var "BETTER_AUTH_TRUSTED_ORIGINS:${{ vars.BETTER_AUTH_TRUSTED_ORIGINS }}"
+            --var "BETTER_AUTH_TRUSTED_ORIGINS:${{ vars.BETTER_AUTH_TRUSTED_ORIGINS }}" \
+            --var "SENTRY_ENVIRONMENT:${{ vars.SENTRY_ENVIRONMENT }}" \
+            --var "SENTRY_RELEASE:${{ github.sha }}"
 
   deploy-web:
     name: Deploy web worker
@@ -109,13 +117,26 @@ jobs:
         run: |
           test -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" || (echo "Missing secret: CLOUDFLARE_ACCOUNT_ID" && exit 1)
           test -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" || (echo "Missing secret: CLOUDFLARE_API_TOKEN" && exit 1)
+          test -n "${{ secrets.SENTRY_AUTH_TOKEN }}" || (echo "Missing secret: SENTRY_AUTH_TOKEN" && exit 1)
+          test -n "${{ vars.SENTRY_ORG }}" || (echo "Missing variable: SENTRY_ORG" && exit 1)
+          test -n "${{ vars.SENTRY_PROJECT_WEB }}" || (echo "Missing variable: SENTRY_PROJECT_WEB" && exit 1)
           test -n "${{ vars.PUBLIC_BACKEND_URL }}" || (echo "Missing variable: PUBLIC_BACKEND_URL" && exit 1)
+          test -n "${{ vars.PUBLIC_SENTRY_DSN_WEB }}" || (echo "Missing variable: PUBLIC_SENTRY_DSN_WEB" && exit 1)
+          test -n "${{ vars.PUBLIC_SENTRY_ENVIRONMENT }}" || (echo "Missing variable: PUBLIC_SENTRY_ENVIRONMENT" && exit 1)
 
       - name: Build web worker
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT_WEB }}
+          SENTRY_RELEASE: ${{ github.sha }}
         run: pnpm --filter @apps/web build
 
       - name: Deploy web worker
         run: |
           pnpm --filter @apps/web exec wrangler deploy \
             --keep-vars \
-            --var "PUBLIC_BACKEND_URL:${{ vars.PUBLIC_BACKEND_URL }}"
+            --var "PUBLIC_BACKEND_URL:${{ vars.PUBLIC_BACKEND_URL }}" \
+            --var "PUBLIC_SENTRY_DSN_WEB:${{ vars.PUBLIC_SENTRY_DSN_WEB }}" \
+            --var "PUBLIC_SENTRY_ENVIRONMENT:${{ vars.PUBLIC_SENTRY_ENVIRONMENT }}" \
+            --var "PUBLIC_SENTRY_RELEASE:${{ github.sha }}"

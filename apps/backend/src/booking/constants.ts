@@ -10,8 +10,10 @@ export const SLOT_STATUS = {
 
 export const BOOKING_STATUS = {
   CONFIRMED: 'confirmed',
+  PENDING_APPROVAL: 'pending_approval',
   CANCELED_BY_PARTICIPANT: 'cancelled_by_participant',
   CANCELED_BY_STAFF: 'cancelled_by_staff',
+  REJECTED_BY_STAFF: 'rejected_by_staff',
   NO_SHOW: 'no_show',
 } as const;
 
@@ -28,4 +30,3 @@ export const TICKET_LEDGER_ACTION = {
   EXPIRE: 'expire',
   ADJUST: 'adjust',
 } as const;
-

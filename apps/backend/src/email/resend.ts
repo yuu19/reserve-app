@@ -1,5 +1,6 @@
 import { render, toPlainText } from '@react-email/render';
 import { createElement } from 'react';
+import { BookingNotificationEmail } from './templates/booking-notification-email.js';
 import { OrganizationInvitationEmail } from './templates/organization-invitation-email.js';
 import { ParticipantInvitationEmail } from './templates/participant-invitation-email.js';
 
@@ -29,6 +30,29 @@ type SendParticipantInvitationInput = {
   inviterName?: string | null;
   inviterEmail?: string | null;
   organizationName: string;
+};
+
+export type BookingNotificationEvent =
+  | 'booking_confirmed'
+  | 'booking_application_received'
+  | 'booking_approved'
+  | 'booking_rejected'
+  | 'booking_cancelled_by_participant'
+  | 'booking_cancelled_by_staff'
+  | 'booking_no_show';
+
+export type SendBookingNotificationInput = {
+  env: ResendEnv;
+  inviteeEmail: string;
+  organizationName: string;
+  participantName: string;
+  serviceName: string;
+  participantsCount: number;
+  slotStartLabel: string;
+  slotEndLabel: string;
+  event: BookingNotificationEvent;
+  reason?: string | null;
+  bookingId: string;
 };
 
 const createOrganizationInvitationAcceptUrl = ({
@@ -65,6 +89,13 @@ const createParticipantInvitationAcceptUrl = ({
   const url = new URL(base);
   url.searchParams.set('invitationId', invitationId);
   return url.toString();
+};
+
+const createBookingsUrl = ({ env }: { env: ResendEnv }) => {
+  if (env.WEB_BASE_URL) {
+    return new URL('/bookings', env.WEB_BASE_URL).toString();
+  }
+  return 'http://localhost:5173/bookings';
 };
 
 const isValidFromField = (value: string) => {
@@ -227,5 +258,94 @@ export const sendParticipantInvitationEmail = async ({
     }
 
     throw new Error(`Failed to send participant invitation email via Resend: ${details}`);
+  }
+};
+
+const bookingNotificationSubjectMap: Record<BookingNotificationEvent, string> = {
+  booking_confirmed: '【予約通知】予約が確定しました',
+  booking_application_received: '【予約通知】予約申請を受け付けました',
+  booking_approved: '【予約通知】予約が承認されました',
+  booking_rejected: '【予約通知】予約が却下されました',
+  booking_cancelled_by_participant: '【予約通知】予約をキャンセルしました',
+  booking_cancelled_by_staff: '【予約通知】運営により予約がキャンセルされました',
+  booking_no_show: '【予約通知】予約がNo-showとして記録されました',
+};
+
+const bookingNotificationEventLabelMap: Record<BookingNotificationEvent, string> = {
+  booking_confirmed: '予約が確定しました',
+  booking_application_received: '予約申請を受け付けました',
+  booking_approved: '予約が承認されました',
+  booking_rejected: '予約が却下されました',
+  booking_cancelled_by_participant: '予約をキャンセルしました',
+  booking_cancelled_by_staff: '運営により予約がキャンセルされました',
+  booking_no_show: '予約がNo-showとして記録されました',
+};
+
+export const sendBookingNotificationEmail = async ({
+  env,
+  inviteeEmail,
+  organizationName,
+  participantName,
+  serviceName,
+  participantsCount,
+  slotStartLabel,
+  slotEndLabel,
+  event,
+  reason,
+  bookingId,
+}: SendBookingNotificationInput) => {
+  const config = requireResendConfig(env);
+  if (!config) {
+    return;
+  }
+
+  const subject = bookingNotificationSubjectMap[event];
+  const eventLabel = bookingNotificationEventLabelMap[event];
+  const bookingsUrl = createBookingsUrl({ env });
+  const html = await render(
+    createElement(BookingNotificationEmail, {
+      organizationName,
+      participantName,
+      serviceName,
+      participantsCount,
+      slotStartLabel,
+      slotEndLabel,
+      eventLabel,
+      reason,
+      bookingId,
+      bookingsUrl,
+    }),
+  );
+  const text = toPlainText(html);
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: config.fromEmail,
+      to: [inviteeEmail],
+      subject,
+      html,
+      text,
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+
+    if (
+      response.status === 403 &&
+      details.includes('You can only send testing emails to your own email address')
+    ) {
+      console.warn(
+        '[booking-email] Resend test-mode restriction: only your own verified recipient is allowed. Verify a domain in Resend and set RESEND_FROM_EMAIL to that domain to send to other recipients.',
+      );
+      return;
+    }
+
+    throw new Error(`Failed to send booking notification email via Resend: ${details}`);
   }
 };
