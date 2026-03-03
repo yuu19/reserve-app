@@ -15,6 +15,8 @@ import {
   SLOT_STATUS,
   TICKET_LEDGER_ACTION,
   TICKET_PACK_STATUS,
+  TICKET_PURCHASE_METHOD,
+  TICKET_PURCHASE_STATUS,
 } from '../booking/constants.js';
 import {
   defaultRecurringRange,
@@ -26,6 +28,11 @@ import {
   sendBookingNotificationEmail,
   type BookingNotificationEvent,
 } from '../email/resend.js';
+import { createCheckoutSession } from '../payment/stripe.js';
+import {
+  ServiceImageUploadError,
+  type ServiceImageUploadService,
+} from '../service-image-upload-service.js';
 
 type AuthRouteBindings = {
   Variables: {
@@ -69,6 +76,7 @@ const orgQuerySchema = z.object({
 const serviceCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema,
   durationMinutes: z.int().min(1).max(24 * 60),
   capacity: z.int().min(1).max(500),
@@ -78,6 +86,7 @@ const serviceCreateBodySchema = z.object({
   timezone: z.string().optional(),
   bookingPolicy: bookingPolicySchema.optional(),
   requiresTicket: z.boolean().optional(),
+  imageUrl: z.string().trim().max(2048).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -89,6 +98,7 @@ const serviceListQuerySchema = z.object({
 const serviceUpdateBodySchema = z.object({
   serviceId: z.string().min(1),
   name: z.string().trim().min(1).max(120).optional(),
+  description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema.optional(),
   durationMinutes: z.int().min(1).max(24 * 60).optional(),
   capacity: z.int().min(1).max(500).optional(),
@@ -98,7 +108,19 @@ const serviceUpdateBodySchema = z.object({
   timezone: z.string().optional(),
   bookingPolicy: bookingPolicySchema.optional(),
   requiresTicket: z.boolean().optional(),
+  imageUrl: z.string().trim().max(2048).nullable().optional(),
   isActive: z.boolean().optional(),
+});
+
+const serviceImageUploadUrlBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  fileName: z.string().trim().min(1).max(255).optional(),
+  contentType: z.string().trim().min(1).max(120),
+  size: z.int().min(1),
+});
+
+const serviceImageUploadTokenParamSchema = z.object({
+  token: z.string().trim().min(20).max(4096),
 });
 
 const serviceArchiveBodySchema = z.object({
@@ -227,6 +249,8 @@ const ticketTypeCreateBodySchema = z.object({
   totalCount: z.int().min(1).max(1000),
   expiresInDays: z.int().min(1).max(3650).optional(),
   isActive: z.boolean().optional(),
+  isForSale: z.boolean().optional(),
+  stripePriceId: z.string().trim().min(1).max(200).optional(),
 });
 
 const ticketTypeListQuerySchema = z.object({
@@ -244,6 +268,51 @@ const ticketPackGrantBodySchema = z.object({
 
 const ticketPackMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+});
+
+const ticketPurchaseMethodSchema = z.enum([
+  TICKET_PURCHASE_METHOD.STRIPE,
+  TICKET_PURCHASE_METHOD.CASH_ON_SITE,
+  TICKET_PURCHASE_METHOD.BANK_TRANSFER,
+]);
+
+const ticketPurchaseStatusSchema = z.enum([
+  TICKET_PURCHASE_STATUS.PENDING_PAYMENT,
+  TICKET_PURCHASE_STATUS.PENDING_APPROVAL,
+  TICKET_PURCHASE_STATUS.APPROVED,
+  TICKET_PURCHASE_STATUS.REJECTED,
+  TICKET_PURCHASE_STATUS.CANCELLED_BY_PARTICIPANT,
+]);
+
+const ticketPurchaseCreateBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  ticketTypeId: z.string().min(1),
+  paymentMethod: ticketPurchaseMethodSchema,
+});
+
+const ticketPurchaseMineQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  status: ticketPurchaseStatusSchema.optional(),
+});
+
+const ticketPurchaseListQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  participantId: z.string().min(1).optional(),
+  paymentMethod: ticketPurchaseMethodSchema.optional(),
+  status: ticketPurchaseStatusSchema.optional(),
+});
+
+const ticketPurchaseApproveBodySchema = z.object({
+  purchaseId: z.string().min(1),
+});
+
+const ticketPurchaseRejectBodySchema = z.object({
+  purchaseId: z.string().min(1),
+  reason: z.string().trim().max(500).optional(),
+});
+
+const ticketPurchaseCancelBodySchema = z.object({
+  purchaseId: z.string().min(1),
 });
 
 const createServiceRoute = createRoute({
@@ -281,6 +350,67 @@ const listServicesRoute = createRoute({
     200: { description: 'Service list' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
+  },
+});
+
+const serviceImageKeyParamSchema = z.object({
+  key: z.string().trim().regex(/^[a-zA-Z0-9._-]+$/).min(1).max(255),
+});
+
+const createServiceImageUploadUrlRoute = createRoute({
+  method: 'post',
+  path: '/organizations/services/images/upload-url',
+  tags: ['Services'],
+  summary: 'Create signed upload URL for service image',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: serviceImageUploadUrlBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Signed upload URL created' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    422: { description: 'Validation error' },
+    503: { description: 'Service image upload not configured' },
+  },
+});
+
+const uploadServiceImageBySignedUrlRoute = createRoute({
+  method: 'put',
+  path: '/organizations/services/images/upload/{token}',
+  tags: ['Services'],
+  summary: 'Upload service image using signed URL',
+  request: {
+    params: serviceImageUploadTokenParamSchema,
+  },
+  responses: {
+    201: { description: 'Service image uploaded' },
+    400: { description: 'Validation error' },
+    401: { description: 'Invalid or expired upload token' },
+    413: { description: 'File too large' },
+    503: { description: 'Service image upload not configured' },
+  },
+});
+
+const getServiceImageRoute = createRoute({
+  method: 'get',
+  path: '/organizations/services/images/{key}',
+  tags: ['Services'],
+  summary: 'Get service image by key',
+  request: {
+    params: serviceImageKeyParamSchema,
+  },
+  responses: {
+    200: { description: 'Service image object' },
+    400: { description: 'Invalid key' },
+    404: { description: 'Not found' },
+    503: { description: 'Service image delivery is not configured' },
   },
 });
 
@@ -770,6 +900,148 @@ const listMyTicketPacksRoute = createRoute({
   },
 });
 
+const listPurchasableTicketTypesRoute = createRoute({
+  method: 'get',
+  path: '/organizations/ticket-types/purchasable',
+  tags: ['Tickets'],
+  summary: 'List purchasable ticket types',
+  request: {
+    query: orgQuerySchema,
+  },
+  responses: {
+    200: { description: 'Purchasable ticket type list' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const createTicketPurchaseRoute = createRoute({
+  method: 'post',
+  path: '/organizations/ticket-purchases',
+  tags: ['Tickets'],
+  summary: 'Create ticket purchase',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: ticketPurchaseCreateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Ticket purchase created' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const listMyTicketPurchasesRoute = createRoute({
+  method: 'get',
+  path: '/organizations/ticket-purchases/mine',
+  tags: ['Tickets'],
+  summary: 'List my ticket purchases',
+  request: {
+    query: ticketPurchaseMineQuerySchema,
+  },
+  responses: {
+    200: { description: 'Ticket purchase list for participant' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const listTicketPurchasesRoute = createRoute({
+  method: 'get',
+  path: '/organizations/ticket-purchases',
+  tags: ['Tickets'],
+  summary: 'List ticket purchases for staff',
+  request: {
+    query: ticketPurchaseListQuerySchema,
+  },
+  responses: {
+    200: { description: 'Ticket purchase list for staff' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+});
+
+const approveTicketPurchaseRoute = createRoute({
+  method: 'post',
+  path: '/organizations/ticket-purchases/approve',
+  tags: ['Tickets'],
+  summary: 'Approve ticket purchase',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: ticketPurchaseApproveBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Ticket purchase approved' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+const rejectTicketPurchaseRoute = createRoute({
+  method: 'post',
+  path: '/organizations/ticket-purchases/reject',
+  tags: ['Tickets'],
+  summary: 'Reject ticket purchase',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: ticketPurchaseRejectBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Ticket purchase rejected' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+const cancelTicketPurchaseRoute = createRoute({
+  method: 'post',
+  path: '/organizations/ticket-purchases/cancel',
+  tags: ['Tickets'],
+  summary: 'Cancel ticket purchase by participant',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: ticketPurchaseCancelBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Ticket purchase canceled' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
 const parseIsoDateOrNull = (value: string | undefined): Date | null => {
   if (!value) {
     return null;
@@ -868,16 +1140,31 @@ const resolveBookingPolicy = (value: string | null | undefined): 'instant' | 'ap
   return value === 'approval' ? 'approval' : 'instant';
 };
 
+const normalizeServiceDescription = (
+  value: string | null | undefined,
+): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
 export const registerBookingRoutes = ({
   authRoutes,
   auth,
   database,
   env,
+  serviceImageUploadService,
 }: {
   authRoutes: OpenAPIHono<AuthRouteBindings>;
   auth: AuthInstance;
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
+  serviceImageUploadService?: ServiceImageUploadService | null;
 }) => {
   const requireIdentity = async (headers: Headers) => {
     return getSessionIdentity(auth, headers);
@@ -1055,6 +1342,198 @@ export const registerBookingRoutes = ({
     };
   };
 
+  const serializeTicketType = (row: Record<string, unknown> | undefined) => ({
+    ...row,
+    serviceIds:
+      typeof row?.serviceIdsJson === 'string' && row.serviceIdsJson.length > 0
+        ? JSON.parse(row.serviceIdsJson)
+        : [],
+    createdAt: toIsoDate(row?.createdAt),
+    updatedAt: toIsoDate(row?.updatedAt),
+  });
+
+  const serializeTicketPack = (row: Record<string, unknown> | undefined) => ({
+    ...row,
+    expiresAt: toIsoDate(row?.expiresAt),
+    createdAt: toIsoDate(row?.createdAt),
+    updatedAt: toIsoDate(row?.updatedAt),
+  });
+
+  const serializeTicketPurchase = (row: Record<string, unknown> | undefined) => ({
+    ...row,
+    approvedAt: toIsoDate(row?.approvedAt),
+    rejectedAt: toIsoDate(row?.rejectedAt),
+    createdAt: toIsoDate(row?.createdAt),
+    updatedAt: toIsoDate(row?.updatedAt),
+  });
+
+  const issueTicketPackWithLedger = async ({
+    organizationId,
+    participantId,
+    ticketTypeId,
+    count,
+    expiresAt,
+    actorUserId,
+    reason,
+    bookingId,
+  }: {
+    organizationId: string;
+    participantId: string;
+    ticketTypeId: string;
+    count: number;
+    expiresAt: Date | null;
+    actorUserId: string;
+    reason: string;
+    bookingId?: string | null;
+  }) => {
+    const status = normalizePackStatus({
+      remainingCount: count,
+      expiresAt,
+    });
+    const ticketPackId = crypto.randomUUID();
+
+    await database.insert(dbSchema.ticketPack).values({
+      id: ticketPackId,
+      organizationId,
+      participantId,
+      ticketTypeId,
+      initialCount: count,
+      remainingCount: count,
+      expiresAt,
+      status,
+    });
+
+    await database.insert(dbSchema.ticketLedger).values({
+      id: crypto.randomUUID(),
+      organizationId,
+      ticketPackId,
+      bookingId: bookingId ?? null,
+      action: TICKET_LEDGER_ACTION.GRANT,
+      delta: count,
+      balanceAfter: count,
+      actorUserId,
+      reason,
+    });
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPack)
+      .where(eq(dbSchema.ticketPack.id, ticketPackId))
+      .limit(1);
+    const ticketPack = rows[0];
+    return {
+      ticketPackId,
+      ticketPack: serializeTicketPack(ticketPack as Record<string, unknown> | undefined),
+    };
+  };
+
+  const approveTicketPurchaseWithIssue = async ({
+    purchaseId,
+    actorUserId,
+    actorReason,
+  }: {
+    purchaseId: string;
+    actorUserId: string;
+    actorReason: string;
+  }) => {
+    const purchaseRows = await database
+      .select({
+        id: dbSchema.ticketPurchase.id,
+        organizationId: dbSchema.ticketPurchase.organizationId,
+        participantId: dbSchema.ticketPurchase.participantId,
+        ticketTypeId: dbSchema.ticketPurchase.ticketTypeId,
+        status: dbSchema.ticketPurchase.status,
+        ticketPackId: dbSchema.ticketPurchase.ticketPackId,
+      })
+      .from(dbSchema.ticketPurchase)
+      .where(eq(dbSchema.ticketPurchase.id, purchaseId))
+      .limit(1);
+    const purchase = purchaseRows[0];
+    if (!purchase) {
+      return { kind: 'not_found' as const };
+    }
+
+    if (purchase.status === TICKET_PURCHASE_STATUS.APPROVED && purchase.ticketPackId) {
+      const rows = await database
+        .select()
+        .from(dbSchema.ticketPurchase)
+        .where(eq(dbSchema.ticketPurchase.id, purchaseId))
+        .limit(1);
+      return {
+        kind: 'already_approved' as const,
+        purchase: serializeTicketPurchase(rows[0] as Record<string, unknown> | undefined),
+      };
+    }
+
+    if (purchase.status !== TICKET_PURCHASE_STATUS.PENDING_APPROVAL) {
+      return { kind: 'invalid_status' as const };
+    }
+
+    const ticketTypeRows = await database
+      .select({
+        id: dbSchema.ticketType.id,
+        totalCount: dbSchema.ticketType.totalCount,
+        expiresInDays: dbSchema.ticketType.expiresInDays,
+      })
+      .from(dbSchema.ticketType)
+      .where(eq(dbSchema.ticketType.id, purchase.ticketTypeId))
+      .limit(1);
+    const ticketType = ticketTypeRows[0];
+    if (!ticketType) {
+      return { kind: 'ticket_type_not_found' as const };
+    }
+
+    const expiresAt = resolveEndDate(ticketType.expiresInDays, undefined);
+    const issued = await issueTicketPackWithLedger({
+      organizationId: purchase.organizationId,
+      participantId: purchase.participantId,
+      ticketTypeId: purchase.ticketTypeId,
+      count: ticketType.totalCount,
+      expiresAt,
+      actorUserId,
+      reason: actorReason,
+    });
+
+    const updatedRows = await database
+      .update(dbSchema.ticketPurchase)
+      .set({
+        status: TICKET_PURCHASE_STATUS.APPROVED,
+        ticketPackId: issued.ticketPackId,
+        approvedByUserId: actorUserId,
+        approvedAt: new Date(),
+        rejectedByUserId: null,
+        rejectedAt: null,
+        rejectReason: null,
+      })
+      .where(
+        and(
+          eq(dbSchema.ticketPurchase.id, purchaseId),
+          eq(dbSchema.ticketPurchase.status, TICKET_PURCHASE_STATUS.PENDING_APPROVAL),
+        ),
+      )
+      .returning({
+        id: dbSchema.ticketPurchase.id,
+      });
+
+    if (!updatedRows[0]) {
+      await database.delete(dbSchema.ticketLedger).where(eq(dbSchema.ticketLedger.ticketPackId, issued.ticketPackId));
+      await database.delete(dbSchema.ticketPack).where(eq(dbSchema.ticketPack.id, issued.ticketPackId));
+      return { kind: 'invalid_status' as const };
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPurchase)
+      .where(eq(dbSchema.ticketPurchase.id, purchaseId))
+      .limit(1);
+
+    return {
+      kind: 'approved' as const,
+      purchase: serializeTicketPurchase(rows[0] as Record<string, unknown> | undefined),
+      ticketPack: issued.ticketPack,
+    };
+  };
+
   const requireAdmin = async ({
     headers,
     organizationId,
@@ -1078,6 +1557,90 @@ export const registerBookingRoutes = ({
 
     return { identity, response: null as Response | null };
   };
+
+  authRoutes.openapi(createServiceImageUploadUrlRoute, async (c) => {
+    if (!serviceImageUploadService) {
+      return c.json({ message: 'Service image upload is not configured.' }, 503);
+    }
+
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    try {
+      const uploadUrl = await serviceImageUploadService.createSignedUploadUrl({
+        ownerUserId: identity.userId,
+        organizationId,
+        fileName: body.fileName,
+        contentType: body.contentType,
+        size: body.size,
+      });
+      return c.json(uploadUrl, 200);
+    } catch (error) {
+      if (error instanceof ServiceImageUploadError) {
+        return c.json({ message: error.message }, error.status as 400 | 401 | 413 | 503);
+      }
+      throw error;
+    }
+  });
+
+  authRoutes.openapi(uploadServiceImageBySignedUrlRoute, async (c) => {
+    if (!serviceImageUploadService) {
+      return c.json({ message: 'Service image upload is not configured.' }, 503);
+    }
+
+    const { token } = c.req.valid('param');
+    try {
+      const uploaded = await serviceImageUploadService.uploadBySignedUrl(token, c.req.raw);
+      return c.json(uploaded, 201);
+    } catch (error) {
+      if (error instanceof ServiceImageUploadError) {
+        return c.json({ message: error.message }, error.status as 400 | 401 | 413 | 503);
+      }
+      throw error;
+    }
+  });
+
+  authRoutes.openapi(getServiceImageRoute, async (c) => {
+    if (!serviceImageUploadService) {
+      return c.text('Service image delivery is not configured.', 503);
+    }
+
+    const { key } = c.req.valid('param');
+    const object = await serviceImageUploadService.get(key);
+    if (!object) {
+      return c.text('Service image not found.', 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata?.(headers);
+    headers.set('content-type', object.httpMetadata?.contentType ?? 'image/webp');
+    headers.set(
+      'cache-control',
+      object.httpMetadata?.cacheControl ?? 'public, max-age=31536000, immutable',
+    );
+
+    return new Response(object.body, {
+      status: 200,
+      headers,
+    });
+  });
 
   authRoutes.openapi(createServiceRoute, async (c) => {
     const body = c.req.valid('json');
@@ -1110,7 +1673,9 @@ export const registerBookingRoutes = ({
       id: createdId,
       organizationId,
       name: body.name,
+      description: normalizeServiceDescription(body.description) ?? null,
       kind: body.kind,
+      imageUrl: body.imageUrl ?? null,
       durationMinutes: body.durationMinutes,
       capacity: body.capacity,
       bookingOpenMinutesBefore: body.bookingOpenMinutesBefore,
@@ -1218,7 +1783,11 @@ export const registerBookingRoutes = ({
       .update(dbSchema.service)
       .set({
         ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.description !== undefined
+          ? { description: normalizeServiceDescription(body.description) }
+          : {}),
         ...(body.kind !== undefined ? { kind: body.kind } : {}),
+        ...(body.imageUrl !== undefined ? { imageUrl: body.imageUrl } : {}),
         ...(body.durationMinutes !== undefined ? { durationMinutes: body.durationMinutes } : {}),
         ...(body.capacity !== undefined ? { capacity: body.capacity } : {}),
         ...(body.bookingOpenMinutesBefore !== undefined
@@ -2966,6 +3535,10 @@ export const registerBookingRoutes = ({
       }
     }
 
+    if (body.isForSale && !body.stripePriceId) {
+      return c.json({ message: 'stripePriceId is required when isForSale is true.' }, 422);
+    }
+
     const ticketTypeId = crypto.randomUUID();
     await database.insert(dbSchema.ticketType).values({
       id: ticketTypeId,
@@ -2975,6 +3548,8 @@ export const registerBookingRoutes = ({
       totalCount: body.totalCount,
       expiresInDays: body.expiresInDays ?? null,
       isActive: body.isActive ?? true,
+      isForSale: body.isForSale ?? false,
+      stripePriceId: body.stripePriceId ?? null,
     });
 
     const rows = await database
@@ -2984,15 +3559,7 @@ export const registerBookingRoutes = ({
       .limit(1);
     const ticketType = rows[0];
 
-    return c.json(
-      {
-        ...ticketType,
-        serviceIds: ticketType?.serviceIdsJson ? JSON.parse(ticketType.serviceIdsJson) : [],
-        createdAt: toIsoDate(ticketType?.createdAt),
-        updatedAt: toIsoDate(ticketType?.updatedAt),
-      },
-      200,
-    );
+    return c.json(serializeTicketType(ticketType as Record<string, unknown> | undefined), 200);
   });
 
   authRoutes.openapi(listTicketTypesRoute, async (c) => {
@@ -3027,15 +3594,430 @@ export const registerBookingRoutes = ({
       .where(and(...filters))
       .orderBy(desc(dbSchema.ticketType.createdAt));
 
+    return c.json(rows.map((row: any) => serializeTicketType(row)), 200);
+  });
+
+  authRoutes.openapi(listPurchasableTicketTypesRoute, async (c) => {
+    const query = c.req.valid('query');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!participant) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketType)
+      .where(
+        and(
+          eq(dbSchema.ticketType.organizationId, organizationId),
+          eq(dbSchema.ticketType.isActive, true),
+          eq(dbSchema.ticketType.isForSale, true),
+        ),
+      )
+      .orderBy(desc(dbSchema.ticketType.createdAt));
+
+    return c.json(rows.map((row: any) => serializeTicketType(row)), 200);
+  });
+
+  authRoutes.openapi(createTicketPurchaseRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!participant) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const ticketTypeRows = await database
+      .select({
+        id: dbSchema.ticketType.id,
+        organizationId: dbSchema.ticketType.organizationId,
+        totalCount: dbSchema.ticketType.totalCount,
+        isActive: dbSchema.ticketType.isActive,
+        isForSale: dbSchema.ticketType.isForSale,
+        stripePriceId: dbSchema.ticketType.stripePriceId,
+      })
+      .from(dbSchema.ticketType)
+      .where(
+        and(
+          eq(dbSchema.ticketType.id, body.ticketTypeId),
+          eq(dbSchema.ticketType.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+    const ticketType = ticketTypeRows[0];
+    if (!ticketType) {
+      return c.json({ message: 'Ticket type not found.' }, 404);
+    }
+    if (!ticketType.isActive || !ticketType.isForSale) {
+      return c.json({ message: 'Ticket type is not purchasable.' }, 409);
+    }
+
+    const purchaseId = crypto.randomUUID();
+    const baseStatus =
+      body.paymentMethod === TICKET_PURCHASE_METHOD.STRIPE
+        ? TICKET_PURCHASE_STATUS.PENDING_PAYMENT
+        : TICKET_PURCHASE_STATUS.PENDING_APPROVAL;
+
+    await database.insert(dbSchema.ticketPurchase).values({
+      id: purchaseId,
+      organizationId,
+      participantId: participant.id,
+      ticketTypeId: ticketType.id,
+      paymentMethod: body.paymentMethod,
+      status: baseStatus,
+    });
+
+    let checkoutUrl: string | null = null;
+    if (body.paymentMethod === TICKET_PURCHASE_METHOD.STRIPE) {
+      if (!ticketType.stripePriceId) {
+        await database.delete(dbSchema.ticketPurchase).where(eq(dbSchema.ticketPurchase.id, purchaseId));
+        return c.json({ message: 'stripePriceId is not configured for ticket type.' }, 422);
+      }
+
+      const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+      const successUrl = `${webBaseUrl}/bookings?ticketPurchase=success&purchaseId=${encodeURIComponent(
+        purchaseId,
+      )}`;
+      const cancelUrl = `${webBaseUrl}/bookings?ticketPurchase=cancel&purchaseId=${encodeURIComponent(
+        purchaseId,
+      )}`;
+
+      try {
+        const session = await createCheckoutSession({
+          env,
+          priceId: ticketType.stripePriceId,
+          successUrl,
+          cancelUrl,
+          clientReferenceId: purchaseId,
+          metadata: {
+            purchaseId,
+            organizationId,
+            participantId: participant.id,
+            ticketTypeId: ticketType.id,
+          },
+        });
+        checkoutUrl = session.url;
+
+        await database
+          .update(dbSchema.ticketPurchase)
+          .set({
+            stripeCheckoutSessionId: session.id,
+          })
+          .where(
+            and(
+              eq(dbSchema.ticketPurchase.id, purchaseId),
+              eq(dbSchema.ticketPurchase.status, TICKET_PURCHASE_STATUS.PENDING_PAYMENT),
+            ),
+          );
+      } catch (error) {
+        await database.delete(dbSchema.ticketPurchase).where(eq(dbSchema.ticketPurchase.id, purchaseId));
+        if (error instanceof Error && error.message === 'STRIPE_NOT_CONFIGURED') {
+          return c.json({ message: 'Stripe is not configured.' }, 422);
+        }
+        const message =
+          error instanceof Error && error.message.length > 0
+            ? error.message
+            : 'Failed to create Stripe checkout session.';
+        return c.json({ message }, 422);
+      }
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPurchase)
+      .where(eq(dbSchema.ticketPurchase.id, purchaseId))
+      .limit(1);
+    const purchase = rows[0];
+
     return c.json(
-      rows.map((row: any) => ({
-        ...row,
-        serviceIds: row.serviceIdsJson ? JSON.parse(row.serviceIdsJson) : [],
-        createdAt: toIsoDate(row.createdAt),
-        updatedAt: toIsoDate(row.updatedAt),
-      })),
+      {
+        ...serializeTicketPurchase(purchase as Record<string, unknown> | undefined),
+        checkoutUrl,
+      },
       200,
     );
+  });
+
+  authRoutes.openapi(listMyTicketPurchasesRoute, async (c) => {
+    const query = c.req.valid('query');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!participant) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const filters = [
+      eq(dbSchema.ticketPurchase.organizationId, organizationId),
+      eq(dbSchema.ticketPurchase.participantId, participant.id),
+    ];
+    if (query.status) {
+      filters.push(eq(dbSchema.ticketPurchase.status, query.status));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPurchase)
+      .where(and(...filters))
+      .orderBy(desc(dbSchema.ticketPurchase.createdAt));
+
+    return c.json(rows.map((row: any) => serializeTicketPurchase(row)), 200);
+  });
+
+  authRoutes.openapi(listTicketPurchasesRoute, async (c) => {
+    const query = c.req.valid('query');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    if (!organizationId) {
+      return c.json({ message: 'organizationId is required.' }, 422);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const filters = [eq(dbSchema.ticketPurchase.organizationId, organizationId)];
+    if (query.participantId) {
+      filters.push(eq(dbSchema.ticketPurchase.participantId, query.participantId));
+    }
+    if (query.paymentMethod) {
+      filters.push(eq(dbSchema.ticketPurchase.paymentMethod, query.paymentMethod));
+    }
+    if (query.status) {
+      filters.push(eq(dbSchema.ticketPurchase.status, query.status));
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPurchase)
+      .where(and(...filters))
+      .orderBy(desc(dbSchema.ticketPurchase.createdAt));
+
+    return c.json(rows.map((row: any) => serializeTicketPurchase(row)), 200);
+  });
+
+  authRoutes.openapi(approveTicketPurchaseRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const purchaseRows = await database
+      .select({
+        id: dbSchema.ticketPurchase.id,
+        organizationId: dbSchema.ticketPurchase.organizationId,
+      })
+      .from(dbSchema.ticketPurchase)
+      .where(eq(dbSchema.ticketPurchase.id, body.purchaseId))
+      .limit(1);
+    const purchase = purchaseRows[0];
+    if (!purchase) {
+      return c.json({ message: 'Ticket purchase not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: purchase.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const result = await approveTicketPurchaseWithIssue({
+      purchaseId: body.purchaseId,
+      actorUserId: identity.userId,
+      actorReason: 'purchase-approved-by-staff',
+    });
+    if (result.kind === 'not_found') {
+      return c.json({ message: 'Ticket purchase not found.' }, 404);
+    }
+    if (result.kind === 'ticket_type_not_found') {
+      return c.json({ message: 'Ticket type not found.' }, 404);
+    }
+    if (result.kind === 'already_approved' || result.kind === 'invalid_status') {
+      return c.json({ message: 'Only pending approval purchase can be approved.' }, 409);
+    }
+
+    return c.json(
+      {
+        purchase: result.purchase,
+        ticketPack: result.ticketPack,
+      },
+      200,
+    );
+  });
+
+  authRoutes.openapi(rejectTicketPurchaseRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const purchaseRows = await database
+      .select({
+        id: dbSchema.ticketPurchase.id,
+        organizationId: dbSchema.ticketPurchase.organizationId,
+        status: dbSchema.ticketPurchase.status,
+      })
+      .from(dbSchema.ticketPurchase)
+      .where(eq(dbSchema.ticketPurchase.id, body.purchaseId))
+      .limit(1);
+    const purchase = purchaseRows[0];
+    if (!purchase) {
+      return c.json({ message: 'Ticket purchase not found.' }, 404);
+    }
+
+    const hasAccess = await hasAdminOrOwnerAccess({
+      database,
+      organizationId: purchase.organizationId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (purchase.status !== TICKET_PURCHASE_STATUS.PENDING_APPROVAL) {
+      return c.json({ message: 'Only pending approval purchase can be rejected.' }, 409);
+    }
+
+    const updatedRows = await database
+      .update(dbSchema.ticketPurchase)
+      .set({
+        status: TICKET_PURCHASE_STATUS.REJECTED,
+        rejectedByUserId: identity.userId,
+        rejectedAt: new Date(),
+        rejectReason: body.reason ?? null,
+      })
+      .where(
+        and(
+          eq(dbSchema.ticketPurchase.id, purchase.id),
+          eq(dbSchema.ticketPurchase.status, TICKET_PURCHASE_STATUS.PENDING_APPROVAL),
+        ),
+      )
+      .returning({
+        id: dbSchema.ticketPurchase.id,
+      });
+    if (!updatedRows[0]) {
+      return c.json({ message: 'Only pending approval purchase can be rejected.' }, 409);
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPurchase)
+      .where(eq(dbSchema.ticketPurchase.id, purchase.id))
+      .limit(1);
+    return c.json(serializeTicketPurchase(rows[0] as Record<string, unknown> | undefined), 200);
+  });
+
+  authRoutes.openapi(cancelTicketPurchaseRoute, async (c) => {
+    const body = c.req.valid('json');
+    const headers = c.req.raw.headers;
+    const identity = await requireIdentity(headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const purchaseRows = await database
+      .select({
+        id: dbSchema.ticketPurchase.id,
+        organizationId: dbSchema.ticketPurchase.organizationId,
+        participantId: dbSchema.ticketPurchase.participantId,
+        status: dbSchema.ticketPurchase.status,
+      })
+      .from(dbSchema.ticketPurchase)
+      .where(eq(dbSchema.ticketPurchase.id, body.purchaseId))
+      .limit(1);
+    const purchase = purchaseRows[0];
+    if (!purchase) {
+      return c.json({ message: 'Ticket purchase not found.' }, 404);
+    }
+
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId: purchase.organizationId,
+      userId: identity.userId,
+    });
+    if (!participant || participant.id !== purchase.participantId) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (
+      purchase.status !== TICKET_PURCHASE_STATUS.PENDING_PAYMENT &&
+      purchase.status !== TICKET_PURCHASE_STATUS.PENDING_APPROVAL
+    ) {
+      return c.json({ message: 'Purchase cannot be canceled.' }, 409);
+    }
+
+    await database
+      .update(dbSchema.ticketPurchase)
+      .set({
+        status: TICKET_PURCHASE_STATUS.CANCELLED_BY_PARTICIPANT,
+      })
+      .where(eq(dbSchema.ticketPurchase.id, purchase.id));
+
+    const rows = await database
+      .select()
+      .from(dbSchema.ticketPurchase)
+      .where(eq(dbSchema.ticketPurchase.id, purchase.id))
+      .limit(1);
+    return c.json(serializeTicketPurchase(rows[0] as Record<string, unknown> | undefined), 200);
   });
 
   authRoutes.openapi(grantTicketPackRoute, async (c) => {
@@ -3102,51 +4084,16 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Invalid expiresAt.' }, 422);
     }
 
-    const status = normalizePackStatus({
-      remainingCount: count,
-      expiresAt,
-    });
-    const ticketPackId = crypto.randomUUID();
-
-    await database.insert(dbSchema.ticketPack).values({
-      id: ticketPackId,
+    const issued = await issueTicketPackWithLedger({
       organizationId,
       participantId: participant.id,
       ticketTypeId: ticketType.id,
-      initialCount: count,
-      remainingCount: count,
+      count,
       expiresAt,
-      status,
-    });
-
-    await database.insert(dbSchema.ticketLedger).values({
-      id: crypto.randomUUID(),
-      organizationId,
-      ticketPackId,
-      bookingId: null,
-      action: TICKET_LEDGER_ACTION.GRANT,
-      delta: count,
-      balanceAfter: count,
       actorUserId: identity.userId,
       reason: 'staff-grant',
     });
-
-    const rows = await database
-      .select()
-      .from(dbSchema.ticketPack)
-      .where(eq(dbSchema.ticketPack.id, ticketPackId))
-      .limit(1);
-    const ticketPack = rows[0];
-
-    return c.json(
-      {
-        ...ticketPack,
-        expiresAt: toIsoDate(ticketPack?.expiresAt),
-        createdAt: toIsoDate(ticketPack?.createdAt),
-        updatedAt: toIsoDate(ticketPack?.updatedAt),
-      },
-      200,
-    );
+    return c.json(issued.ticketPack, 200);
   });
 
   authRoutes.openapi(listMyTicketPacksRoute, async (c) => {
@@ -3196,14 +4143,6 @@ export const registerBookingRoutes = ({
       )
       .orderBy(asc(dbSchema.ticketPack.createdAt));
 
-    return c.json(
-      rows.map((row: any) => ({
-        ...row,
-        expiresAt: toIsoDate(row.expiresAt),
-        createdAt: toIsoDate(row.createdAt),
-        updatedAt: toIsoDate(row.updatedAt),
-      })),
-      200,
-    );
+    return c.json(rows.map((row: any) => serializeTicketPack(row)), 200);
   });
 };

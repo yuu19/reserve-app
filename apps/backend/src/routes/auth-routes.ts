@@ -4,6 +4,7 @@ import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-
 import * as dbSchema from '../db/schema.js';
 import { sendParticipantInvitationEmail } from '../email/resend.js';
 import type { OrganizationLogoService } from '../organization-logo-service.js';
+import type { ServiceImageUploadService } from '../service-image-upload-service.js';
 import { registerBookingRoutes } from './booking-routes.js';
 
 type AuthRouteBindings = {
@@ -17,6 +18,7 @@ type CreateAuthRoutesOptions = {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
   organizationLogoService?: OrganizationLogoService | null;
+  serviceImageUploadService?: ServiceImageUploadService | null;
 };
 
 const LOGO_KEY_PATTERN = /^[a-zA-Z0-9._-]+$/;
@@ -167,6 +169,10 @@ const createParticipantInvitationBodySchema = z.object({
 
 const listParticipantsQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+});
+
+const selfEnrollParticipantBodySchema = z.object({
+  organizationId: z.string().min(1),
 });
 
 const listParticipantInvitationsQuerySchema = z.object({
@@ -575,6 +581,40 @@ const listParticipantsRoute = createRoute({
   },
 });
 
+const selfEnrollParticipantRoute = createRoute({
+  method: 'post',
+  path: '/organizations/participants/self-enroll',
+  tags: ['Participants'],
+  summary: 'Create participant membership for current user in public organization',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: selfEnrollParticipantBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Participant membership ensured',
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    403: {
+      description: 'Forbidden',
+    },
+    400: {
+      description: 'Validation error',
+    },
+    503: {
+      description: 'Public organization is not configured',
+    },
+  },
+});
+
 const createParticipantInvitationRoute = createRoute({
   method: 'post',
   path: '/organizations/participants/invitations',
@@ -778,7 +818,33 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   const database = options.database;
   const env = options.env;
   const organizationLogoService = options.organizationLogoService ?? null;
+  const serviceImageUploadService = options.serviceImageUploadService ?? null;
   const authRoutes = new OpenAPIHono<AuthRouteBindings>();
+  const hasCookieDomain = Boolean(env.BETTER_AUTH_COOKIE_DOMAIN?.trim());
+  const appendLegacyOAuthStateCleanupCookie = (headers: Headers) => {
+    if (!hasCookieDomain) {
+      return;
+    }
+
+    // Clear legacy host-only auth cookies to avoid mismatched state/session after
+    // migrating to Domain=.wakureserve.com cookies.
+    const legacyCookieNames = [
+      '__Secure-better-auth.oauth_state',
+      '__Secure-better-auth.session_token',
+      '__Secure-better-auth.session_data',
+      '__Secure-better-auth.pkce_code_verifier',
+      'better-auth.session_token',
+      'better-auth.session_data',
+      'better-auth.pkce_code_verifier',
+    ];
+
+    for (const cookieName of legacyCookieNames) {
+      headers.append(
+        'set-cookie',
+        `${cookieName}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      );
+    }
+  };
 
   const getActorUserId = async (headers: Headers): Promise<string | null> => {
     const session = await auth.api.getSession({ headers });
@@ -1080,6 +1146,34 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return null;
   };
 
+  const serializeParticipant = (
+    participant:
+      | {
+          id: string;
+          organizationId: string;
+          userId: string;
+          email: string;
+          name: string;
+          createdAt: unknown;
+          updatedAt: unknown;
+        }
+      | null,
+  ) => {
+    if (!participant) {
+      return null;
+    }
+
+    return {
+      id: participant.id,
+      organizationId: participant.organizationId,
+      userId: participant.userId,
+      email: participant.email,
+      name: participant.name,
+      createdAt: toIsoDateString(participant.createdAt),
+      updatedAt: toIsoDateString(participant.updatedAt),
+    };
+  };
+
   const serializeParticipantInvitation = (
     invitation:
       | {
@@ -1176,21 +1270,37 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     // Better Auth returns 200 + { url, redirect } for social sign-in starts.
     // Convert to an actual 302 for browser navigation unless explicitly disabled.
     if (query.disableRedirect === true) {
-      return response;
+      const headers = new Headers(response.headers);
+      appendLegacyOAuthStateCleanupCookie(headers);
+      return new Response(response.body, {
+        status: response.status,
+        headers,
+      });
     }
 
     if (!response.ok) {
-      return response;
+      const headers = new Headers(response.headers);
+      appendLegacyOAuthStateCleanupCookie(headers);
+      return new Response(response.body, {
+        status: response.status,
+        headers,
+      });
     }
 
     const location = response.headers.get('location');
     if (!location) {
-      return response;
+      const headers = new Headers(response.headers);
+      appendLegacyOAuthStateCleanupCookie(headers);
+      return new Response(response.body, {
+        status: response.status,
+        headers,
+      });
     }
 
     const headers = new Headers(response.headers);
     headers.delete('content-type');
     headers.delete('content-length');
+    appendLegacyOAuthStateCleanupCookie(headers);
 
     return new Response(null, {
       status: 302,
@@ -1559,6 +1669,138 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           createdAt: toIsoDateString(row.createdAt),
           updatedAt: toIsoDateString(row.updatedAt),
         })),
+        200,
+      );
+    })();
+  });
+
+  authRoutes.openapi(selfEnrollParticipantRoute, (c) => {
+    return (async () => {
+      const body = c.req.valid('json');
+      const headers = c.req.raw.headers;
+      const identity = await getSessionIdentity(headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+      if (!identity.email) {
+        return c.json({ message: 'Current user email is unavailable.' }, 400);
+      }
+      const participantEmail = identity.email;
+
+      const publicOrganizationSlug = env.PUBLIC_EVENTS_ORGANIZATION_SLUG?.trim();
+      if (!publicOrganizationSlug) {
+        return c.json({ message: 'PUBLIC_EVENTS_ORGANIZATION_SLUG is not configured.' }, 503);
+      }
+
+      const publicOrganizationRows = await database
+        .select({
+          id: dbSchema.organization.id,
+        })
+        .from(dbSchema.organization)
+        .where(eq(dbSchema.organization.slug, publicOrganizationSlug))
+        .limit(1);
+      const publicOrganization = publicOrganizationRows[0];
+      if (!publicOrganization) {
+        return c.json({ message: 'Public events organization was not found.' }, 503);
+      }
+
+      if (body.organizationId !== publicOrganization.id) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const currentSession = await auth.api.getSession({ headers });
+      const participantName = getStringValue(currentSession?.user?.name)?.trim();
+      if (!participantName) {
+        return c.json({ message: 'Current user name is unavailable.' }, 400);
+      }
+
+      const selectExistingParticipant = async () => {
+        const rows = await database
+          .select({
+            id: dbSchema.participant.id,
+            organizationId: dbSchema.participant.organizationId,
+            userId: dbSchema.participant.userId,
+            email: dbSchema.participant.email,
+            name: dbSchema.participant.name,
+            createdAt: dbSchema.participant.createdAt,
+            updatedAt: dbSchema.participant.updatedAt,
+          })
+          .from(dbSchema.participant)
+          .where(
+            and(
+              eq(dbSchema.participant.organizationId, body.organizationId),
+              or(
+                eq(dbSchema.participant.userId, identity.userId),
+                eq(dbSchema.participant.email, participantEmail),
+              ),
+            ),
+          )
+          .limit(1);
+
+        return rows[0] ?? null;
+      };
+
+      const existingParticipant = await selectExistingParticipant();
+      if (existingParticipant) {
+        return c.json(
+          {
+            participant: serializeParticipant(existingParticipant),
+            created: false,
+          },
+          200,
+        );
+      }
+
+      const participantId = crypto.randomUUID();
+      try {
+        await database.insert(dbSchema.participant).values({
+          id: participantId,
+          organizationId: body.organizationId,
+          userId: identity.userId,
+          email: participantEmail,
+          name: participantName,
+        });
+      } catch (error) {
+        const maybeUniqueConstraint =
+          error instanceof Error && error.message.includes('UNIQUE constraint failed');
+        if (maybeUniqueConstraint) {
+          const duplicated = await selectExistingParticipant();
+          if (duplicated) {
+            return c.json(
+              {
+                participant: serializeParticipant(duplicated),
+                created: false,
+              },
+              200,
+            );
+          }
+        }
+        throw error;
+      }
+
+      const createdRows = await database
+        .select({
+          id: dbSchema.participant.id,
+          organizationId: dbSchema.participant.organizationId,
+          userId: dbSchema.participant.userId,
+          email: dbSchema.participant.email,
+          name: dbSchema.participant.name,
+          createdAt: dbSchema.participant.createdAt,
+          updatedAt: dbSchema.participant.updatedAt,
+        })
+        .from(dbSchema.participant)
+        .where(eq(dbSchema.participant.id, participantId))
+        .limit(1);
+      const createdParticipant = createdRows[0] ?? null;
+      if (!createdParticipant) {
+        return c.json({ message: 'Failed to create participant.' }, 500);
+      }
+
+      return c.json(
+        {
+          participant: serializeParticipant(createdParticipant),
+          created: true,
+        },
         200,
       );
     })();
@@ -2023,6 +2265,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     auth,
     database,
     env,
+    serviceImageUploadService,
   });
 
   return authRoutes;

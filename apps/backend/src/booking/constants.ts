@@ -23,6 +23,20 @@ export const TICKET_PACK_STATUS = {
   EXPIRED: 'expired',
 } as const;
 
+export const TICKET_PURCHASE_METHOD = {
+  STRIPE: 'stripe',
+  CASH_ON_SITE: 'cash_on_site',
+  BANK_TRANSFER: 'bank_transfer',
+} as const;
+
+export const TICKET_PURCHASE_STATUS = {
+  PENDING_PAYMENT: 'pending_payment',
+  PENDING_APPROVAL: 'pending_approval',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  CANCELLED_BY_PARTICIPANT: 'cancelled_by_participant',
+} as const;
+
 export const TICKET_LEDGER_ACTION = {
   GRANT: 'grant',
   CONSUME: 'consume',

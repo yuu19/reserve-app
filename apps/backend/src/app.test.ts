@@ -89,6 +89,33 @@ const toJson = async (response: Response): Promise<unknown> => {
   }
 };
 
+const toHex = (buffer: ArrayBuffer): string =>
+  Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+
+const createStripeSignatureHeader = async (payload: string, secret: string, timestamp?: number) => {
+  const signatureTimestamp = timestamp ?? Math.floor(Date.now() / 1000);
+  const signedPayload = `${signatureTimestamp}.${payload}`;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    {
+      name: 'HMAC',
+      hash: 'SHA-256',
+    },
+    false,
+    ['sign'],
+  );
+  const signatureBuffer = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(signedPayload),
+  );
+  const signature = toHex(signatureBuffer);
+  return `t=${signatureTimestamp},v1=${signature}`;
+};
+
 const selectInvitationStatus = async (invitationId: string) => {
   const row = await d1
     .prepare('SELECT status FROM invitation WHERE id = ?')
@@ -176,6 +203,34 @@ const selectTicketLedgerActionCount = async (ticketPackId: string, action: strin
   const row = await d1
     .prepare('SELECT COUNT(*) as count FROM ticket_ledger WHERE ticket_pack_id = ? AND action = ?')
     .bind(ticketPackId, action)
+    .first<{ count: number | string }>();
+
+  return Number(row?.count ?? 0);
+};
+
+const selectTicketPurchaseRow = async (purchaseId: string) => {
+  return d1
+    .prepare(
+      'SELECT id, participant_id as participantId, ticket_type_id as ticketTypeId, payment_method as paymentMethod, status, ticket_pack_id as ticketPackId, stripe_checkout_session_id as stripeCheckoutSessionId FROM ticket_purchase WHERE id = ? LIMIT 1',
+    )
+    .bind(purchaseId)
+    .first<{
+      id: string;
+      participantId: string;
+      ticketTypeId: string;
+      paymentMethod: string;
+      status: string;
+      ticketPackId: string | null;
+      stripeCheckoutSessionId: string | null;
+    }>();
+};
+
+const countTicketPacksForParticipantAndType = async (participantId: string, ticketTypeId: string) => {
+  const row = await d1
+    .prepare(
+      'SELECT COUNT(*) as count FROM ticket_pack WHERE participant_id = ? AND ticket_type_id = ?',
+    )
+    .bind(participantId, ticketTypeId)
     .first<{ count: number | string }>();
 
   return Number(row?.count ?? 0);
@@ -344,6 +399,7 @@ beforeAll(async () => {
       BETTER_AUTH_URL: 'http://localhost:3000',
       BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
       BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+      PUBLIC_EVENTS_ORGANIZATION_SLUG: 'public-events-org',
       GOOGLE_CLIENT_ID: 'test-google-client-id',
       GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
     },
@@ -385,6 +441,28 @@ describe('backend app', () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toContain('https://accounts.google.com/o/oauth2/v2/auth');
+  });
+
+  it('sets oauth_state cookie on Google OIDC start endpoint', async () => {
+    const response = await app.request(
+      '/api/v1/auth/oidc/google?callbackURL=http%3A%2F%2Flocalhost%3A5173%2F',
+    );
+
+    expect(response.status).toBe(302);
+    const setCookies = getSetCookieValues(response);
+    expect(setCookies.some((cookie) => /oauth_state=/.test(cookie))).toBe(true);
+  });
+
+  it('uses non-secure oauth_state cookie for local http development', async () => {
+    const response = await app.request(
+      '/api/v1/auth/oidc/google?callbackURL=http%3A%2F%2Flocalhost%3A5173%2F',
+    );
+
+    expect(response.status).toBe(302);
+    const setCookies = getSetCookieValues(response);
+    const oauthStateCookie = setCookies.find((cookie) => /oauth_state=/.test(cookie));
+    expect(oauthStateCookie).toBeDefined();
+    expect(oauthStateCookie).not.toContain('Secure');
   });
 
   it('keeps JSON response when disableRedirect=true for Google OIDC start endpoint', async () => {
@@ -889,6 +967,13 @@ describe('backend app', () => {
           slotId: 'dummy-slot',
         },
       },
+      {
+        path: '/api/v1/auth/organizations/participants/self-enroll',
+        method: 'POST',
+        body: {
+          organizationId: 'dummy-org',
+        },
+      },
       { path: '/api/v1/auth/organizations/bookings/mine', method: 'GET' },
       {
         path: '/api/v1/auth/organizations/bookings/cancel',
@@ -926,7 +1011,39 @@ describe('backend app', () => {
         },
       },
       { path: '/api/v1/auth/organizations/ticket-types', method: 'GET' },
+      { path: '/api/v1/auth/organizations/ticket-types/purchasable', method: 'GET' },
       { path: '/api/v1/auth/organizations/ticket-packs/mine', method: 'GET' },
+      { path: '/api/v1/auth/organizations/ticket-purchases', method: 'GET' },
+      {
+        path: '/api/v1/auth/organizations/ticket-purchases',
+        method: 'POST',
+        body: {
+          ticketTypeId: 'dummy-ticket-type',
+          paymentMethod: 'stripe',
+        },
+      },
+      { path: '/api/v1/auth/organizations/ticket-purchases/mine', method: 'GET' },
+      {
+        path: '/api/v1/auth/organizations/ticket-purchases/approve',
+        method: 'POST',
+        body: {
+          purchaseId: 'dummy-purchase',
+        },
+      },
+      {
+        path: '/api/v1/auth/organizations/ticket-purchases/reject',
+        method: 'POST',
+        body: {
+          purchaseId: 'dummy-purchase',
+        },
+      },
+      {
+        path: '/api/v1/auth/organizations/ticket-purchases/cancel',
+        method: 'POST',
+        body: {
+          purchaseId: 'dummy-purchase',
+        },
+      },
       { path: '/api/v1/auth/organizations/recurring-schedules', method: 'GET' },
     ];
 
@@ -940,6 +1057,247 @@ describe('backend app', () => {
       });
       expect(response.status).toBe(401);
     }
+  });
+
+  it('lists public events and supports self-enroll before booking', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Public Owner',
+      email: 'public-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Public Events Org',
+      slug: 'public-events-org',
+    });
+
+    const serviceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Public Event Service',
+        description: '公開向けのサービス説明テキストです。',
+        kind: 'single',
+        bookingPolicy: 'instant',
+        durationMinutes: 60,
+        capacity: 3,
+      }),
+    });
+    expect(serviceResponse.status).toBe(200);
+    const servicePayload = (await toJson(serviceResponse)) as Record<string, unknown>;
+    const serviceId = servicePayload.id as string;
+
+    const slotStartAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const slotEndAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+    const slotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        serviceId,
+        startAt: slotStartAt,
+        endAt: slotEndAt,
+      }),
+    });
+    expect(slotResponse.status).toBe(200);
+    const slotPayload = (await toJson(slotResponse)) as Record<string, unknown>;
+    const slotId = slotPayload.id as string;
+
+    const publicEventsResponse = await app.request('/api/v1/public/events');
+    expect(publicEventsResponse.status).toBe(200);
+    const publicEventsPayload = (await toJson(publicEventsResponse)) as Array<Record<string, unknown>>;
+    const publicEvent = publicEventsPayload.find((row) => row.slotId === slotId);
+    expect(publicEvent).toBeTruthy();
+    expect(publicEvent?.serviceDescription).toBe('公開向けのサービス説明テキストです。');
+
+    const publicEventDetailResponse = await app.request(
+      `/api/v1/public/events/${encodeURIComponent(slotId)}`,
+    );
+    expect(publicEventDetailResponse.status).toBe(200);
+    const publicEventDetail = (await toJson(publicEventDetailResponse)) as Record<string, unknown>;
+    expect(publicEventDetail.slotId).toBe(slotId);
+    expect(publicEventDetail.organizationId).toBe(organizationId);
+    expect(publicEventDetail.serviceDescription).toBe('公開向けのサービス説明テキストです。');
+
+    const unauthSelfEnrollResponse = await app.request(
+      '/api/v1/auth/organizations/participants/self-enroll',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId,
+        }),
+      },
+    );
+    expect(unauthSelfEnrollResponse.status).toBe(401);
+
+    const participantUser = createAuthAgent(app);
+    await signUpUser({
+      agent: participantUser,
+      name: 'Self Enroll User',
+      email: 'self-enroll-user@example.com',
+    });
+
+    const bookingBeforeSelfEnrollResponse = await participantUser.request(
+      '/api/v1/auth/organizations/bookings',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          slotId,
+        }),
+      },
+    );
+    expect(bookingBeforeSelfEnrollResponse.status).toBe(403);
+
+    const forbiddenSelfEnrollResponse = await participantUser.request(
+      '/api/v1/auth/organizations/participants/self-enroll',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId: 'another-org',
+        }),
+      },
+    );
+    expect(forbiddenSelfEnrollResponse.status).toBe(403);
+
+    const firstSelfEnrollResponse = await participantUser.request(
+      '/api/v1/auth/organizations/participants/self-enroll',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId,
+        }),
+      },
+    );
+    expect(firstSelfEnrollResponse.status).toBe(200);
+    const firstSelfEnrollPayload = (await toJson(firstSelfEnrollResponse)) as Record<string, unknown>;
+    expect(firstSelfEnrollPayload.created).toBe(true);
+
+    const secondSelfEnrollResponse = await participantUser.request(
+      '/api/v1/auth/organizations/participants/self-enroll',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId,
+        }),
+      },
+    );
+    expect(secondSelfEnrollResponse.status).toBe(200);
+    const secondSelfEnrollPayload = (await toJson(secondSelfEnrollResponse)) as Record<string, unknown>;
+    expect(secondSelfEnrollPayload.created).toBe(false);
+    expect(await selectParticipantCountByEmail(organizationId, 'self-enroll-user@example.com')).toBe(1);
+
+    const bookingAfterSelfEnrollResponse = await participantUser.request(
+      '/api/v1/auth/organizations/bookings',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          slotId,
+        }),
+      },
+    );
+    expect(bookingAfterSelfEnrollResponse.status).toBe(200);
+  });
+
+  it('validates service name/description limits and normalizes description on update', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Service Rule Owner',
+      email: 'service-rule-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Service Rule Org',
+      slug: 'service-rule-org',
+    });
+
+    const validServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: '名'.repeat(120),
+        description: '説'.repeat(500),
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 5,
+      }),
+    });
+    expect(validServiceResponse.status).toBe(200);
+    const validServicePayload = (await toJson(validServiceResponse)) as Record<string, unknown>;
+    const serviceId = validServicePayload.id as string;
+    expect(validServicePayload.description).toBe('説'.repeat(500));
+
+    const tooLongNameResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: '名'.repeat(121),
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 5,
+      }),
+    });
+    expect([400, 422]).toContain(tooLongNameResponse.status);
+
+    const tooLongDescriptionResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: '文字制限チェック',
+        description: '説'.repeat(501),
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 5,
+      }),
+    });
+    expect([400, 422]).toContain(tooLongDescriptionResponse.status);
+
+    const updateDescriptionResponse = await owner.request('/api/v1/auth/organizations/services/update', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        serviceId,
+        description: '   ',
+      }),
+    });
+    expect(updateDescriptionResponse.status).toBe(200);
+    const updateDescriptionPayload = (await toJson(updateDescriptionResponse)) as Record<string, unknown>;
+    expect(updateDescriptionPayload.description).toBeNull();
   });
 
   it('handles booking and ticket flows with permissions', async () => {
@@ -1244,6 +1602,359 @@ describe('backend app', () => {
       }),
     });
     expect(noShowTwiceResponse.status).toBe(409);
+  });
+
+  it('handles ticket purchase approval, rejection and participant cancel flows', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Ticket Purchase Owner',
+      email: 'ticket-purchase-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Ticket Purchase Org',
+      slug: 'ticket-purchase-org',
+    });
+
+    const participantInvite = await createParticipantInvitation({
+      agent: owner,
+      email: 'ticket-purchase-participant@example.com',
+      participantName: 'Ticket Purchase Participant',
+      organizationId,
+    });
+    expect(participantInvite.response.status).toBe(200);
+
+    const participantUser = createAuthAgent(app);
+    await signUpUser({
+      agent: participantUser,
+      name: 'Ticket Purchase Participant',
+      email: 'ticket-purchase-participant@example.com',
+    });
+    const participantAcceptResponse = await participantUser.request(
+      '/api/v1/auth/organizations/participants/invitations/accept',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          invitationId: participantInvite.payload?.id,
+        }),
+      },
+    );
+    expect(participantAcceptResponse.status).toBe(200);
+
+    const ticketTypeCreateResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Purchase Ticket',
+        totalCount: 5,
+        isForSale: true,
+        stripePriceId: 'price_test_purchase',
+      }),
+    });
+    expect(ticketTypeCreateResponse.status).toBe(200);
+    const ticketTypePayload = (await toJson(ticketTypeCreateResponse)) as Record<string, unknown>;
+    const ticketTypeId = ticketTypePayload.id as string;
+
+    const participantId = await selectParticipantIdByEmail(
+      organizationId,
+      'ticket-purchase-participant@example.com',
+    );
+    expect(participantId).toBeTruthy();
+
+    const bankPurchaseResponse = await participantUser.request('/api/v1/auth/organizations/ticket-purchases', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        ticketTypeId,
+        paymentMethod: 'bank_transfer',
+      }),
+    });
+    expect(bankPurchaseResponse.status).toBe(200);
+    const bankPurchasePayload = (await toJson(bankPurchaseResponse)) as Record<string, unknown>;
+    const bankPurchaseId = bankPurchasePayload.id as string;
+    expect(bankPurchasePayload.status).toBe('pending_approval');
+
+    const approveResponse = await owner.request('/api/v1/auth/organizations/ticket-purchases/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        purchaseId: bankPurchaseId,
+      }),
+    });
+    expect(approveResponse.status).toBe(200);
+    const approvedPurchase = await selectTicketPurchaseRow(bankPurchaseId);
+    expect(approvedPurchase?.status).toBe('approved');
+    expect(approvedPurchase?.ticketPackId).toBeTruthy();
+    expect(await countTicketPacksForParticipantAndType(participantId as string, ticketTypeId)).toBe(1);
+
+    const approveAgainResponse = await owner.request('/api/v1/auth/organizations/ticket-purchases/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        purchaseId: bankPurchaseId,
+      }),
+    });
+    expect(approveAgainResponse.status).toBe(409);
+
+    const cashPurchaseResponse = await participantUser.request('/api/v1/auth/organizations/ticket-purchases', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        ticketTypeId,
+        paymentMethod: 'cash_on_site',
+      }),
+    });
+    expect(cashPurchaseResponse.status).toBe(200);
+    const cashPurchasePayload = (await toJson(cashPurchaseResponse)) as Record<string, unknown>;
+    const cashPurchaseId = cashPurchasePayload.id as string;
+    expect(cashPurchasePayload.status).toBe('pending_approval');
+
+    const rejectResponse = await owner.request('/api/v1/auth/organizations/ticket-purchases/reject', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        purchaseId: cashPurchaseId,
+        reason: '入金確認ができませんでした',
+      }),
+    });
+    expect(rejectResponse.status).toBe(200);
+    const rejectedPurchase = await selectTicketPurchaseRow(cashPurchaseId);
+    expect(rejectedPurchase?.status).toBe('rejected');
+    expect(await countTicketPacksForParticipantAndType(participantId as string, ticketTypeId)).toBe(1);
+
+    const anotherPurchaseResponse = await participantUser.request('/api/v1/auth/organizations/ticket-purchases', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        ticketTypeId,
+        paymentMethod: 'bank_transfer',
+      }),
+    });
+    expect(anotherPurchaseResponse.status).toBe(200);
+    const anotherPurchasePayload = (await toJson(anotherPurchaseResponse)) as Record<string, unknown>;
+    const anotherPurchaseId = anotherPurchasePayload.id as string;
+    expect(anotherPurchasePayload.status).toBe('pending_approval');
+
+    const cancelResponse = await participantUser.request('/api/v1/auth/organizations/ticket-purchases/cancel', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        purchaseId: anotherPurchaseId,
+      }),
+    });
+    expect(cancelResponse.status).toBe(200);
+    const canceledPurchase = await selectTicketPurchaseRow(anotherPurchaseId);
+    expect(canceledPurchase?.status).toBe('cancelled_by_participant');
+
+    const cancelApprovedResponse = await participantUser.request(
+      '/api/v1/auth/organizations/ticket-purchases/cancel',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          purchaseId: bankPurchaseId,
+        }),
+      },
+    );
+    expect(cancelApprovedResponse.status).toBe(409);
+
+    const participantApproveForbidden = await participantUser.request(
+      '/api/v1/auth/organizations/ticket-purchases/approve',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          purchaseId: bankPurchaseId,
+        }),
+      },
+    );
+    expect(participantApproveForbidden.status).toBe(403);
+  });
+
+  it('handles stripe ticket purchase webhook idempotently', async () => {
+    const stripeSecretKey = 'sk_test_dummy';
+    const stripeWebhookSecret = 'whsec_test_dummy';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: stripeSecretKey,
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url === 'https://api.stripe.com/v1/checkout/sessions') {
+        return new Response(
+          JSON.stringify({
+            id: 'cs_test_ticket_purchase',
+            url: 'https://checkout.stripe.com/c/pay/cs_test_ticket_purchase',
+            status: 'open',
+            payment_status: 'unpaid',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Stripe Purchase Owner',
+        email: 'stripe-purchase-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Stripe Purchase Org',
+        slug: 'stripe-purchase-org',
+      });
+
+      const participantInvite = await createParticipantInvitation({
+        agent: owner,
+        email: 'stripe-purchase-participant@example.com',
+        participantName: 'Stripe Purchase Participant',
+        organizationId,
+      });
+      expect(participantInvite.response.status).toBe(200);
+
+      const participantUser = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: participantUser,
+        name: 'Stripe Purchase Participant',
+        email: 'stripe-purchase-participant@example.com',
+      });
+      const participantAcceptResponse = await participantUser.request(
+        '/api/v1/auth/organizations/participants/invitations/accept',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            invitationId: participantInvite.payload?.id,
+          }),
+        },
+      );
+      expect(participantAcceptResponse.status).toBe(200);
+
+      const ticketTypeCreateResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          name: 'Stripe Ticket',
+          totalCount: 4,
+          isForSale: true,
+          stripePriceId: 'price_test_webhook',
+        }),
+      });
+      expect(ticketTypeCreateResponse.status).toBe(200);
+      const ticketTypePayload = (await toJson(ticketTypeCreateResponse)) as Record<string, unknown>;
+      const ticketTypeId = ticketTypePayload.id as string;
+
+      const participantId = await selectParticipantIdByEmail(
+        organizationId,
+        'stripe-purchase-participant@example.com',
+      );
+      expect(participantId).toBeTruthy();
+
+      const createPurchaseResponse = await participantUser.request('/api/v1/auth/organizations/ticket-purchases', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          ticketTypeId,
+          paymentMethod: 'stripe',
+        }),
+      });
+      expect(createPurchaseResponse.status).toBe(200);
+      const createPurchasePayload = (await toJson(createPurchaseResponse)) as Record<string, unknown>;
+      const purchaseId = createPurchasePayload.id as string;
+      expect(createPurchasePayload.status).toBe('pending_payment');
+      expect(typeof createPurchasePayload.checkoutUrl).toBe('string');
+
+      const purchaseBeforeWebhook = await selectTicketPurchaseRow(purchaseId);
+      expect(purchaseBeforeWebhook?.stripeCheckoutSessionId).toBe('cs_test_ticket_purchase');
+
+      const webhookPayload = JSON.stringify({
+        id: 'evt_test_checkout_completed',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_test_ticket_purchase',
+            metadata: {
+              purchaseId,
+            },
+          },
+        },
+      });
+      const validSignatureHeader = await createStripeSignatureHeader(
+        webhookPayload,
+        stripeWebhookSecret,
+      );
+
+      const webhookResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': validSignatureHeader,
+        },
+        body: webhookPayload,
+      });
+      expect(webhookResponse.status).toBe(200);
+
+      const purchaseAfterWebhook = await selectTicketPurchaseRow(purchaseId);
+      expect(purchaseAfterWebhook?.status).toBe('approved');
+      expect(purchaseAfterWebhook?.ticketPackId).toBeTruthy();
+      expect(await countTicketPacksForParticipantAndType(participantId as string, ticketTypeId)).toBe(1);
+
+      const webhookDuplicateResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': validSignatureHeader,
+        },
+        body: webhookPayload,
+      });
+      expect(webhookDuplicateResponse.status).toBe(200);
+      expect(await countTicketPacksForParticipantAndType(participantId as string, ticketTypeId)).toBe(1);
+
+      const invalidSignatureResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': 't=1,v1=invalid',
+        },
+        body: webhookPayload,
+      });
+      expect(invalidSignatureResponse.status).toBe(400);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it('handles approval booking policy flows', async () => {
@@ -2122,6 +2833,7 @@ describe('backend app', () => {
     expect(body.paths['/api/v1/auth/organizations/participants/invitations/accept']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/participants/invitations/reject']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/participants/invitations/cancel']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/participants/self-enroll']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/services']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/services/update']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/services/archive']).toBeDefined();
@@ -2140,7 +2852,15 @@ describe('backend app', () => {
     expect(body.paths['/api/v1/auth/organizations/bookings/reject']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/no-show']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-types']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/ticket-types/purchasable']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-packs/grant']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-packs/mine']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/ticket-purchases']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/ticket-purchases/mine']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/ticket-purchases/approve']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/ticket-purchases/reject']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/ticket-purchases/cancel']).toBeDefined();
+    expect(body.paths['/api/v1/public/events']).toBeDefined();
+    expect(body.paths['/api/v1/public/events/{slotId}']).toBeDefined();
   });
 });

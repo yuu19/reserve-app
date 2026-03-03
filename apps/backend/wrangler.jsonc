@@ -29,14 +29,27 @@
   ],
   // Set these for Cloudflare deploy (or move to secrets/CI vars).
   "vars": {
-    "BETTER_AUTH_URL": "https://reserve-app-backend.yusuke-kusi1028.workers.dev",
-    "BETTER_AUTH_TRUSTED_ORIGINS": "https://reserve-app-web.yusuke-kusi1028.workers.dev,https://reserve-app-backend.yusuke-kusi1028.workers.dev,http://localhost:5173",
-    "INVITATION_ACCEPT_URL_BASE": "https://reserve-app-web.yusuke-kusi1028.workers.dev/invitations/accept",
-    "PARTICIPANT_INVITATION_ACCEPT_URL_BASE": "https://reserve-app-web.yusuke-kusi1028.workers.dev/participants/invitations/accept",
-    "WEB_BASE_URL": "https://reserve-app-web.yusuke-kusi1028.workers.dev",
+    "BETTER_AUTH_URL": "https://api.wakureserve.com",
+    "BETTER_AUTH_TRUSTED_ORIGINS": "https://web.wakureserve.com,https://reserve-app-web.yusuke-kusi1028.workers.dev,https://api.wakureserve.com,http://localhost:5173",
+    // Production: .wakureserve.com / Staging: .stg.wakureserve.com
+    "BETTER_AUTH_COOKIE_DOMAIN": ".wakureserve.com",
+    "INVITATION_ACCEPT_URL_BASE": "https://web.wakureserve.com/invitations/accept",
+    "PARTICIPANT_INVITATION_ACCEPT_URL_BASE": "https://web.wakureserve.com/participants/invitations/accept",
+    "WEB_BASE_URL": "https://web.wakureserve.com",
+    "PUBLIC_EVENTS_ORGANIZATION_SLUG": "public-events",
     "ORG_LOGO_MAX_UPLOAD_BYTES": "5242880",
     "ORG_LOGO_PUBLIC_BASE_URL": "",
+    "SERVICE_IMAGE_MAX_UPLOAD_BYTES": "8388608",
+    "SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS": "300",
+    "SERVICE_IMAGE_UPLOAD_SIGNING_SECRET": "",
+    "SERVICE_IMAGE_PUBLIC_BASE_URL": "",
   },
+  "routes": [
+    {
+      "pattern": "api.wakureserve.com",
+      "custom_domain": true
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",

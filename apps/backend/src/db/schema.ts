@@ -272,6 +272,8 @@ export const service = sqliteTable(
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    description: text('description'),
+    imageUrl: text('image_url'),
     kind: text('kind').notNull(),
     durationMinutes: integer('duration_minutes').notNull(),
     capacity: integer('capacity').notNull(),
@@ -456,6 +458,8 @@ export const ticketType = sqliteTable(
     totalCount: integer('total_count').notNull(),
     expiresInDays: integer('expires_in_days'),
     isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
+    isForSale: integer('is_for_sale', { mode: 'boolean' }).default(false).notNull(),
+    stripePriceId: text('stripe_price_id'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -495,6 +499,51 @@ export const ticketPack = sqliteTable(
   (table) => [
     index('ticket_pack_org_participant_status_idx').on(table.organizationId, table.participantId, table.status),
     index('ticket_pack_org_expires_idx').on(table.organizationId, table.expiresAt),
+  ],
+);
+
+export const ticketPurchase = sqliteTable(
+  'ticket_purchase',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    participantId: text('participant_id')
+      .notNull()
+      .references(() => participant.id, { onDelete: 'cascade' }),
+    ticketTypeId: text('ticket_type_id')
+      .notNull()
+      .references(() => ticketType.id, { onDelete: 'cascade' }),
+    paymentMethod: text('payment_method').notNull(),
+    status: text('status').notNull(),
+    ticketPackId: text('ticket_pack_id').references(() => ticketPack.id, { onDelete: 'set null' }),
+    stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+    approvedByUserId: text('approved_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    approvedAt: integer('approved_at', { mode: 'timestamp_ms' }),
+    rejectedByUserId: text('rejected_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    rejectedAt: integer('rejected_at', { mode: 'timestamp_ms' }),
+    rejectReason: text('reject_reason'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('ticket_purchase_org_status_created_idx').on(
+      table.organizationId,
+      table.status,
+      table.createdAt,
+    ),
+    index('ticket_purchase_org_participant_created_idx').on(
+      table.organizationId,
+      table.participantId,
+      table.createdAt,
+    ),
+    uniqueIndex('ticket_purchase_stripe_checkout_session_uidx').on(table.stripeCheckoutSessionId),
   ],
 );
 
@@ -569,6 +618,12 @@ export const userRelations = relations(user, ({ many }) => ({
   participantInvitationAuditLogs: many(participantInvitationAuditLog),
   bookingsCancelledBy: many(booking),
   ticketLedgers: many(ticketLedger),
+  ticketPurchasesApproved: many(ticketPurchase, {
+    relationName: 'ticketPurchaseApprovedBy',
+  }),
+  ticketPurchasesRejected: many(ticketPurchase, {
+    relationName: 'ticketPurchaseRejectedBy',
+  }),
   bookingAuditLogs: many(bookingAuditLog),
 }));
 
@@ -596,6 +651,7 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   bookings: many(booking),
   ticketTypes: many(ticketType),
   ticketPacks: many(ticketPack),
+  ticketPurchases: many(ticketPurchase),
   ticketLedgers: many(ticketLedger),
   bookingAuditLogs: many(bookingAuditLog),
   invitations: many(invitation),
@@ -626,6 +682,7 @@ export const participantRelations = relations(participant, ({ one, many }) => ({
   }),
   bookings: many(booking),
   ticketPacks: many(ticketPack),
+  ticketPurchases: many(ticketPurchase),
 }));
 
 export const serviceRelations = relations(service, ({ one, many }) => ({
@@ -713,6 +770,7 @@ export const ticketTypeRelations = relations(ticketType, ({ one, many }) => ({
     references: [organization.id],
   }),
   ticketPacks: many(ticketPack),
+  ticketPurchases: many(ticketPurchase),
 }));
 
 export const ticketPackRelations = relations(ticketPack, ({ one, many }) => ({
@@ -728,7 +786,37 @@ export const ticketPackRelations = relations(ticketPack, ({ one, many }) => ({
     fields: [ticketPack.ticketTypeId],
     references: [ticketType.id],
   }),
+  ticketPurchases: many(ticketPurchase),
   ticketLedgers: many(ticketLedger),
+}));
+
+export const ticketPurchaseRelations = relations(ticketPurchase, ({ one }) => ({
+  organization: one(organization, {
+    fields: [ticketPurchase.organizationId],
+    references: [organization.id],
+  }),
+  participant: one(participant, {
+    fields: [ticketPurchase.participantId],
+    references: [participant.id],
+  }),
+  ticketType: one(ticketType, {
+    fields: [ticketPurchase.ticketTypeId],
+    references: [ticketType.id],
+  }),
+  ticketPack: one(ticketPack, {
+    fields: [ticketPurchase.ticketPackId],
+    references: [ticketPack.id],
+  }),
+  approvedByUser: one(user, {
+    relationName: 'ticketPurchaseApprovedBy',
+    fields: [ticketPurchase.approvedByUserId],
+    references: [user.id],
+  }),
+  rejectedByUser: one(user, {
+    relationName: 'ticketPurchaseRejectedBy',
+    fields: [ticketPurchase.rejectedByUserId],
+    references: [user.id],
+  }),
 }));
 
 export const ticketLedgerRelations = relations(ticketLedger, ({ one }) => ({

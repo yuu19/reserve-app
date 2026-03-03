@@ -1,6 +1,8 @@
 BETTER_AUTH_URL=http://localhost:3000
 BETTER_AUTH_SECRET=replace-with-at-least-32-characters
 BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://localhost:5173,mobile://
+# Prod: .wakureserve.com / Staging: .stg.wakureserve.com
+BETTER_AUTH_COOKIE_DOMAIN=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 RESEND_API_KEY=
@@ -8,10 +10,19 @@ RESEND_FROM_EMAIL=onboarding@resend.dev
 INVITATION_ACCEPT_URL_BASE=http://localhost:5173/invitations/accept
 PARTICIPANT_INVITATION_ACCEPT_URL_BASE=http://localhost:5173/participants/invitations/accept
 WEB_BASE_URL=http://localhost:5173
+PUBLIC_EVENTS_ORGANIZATION_SLUG=public-events
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
 ORG_LOGO_MAX_UPLOAD_BYTES=5242880
-# Optional: direct public base URL for logos (e.g. https://assets.example.com)
+# Optional: direct public base URL for logos (e.g. https://assets.wakureserve.com)
 # If empty, backend logo proxy URL is stored in organization.logo
 ORG_LOGO_PUBLIC_BASE_URL=
+SERVICE_IMAGE_MAX_UPLOAD_BYTES=8388608
+SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS=300
+SERVICE_IMAGE_UPLOAD_SIGNING_SECRET=
+# Optional: direct public base URL for service images (e.g. https://assets.wakureserve.com/services)
+# If empty, backend delivery URL is stored in service.imageUrl
+SERVICE_IMAGE_PUBLIC_BASE_URL=
 SENTRY_DSN_BACKEND=
 SENTRY_ENVIRONMENT=production
 SENTRY_RELEASE=

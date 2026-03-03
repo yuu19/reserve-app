@@ -60,10 +60,19 @@ type ImagesBinding = {
 
 export type BackendWorkerEnv = AuthRuntimeEnv & {
   DB: D1DatabaseBinding;
+  BETTER_AUTH_COOKIE_DOMAIN?: string;
+  PUBLIC_EVENTS_ORGANIZATION_SLUG?: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
   ORG_LOGO_BUCKET?: R2BucketBinding;
+  SERVICE_IMAGE_BUCKET?: R2BucketBinding;
   IMAGES?: ImagesBinding;
   ORG_LOGO_PUBLIC_BASE_URL?: string;
   ORG_LOGO_MAX_UPLOAD_BYTES?: string;
+  SERVICE_IMAGE_PUBLIC_BASE_URL?: string;
+  SERVICE_IMAGE_MAX_UPLOAD_BYTES?: string;
+  SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS?: string;
+  SERVICE_IMAGE_UPLOAD_SIGNING_SECRET?: string;
   SENTRY_DSN_BACKEND?: string;
   SENTRY_ENVIRONMENT?: string;
   SENTRY_RELEASE?: string;

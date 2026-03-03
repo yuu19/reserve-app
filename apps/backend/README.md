@@ -21,22 +21,35 @@ pnpm --filter @apps/backend run dev
 
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
+- `BETTER_AUTH_COOKIE_DOMAIN` (例: `.wakureserve.com`, staging は `.stg.wakureserve.com`)
 
 任意 (招待メールを Resend で送信):
 
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL` (例: `onboarding@resend.dev`)
-- `INVITATION_ACCEPT_URL_BASE` (例: `https://your-web.example.com/invitations/accept`)
-- `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` (例: `https://your-web.example.com/participants/invitations/accept`)
+- `INVITATION_ACCEPT_URL_BASE` (例: `https://your-web.wakureserve.com/invitations/accept`)
+- `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` (例: `https://your-web.wakureserve.com/participants/invitations/accept`)
 - `WEB_BASE_URL` (`INVITATION_ACCEPT_URL_BASE` / `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` 未指定時のフォールバック)
 
 予約通知メールも同じ `RESEND_API_KEY` / `RESEND_FROM_EMAIL` を利用します。  
 通知メール内の予約一覧リンクは `WEB_BASE_URL` を使って `/bookings` を生成します。
 
+任意 (回数券購入の Stripe 決済):
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+
 任意 (organization ロゴアップロード):
 
 - `ORG_LOGO_MAX_UPLOAD_BYTES` (デフォルト: `5242880` = 5MB)
 - `ORG_LOGO_PUBLIC_BASE_URL` (R2 カスタムドメインで直接配信する場合)
+
+任意 (サービス画像アップロード / 署名付き URL):
+
+- `SERVICE_IMAGE_MAX_UPLOAD_BYTES` (デフォルト: `8388608` = 8MB)
+- `SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS` (デフォルト: `300`)
+- `SERVICE_IMAGE_UPLOAD_SIGNING_SECRET` (未設定時は `BETTER_AUTH_SECRET` を使用)
+- `SERVICE_IMAGE_PUBLIC_BASE_URL` (R2 カスタムドメインで直接配信する場合)
 
 任意 (Sentry):
 
@@ -50,9 +63,13 @@ pnpm --filter @apps/backend run dev
 - Swagger UI: `/api/docs`
 - Better Auth routes: `/api/auth/*`
 - RPC routes: `/api/v1/auth/*`
+  - Stripe webhook endpoint: `POST /api/webhooks/stripe`
   - Google OIDC start endpoint: `/api/v1/auth/oidc/google`
   - Organization logo upload endpoint: `POST /api/v1/auth/organizations/logo` (multipart form-data)
   - Organization logo delivery endpoint: `GET /api/v1/auth/organizations/logo/:key`
+  - Service image signed upload URL endpoint: `POST /api/v1/auth/organizations/services/images/upload-url`
+  - Service image upload endpoint: `PUT /api/v1/auth/organizations/services/images/upload/:token`
+  - Service image delivery endpoint: `GET /api/v1/auth/organizations/services/images/:key`
 
 `@better-auth/expo` server plugin を有効化しているため、Expo クライアントからの認証にも対応しています。
 
@@ -66,6 +83,14 @@ pnpm --filter @apps/backend run dev
 - No-show (`booking_no_show`)
 
 送信失敗時はベストエフォートです。予約 API 自体は成功のまま、Worker ログに警告を出します。
+
+## 回数券購入フロー
+
+- participant は `ticket-types/purchasable` から券種を選択して購入申請できます。
+- `paymentMethod=stripe`: 購入申請は `pending_payment` で作成され、`/api/webhooks/stripe` の
+  `checkout.session.completed` 到達で `approved` になり、回数券が即時利用可能になります。
+- `paymentMethod=cash_on_site|bank_transfer`: `pending_approval` で作成され、admin/owner の承認時に回数券が付与されます。
+- 重複 webhook は idempotent に処理され、二重付与を防止します。
 
 ## Cloudflare Workers deploy setup
 
@@ -102,12 +127,19 @@ pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
 
 - `BETTER_AUTH_URL`
 - `BETTER_AUTH_TRUSTED_ORIGINS` (web の URL を含む)
+- `BETTER_AUTH_COOKIE_DOMAIN` (cross-subdomain cookie 共有)
 - `INVITATION_ACCEPT_URL_BASE` (招待メールのリンク先。`/invitations/accept` を含める)
 - `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` (参加者招待メールのリンク先。`/participants/invitations/accept` を含める)
 - `WEB_BASE_URL` (`INVITATION_ACCEPT_URL_BASE` / `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` 未設定時のフォールバック)
 - `RESEND_FROM_EMAIL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
 - `ORG_LOGO_MAX_UPLOAD_BYTES`
 - `ORG_LOGO_PUBLIC_BASE_URL`
+- `SERVICE_IMAGE_MAX_UPLOAD_BYTES`
+- `SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS`
+- `SERVICE_IMAGE_UPLOAD_SIGNING_SECRET`
+- `SERVICE_IMAGE_PUBLIC_BASE_URL`
 - `SENTRY_ENVIRONMENT`
 - `SENTRY_RELEASE`
 
@@ -116,6 +148,16 @@ pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
 ```bash
 pnpm --filter @apps/backend run cf:deploy
 ```
+
+推奨ドメイン構成:
+
+- Prod: `web.wakureserve.com` / `api.wakureserve.com`
+- Staging: `web.stg.wakureserve.com` / `api.stg.wakureserve.com`
+- 現在は prod のみ適用済みで、staging は将来別 Worker として構築予定です。
+- Google OIDC redirect URI:
+  - `https://api.wakureserve.com/api/auth/callback/google`
+  - `https://api.stg.wakureserve.com/api/auth/callback/google`
+  - `http://localhost:3000/api/auth/callback/google`
 
 ## GitHub Actions deploy
 

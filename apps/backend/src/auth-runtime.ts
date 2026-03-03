@@ -9,6 +9,10 @@ export type AuthRuntimeEnv = {
   BETTER_AUTH_URL?: string;
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_TRUSTED_ORIGINS?: string;
+  BETTER_AUTH_COOKIE_DOMAIN?: string;
+  PUBLIC_EVENTS_ORGANIZATION_SLUG?: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
 } & ResendEnv;
@@ -22,6 +26,19 @@ const parseCsv = (value: string | undefined): string[] =>
     .map((entry) => entry.trim())
     .filter(Boolean);
 
+const toAbsoluteUrl = (value: string | undefined): string | undefined => {
+  const candidate = value?.trim();
+  if (!candidate) {
+    return undefined;
+  }
+
+  try {
+    return new URL(candidate).toString();
+  } catch {
+    return undefined;
+  }
+};
+
 export const createAuthRuntime = ({
   database,
   env,
@@ -30,6 +47,13 @@ export const createAuthRuntime = ({
   env: AuthRuntimeEnv;
 }) => {
   const baseURL = env.BETTER_AUTH_URL ?? 'http://localhost:3000';
+  const useSecureCookies = (() => {
+    try {
+      return new URL(baseURL).protocol === 'https:';
+    } catch {
+      return false;
+    }
+  })();
   const secret =
     env.BETTER_AUTH_SECRET ?? 'change-this-development-secret-to-at-least-32-characters';
 
@@ -41,6 +65,16 @@ export const createAuthRuntime = ({
   if (!authTrustedOrigins.includes('mobile://')) {
     authTrustedOrigins.push('mobile://');
   }
+
+  const fallbackWebOrigin = authTrustedOrigins.find(
+    (origin) => origin !== baseURL && !origin.startsWith('mobile://'),
+  );
+  const oauthErrorURL = toAbsoluteUrl(env.WEB_BASE_URL) ?? toAbsoluteUrl(fallbackWebOrigin);
+
+  const cookieDomain = env.BETTER_AUTH_COOKIE_DOMAIN?.trim();
+  const crossSubDomainCookiesEnabled = Boolean(
+    cookieDomain && cookieDomain !== 'localhost' && !cookieDomain.startsWith('localhost:'),
+  );
 
   const socialProviders =
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
@@ -65,6 +99,32 @@ export const createAuthRuntime = ({
     emailAndPassword: {
       enabled: true,
     },
+    account: {
+      storeStateStrategy: 'cookie',
+    },
+    advanced: {
+      useSecureCookies,
+      // Allow cross-origin frontend origins (e.g. workers.dev / localhost) to
+      // send auth cookies in production. Local HTTP keeps Lax.
+      defaultCookieAttributes: {
+        sameSite: useSecureCookies ? 'none' : 'lax',
+      },
+      ...(crossSubDomainCookiesEnabled
+        ? {
+            crossSubDomainCookies: {
+              enabled: true,
+              domain: cookieDomain,
+            },
+          }
+        : {}),
+    },
+    ...(oauthErrorURL
+      ? {
+          onAPIError: {
+            errorURL: oauthErrorURL,
+          },
+        }
+      : {}),
     trustedOrigins: authTrustedOrigins,
     socialProviders,
     plugins: [

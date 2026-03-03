@@ -3,6 +3,7 @@ import { createWorkerAuthRuntime, type BackendWorkerEnv } from './auth-worker.js
 import { runDailyBookingMaintenance } from './booking/scheduler.js';
 import { createApp } from './app.js';
 import { createOrganizationLogoService } from './organization-logo-service.js';
+import { createServiceImageUploadService } from './service-image-upload-service.js';
 
 let workerApp: ReturnType<typeof createApp> | null = null;
 let workerRuntime: ReturnType<typeof createWorkerAuthRuntime> | null = null;
@@ -19,9 +20,11 @@ const getWorkerApp = (env: BackendWorkerEnv) => {
   if (!workerApp) {
     const authRuntime = getWorkerRuntime(env);
     const organizationLogoService = createOrganizationLogoService(env);
+    const serviceImageUploadService = createServiceImageUploadService(env);
     workerApp = createApp({
       ...authRuntime,
       organizationLogoService,
+      serviceImageUploadService,
     });
   }
 
