@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
@@ -12,9 +15,14 @@
 	const activeOrganizationLabel = $derived(
 		activeOrganization?.name ?? activeOrganization?.id ?? '選択されていません'
 	);
+	const pathname = $derived(page.url.pathname);
 
 	onMount(() => {
 		void (async () => {
+			if (pathname === '/contracts') {
+				await goto(resolve('/admin/contracts'));
+				return;
+			}
 			loading = true;
 			try {
 				const { session } = await loadSession();

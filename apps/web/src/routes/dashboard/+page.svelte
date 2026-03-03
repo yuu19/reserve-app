@@ -1,10 +1,15 @@
-	<script lang="ts">
+<script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { getCurrentPathWithSearch, loadSession, redirectToLoginWithNext } from '$lib/features/auth-session.svelte';
+	import {
+		getCurrentPathWithSearch,
+		loadSession,
+		redirectToLoginWithNext
+	} from '$lib/features/auth-session.svelte';
 	import { loadOrganizations } from '$lib/features/organization-context.svelte';
 	import { loadParticipantFeatureData } from '$lib/features/invitations-participant.svelte';
 	import type { OrganizationPayload } from '$lib/rpc-client';
@@ -17,6 +22,7 @@
 	const activeOrganizationLabel = $derived(
 		activeOrganization?.name ?? activeOrganization?.id ?? '選択されていません'
 	);
+	const pathname = $derived(page.url.pathname);
 
 	const refreshDashboard = async () => {
 		const { session } = await loadSession();
@@ -30,7 +36,9 @@
 		if (nextActiveOrganization?.id) {
 			const participantData = await loadParticipantFeatureData(nextActiveOrganization.id);
 			participantCount = participantData.participants.length;
-			pendingParticipantInviteCount = participantData.sent.filter((inv) => inv.status === 'pending').length;
+			pendingParticipantInviteCount = participantData.sent.filter(
+				(inv) => inv.status === 'pending'
+			).length;
 		} else {
 			participantCount = 0;
 			pendingParticipantInviteCount = 0;
@@ -39,6 +47,10 @@
 
 	onMount(() => {
 		void (async () => {
+			if (pathname === '/dashboard') {
+				await goto(resolve('/admin/dashboard'));
+				return;
+			}
 			loading = true;
 			try {
 				await refreshDashboard();
@@ -52,12 +64,15 @@
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
 		<h1 class="text-3xl font-semibold text-slate-900">ダッシュボード</h1>
-		<p class="text-sm text-slate-600">運用状況のサマリーを確認します。組織設定は設定ページで行います。</p>
+		<p class="text-sm text-slate-600">
+			運用状況のサマリーを確認し、管理者向け・参加者向けの画面へ移動できます。
+		</p>
 	</header>
 
 	<section class="grid gap-4 md:grid-cols-3">
 		<Card class="surface-panel border-slate-200/80 shadow-md">
-			<CardHeader><h2 class="text-sm font-semibold text-slate-700">現在の利用中組織</h2></CardHeader>
+			<CardHeader><h2 class="text-sm font-semibold text-slate-700">現在の利用中組織</h2></CardHeader
+			>
 			<CardContent>
 				{#if loading}
 					<p class="text-sm text-muted-foreground">確認中…</p>
@@ -68,20 +83,83 @@
 		</Card>
 		<Card class="surface-panel border-slate-200/80 shadow-md">
 			<CardHeader><h2 class="text-sm font-semibold text-slate-700">参加者数</h2></CardHeader>
-			<CardContent><p class="metric-value text-3xl font-semibold text-slate-900">{participantCount}</p></CardContent>
+			<CardContent
+				><p class="metric-value text-3xl font-semibold text-slate-900">
+					{participantCount}
+				</p></CardContent
+			>
 		</Card>
 		<Card class="surface-panel border-slate-200/80 shadow-md">
-			<CardHeader><h2 class="text-sm font-semibold text-slate-700">保留中の参加者招待</h2></CardHeader>
-			<CardContent><p class="metric-value text-3xl font-semibold text-slate-900">{pendingParticipantInviteCount}</p></CardContent>
+			<CardHeader
+				><h2 class="text-sm font-semibold text-slate-700">保留中の参加者招待</h2></CardHeader
+			>
+			<CardContent
+				><p class="metric-value text-3xl font-semibold text-slate-900">
+					{pendingParticipantInviteCount}
+				</p></CardContent
+			>
 		</Card>
 	</section>
 
-	<section class="flex flex-wrap gap-2">
-		<Button type="button" onclick={() => goto(resolve('/settings'))}>設定へ移動</Button>
-		<Button type="button" variant="outline" onclick={() => goto(resolve('/bookings'))}>予約へ移動</Button>
-		<Button type="button" variant="outline" onclick={() => goto(resolve('/participants'))}>参加者へ移動</Button>
-		<Button type="button" variant="outline" onclick={() => goto(resolve('/admin-invitations'))}
-			>管理者招待へ移動</Button
-		>
+	<section class="grid gap-4 lg:grid-cols-2">
+		<Card class="surface-panel border-slate-200/80 shadow-md">
+			<CardHeader class="space-y-1">
+				<h2 class="text-xl font-semibold text-slate-900">管理者向け</h2>
+				<p class="text-sm text-slate-600">
+					組織運用・予約管理・招待管理など、管理権限が必要な操作をまとめています。
+				</p>
+			</CardHeader>
+			<CardContent class="space-y-3">
+				<div class="flex flex-wrap gap-2">
+					<Button type="button" onclick={() => goto(resolve('/admin/settings'))}>設定へ移動</Button>
+					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/bookings'))}
+						>予約運用へ移動</Button
+					>
+					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/services'))}
+						>サービス一覧へ移動</Button
+					>
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve('/admin/schedules/slots'))}>単発一覧へ移動</Button
+					>
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve('/admin/schedules/recurring'))}>定期一覧へ移動</Button
+					>
+					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/participants'))}
+						>参加者へ移動</Button
+					>
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve('/admin/invitations'))}>管理者招待へ移動</Button
+					>
+				</div>
+			</CardContent>
+		</Card>
+
+		<Card class="surface-panel border-slate-200/80 shadow-md">
+			<CardHeader class="space-y-1">
+				<h2 class="text-xl font-semibold text-slate-900">参加者向け</h2>
+				<p class="text-sm text-slate-600">
+					公開イベントの確認や予約申込みなど、参加者導線に必要な画面へ移動できます。
+				</p>
+			</CardHeader>
+			<CardContent class="space-y-3">
+				<div class="flex flex-wrap gap-2">
+					<Button type="button" variant="outline" onclick={() => goto(resolve('/events'))}
+						>イベント一覧へ移動</Button
+					>
+					<Button type="button" variant="outline" onclick={() => goto(resolve('/participant/bookings'))}
+						>予約確認へ移動</Button
+					>
+					<Button type="button" variant="outline" onclick={() => goto(resolve('/participant/invitations'))}
+						>参加者招待へ移動</Button
+					>
+				</div>
+			</CardContent>
+		</Card>
 	</section>
 </main>

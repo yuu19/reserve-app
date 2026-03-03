@@ -11,6 +11,10 @@ pnpm --filter @apps/web dev
 ```
 
 `PUBLIC_BACKEND_URL` points to backend URL (default: `http://localhost:3000`).
+custom domain 運用の推奨:
+
+- Prod: `https://api.wakureserve.com`
+- Staging: `https://api.stg.wakureserve.com`
 
 Sentry 連携用 public 変数:
 
@@ -30,8 +34,13 @@ Sentry 連携用 public 変数:
 - 回数券種別一覧:
   - `name`, `totalCount`, `expiresInDays`, 対象サービス数, `isActive`, 作成日時を表示
 
-### `/bookings`（参加者タブ）
+### `/participant/bookings`
 
+- 「回数券購入」カードを表示
+- 購入方式:
+  - `stripe`: Checkout へ遷移（Webhook確定後に利用可能化）
+  - `cash_on_site` / `bank_transfer`: 申請後は運営承認待ち
+- 購入申請履歴（status / paymentMethod / 申請日時 / 取り下げ）を表示
 - 「マイ回数券」カードを表示
 - 全パック（`active` / `exhausted` / `expired`）を表示
 - 表示項目:
@@ -40,18 +49,52 @@ Sentry 連携用 public 変数:
   - `status`
   - `expiresAt`（未設定は無期限）
 
-### `/bookings`（運営タブ）
+### `/admin/bookings`
+
+- 予約運用専用（承認/却下/運営キャンセル/No-show）
+- 予約ステータス・サービス・参加者でのフィルタ
+
+### `/admin/services`
 
 - サービス作成フォームに `requiresTicket` チェックボックスを追加
 - 回数券必須サービスを UI から設定可能
-- リソース管理セクションを追加（Service / Slot / Recurring）
+- Service 一覧で行アクションから停止/再開を実行可能
 - 接続済み API:
   - `updateService` / `archiveService`
+
+### `/admin/services/new`
+
+- サービス作成フォーム専用
+- 作成後は `/admin/services` へ遷移
+
+### `/admin/schedules/slots`
+
+- 単発 Slot 一覧と停止アクション
+- 接続済み API:
   - `cancelSlot`（表示月の slot を対象）
+
+### `/admin/schedules/slots/new`
+
+- 単発 Slot 作成フォーム専用
+- 作成後は `/admin/schedules/slots` へ遷移
+
+### `/admin/schedules/recurring`
+
+- 定期 Schedule 一覧・更新・停止/再開・例外登録・枠再生成
+- 接続済み API:
   - `updateRecurringSchedule`
   - `upsertRecurringScheduleException`
   - `generateRecurringSlots`
-- 一覧選択 + 行操作で更新・停止を実行
+
+### `/admin/schedules/recurring/new`
+
+- 定期 Schedule 作成フォーム専用
+- 作成後は `/admin/schedules/recurring` へ遷移
+
+### `/participants`（回数券購入管理）
+
+- 「回数券購入管理」セクションを追加
+- pending 申請に対して `承認` / `却下（理由任意）` を実行可能
 
 ### 補足
 
@@ -66,6 +109,12 @@ Sentry 連携用 public 変数:
 - `vars.PUBLIC_SENTRY_DSN_WEB`
 - `vars.PUBLIC_SENTRY_ENVIRONMENT`
 - `vars.PUBLIC_SENTRY_RELEASE`
+
+推奨 URL:
+
+- Web: `https://web.wakureserve.com` / `https://web.stg.wakureserve.com`
+- API: `https://api.wakureserve.com` / `https://api.stg.wakureserve.com`
+- 現在は prod (`web.wakureserve.com` / `api.wakureserve.com`) のみ適用済みです。
 
 2. Deploy:
 
@@ -83,6 +132,11 @@ pnpm --filter @apps/web run cf:dev
 
 `.github/workflows/deploy-workers.yml` で web Worker をデプロイします。  
 `PUBLIC_BACKEND_URL` と `PUBLIC_SENTRY_*` は GitHub Variables から `wrangler deploy --var ...` で注入されます。
+
+Google OIDC callback は API 側に固定します:
+
+- `https://api.wakureserve.com/api/auth/callback/google`
+- `https://api.stg.wakureserve.com/api/auth/callback/google`
 
 Sentry sourcemap upload のために以下が必要です:
 

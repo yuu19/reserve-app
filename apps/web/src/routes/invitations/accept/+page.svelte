@@ -5,7 +5,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '$lib/components/ui/card';
 	import { formatJaDateTime } from '$lib/date/format';
-	import { authRpc, type AuthSessionPayload } from '$lib/rpc-client';
+	import { loadSession } from '$lib/features/auth-session.svelte';
+	import { authRpc } from '$lib/rpc-client';
 
 	type JsonRecord = Record<string, unknown>;
 	type BusyAction = null | 'accept' | 'reject';
@@ -30,21 +31,6 @@
 
 	const isRecord = (value: unknown): value is JsonRecord => {
 		return typeof value === 'object' && value !== null;
-	};
-
-	const asSessionPayload = (value: unknown): AuthSessionPayload => {
-		if (value === null) {
-			return null;
-		}
-
-		if (!isRecord(value) || !isRecord(value.user) || !isRecord(value.session)) {
-			return null;
-		}
-
-		return {
-			user: value.user,
-			session: value.session
-		};
 	};
 
 	const parseResponseBody = async (response: Response): Promise<unknown> => {
@@ -128,11 +114,8 @@
 
 		invitationId = nextInvitationId;
 
-		const sessionResponse = await authRpc.getSession();
-		const sessionPayload = await parseResponseBody(sessionResponse);
-		const session = asSessionPayload(sessionPayload);
-
-		if (!sessionResponse.ok || !session) {
+		const { session } = await loadSession();
+		if (!session) {
 			const next = `${window.location.pathname}${window.location.search}`;
 			window.location.assign(`${resolve('/')}?next=${encodeURIComponent(next)}`);
 			return;

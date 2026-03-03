@@ -1,13 +1,14 @@
 import {
 	authRpc,
 	type BookingPayload,
-	type ParticipantPayload,
-	type RecurringSchedulePayload,
-	type ServicePayload,
-	type SlotPayload,
-	type TicketPackPayload
+	type ServiceImageUploadUrlPayload
 } from '$lib/rpc-client';
 import { formatJaMonth, formatJaTime } from '$lib/date/format';
+import { getAdminBookingsOperationsPageData } from '$lib/remote/admin-bookings-operations.remote';
+import { getAdminRecurringPageData } from '$lib/remote/admin-recurring-page.remote';
+import { getAdminServicesPageData } from '$lib/remote/admin-services-page.remote';
+import { getAdminSlotsPageData } from '$lib/remote/admin-slots-page.remote';
+import { getParticipantBookingsPageData } from '$lib/remote/participant-bookings-page.remote';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
@@ -48,37 +49,16 @@ const extractValidationErrorMessage = (payload: unknown): string | null => {
 	return null;
 };
 
-const isService = (value: unknown): value is ServicePayload =>
-	isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string';
-
-const isSlot = (value: unknown): value is SlotPayload =>
-	isRecord(value) && typeof value.id === 'string' && typeof value.serviceId === 'string';
-
-const isRecurring = (value: unknown): value is RecurringSchedulePayload =>
-	isRecord(value) && typeof value.id === 'string' && typeof value.serviceId === 'string';
-
 const isBooking = (value: unknown): value is BookingPayload =>
 	isRecord(value) && typeof value.id === 'string' && typeof value.slotId === 'string';
-
-const isParticipant = (value: unknown): value is ParticipantPayload =>
+const isServiceImageUploadUrlPayload = (value: unknown): value is ServiceImageUploadUrlPayload =>
 	isRecord(value) &&
-	typeof value.id === 'string' &&
-	typeof value.organizationId === 'string' &&
-	typeof value.email === 'string';
-
-const isTicketPack = (value: unknown): value is TicketPackPayload =>
-	isRecord(value) &&
-	typeof value.id === 'string' &&
-	typeof value.organizationId === 'string' &&
-	typeof value.ticketTypeId === 'string';
-
-const asServices = (value: unknown) => (Array.isArray(value) ? value.filter(isService) : []);
-const asSlots = (value: unknown) => (Array.isArray(value) ? value.filter(isSlot) : []);
-const asRecurring = (value: unknown) => (Array.isArray(value) ? value.filter(isRecurring) : []);
-const asBookings = (value: unknown) => (Array.isArray(value) ? value.filter(isBooking) : []);
-const asParticipants = (value: unknown) =>
-	Array.isArray(value) ? value.filter(isParticipant) : [];
-const asTicketPacks = (value: unknown) => (Array.isArray(value) ? value.filter(isTicketPack) : []);
+	typeof value.key === 'string' &&
+	typeof value.uploadUrl === 'string' &&
+	typeof value.imageUrl === 'string' &&
+	typeof value.expiresAt === 'string' &&
+	typeof value.contentType === 'string' &&
+	typeof value.maxUploadBytes === 'number';
 
 export const toReservationErrorMessage = (status: number, payload: unknown, fallback: string) => {
 	const message = extractMessage(payload);
@@ -214,174 +194,31 @@ export const buildCalendarDays = (monthDate: Date): Date[] => {
 	return days;
 };
 
-export const loadBookingData = async (
-	organizationId: string,
-	from: string,
-	to: string,
-	serviceId?: string,
-	includeStaffData = false
-) => {
-	const [
-		servicesResponse,
-		recurringResponse,
-		slotsResponse,
-		availableResponse,
-		myBookingsResponse,
-		myTicketPacksResponse,
-		staffBookingsResponse,
-		staffParticipantsResponse,
-		staffServicesResponse,
-		staffRecurringSchedulesResponse
-	] = await Promise.all([
-		authRpc.listServices({ organizationId }),
-		authRpc.listRecurringSchedules({ organizationId, isActive: true }),
-		authRpc.listSlots({ organizationId, from, to }),
-		authRpc.listAvailableSlots({ organizationId, from, to, serviceId: serviceId || undefined }),
-		authRpc.listMyBookings({ organizationId }),
-		authRpc.listMyTicketPacks(organizationId),
-		includeStaffData ? authRpc.listBookings({ organizationId }) : Promise.resolve(null),
-		includeStaffData ? authRpc.listParticipants(organizationId) : Promise.resolve(null),
-		includeStaffData
-			? authRpc.listServices({ organizationId, includeArchived: true })
-			: Promise.resolve(null),
-		includeStaffData ? authRpc.listRecurringSchedules({ organizationId }) : Promise.resolve(null)
-	]);
+export const loadAdminBookingsOperationsData = async (from: string, to: string, serviceId?: string) => {
+	return getAdminBookingsOperationsPageData({ from, to, serviceId: serviceId || undefined });
+};
 
-	const [
-		servicesPayload,
-		recurringPayload,
-		slotsPayload,
-		availablePayload,
-		myPayload,
-		myTicketPacksPayload,
-		staffBookingsPayload,
-		staffParticipantsPayload,
-		staffServicesPayload,
-		staffRecurringSchedulesPayload
-	] = await Promise.all([
-		parseResponseBody(servicesResponse),
-		parseResponseBody(recurringResponse),
-		parseResponseBody(slotsResponse),
-		parseResponseBody(availableResponse),
-		parseResponseBody(myBookingsResponse),
-		parseResponseBody(myTicketPacksResponse),
-		staffBookingsResponse ? parseResponseBody(staffBookingsResponse) : Promise.resolve(null),
-		staffParticipantsResponse
-			? parseResponseBody(staffParticipantsResponse)
-			: Promise.resolve(null),
-		staffServicesResponse ? parseResponseBody(staffServicesResponse) : Promise.resolve(null),
-		staffRecurringSchedulesResponse
-			? parseResponseBody(staffRecurringSchedulesResponse)
-			: Promise.resolve(null)
-	]);
+export const loadAdminServicesData = async (from: string, to: string) => {
+	return getAdminServicesPageData({ from, to });
+};
 
-	const participantAccessDenied =
-		availableResponse.status === 403 ||
-		myBookingsResponse.status === 403 ||
-		myTicketPacksResponse.status === 403;
+export const loadAdminSlotsData = async (from: string, to: string, serviceId?: string) => {
+	return getAdminSlotsPageData({ from, to, serviceId: serviceId || undefined });
+};
 
-	return {
-		services: servicesResponse.ok ? asServices(servicesPayload) : [],
-		recurringSchedules: recurringResponse.ok ? asRecurring(recurringPayload) : [],
-		slots: slotsResponse.ok ? asSlots(slotsPayload) : [],
-		availableSlots: availableResponse.ok ? asSlots(availablePayload) : [],
-		myBookings: myBookingsResponse.ok ? asBookings(myPayload) : [],
-		myTicketPacks: myTicketPacksResponse.ok ? asTicketPacks(myTicketPacksPayload) : [],
-		staffBookings:
-			includeStaffData && staffBookingsResponse && staffBookingsResponse.ok
-				? asBookings(staffBookingsPayload)
-				: [],
-		staffParticipants:
-			includeStaffData && staffParticipantsResponse && staffParticipantsResponse.ok
-				? asParticipants(staffParticipantsPayload)
-				: [],
-		staffServices:
-			includeStaffData && staffServicesResponse && staffServicesResponse.ok
-				? asServices(staffServicesPayload)
-				: [],
-		staffRecurringSchedules:
-			includeStaffData && staffRecurringSchedulesResponse && staffRecurringSchedulesResponse.ok
-				? asRecurring(staffRecurringSchedulesPayload)
-				: [],
-		participantAccessDenied,
-		errors: [
-			!servicesResponse.ok
-				? toReservationErrorMessage(
-						servicesResponse.status,
-						servicesPayload,
-						'サービス一覧の取得に失敗しました。'
-					)
-				: null,
-			!recurringResponse.ok
-				? toReservationErrorMessage(
-						recurringResponse.status,
-						recurringPayload,
-						'定期スケジュールの取得に失敗しました。'
-					)
-				: null,
-			!slotsResponse.ok
-				? toReservationErrorMessage(
-						slotsResponse.status,
-						slotsPayload,
-						'枠一覧の取得に失敗しました。'
-					)
-				: null,
-			!participantAccessDenied && !availableResponse.ok
-				? toReservationErrorMessage(
-						availableResponse.status,
-						availablePayload,
-						'空き枠一覧の取得に失敗しました。'
-					)
-				: null,
-			!participantAccessDenied && !myBookingsResponse.ok
-				? toReservationErrorMessage(
-						myBookingsResponse.status,
-						myPayload,
-						'マイ予約一覧の取得に失敗しました。'
-					)
-				: null,
-			!participantAccessDenied && !myTicketPacksResponse.ok
-				? toReservationErrorMessage(
-						myTicketPacksResponse.status,
-						myTicketPacksPayload,
-						'マイ回数券の取得に失敗しました。'
-					)
-				: null,
-			includeStaffData && staffBookingsResponse && !staffBookingsResponse.ok
-				? toReservationErrorMessage(
-						staffBookingsResponse.status,
-						staffBookingsPayload,
-						'運営予約一覧の取得に失敗しました。'
-					)
-				: null,
-			includeStaffData && staffParticipantsResponse && !staffParticipantsResponse.ok
-				? toReservationErrorMessage(
-						staffParticipantsResponse.status,
-						staffParticipantsPayload,
-						'参加者一覧の取得に失敗しました。'
-					)
-				: null,
-			includeStaffData && staffServicesResponse && !staffServicesResponse.ok
-				? toReservationErrorMessage(
-						staffServicesResponse.status,
-						staffServicesPayload,
-						'運営サービス一覧の取得に失敗しました。'
-					)
-				: null,
-			includeStaffData && staffRecurringSchedulesResponse && !staffRecurringSchedulesResponse.ok
-				? toReservationErrorMessage(
-						staffRecurringSchedulesResponse.status,
-						staffRecurringSchedulesPayload,
-						'運営定期スケジュール一覧の取得に失敗しました。'
-					)
-				: null
-		].filter((msg): msg is string => msg !== null)
-	};
+export const loadAdminRecurringData = async (from: string, to: string) => {
+	return getAdminRecurringPageData({ from, to });
+};
+
+export const loadParticipantBookingsData = async (from: string, to: string, serviceId?: string) => {
+	return getParticipantBookingsPageData({ from, to, serviceId: serviceId || undefined });
 };
 
 export const createService = async (input: {
 	organizationId: string;
 	name: string;
+	description?: string | null;
+	imageUrl?: string | null;
 	kind: 'single' | 'recurring';
 	bookingPolicy: 'instant' | 'approval';
 	durationMinutes: number;
@@ -444,6 +281,8 @@ export const createRecurringSchedule = async (input: {
 export const updateServiceByStaff = async (input: {
 	serviceId: string;
 	name?: string;
+	description?: string | null;
+	imageUrl?: string | null;
 	kind?: 'single' | 'recurring';
 	bookingPolicy?: 'instant' | 'approval';
 	durationMinutes?: number;
@@ -462,6 +301,57 @@ export const updateServiceByStaff = async (input: {
 	};
 };
 
+export const uploadServiceImage = async ({
+	organizationId,
+	file
+}: {
+	organizationId: string;
+	file: File;
+}) => {
+	const signedUrlResponse = await authRpc.createServiceImageUploadUrl({
+		organizationId,
+		fileName: file.name,
+		contentType: file.type,
+		size: file.size
+	});
+	const signedUrlPayload = await parseResponseBody(signedUrlResponse);
+	if (!signedUrlResponse.ok || !isServiceImageUploadUrlPayload(signedUrlPayload)) {
+		return {
+			ok: false,
+			message: toReservationErrorMessage(
+				signedUrlResponse.status,
+				signedUrlPayload,
+				'サービス画像アップロードURLの取得に失敗しました。'
+			),
+			imageUrl: null as string | null
+		};
+	}
+
+	const uploadResponse = await authRpc.uploadServiceImageBySignedUrl(
+		signedUrlPayload.uploadUrl,
+		file,
+		signedUrlPayload.contentType
+	);
+	const uploadPayload = await parseResponseBody(uploadResponse);
+	if (!uploadResponse.ok) {
+		return {
+			ok: false,
+			message: toReservationErrorMessage(
+				uploadResponse.status,
+				uploadPayload,
+				'サービス画像のアップロードに失敗しました。'
+			),
+			imageUrl: null as string | null
+		};
+	}
+
+	return {
+		ok: true,
+		message: 'サービス画像をアップロードしました。',
+		imageUrl: signedUrlPayload.imageUrl
+	};
+};
+
 export const archiveServiceByStaff = async (serviceId: string) => {
 	const response = await authRpc.archiveService({ serviceId });
 	const payload = await parseResponseBody(response);
@@ -470,6 +360,17 @@ export const archiveServiceByStaff = async (serviceId: string) => {
 		message: response.ok
 			? 'サービスを停止しました。'
 			: toReservationErrorMessage(response.status, payload, 'サービス停止に失敗しました。')
+	};
+};
+
+export const resumeServiceByStaff = async (serviceId: string) => {
+	const response = await authRpc.updateService({ serviceId, isActive: true });
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? 'サービスを再開しました。'
+			: toReservationErrorMessage(response.status, payload, 'サービス再開に失敗しました。')
 	};
 };
 

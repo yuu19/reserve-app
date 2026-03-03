@@ -5,11 +5,21 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import OrganizationSwitcher from '$lib/components/organization-switcher.svelte';
 	import { Toaster, toast } from 'svelte-sonner';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { authRpc, type AuthSessionPayload } from '$lib/rpc-client';
-	import { loadSession, parseResponseBody, toErrorMessage } from '$lib/features/auth-session.svelte';
+	import { onAuthSessionUpdated } from '$lib/features/auth-lifecycle';
+	import {
+		loadOrganizations,
+		setActiveOrganization
+	} from '$lib/features/organization-context.svelte';
+	import { authRpc, type AuthSessionPayload, type OrganizationPayload } from '$lib/rpc-client';
+	import {
+		loadSession,
+		parseResponseBody,
+		toErrorMessage
+	} from '$lib/features/auth-session.svelte';
 	import {
 		Building2,
 		CalendarDays,
@@ -34,56 +44,78 @@
 	let mobileMenuOpen = $state(false);
 	let desktopSidebarCollapsed = $state(false);
 	let session = $state<AuthSessionPayload>(null);
+	let organizations = $state<OrganizationPayload[]>([]);
+	let activeOrganization = $state<OrganizationPayload | null>(null);
+	let switchingOrganization = $state(false);
+	let refreshSessionStatePromise: Promise<void> | null = null;
+	let fallbackRefreshPath = '';
 	let sectionOpenState = $state<Record<string, boolean>>({
-		bookings: true,
-		invitations: true,
-		organization: true
+		admin: true,
+		participant: true
 	});
 
 	type NavItem = {
-		href: '/dashboard' | '/bookings' | '/participants' | '/admin-invitations' | '/settings' | '/contracts';
+		href:
+			| '/admin/dashboard'
+			| '/admin/bookings'
+			| '/admin/services'
+			| '/admin/schedules/slots'
+			| '/admin/schedules/recurring'
+			| '/admin/participants'
+			| '/admin/invitations'
+			| '/admin/settings'
+			| '/admin/contracts'
+			| '/participant/home'
+			| '/participant/bookings'
+			| '/participant/invitations'
+			| '/participant/admin-invitations'
+			| '/events';
 		label: string;
 		icon: typeof LayoutDashboard;
 	};
 
 	type NavSection = {
-		id: 'bookings' | 'invitations' | 'organization';
+		id: 'admin' | 'participant';
 		label: string;
 		items: NavItem[];
 	};
 
 	type SectionTab = {
-		href: '/dashboard' | '/settings' | '/contracts';
+		href: '/admin/dashboard' | '/admin/settings' | '/admin/contracts';
 		label: string;
 	};
 
 	const sectionTabs: SectionTab[] = [
-		{ href: '/dashboard', label: '管理' },
-		{ href: '/settings', label: '設定' },
-		{ href: '/contracts', label: '契約' }
+		{ href: '/admin/dashboard', label: '管理' },
+		{ href: '/admin/settings', label: '設定' },
+		{ href: '/admin/contracts', label: '契約' }
 	];
 
 	const navSections: NavSection[] = [
 		{
-			id: 'bookings',
-			label: '予約',
-			items: [{ href: '/bookings', label: '予約管理', icon: CalendarDays }]
-		},
-		{
-			id: 'invitations',
-			label: '招待',
+			id: 'admin',
+			label: '管理者',
 			items: [
-				{ href: '/participants', label: '参加者管理', icon: Users },
-				{ href: '/admin-invitations', label: '管理者招待', icon: ShieldCheck }
+				{ href: '/admin/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
+				{ href: '/admin/bookings', label: '予約運用', icon: CalendarDays },
+				{ href: '/admin/services', label: 'サービス一覧', icon: CalendarDays },
+				{ href: '/admin/schedules/slots', label: '単発一覧', icon: CalendarDays },
+				{ href: '/admin/schedules/recurring', label: '定期一覧', icon: CalendarDays },
+				{ href: '/admin/participants', label: '参加者管理', icon: Users },
+				{ href: '/admin/invitations', label: '管理者招待', icon: ShieldCheck },
+				{ href: '/admin/settings', label: '設定', icon: Settings },
+				{ href: '/admin/contracts', label: '契約', icon: Building2 }
 			]
 		},
 		{
-			id: 'organization',
-			label: '組織',
+			id: 'participant',
+			label: '参加者',
 			items: [
-				{ href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
-				{ href: '/settings', label: '設定', icon: Settings },
-				{ href: '/contracts', label: '契約', icon: Building2 }
+				{ href: '/participant/home', label: 'ホーム', icon: LayoutDashboard },
+				{ href: '/events', label: 'イベント一覧', icon: CalendarDays },
+				{ href: '/participant/bookings', label: '予約確認', icon: CalendarDays },
+				{ href: '/participant/invitations', label: '参加者招待', icon: Users },
+				{ href: '/participant/admin-invitations', label: '管理者招待', icon: ShieldCheck }
 			]
 		}
 	];
@@ -102,6 +134,7 @@
 		}
 		return 'ユーザー';
 	});
+	const activeOrganizationName = $derived(activeOrganization?.name ?? '組織未選択');
 
 	const isActive = (href: string): boolean => pathname === href || pathname.startsWith(`${href}/`);
 
@@ -113,13 +146,13 @@
 	};
 
 	const activeSectionTab = $derived.by(() => {
-		if (pathname.startsWith('/settings')) {
-			return '/settings';
+		if (pathname.startsWith('/admin/settings')) {
+			return '/admin/settings';
 		}
-		if (pathname.startsWith('/contracts')) {
-			return '/contracts';
+		if (pathname.startsWith('/admin/contracts')) {
+			return '/admin/contracts';
 		}
-		return '/dashboard';
+		return '/admin/dashboard';
 	});
 	const desktopSidebarGridClass = $derived(
 		desktopSidebarCollapsed
@@ -149,13 +182,65 @@
 	);
 
 	const refreshSessionState = async () => {
-		loadingSession = true;
+		if (refreshSessionStatePromise) {
+			return refreshSessionStatePromise;
+		}
+
+		const run = async () => {
+			loadingSession = true;
+			try {
+				const loaded = await loadSession();
+				session = loaded.session;
+				isLoggedIn = !!loaded.session;
+				if (!loaded.session) {
+					organizations = [];
+					activeOrganization = null;
+					return;
+				}
+				const { organizations: nextOrganizations, activeOrganization: nextActiveOrganization } =
+					await loadOrganizations();
+				organizations = nextOrganizations;
+				activeOrganization = nextActiveOrganization;
+			} finally {
+				loadingSession = false;
+			}
+		};
+
+		refreshSessionStatePromise = run();
 		try {
-			const loaded = await loadSession();
-			session = loaded.session;
-			isLoggedIn = !!loaded.session;
+			await refreshSessionStatePromise;
 		} finally {
-			loadingSession = false;
+			refreshSessionStatePromise = null;
+		}
+	};
+
+	const submitSetActiveOrganizationFromHeader = async (organizationId: string | null) => {
+		if (switchingOrganization) {
+			return;
+		}
+
+		const currentOrganizationId = activeOrganization?.id ?? null;
+		if (organizationId === currentOrganizationId) {
+			return;
+		}
+
+		switchingOrganization = true;
+		try {
+			const result = await setActiveOrganization(organizationId);
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			await refreshSessionState();
+			if (typeof window !== 'undefined') {
+				window.location.assign(
+					`${window.location.pathname}${window.location.search}${window.location.hash}`
+				);
+			}
+		} catch {
+			toast.error('組織の切り替えに失敗しました。');
+		} finally {
+			switchingOrganization = false;
 		}
 	};
 
@@ -171,6 +256,8 @@
 			toast.success('ログアウトしました。');
 			isLoggedIn = false;
 			session = null;
+			organizations = [];
+			activeOrganization = null;
 			mobileMenuOpen = false;
 			await goto(resolve('/'));
 		} catch {
@@ -184,7 +271,59 @@
 		mobileMenuOpen = false;
 	};
 
+	const redirectToCanonicalWebDomain = (): boolean => {
+		if (typeof window === 'undefined') {
+			return false;
+		}
+		if (!window.location.hostname.endsWith('.workers.dev')) {
+			return false;
+		}
+
+		let backendHost: string;
+		try {
+			backendHost = new URL(authRpc.backendUrl).hostname;
+		} catch {
+			return false;
+		}
+
+		if (!backendHost.startsWith('api.')) {
+			return false;
+		}
+
+		const canonicalHost = backendHost.replace(/^api\./, 'web.');
+		if (canonicalHost === window.location.hostname) {
+			return false;
+		}
+
+		const nextUrl = new URL(window.location.href);
+		nextUrl.protocol = 'https:';
+		nextUrl.host = canonicalHost;
+		window.location.replace(nextUrl.toString());
+		return true;
+	};
+
 	onMount(() => {
+		if (redirectToCanonicalWebDomain()) {
+			return;
+		}
+		const stopListeningAuthSession = onAuthSessionUpdated(() => {
+			void refreshSessionState();
+		});
+		void refreshSessionState();
+		return () => {
+			stopListeningAuthSession();
+		};
+	});
+
+	$effect(() => {
+		if (isPublicRoot || isLoggedIn || loadingSession) {
+			fallbackRefreshPath = '';
+			return;
+		}
+		if (fallbackRefreshPath === pathname) {
+			return;
+		}
+		fallbackRefreshPath = pathname;
 		void refreshSessionState();
 	});
 </script>
@@ -238,8 +377,12 @@
 							variant="ghost"
 							size="icon"
 							onclick={() => (desktopSidebarCollapsed = !desktopSidebarCollapsed)}
-							aria-label={desktopSidebarCollapsed ? 'サイドメニューを展開' : 'サイドメニューを折りたたむ'}
-							title={desktopSidebarCollapsed ? 'サイドメニューを展開' : 'サイドメニューを折りたたむ'}
+							aria-label={desktopSidebarCollapsed
+								? 'サイドメニューを展開'
+								: 'サイドメニューを折りたたむ'}
+							title={desktopSidebarCollapsed
+								? 'サイドメニューを展開'
+								: 'サイドメニューを折りたたむ'}
 						>
 							<span
 								class={`inline-flex transition-transform duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${desktopSidebarCollapsed ? 'rotate-180' : 'rotate-0'}`}
@@ -301,7 +444,10 @@
 									{/if}
 								</button>
 								{#if sectionOpenState[section.id]}
-									<div id={`sidebar-section-${section.id}`} class="space-y-1 border-t border-slate-200/70 p-2">
+									<div
+										id={`sidebar-section-${section.id}`}
+										class="space-y-1 border-t border-slate-200/70 p-2"
+									>
 										{#each section.items as item (item.href)}
 											<a
 												href={resolve(item.href)}
@@ -366,14 +512,43 @@
 		</aside>
 
 		<div class="min-w-0">
-			<header class="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:hidden">
+			<header
+				class="sticky top-0 z-30 hidden items-center justify-end gap-3 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:flex"
+			>
+				<OrganizationSwitcher
+					{organizations}
+					activeOrganizationId={activeOrganization?.id ?? null}
+					{activeOrganizationName}
+					loading={loadingSession}
+					busy={switchingOrganization}
+					onSelect={submitSetActiveOrganizationFromHeader}
+				/>
+			</header>
+
+			<header
+				class="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:hidden"
+			>
 				<div class="flex items-center gap-2">
-					<Button type="button" variant="ghost" size="icon" onclick={() => (mobileMenuOpen = true)} aria-label="メニューを開く">
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						onclick={() => (mobileMenuOpen = true)}
+						aria-label="メニューを開く"
+					>
 						<Menu class="size-5" aria-hidden="true" />
 					</Button>
 					<p class="text-sm font-semibold text-slate-900">Reserve App</p>
 				</div>
-				<Badge variant="default">ログイン中</Badge>
+				<OrganizationSwitcher
+					{organizations}
+					activeOrganizationId={activeOrganization?.id ?? null}
+					{activeOrganizationName}
+					loading={loadingSession}
+					busy={switchingOrganization}
+					compact={true}
+					onSelect={submitSetActiveOrganizationFromHeader}
+				/>
 			</header>
 
 			{@render children()}
@@ -388,12 +563,20 @@
 				onclick={closeMobileMenu}
 				aria-label="メニューを閉じる"
 			></button>
-			<aside class="absolute inset-y-0 left-0 w-72 border-r border-slate-200/80 bg-sidebar shadow-xl">
+			<aside
+				class="absolute inset-y-0 left-0 w-72 border-r border-slate-200/80 bg-sidebar shadow-xl"
+			>
 				<div class="flex h-full flex-col justify-between">
 					<div class="space-y-5 px-5 py-5">
 						<div class="flex items-center justify-between">
 							<p class="text-sm font-semibold text-slate-900">{sessionUserName}</p>
-							<Button type="button" variant="ghost" size="icon" onclick={closeMobileMenu} aria-label="メニューを閉じる">
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								onclick={closeMobileMenu}
+								aria-label="メニューを閉じる"
+							>
 								<X class="size-5" aria-hidden="true" />
 							</Button>
 						</div>
@@ -432,7 +615,10 @@
 										{/if}
 									</button>
 									{#if sectionOpenState[section.id]}
-										<div id={`mobile-sidebar-section-${section.id}`} class="space-y-1 border-t border-slate-200/70 p-2">
+										<div
+											id={`mobile-sidebar-section-${section.id}`}
+											class="space-y-1 border-t border-slate-200/70 p-2"
+										>
 											{#each section.items as item (item.href)}
 												<a
 													href={resolve(item.href)}

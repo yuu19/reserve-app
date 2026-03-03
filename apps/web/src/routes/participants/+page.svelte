@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -7,13 +10,14 @@
 	import { Label } from '$lib/components/ui/label';
 	import {
 		actParticipantInvitation,
-		createParticipantInvitation,
-		loadParticipantFeatureData
+		createParticipantInvitation
 	} from '$lib/features/invitations-participant.svelte';
+	import { loadParticipantsPageData } from '$lib/features/participants-page.svelte';
 	import {
+		approveTicketPurchase,
 		createTicketType,
+		rejectTicketPurchase,
 		grantTicketPack,
-		loadTicketManagementData,
 		toIsoFromDateTimeLocal
 	} from '$lib/features/tickets.svelte';
 	import {
@@ -21,30 +25,48 @@
 		loadSession,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
-	import { loadOrganizations } from '$lib/features/organization-context.svelte';
 	import type {
 		ParticipantInvitationPayload,
 		ParticipantPayload,
 		ServicePayload,
+		TicketPurchasePayload,
 		TicketTypePayload
 	} from '$lib/rpc-client';
 	import { toast } from 'svelte-sonner';
+
+	let { routeMode = null }: { routeMode?: 'admin' | 'participant' | null } = $props();
 
 	let loading = $state(true);
 	let busy = $state(false);
 	let activeOrganizationId = $state<string | null>(null);
 	let canManage = $state(false);
+	const pathname = $derived(page.url.pathname);
+	const participantsPageMode = $derived.by(() => {
+		if (routeMode) {
+			return routeMode;
+		}
+		if (pathname.startsWith('/admin/participants')) {
+			return 'admin';
+		}
+		if (pathname.startsWith('/participant/invitations')) {
+			return 'participant';
+		}
+		return 'legacy';
+	});
 	let participants = $state<ParticipantPayload[]>([]);
 	let sentInvitations = $state<ParticipantInvitationPayload[]>([]);
 	let receivedInvitations = $state<ParticipantInvitationPayload[]>([]);
 	let services = $state<ServicePayload[]>([]);
 	let ticketTypes = $state<TicketTypePayload[]>([]);
+	let ticketPurchases = $state<TicketPurchasePayload[]>([]);
 	let participantInvitationForm = $state({ email: '', participantName: '' });
 	let ticketTypeForm = $state({
 		name: '',
 		totalCount: '10',
 		expiresInDays: '',
-		serviceIds: [] as string[]
+		serviceIds: [] as string[],
+		isForSale: false,
+		stripePriceId: ''
 	});
 	let ticketGrantForm = $state({
 		participantId: '',
@@ -52,6 +74,15 @@
 		count: '',
 		expiresAt: ''
 	});
+	let ticketPurchaseFilter = $state({
+		status: 'all' as 'all' | TicketPurchasePayload['status'],
+		paymentMethod: 'all' as 'all' | TicketPurchasePayload['paymentMethod'],
+		participantId: ''
+	});
+	let ticketPurchaseAction = $state<{
+		kind: 'approve' | 'reject';
+		id: string;
+	} | null>(null);
 
 	const normalizeToText = (value: string | number): string => String(value).trim();
 
@@ -92,6 +123,78 @@
 			minute: '2-digit'
 		});
 	};
+	const ticketPurchaseStatusLabelMap: Record<TicketPurchasePayload['status'], string> = {
+		pending_payment: '決済待ち',
+		pending_approval: '承認待ち',
+		approved: '承認済み',
+		rejected: '却下',
+		cancelled_by_participant: '取り下げ'
+	};
+	const ticketPurchaseMethodLabelMap: Record<TicketPurchasePayload['paymentMethod'], string> = {
+		stripe: 'Stripe',
+		cash_on_site: '現地決済',
+		bank_transfer: '銀行振込'
+	};
+	const filteredTicketPurchases = $derived.by(() =>
+		ticketPurchases
+			.filter((purchase) => {
+				if (
+					ticketPurchaseFilter.status !== 'all' &&
+					purchase.status !== ticketPurchaseFilter.status
+				) {
+					return false;
+				}
+				if (
+					ticketPurchaseFilter.paymentMethod !== 'all' &&
+					purchase.paymentMethod !== ticketPurchaseFilter.paymentMethod
+				) {
+					return false;
+				}
+				if (
+					ticketPurchaseFilter.participantId &&
+					purchase.participantId !== ticketPurchaseFilter.participantId
+				) {
+					return false;
+				}
+				return true;
+			})
+			.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+	);
+	const pendingSentInvitationsCount = $derived(
+		sentInvitations.filter((invitation) => invitation.status === 'pending').length
+	);
+	const pendingReceivedInvitationsCount = $derived(
+		receivedInvitations.filter((invitation) => invitation.status === 'pending').length
+	);
+	const pendingTicketPurchaseApprovalCount = $derived(
+		ticketPurchases.filter((purchase) => purchase.status === 'pending_approval').length
+	);
+	const formatTicketPurchaseIdShort = (purchaseId: string): string => purchaseId.slice(0, 8);
+	const formatTicketTypeIdShort = (ticketTypeId: string): string => ticketTypeId.slice(0, 8);
+	const getParticipantLabel = (participantId: string) => {
+		const participant = participants.find((item) => item.id === participantId);
+		return participant ? `${participant.name} / ${participant.email}` : participantId;
+	};
+	const isTicketPurchaseActionInProgress = (
+		kind: 'approve' | 'reject',
+		purchaseId: string
+	): boolean => ticketPurchaseAction?.kind === kind && ticketPurchaseAction.id === purchaseId;
+	const toExceptionMessage = (error: unknown, fallback: string): string => {
+		if (error instanceof Error && error.message) {
+			return error.message;
+		}
+		return fallback;
+	};
+	const resetParticipantViewState = () => {
+		activeOrganizationId = null;
+		canManage = false;
+		participants = [];
+		sentInvitations = [];
+		receivedInvitations = [];
+		services = [];
+		ticketTypes = [];
+		ticketPurchases = [];
+	};
 
 	const refresh = async () => {
 		const { session } = await loadSession();
@@ -99,18 +202,27 @@
 			redirectToLoginWithNext(getCurrentPathWithSearch());
 			return;
 		}
-		const { activeOrganization } = await loadOrganizations();
-		activeOrganizationId = activeOrganization?.id ?? null;
-		const participantData = await loadParticipantFeatureData(activeOrganizationId ?? undefined);
-		const ticketData = await loadTicketManagementData(activeOrganizationId ?? undefined);
-		participants = participantData.participants;
-		sentInvitations = participantData.sent;
-		receivedInvitations = participantData.received;
-		services = ticketData.services;
-		ticketTypes = ticketData.ticketTypes;
-		canManage = participantData.canManage;
-		if (ticketData.errors.length > 0) {
-			toast.error(ticketData.errors[0]);
+		if (pathname === '/participants') {
+			await goto(resolve('/admin/participants'));
+			return;
+		}
+		try {
+			const data = await loadParticipantsPageData();
+			if (!data.activeOrganizationId) {
+				resetParticipantViewState();
+				return;
+			}
+			activeOrganizationId = data.activeOrganizationId;
+			canManage = data.canManage;
+			participants = data.participants;
+			sentInvitations = data.sentInvitations;
+			receivedInvitations = data.receivedInvitations;
+			services = data.services;
+			ticketTypes = data.ticketTypes;
+			ticketPurchases = data.ticketPurchases;
+		} catch (error) {
+			resetParticipantViewState();
+			toast.error(toExceptionMessage(error, '参加者データの取得に失敗しました。'));
 		}
 	};
 
@@ -190,6 +302,11 @@
 			toast.error('有効日数は 1 以上の整数で入力してください。');
 			return;
 		}
+		const stripePriceId = normalizeToText(ticketTypeForm.stripePriceId);
+		if (ticketTypeForm.isForSale && !stripePriceId) {
+			toast.error('販売対象にする場合は Stripe 価格IDを入力してください。');
+			return;
+		}
 
 		busy = true;
 		try {
@@ -198,7 +315,9 @@
 				name: ticketTypeForm.name,
 				totalCount,
 				expiresInDays,
-				serviceIds: ticketTypeForm.serviceIds
+				serviceIds: ticketTypeForm.serviceIds,
+				isForSale: ticketTypeForm.isForSale,
+				stripePriceId: stripePriceId || undefined
 			});
 			if (!result.ok) {
 				toast.error(result.message);
@@ -209,7 +328,9 @@
 				name: '',
 				totalCount: '10',
 				expiresInDays: '',
-				serviceIds: []
+				serviceIds: [],
+				isForSale: false,
+				stripePriceId: ''
 			};
 			await refresh();
 		} finally {
@@ -268,6 +389,52 @@
 		}
 	};
 
+	const submitApproveTicketPurchase = async (purchaseId: string) => {
+		if (!canManage || ticketPurchaseAction) {
+			return;
+		}
+		if (!confirm('この回数券購入申請を承認しますか？')) {
+			return;
+		}
+		ticketPurchaseAction = { kind: 'approve', id: purchaseId };
+		try {
+			const result = await approveTicketPurchase(purchaseId);
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			ticketPurchaseAction = null;
+		}
+	};
+
+	const submitRejectTicketPurchase = async (purchaseId: string) => {
+		if (!canManage || ticketPurchaseAction) {
+			return;
+		}
+		if (!confirm('この回数券購入申請を却下しますか？')) {
+			return;
+		}
+		const reasonInput = prompt('却下理由を入力してください（任意）', '');
+		if (reasonInput === null) {
+			return;
+		}
+		ticketPurchaseAction = { kind: 'reject', id: purchaseId };
+		try {
+			const result = await rejectTicketPurchase(purchaseId, reasonInput);
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			ticketPurchaseAction = null;
+		}
+	};
+
 	onMount(() => {
 		void (async () => {
 			loading = true;
@@ -282,56 +449,120 @@
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-slate-900">参加者</h1>
-		<p class="text-sm text-slate-600">参加者一覧・参加者招待・回数券管理を行います。</p>
+		<h1 class="text-3xl font-semibold text-slate-900">
+			{participantsPageMode === 'participant' ? '参加者招待' : '参加者管理'}
+		</h1>
+		<p class="text-sm text-slate-600">
+			{participantsPageMode === 'participant'
+				? '受信した参加者招待の承諾・辞退を行います。'
+				: '参加者一覧・参加者招待・回数券管理を行います。'}
+		</p>
 	</header>
 
 	{#if !activeOrganizationId}
 		<Card class="surface-panel border-slate-200/80 shadow-lg"
 			><CardContent class="py-6"
 				><p class="text-sm text-muted-foreground">
-					利用中の組織を `/dashboard` で選択してください。
+					利用中の組織を `/admin/dashboard` で選択してください。
 				</p></CardContent
 			></Card
 		>
 	{:else}
-		<section class="grid gap-6 xl:grid-cols-[1fr_1fr]">
-			<Card class="surface-panel border-slate-200/80 shadow-lg">
-				<CardHeader><h2 class="text-xl font-semibold">参加者一覧</h2></CardHeader>
-				<CardContent>
-					{#if loading}
-						<p class="text-sm text-muted-foreground">参加者を読み込み中…</p>
-					{:else if participants.length === 0}
-						<p class="text-sm text-muted-foreground">参加者はまだ登録されていません。</p>
-					{:else}
-						<div class="space-y-2">
-							{#each participants as participant (participant.id)}
-								<div class="rounded-lg border border-slate-200/80 bg-white/80 p-3">
-									<p class="text-sm font-semibold">{participant.name}</p>
-									<p class="text-xs text-muted-foreground">{participant.email}</p>
-								</div>
-							{/each}
+		<section class="grid gap-4 lg:grid-cols-2">
+			{#if participantsPageMode !== 'participant'}
+				<Card class="surface-panel border-slate-200/80 shadow-md">
+					<CardHeader class="space-y-1">
+						<h2 class="text-lg font-semibold text-slate-900">管理者向けエリア</h2>
+						<CardDescription>
+							参加者一覧、招待送信、回数券種別作成・購入承認などの運用を行う画面です。
+						</CardDescription>
+					</CardHeader>
+					<CardContent class="grid gap-2 text-sm text-slate-700 sm:grid-cols-3">
+						<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
+							<p class="text-xs text-slate-500">参加者数</p>
+							<p class="text-base font-semibold text-slate-900">{participants.length}</p>
 						</div>
-					{/if}
-				</CardContent>
-			</Card>
+						<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
+							<p class="text-xs text-slate-500">送信中招待</p>
+							<p class="text-base font-semibold text-slate-900">{pendingSentInvitationsCount}</p>
+						</div>
+						<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
+							<p class="text-xs text-slate-500">承認待ち購入</p>
+							<p class="text-base font-semibold text-slate-900">
+								{pendingTicketPurchaseApprovalCount}
+							</p>
+						</div>
+					</CardContent>
+				</Card>
+			{/if}
+
+			{#if participantsPageMode !== 'admin'}
+				<Card class="surface-panel border-slate-200/80 shadow-md">
+					<CardHeader class="space-y-1">
+						<h2 class="text-lg font-semibold text-slate-900">参加者向けエリア</h2>
+						<CardDescription>
+							自分宛ての参加者招待を承諾・辞退し、利用可能な運用情報を確認する画面です。
+						</CardDescription>
+					</CardHeader>
+					<CardContent class="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+						<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
+							<p class="text-xs text-slate-500">受信招待</p>
+							<p class="text-base font-semibold text-slate-900">{receivedInvitations.length}</p>
+						</div>
+						<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
+							<p class="text-xs text-slate-500">対応待ち招待</p>
+							<p class="text-base font-semibold text-slate-900">{pendingReceivedInvitationsCount}</p>
+						</div>
+					</CardContent>
+				</Card>
+			{/if}
+		</section>
+
+		<section class="grid gap-6 xl:grid-cols-[1fr_1fr]">
+			{#if participantsPageMode !== 'participant'}
+				<Card class="surface-panel border-slate-200/80 shadow-lg">
+					<CardHeader><h2 class="text-xl font-semibold">参加者一覧</h2></CardHeader>
+					<CardContent>
+						{#if loading}
+							<p class="text-sm text-muted-foreground">参加者を読み込み中…</p>
+						{:else if participants.length === 0}
+							<p class="text-sm text-muted-foreground">参加者はまだ登録されていません。</p>
+						{:else}
+							<div class="space-y-2">
+								{#each participants as participant (participant.id)}
+									<div class="rounded-lg border border-slate-200/80 bg-white/80 p-3">
+										<p class="text-sm font-semibold">{participant.name}</p>
+										<p class="text-xs text-muted-foreground">{participant.email}</p>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+			{/if}
 
 			<Card class="surface-panel border-slate-200/80 shadow-lg">
 				<CardHeader
-					><h2 class="text-xl font-semibold">参加者招待管理</h2>
-					<CardDescription>作成・再送・取消・受信招待の処理。</CardDescription></CardHeader
+					><h2 class="text-xl font-semibold">
+						{participantsPageMode === 'participant' ? '受信した参加者招待' : '参加者招待'}
+					</h2>
+					<CardDescription
+						>{participantsPageMode === 'participant'
+							? '自分宛てに届いた参加者招待の承諾・辞退を行います。'
+							: '管理者向けの参加者招待送信・再送・取消を行います。'}</CardDescription
+					></CardHeader
 				>
 				<CardContent class="space-y-4">
-					{#if !canManage}
+					{#if participantsPageMode !== 'participant' && !canManage}
 						<p class="text-sm text-muted-foreground">
 							参加者招待の管理には admin または owner 権限が必要です。
 						</p>
-					{:else}
+					{:else if participantsPageMode !== 'participant'}
 						<form
 							class="space-y-3 rounded-lg border border-slate-200/80 bg-white/80 p-4"
 							onsubmit={submitCreateParticipantInvitation}
 						>
-							<h3 class="text-sm font-semibold">参加者招待を送信</h3>
+							<h3 class="text-sm font-semibold">管理者向け: 参加者招待を送信</h3>
 							<div class="space-y-2">
 								<Label for="participant-email">メールアドレス</Label><Input
 									id="participant-email"
@@ -355,84 +586,89 @@
 						</form>
 					{/if}
 
-					<div class="space-y-2">
-						<h3 class="text-sm font-semibold">送信済み参加者招待</h3>
-						{#if sentInvitations.length === 0}
-							<p class="text-sm text-muted-foreground">送信済み参加者招待はありません。</p>
-						{:else}
-							<div class="space-y-2">
-								{#each sentInvitations as invitation (invitation.id)}
-									<div
-										class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3"
-									>
-										<div>
-											<p class="text-sm font-semibold">{invitation.participantName}</p>
-											<p class="text-xs text-muted-foreground">{invitation.email}</p>
+					{#if participantsPageMode !== 'participant'}
+						<div class="space-y-2">
+							<h3 class="text-sm font-semibold">管理者向け: 送信済み参加者招待</h3>
+							{#if sentInvitations.length === 0}
+								<p class="text-sm text-muted-foreground">送信済み参加者招待はありません。</p>
+							{:else}
+								<div class="space-y-2">
+									{#each sentInvitations as invitation (invitation.id)}
+										<div
+											class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3"
+										>
+											<div>
+												<p class="text-sm font-semibold">{invitation.participantName}</p>
+												<p class="text-xs text-muted-foreground">{invitation.email}</p>
+											</div>
+											<div class="flex items-center gap-2">
+												<Badge variant={invitation.status === 'pending' ? 'outline' : 'secondary'}
+													>{invitation.status}</Badge
+												>
+												<Button
+													type="button"
+													variant="outline"
+													onclick={() => submitResendParticipantInvitation(invitation)}
+													disabled={busy || invitation.status !== 'pending' || !canManage}
+													>再送</Button
+												>
+												<Button
+													type="button"
+													variant="destructive"
+													onclick={() => submitAction('cancel', invitation.id)}
+													disabled={busy || invitation.status !== 'pending' || !canManage}
+													>取り消し</Button
+												>
+											</div>
 										</div>
-										<div class="flex items-center gap-2">
-											<Badge variant={invitation.status === 'pending' ? 'outline' : 'secondary'}
-												>{invitation.status}</Badge
-											>
-											<Button
-												type="button"
-												variant="outline"
-												onclick={() => submitResendParticipantInvitation(invitation)}
-												disabled={busy || invitation.status !== 'pending' || !canManage}
-												>再送</Button
-											>
-											<Button
-												type="button"
-												variant="destructive"
-												onclick={() => submitAction('cancel', invitation.id)}
-												disabled={busy || invitation.status !== 'pending' || !canManage}
-												>取り消し</Button
-											>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
 
-					<div class="space-y-2">
-						<h3 class="text-sm font-semibold">受信した参加者招待</h3>
-						{#if receivedInvitations.length === 0}
-							<p class="text-sm text-muted-foreground">受信した参加者招待はありません。</p>
-						{:else}
-							<div class="space-y-2">
-								{#each receivedInvitations as invitation (invitation.id)}
-									<div
-										class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3"
-									>
-										<div>
-											<p class="text-sm font-semibold">{invitation.participantName}</p>
-											<p class="text-xs text-muted-foreground">
-												{invitation.organizationName ?? invitation.organizationId} / {invitation.status}
-											</p>
+					{#if participantsPageMode !== 'admin'}
+						<div class="space-y-2">
+							<h3 class="text-sm font-semibold">参加者向け: 受信した参加者招待</h3>
+							{#if receivedInvitations.length === 0}
+								<p class="text-sm text-muted-foreground">受信した参加者招待はありません。</p>
+							{:else}
+								<div class="space-y-2">
+									{#each receivedInvitations as invitation (invitation.id)}
+										<div
+											class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3"
+										>
+											<div>
+												<p class="text-sm font-semibold">{invitation.participantName}</p>
+												<p class="text-xs text-muted-foreground">
+													{invitation.organizationName ?? invitation.organizationId} / {invitation.status}
+												</p>
+											</div>
+											<div class="flex items-center gap-2">
+												<Button
+													type="button"
+													variant="secondary"
+													onclick={() => submitAction('accept', invitation.id)}
+													disabled={busy || invitation.status !== 'pending'}>承諾</Button
+												><Button
+													type="button"
+													variant="outline"
+													onclick={() => submitAction('reject', invitation.id)}
+													disabled={busy || invitation.status !== 'pending'}>辞退</Button
+												>
+											</div>
 										</div>
-										<div class="flex items-center gap-2">
-											<Button
-												type="button"
-												variant="secondary"
-												onclick={() => submitAction('accept', invitation.id)}
-												disabled={busy || invitation.status !== 'pending'}>承諾</Button
-											><Button
-												type="button"
-												variant="outline"
-												onclick={() => submitAction('reject', invitation.id)}
-												disabled={busy || invitation.status !== 'pending'}>辞退</Button
-											>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
 				</CardContent>
 			</Card>
 		</section>
 
-		<section>
+		{#if participantsPageMode !== 'participant'}
+			<section>
 			<Card class="surface-panel border-slate-200/80 shadow-lg">
 				<CardHeader>
 					<h2 class="text-xl font-semibold">回数券管理</h2>
@@ -479,6 +715,27 @@
 										type="number"
 										min="1"
 										bind:value={ticketTypeForm.expiresInDays}
+									/>
+								</div>
+								<div
+									class="flex items-center gap-2 rounded-md border border-slate-200/80 bg-slate-50/60 px-3 py-2"
+								>
+									<input
+										id="ticket-type-is-for-sale"
+										name="ticket_type_is_for_sale"
+										type="checkbox"
+										bind:checked={ticketTypeForm.isForSale}
+									/>
+									<Label for="ticket-type-is-for-sale">参加者が購入できるようにする</Label>
+								</div>
+								<div class="space-y-2">
+									<Label for="ticket-type-stripe-price-id">Stripe 価格ID（販売時必須）</Label>
+									<Input
+										id="ticket-type-stripe-price-id"
+										name="ticket_type_stripe_price_id"
+										type="text"
+										bind:value={ticketTypeForm.stripePriceId}
+										placeholder="price_xxx"
 									/>
 								</div>
 								<div class="space-y-2">
@@ -590,7 +847,11 @@
 												<p class="text-sm font-semibold">{ticketType.name}</p>
 												<p class="text-xs text-muted-foreground">
 													回数: {ticketType.totalCount} / 有効日数: {ticketType.expiresInDays ??
-														'無期限'} / 対象サービス: {ticketType.serviceIds?.length ?? 0}件
+														'無期限'} / 対象サービス: {ticketType.serviceIds?.length ?? 0}件 / 販売:
+													{ticketType.isForSale ? '公開' : '非公開'}
+												</p>
+												<p class="text-xs text-muted-foreground">
+													Stripe価格ID: {ticketType.stripePriceId || '-'}
 												</p>
 												<p class="text-xs text-muted-foreground">
 													作成: {formatDateTime(ticketType.createdAt)}
@@ -604,9 +865,145 @@
 								</div>
 							{/if}
 						</section>
+
+						<section class="space-y-3">
+							<h3 class="text-sm font-semibold">回数券購入管理</h3>
+							<div class="grid gap-3 md:grid-cols-3">
+								<div class="space-y-2">
+									<Label for="purchase-filter-status">ステータス</Label>
+									<select
+										id="purchase-filter-status"
+										name="purchase_filter_status"
+										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+										bind:value={ticketPurchaseFilter.status}
+									>
+										<option value="all">all</option>
+										<option value="pending_payment">pending_payment</option>
+										<option value="pending_approval">pending_approval</option>
+										<option value="approved">approved</option>
+										<option value="rejected">rejected</option>
+										<option value="cancelled_by_participant">cancelled_by_participant</option>
+									</select>
+								</div>
+								<div class="space-y-2">
+									<Label for="purchase-filter-method">支払方法</Label>
+									<select
+										id="purchase-filter-method"
+										name="purchase_filter_method"
+										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+										bind:value={ticketPurchaseFilter.paymentMethod}
+									>
+										<option value="all">all</option>
+										<option value="stripe">stripe</option>
+										<option value="cash_on_site">cash_on_site</option>
+										<option value="bank_transfer">bank_transfer</option>
+									</select>
+								</div>
+								<div class="space-y-2">
+									<Label for="purchase-filter-participant">参加者</Label>
+									<select
+										id="purchase-filter-participant"
+										name="purchase_filter_participant"
+										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+										bind:value={ticketPurchaseFilter.participantId}
+									>
+										<option value="">すべて</option>
+										{#each participants as participant (participant.id)}
+											<option value={participant.id}
+												>{participant.name} / {participant.email}</option
+											>
+										{/each}
+									</select>
+								</div>
+							</div>
+
+							{#if filteredTicketPurchases.length === 0}
+								<p class="text-sm text-muted-foreground">該当する購入申請はありません。</p>
+							{:else}
+								<div class="overflow-x-auto rounded-lg border border-slate-200/80 bg-white/80">
+									<table class="w-full min-w-[980px] text-sm">
+										<thead class="bg-slate-50 text-slate-600">
+											<tr>
+												<th class="px-3 py-2 text-left font-medium">申請ID</th>
+												<th class="px-3 py-2 text-left font-medium">参加者</th>
+												<th class="px-3 py-2 text-left font-medium">券種ID</th>
+												<th class="px-3 py-2 text-left font-medium">支払方法</th>
+												<th class="px-3 py-2 text-left font-medium">ステータス</th>
+												<th class="px-3 py-2 text-left font-medium">申請日時</th>
+												<th class="px-3 py-2 text-left font-medium">操作</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each filteredTicketPurchases as purchase (purchase.id)}
+												{@const isPendingApproval = purchase.status === 'pending_approval'}
+												<tr class="border-t border-slate-200/70 align-top">
+													<td class="px-3 py-3 font-mono text-xs">
+														{formatTicketPurchaseIdShort(purchase.id)}
+													</td>
+													<td class="px-3 py-3">{getParticipantLabel(purchase.participantId)}</td>
+													<td class="px-3 py-3 font-mono text-xs">
+														{formatTicketTypeIdShort(purchase.ticketTypeId)}
+													</td>
+													<td class="px-3 py-3">
+														{ticketPurchaseMethodLabelMap[purchase.paymentMethod]}
+													</td>
+													<td class="px-3 py-3">
+														<Badge
+															variant={purchase.status === 'approved'
+																? 'outline'
+																: purchase.status === 'rejected'
+																	? 'destructive'
+																	: 'secondary'}
+														>
+															{ticketPurchaseStatusLabelMap[purchase.status]}
+														</Badge>
+														{#if purchase.rejectReason}
+															<p class="mt-1 text-xs text-rose-600">
+																理由: {purchase.rejectReason}
+															</p>
+														{/if}
+													</td>
+													<td class="px-3 py-3">{formatDateTime(purchase.createdAt)}</td>
+													<td class="px-3 py-3">
+														{#if isPendingApproval}
+															<div class="flex flex-wrap gap-2">
+																<Button
+																	type="button"
+																	size="sm"
+																	onclick={() => submitApproveTicketPurchase(purchase.id)}
+																	disabled={busy || !!ticketPurchaseAction}
+																>
+																	{isTicketPurchaseActionInProgress('approve', purchase.id)
+																		? '処理中…'
+																		: '承認'}
+																</Button>
+																<Button
+																	type="button"
+																	size="sm"
+																	variant="outline"
+																	onclick={() => submitRejectTicketPurchase(purchase.id)}
+																	disabled={busy || !!ticketPurchaseAction}
+																>
+																	{isTicketPurchaseActionInProgress('reject', purchase.id)
+																		? '処理中…'
+																		: '却下'}
+																</Button>
+															</div>
+														{:else}
+															<span class="text-xs text-slate-500">操作不可</span>
+														{/if}
+													</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+						</section>
 					{/if}
 				</CardContent>
 			</Card>
-		</section>
+			</section>
+		{/if}
 	{/if}
 </main>

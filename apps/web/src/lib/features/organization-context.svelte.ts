@@ -1,5 +1,6 @@
 import { authRpc, type OrganizationPayload } from '$lib/rpc-client';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import { writeLastUsedOrganizationId } from './organization-preference';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
@@ -22,10 +23,16 @@ export const loadOrganizations = async () => {
 		parseResponseBody(listResponse),
 		parseResponseBody(activeResponse)
 	]);
+	const organizations = listResponse.ok ? asOrganizations(listPayload) : [];
+	const activeOrganization = activeResponse.ok ? asOrganization(activePayload) : null;
+
+	if (activeOrganization?.id) {
+		writeLastUsedOrganizationId(activeOrganization.id);
+	}
 
 	return {
-		organizations: listResponse.ok ? asOrganizations(listPayload) : [],
-		activeOrganization: activeResponse.ok ? asOrganization(activePayload) : null
+		organizations,
+		activeOrganization
 	};
 };
 
@@ -42,6 +49,9 @@ export const createOrganization = async (input: { name: string; slug: string; lo
 export const setActiveOrganization = async (organizationId: string | null) => {
 	const response = await authRpc.setActiveOrganization({ organizationId });
 	const payload = await parseResponseBody(response);
+	if (response.ok) {
+		writeLastUsedOrganizationId(organizationId);
+	}
 	return {
 		ok: response.ok,
 		status: response.status,

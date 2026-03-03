@@ -10,8 +10,14 @@
 	},
 	// Replace with actual backend worker URL.
 	"vars": {
-		"PUBLIC_BACKEND_URL": "https://reserve-app-backend.yusuke-kusi1028.workers.dev"
+		"PUBLIC_BACKEND_URL": "https://api.wakureserve.com"
 	},
+	"routes": [
+		{
+			"pattern": "web.wakureserve.com",
+			"custom_domain": true
+		}
+	],
 	"workers_dev": true,
 	"preview_urls": true,
 	"observability": {

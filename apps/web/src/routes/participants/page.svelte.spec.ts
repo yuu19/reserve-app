@@ -18,5 +18,10 @@ describe('/participants/+page.svelte', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 3, name: '回数券付与' }))
 			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 3, name: '回数券購入管理' }))
+			.toBeInTheDocument();
+		await expect.element(page.getByLabelText('ステータス')).toBeInTheDocument();
+		await expect.element(page.getByLabelText('支払方法')).toBeInTheDocument();
 	});
 });

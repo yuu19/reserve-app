@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -24,6 +27,7 @@
 
 	const selectedOrganizationLogoFile = $derived(organizationLogoFiles?.item(0) ?? null);
 	const activeOrganizationId = $derived(activeOrganization?.id ?? null);
+	const pathname = $derived(page.url.pathname);
 
 	const refreshSettings = async () => {
 		const { session } = await loadSession();
@@ -87,6 +91,10 @@
 
 	onMount(() => {
 		void (async () => {
+			if (pathname === '/settings') {
+				await goto(resolve('/admin/settings'));
+				return;
+			}
 			loading = true;
 			try {
 				await refreshSettings();

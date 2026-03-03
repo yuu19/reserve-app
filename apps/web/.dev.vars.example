@@ -1,4 +1,5 @@
 PUBLIC_BACKEND_URL=http://localhost:3000
+# Prod: https://api.wakureserve.com / Staging: https://api.stg.wakureserve.com
 PUBLIC_SENTRY_DSN_WEB=
 PUBLIC_SENTRY_ENVIRONMENT=production
 PUBLIC_SENTRY_RELEASE=

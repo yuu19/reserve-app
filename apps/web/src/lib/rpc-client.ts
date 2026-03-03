@@ -62,6 +62,8 @@ export type ServicePayload = {
 	id: string;
 	organizationId: string;
 	name: string;
+	description?: string | null;
+	imageUrl?: string | null;
 	kind: 'single' | 'recurring';
 	bookingPolicy: 'instant' | 'approval';
 	durationMinutes: number;
@@ -149,6 +151,8 @@ export type TicketTypePayload = {
 	totalCount: number;
 	expiresInDays?: number | null;
 	isActive: boolean;
+	isForSale: boolean;
+	stripePriceId?: string | null;
 	createdAt: string;
 	updatedAt: string;
 	[key: string]: unknown;
@@ -168,6 +172,61 @@ export type TicketPackPayload = {
 	[key: string]: unknown;
 };
 
+export type TicketPurchaseMethod = 'stripe' | 'cash_on_site' | 'bank_transfer';
+
+export type TicketPurchaseStatus =
+	| 'pending_payment'
+	| 'pending_approval'
+	| 'approved'
+	| 'rejected'
+	| 'cancelled_by_participant';
+
+export type TicketPurchasePayload = {
+	id: string;
+	organizationId: string;
+	participantId: string;
+	ticketTypeId: string;
+	paymentMethod: TicketPurchaseMethod;
+	status: TicketPurchaseStatus;
+	ticketPackId?: string | null;
+	stripeCheckoutSessionId?: string | null;
+	approvedByUserId?: string | null;
+	approvedAt?: string | null;
+	rejectedByUserId?: string | null;
+	rejectedAt?: string | null;
+	rejectReason?: string | null;
+	createdAt: string;
+	updatedAt: string;
+	checkoutUrl?: string | null;
+	[key: string]: unknown;
+};
+
+export type PublicEventListItemPayload = {
+	organizationId: string;
+	serviceId: string;
+	serviceName: string;
+	serviceDescription?: string | null;
+	serviceImageUrl?: string | null;
+	serviceKind: 'single' | 'recurring';
+	bookingPolicy: 'instant' | 'approval';
+	requiresTicket: boolean;
+	slotId: string;
+	startAt: string;
+	endAt: string;
+	slotStatus: 'open' | 'canceled' | 'completed';
+	capacity: number;
+	reservedCount: number;
+	remainingCount: number;
+	bookingOpenAt: string;
+	bookingCloseAt: string;
+	isBookable: boolean;
+	staffLabel?: string | null;
+	locationLabel?: string | null;
+	[key: string]: unknown;
+};
+
+export type PublicEventDetailPayload = PublicEventListItemPayload;
+
 export type OrganizationRole = 'admin' | 'member';
 export type OrganizationLogoUploadPayload = {
 	key: string;
@@ -175,6 +234,15 @@ export type OrganizationLogoUploadPayload = {
 	contentType: string;
 	originalContentType: string;
 	size: number;
+};
+
+export type ServiceImageUploadUrlPayload = {
+	key: string;
+	uploadUrl: string;
+	imageUrl: string;
+	expiresAt: string;
+	contentType: string;
+	maxUploadBytes: number;
 };
 
 type SignInInput = {
@@ -218,9 +286,15 @@ type CreateParticipantInvitationInput = {
 	resend?: boolean;
 };
 
+type SelfEnrollParticipantInput = {
+	organizationId: string;
+};
+
 type CreateServiceInput = {
 	organizationId?: string;
 	name: string;
+	description?: string | null;
+	imageUrl?: string | null;
 	kind: 'single' | 'recurring';
 	bookingPolicy?: 'instant' | 'approval';
 	durationMinutes: number;
@@ -236,6 +310,8 @@ type CreateServiceInput = {
 type UpdateServiceInput = {
 	serviceId: string;
 	name?: string;
+	description?: string | null;
+	imageUrl?: string | null;
 	kind?: 'single' | 'recurring';
 	bookingPolicy?: 'instant' | 'approval';
 	durationMinutes?: number;
@@ -250,6 +326,13 @@ type UpdateServiceInput = {
 
 type ArchiveServiceInput = {
 	serviceId: string;
+};
+
+type CreateServiceImageUploadUrlInput = {
+	organizationId?: string;
+	fileName?: string;
+	contentType: string;
+	size: number;
 };
 
 type ListServicesQuery = {
@@ -367,6 +450,8 @@ type CreateTicketTypeInput = {
 	totalCount: number;
 	expiresInDays?: number;
 	isActive?: boolean;
+	isForSale?: boolean;
+	stripePriceId?: string;
 };
 
 type ListTicketTypesQuery = {
@@ -380,6 +465,37 @@ type GrantTicketPackInput = {
 	ticketTypeId: string;
 	count?: number;
 	expiresAt?: string;
+};
+
+type CreateTicketPurchaseInput = {
+	organizationId?: string;
+	ticketTypeId: string;
+	paymentMethod: TicketPurchaseMethod;
+};
+
+type ListTicketPurchasesQuery = {
+	organizationId?: string;
+	participantId?: string;
+	paymentMethod?: TicketPurchaseMethod;
+	status?: TicketPurchaseStatus;
+};
+
+type ListMyTicketPurchasesQuery = {
+	organizationId?: string;
+	status?: TicketPurchaseStatus;
+};
+
+type TicketPurchaseApproveInput = {
+	purchaseId: string;
+};
+
+type TicketPurchaseRejectInput = {
+	purchaseId: string;
+	reason?: string;
+};
+
+type TicketPurchaseCancelInput = {
+	purchaseId: string;
 };
 
 type OrganizationQuery = {
@@ -443,6 +559,9 @@ type AuthRpcClient = {
 					};
 					participants: {
 						$get: (args?: { query: OrganizationQuery }) => Promise<Response>;
+						'self-enroll': {
+							$post: (args: { json: SelfEnrollParticipantInput }) => Promise<Response>;
+						};
 						invitations: {
 							$get: (args?: { query: OrganizationQuery }) => Promise<Response>;
 							$post: (args: { json: CreateParticipantInvitationInput }) => Promise<Response>;
@@ -521,6 +640,9 @@ type AuthRpcClient = {
 					'ticket-types': {
 						$get: (args?: { query: ListTicketTypesQuery }) => Promise<Response>;
 						$post: (args: { json: CreateTicketTypeInput }) => Promise<Response>;
+						purchasable: {
+							$get: (args?: { query: OrganizationQuery }) => Promise<Response>;
+						};
 					};
 					'ticket-packs': {
 						mine: {
@@ -528,6 +650,22 @@ type AuthRpcClient = {
 						};
 						grant: {
 							$post: (args: { json: GrantTicketPackInput }) => Promise<Response>;
+						};
+					};
+					'ticket-purchases': {
+						$get: (args?: { query: ListTicketPurchasesQuery }) => Promise<Response>;
+						$post: (args: { json: CreateTicketPurchaseInput }) => Promise<Response>;
+						mine: {
+							$get: (args?: { query: ListMyTicketPurchasesQuery }) => Promise<Response>;
+						};
+						approve: {
+							$post: (args: { json: TicketPurchaseApproveInput }) => Promise<Response>;
+						};
+						reject: {
+							$post: (args: { json: TicketPurchaseRejectInput }) => Promise<Response>;
+						};
+						cancel: {
+							$post: (args: { json: TicketPurchaseCancelInput }) => Promise<Response>;
 						};
 					};
 				};
@@ -570,6 +708,24 @@ export const authRpc = {
 			credentials: 'include'
 		});
 	},
+	createServiceImageUploadUrl: (json: CreateServiceImageUploadUrlInput) =>
+		fetch(new URL('/api/v1/auth/organizations/services/images/upload-url', backendUrl), {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify(json),
+			credentials: 'include'
+		}),
+	uploadServiceImageBySignedUrl: (uploadUrl: string, file: File, contentType: string) =>
+		fetch(uploadUrl, {
+			method: 'PUT',
+			headers: {
+				'content-type': contentType
+			},
+			body: file,
+			credentials: 'omit'
+		}),
 	getSession: () => rpcClient.api.v1.auth.session.$get(),
 	signIn: (json: SignInInput) => rpcClient.api.v1.auth['sign-in'].$post({ json }),
 	signUp: (json: SignUpInput) => rpcClient.api.v1.auth['sign-up'].$post({ json }),
@@ -602,6 +758,8 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations.participants.$get(
 			organizationId ? { query: { organizationId } } : undefined
 		),
+	selfEnrollParticipant: (json: SelfEnrollParticipantInput) =>
+		rpcClient.api.v1.auth.organizations.participants['self-enroll'].$post({ json }),
 	listParticipantInvitations: (organizationId?: string) =>
 		rpcClient.api.v1.auth.organizations.participants.invitations.$get(
 			organizationId ? { query: { organizationId } } : undefined
@@ -662,10 +820,28 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations['ticket-types'].$post({ json }),
 	listTicketTypes: (query?: ListTicketTypesQuery) =>
 		rpcClient.api.v1.auth.organizations['ticket-types'].$get(query ? { query } : undefined),
+	listPurchasableTicketTypes: (organizationId?: string) =>
+		rpcClient.api.v1.auth.organizations['ticket-types'].purchasable.$get(
+			organizationId ? { query: { organizationId } } : undefined
+		),
 	grantTicketPack: (json: GrantTicketPackInput) =>
 		rpcClient.api.v1.auth.organizations['ticket-packs'].grant.$post({ json }),
 	listMyTicketPacks: (organizationId?: string) =>
 		rpcClient.api.v1.auth.organizations['ticket-packs'].mine.$get(
 			organizationId ? { query: { organizationId } } : undefined
-		)
+		),
+	createTicketPurchase: (json: CreateTicketPurchaseInput) =>
+		rpcClient.api.v1.auth.organizations['ticket-purchases'].$post({ json }),
+	listMyTicketPurchases: (query?: ListMyTicketPurchasesQuery) =>
+		rpcClient.api.v1.auth.organizations['ticket-purchases'].mine.$get(
+			query ? { query } : undefined
+		),
+	listTicketPurchases: (query?: ListTicketPurchasesQuery) =>
+		rpcClient.api.v1.auth.organizations['ticket-purchases'].$get(query ? { query } : undefined),
+	approveTicketPurchase: (json: TicketPurchaseApproveInput) =>
+		rpcClient.api.v1.auth.organizations['ticket-purchases'].approve.$post({ json }),
+	rejectTicketPurchase: (json: TicketPurchaseRejectInput) =>
+		rpcClient.api.v1.auth.organizations['ticket-purchases'].reject.$post({ json }),
+	cancelTicketPurchase: (json: TicketPurchaseCancelInput) =>
+		rpcClient.api.v1.auth.organizations['ticket-purchases'].cancel.$post({ json })
 };

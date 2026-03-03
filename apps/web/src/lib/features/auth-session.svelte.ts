@@ -1,9 +1,17 @@
-import { authRpc, type AuthSessionPayload } from '$lib/rpc-client';
+import { getRemoteSession } from '$lib/remote/session.remote';
+import { authRpc, type AuthSessionPayload, type OrganizationPayload } from '$lib/rpc-client';
+import { readLastUsedOrganizationId, writeLastUsedOrganizationId } from './organization-preference';
 
 export type JsonRecord = Record<string, unknown>;
 
 export const isRecord = (value: unknown): value is JsonRecord =>
 	typeof value === 'object' && value !== null;
+
+const isOrganizationPayload = (value: unknown): value is OrganizationPayload =>
+	isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string' && typeof value.slug === 'string';
+
+const asOrganizations = (value: unknown): OrganizationPayload[] =>
+	Array.isArray(value) ? value.filter(isOrganizationPayload) : [];
 
 export const asSessionPayload = (value: unknown): AuthSessionPayload => {
 	if (value === null) {
@@ -84,10 +92,120 @@ export const getCurrentPathWithSearch = (): string => {
 };
 
 export const loadSession = async (): Promise<{ session: AuthSessionPayload; status: number }> => {
-	const response = await authRpc.getSession();
-	const payload = await parseResponseBody(response);
-	if (!response.ok) {
-		return { session: null, status: response.status };
+	try {
+		if (typeof window !== 'undefined') {
+			const response = await authRpc.getSession();
+			const payload = await parseResponseBody(response);
+			if (!response.ok) {
+				return { session: null, status: response.status };
+			}
+			return {
+				session: asSessionPayload(payload),
+				status: response.status
+			};
+		}
+		return await getRemoteSession();
+	} catch {
+		return { session: null, status: 503 };
 	}
-	return { session: asSessionPayload(payload), status: response.status };
 };
+
+export type PortalAccess = {
+	canManage: boolean;
+	canUseParticipantBooking: boolean;
+	hasActiveOrganization: boolean;
+};
+
+const emptyPortalAccess = (): PortalAccess => ({
+	canManage: false,
+	canUseParticipantBooking: false,
+	hasActiveOrganization: false
+});
+
+const readActiveOrganizationId = (payload: unknown): string | null => {
+	if (!isRecord(payload) || typeof payload.id !== 'string') {
+		return null;
+	}
+	return payload.id;
+};
+
+export const resolveLastUsedOrganizationId = (
+	organizations: OrganizationPayload[],
+	lastUsedOrganizationId: string | null
+): string | null => {
+	if (!lastUsedOrganizationId) {
+		return null;
+	}
+	return organizations.some((organization) => organization.id === lastUsedOrganizationId)
+		? lastUsedOrganizationId
+		: null;
+};
+
+const activateLastUsedOrganizationIfNeeded = async (
+	activeOrganizationId: string | null
+): Promise<string | null> => {
+	if (activeOrganizationId) {
+		writeLastUsedOrganizationId(activeOrganizationId);
+		return activeOrganizationId;
+	}
+
+	const listResponse = await authRpc.listOrganizations();
+	const listPayload = await parseResponseBody(listResponse);
+	if (!listResponse.ok) {
+		return null;
+	}
+
+	const organizations = asOrganizations(listPayload);
+	const targetOrganizationId = resolveLastUsedOrganizationId(
+		organizations,
+		readLastUsedOrganizationId()
+	);
+	if (!targetOrganizationId) {
+		return null;
+	}
+
+	const activateResponse = await authRpc.setActiveOrganization({
+		organizationId: targetOrganizationId
+	});
+	if (!activateResponse.ok) {
+		return null;
+	}
+
+	writeLastUsedOrganizationId(targetOrganizationId);
+	return targetOrganizationId;
+};
+
+export const loadPortalAccess = async (): Promise<PortalAccess> => {
+	try {
+		const organizationResponse = await authRpc.getFullOrganization();
+		const organizationPayload = await parseResponseBody(organizationResponse);
+		if (!organizationResponse.ok) {
+			return emptyPortalAccess();
+		}
+
+		const activeOrganizationId = await activateLastUsedOrganizationIfNeeded(
+			readActiveOrganizationId(organizationPayload)
+		);
+		if (!activeOrganizationId) {
+			return emptyPortalAccess();
+		}
+
+		const [participantsResponse, participantInvitationResponse, myBookingsResponse] =
+			await Promise.all([
+				authRpc.listParticipants(activeOrganizationId),
+				authRpc.listParticipantInvitations(activeOrganizationId),
+				authRpc.listMyBookings({ organizationId: activeOrganizationId })
+			]);
+
+		return {
+			canManage: participantsResponse.ok && participantInvitationResponse.ok,
+			canUseParticipantBooking: myBookingsResponse.ok,
+			hasActiveOrganization: true
+		};
+	} catch {
+		return emptyPortalAccess();
+	}
+};
+
+export const resolvePortalHomePath = (portalAccess: PortalAccess): '/admin/dashboard' | '/participant/home' =>
+	portalAccess.canManage ? '/admin/dashboard' : '/participant/home';
