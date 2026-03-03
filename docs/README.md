@@ -133,11 +133,14 @@ GitHub シークレット:
 - `BETTER_AUTH_SECRET`
 - `SENTRY_AUTH_TOKEN`（Web sourcemap upload 用）
 - `SENTRY_DSN_BACKEND`
+- `STRIPE_SECRET_KEY`（回数券 Stripe 決済を使う場合）
+- `STRIPE_WEBHOOK_SECRET`（回数券 Stripe 決済を使う場合）
 
 GitHub 変数:
 
 - `BETTER_AUTH_URL`
 - `BETTER_AUTH_TRUSTED_ORIGINS`
+- `BETTER_AUTH_COOKIE_DOMAIN`
 - `PUBLIC_BACKEND_URL`
 - `SENTRY_ORG`
 - `SENTRY_PROJECT_WEB`
@@ -149,6 +152,11 @@ GitHub 変数:
 
 - backend デプロイ時に `wrangler d1 migrations apply --remote` を実行します。
 - web デプロイ前ビルドで Sentry sourcemap upload を実行します（`SENTRY_RELEASE=${{ github.sha }}`）。
+- Stripe webhook は `POST /api/webhooks/stripe` で受け付けます（`STRIPE_WEBHOOK_SECRET` 必須）。
+- カスタムドメイン運用時は以下の値を推奨します。
+  - Prod: `BETTER_AUTH_URL=https://api.wakureserve.com`, `PUBLIC_BACKEND_URL=https://api.wakureserve.com`, `BETTER_AUTH_COOKIE_DOMAIN=.wakureserve.com`
+  - Staging: `BETTER_AUTH_URL=https://api.stg.wakureserve.com`, `PUBLIC_BACKEND_URL=https://api.stg.wakureserve.com`, `BETTER_AUTH_COOKIE_DOMAIN=.stg.wakureserve.com`
+  - 現在の実運用は prod のみ適用済みで、staging は将来別 Worker で構築予定です。
 - backend の `database_id` は、事前に `apps/backend/wrangler.jsonc` に設定してください。
 
 詳細な設定手順:

@@ -14,13 +14,13 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.example.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.stg.wakureserve.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.example.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.wakureserve.com"
       }
     }
   },

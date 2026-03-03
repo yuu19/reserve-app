@@ -64,6 +64,7 @@ jobs:
           test -n "${{ secrets.SENTRY_DSN_BACKEND }}" || (echo "Missing secret: SENTRY_DSN_BACKEND" && exit 1)
           test -n "${{ vars.BETTER_AUTH_URL }}" || (echo "Missing variable: BETTER_AUTH_URL" && exit 1)
           test -n "${{ vars.BETTER_AUTH_TRUSTED_ORIGINS }}" || (echo "Missing variable: BETTER_AUTH_TRUSTED_ORIGINS" && exit 1)
+          test -n "${{ vars.BETTER_AUTH_COOKIE_DOMAIN }}" || (echo "Missing variable: BETTER_AUTH_COOKIE_DOMAIN" && exit 1)
           test -n "${{ vars.SENTRY_ENVIRONMENT }}" || (echo "Missing variable: SENTRY_ENVIRONMENT" && exit 1)
 
       - name: Sync BETTER_AUTH_SECRET
@@ -83,6 +84,7 @@ jobs:
             --keep-vars \
             --var "BETTER_AUTH_URL:${{ vars.BETTER_AUTH_URL }}" \
             --var "BETTER_AUTH_TRUSTED_ORIGINS:${{ vars.BETTER_AUTH_TRUSTED_ORIGINS }}" \
+            --var "BETTER_AUTH_COOKIE_DOMAIN:${{ vars.BETTER_AUTH_COOKIE_DOMAIN }}" \
             --var "SENTRY_ENVIRONMENT:${{ vars.SENTRY_ENVIRONMENT }}" \
             --var "SENTRY_RELEASE:${{ github.sha }}"
 

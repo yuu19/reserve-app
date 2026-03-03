@@ -65,4 +65,6 @@ pnpm --filter @apps/mobile eas:build:preview:android
 ### 注意点
 
 - `eas.json` の `EXPO_PUBLIC_BACKEND_URL` は本番/検証環境の URL に更新してください。
+  - Prod: `https://api.wakureserve.com`
+  - Preview/Staging: `https://api.stg.wakureserve.com`
 - `bundleIdentifier` / `package` は各自のアプリ識別子に変更してください。

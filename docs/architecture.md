@@ -113,29 +113,39 @@
 
 ログイン後の業務導線:
 
-- `/dashboard`:
+- `/admin/dashboard`:
   - KPIサマリー（利用中組織、参加者数、保留中参加者招待数）
   - organization 管理（作成・active 切り替え）
-- `/bookings`:
-  - 予約タブ（運営 / 参加者）
-  - 運営: Service 作成、単発 Slot 作成、定期 RecurringSchedule 作成
-  - 参加者:
-    - 予約カレンダー（週グリッドの月表示、申込、マイ予約キャンセル）
-    - 日程表（表示月ベースの一覧表示）
-      - 切替: `今後の日程` / `過去の日程`
-      - 列: 時間帯 / サービス / 状態 / 定員 / 承認待ち / 確定 / 残席
-      - 承認待ちは現行APIに値がないため `0` 固定
-  - 閲覧権限:
-    - `owner` / `admin` かつ `participant` 未所属: カレンダー閲覧のみ可（全 slot 表示）
-    - `member` かつ `participant` 未所属: カレンダー閲覧不可
-- `/participants`:
+- `/admin/bookings`:
+  - 運営向け予約運用（承認/却下/運営キャンセル/No-show）
+- `/admin/services`:
+  - サービス一覧・編集・停止/再開
+- `/admin/services/new`:
+  - サービス作成フォーム
+- `/admin/schedules/slots`:
+  - 単発 Slot 一覧・停止
+- `/admin/schedules/slots/new`:
+  - 単発 Slot 作成フォーム
+- `/admin/schedules/recurring`:
+  - 定期 RecurringSchedule 一覧・更新・停止/再開・例外登録・枠再生成
+- `/admin/schedules/recurring/new`:
+  - 定期 RecurringSchedule 作成フォーム
+- `/participant/bookings`:
+  - 参加者向け予約カレンダー（週グリッドの月表示、申込、マイ予約キャンセル）
+  - 日程表（表示月ベースの一覧表示）
+    - 切替: `今後の日程` / `過去の日程`
+    - 列: 時間帯 / サービス / 状態 / 定員 / 承認待ち / 確定 / 残席
+    - 承認待ちは現行APIに値がないため `0` 固定
+- `/admin/participants`:
   - 参加者一覧
   - 参加者招待作成（メール + 氏名）
   - 送信済み参加者招待（再送/取消）
+- `/participant/invitations`:
   - 受信参加者招待（承諾/辞退）
-- `/admin-invitations`:
+- `/admin/invitations`:
   - 管理者招待作成
   - 送信済み管理者招待（再送/取消）
+- `/participant/admin-invitations`:
   - 受信管理者招待（承諾/辞退）
 
 未ログインで業務画面に直接アクセスした場合は `/?next=<current-url>` へ誘導し、ログイン後に復帰する。
@@ -169,23 +179,51 @@
 
 ### 7.1 デプロイ先
 
-- Backend Worker: `reserve-app-backend`
-  - URL: `https://reserve-app-backend.yusuke-kusi1028.workers.dev`
-- Web Worker: `reserve-app-web`
-  - URL: `https://reserve-app-web.yusuke-kusi1028.workers.dev`
+- Backend API:
+  - Prod: `https://api.wakureserve.com`
+  - Staging: `https://api.stg.wakureserve.com`
+- Web:
+  - Prod: `https://web.wakureserve.com`
+  - Staging: `https://web.stg.wakureserve.com`
 
 ### 7.2 本番向け主要環境変数
 
 - Backend (`apps/backend/wrangler.jsonc`)
-  - `BETTER_AUTH_URL=https://reserve-app-backend.yusuke-kusi1028.workers.dev`
-  - `BETTER_AUTH_TRUSTED_ORIGINS=https://reserve-app-web.yusuke-kusi1028.workers.dev,https://reserve-app-backend.yusuke-kusi1028.workers.dev`
-  - `INVITATION_ACCEPT_URL_BASE=https://reserve-app-web.yusuke-kusi1028.workers.dev/invitations/accept`
-  - `PARTICIPANT_INVITATION_ACCEPT_URL_BASE=https://reserve-app-web.yusuke-kusi1028.workers.dev/participants/invitations/accept`
-  - `WEB_BASE_URL=https://reserve-app-web.yusuke-kusi1028.workers.dev`
+  - `BETTER_AUTH_URL=https://api.wakureserve.com`
+  - `BETTER_AUTH_TRUSTED_ORIGINS=https://web.wakureserve.com,https://api.wakureserve.com`
+  - `BETTER_AUTH_COOKIE_DOMAIN=.wakureserve.com`
+  - `INVITATION_ACCEPT_URL_BASE=https://web.wakureserve.com/invitations/accept`
+  - `PARTICIPANT_INVITATION_ACCEPT_URL_BASE=https://web.wakureserve.com/participants/invitations/accept`
+  - `WEB_BASE_URL=https://web.wakureserve.com`
 - Web (`apps/web/wrangler.jsonc`)
-  - `PUBLIC_BACKEND_URL=https://reserve-app-backend.yusuke-kusi1028.workers.dev`
+  - `PUBLIC_BACKEND_URL=https://api.wakureserve.com`
 
-### 7.3 デプロイコマンド
+### 7.3 Staging 向け差分
+
+現時点では staging の Custom Domain / Worker は未適用です（将来、別 Worker として構築予定）。
+
+- Backend
+  - `BETTER_AUTH_URL=https://api.stg.wakureserve.com`
+  - `BETTER_AUTH_TRUSTED_ORIGINS=https://web.stg.wakureserve.com,https://api.stg.wakureserve.com`
+  - `BETTER_AUTH_COOKIE_DOMAIN=.stg.wakureserve.com`
+  - `INVITATION_ACCEPT_URL_BASE=https://web.stg.wakureserve.com/invitations/accept`
+  - `PARTICIPANT_INVITATION_ACCEPT_URL_BASE=https://web.stg.wakureserve.com/participants/invitations/accept`
+  - `WEB_BASE_URL=https://web.stg.wakureserve.com`
+- Web
+  - `PUBLIC_BACKEND_URL=https://api.stg.wakureserve.com`
+
+### 7.4 OIDC Redirect URI（Google）
+
+- `https://api.wakureserve.com/api/auth/callback/google`
+- `https://api.stg.wakureserve.com/api/auth/callback/google`
+- `http://localhost:3000/api/auth/callback/google`
+
+### 7.5 preview URL 運用
+
+- workers.dev の一時 preview URL は OIDC 対象外
+- OIDC 検証は固定 staging ドメイン (`web.stg.wakureserve.com` / `api.stg.wakureserve.com`) で実施
+
+### 7.6 デプロイコマンド
 
 - Backend: `pnpm deploy:backend`
 - Web: `pnpm deploy:web`
@@ -274,13 +312,27 @@
 #### 8.3.5 Ticket（回数券）
 
 - `POST /api/v1/auth/organizations/ticket-types`
-  - Body: `{ organizationId?: string; name: string; serviceIds?: string[]; totalCount: number; expiresInDays?: number; isActive?: boolean }`
+  - Body: `{ organizationId?: string; name: string; serviceIds?: string[]; totalCount: number; expiresInDays?: number; isActive?: boolean; isForSale?: boolean; stripePriceId?: string }`
 - `GET /api/v1/auth/organizations/ticket-types`
   - Query: `{ organizationId?: string; isActive?: boolean }`
+- `GET /api/v1/auth/organizations/ticket-types/purchasable`
+  - Query: `{ organizationId?: string }`
 - `POST /api/v1/auth/organizations/ticket-packs/grant`
   - Body: `{ organizationId?: string; participantId: string; ticketTypeId: string; count?: number; expiresAt?: string(ISO) }`
 - `GET /api/v1/auth/organizations/ticket-packs/mine`
   - Query: `{ organizationId?: string }`
+- `POST /api/v1/auth/organizations/ticket-purchases`
+  - Body: `{ organizationId?: string; ticketTypeId: string; paymentMethod: 'stripe' | 'cash_on_site' | 'bank_transfer' }`
+- `GET /api/v1/auth/organizations/ticket-purchases/mine`
+  - Query: `{ organizationId?: string; status?: string }`
+- `GET /api/v1/auth/organizations/ticket-purchases`
+  - Query: `{ organizationId?: string; participantId?: string; paymentMethod?: string; status?: string }`
+- `POST /api/v1/auth/organizations/ticket-purchases/approve`
+  - Body: `{ purchaseId: string }`
+- `POST /api/v1/auth/organizations/ticket-purchases/reject`
+  - Body: `{ purchaseId: string; reason?: string }`
+- `POST /api/v1/auth/organizations/ticket-purchases/cancel`
+  - Body: `{ purchaseId: string }`
 
 #### 8.3.6 エラーコード方針（全API共通）
 
@@ -323,7 +375,7 @@
 
 #### 8.4.6 `ticket_type`
 
-- columns: `id`, `organizationId`, `name`, `serviceIdsJson(nullable)`, `totalCount`, `expiresInDays`, `isActive`, `createdAt`, `updatedAt`
+- columns: `id`, `organizationId`, `name`, `serviceIdsJson(nullable)`, `totalCount`, `expiresInDays`, `isActive`, `isForSale`, `stripePriceId(nullable)`, `createdAt`, `updatedAt`
 - indexes: `(organizationId, isActive)`
 
 #### 8.4.7 `ticket_pack`
@@ -336,7 +388,12 @@
 - columns: `id`, `organizationId`, `ticketPackId`, `bookingId(nullable)`, `action('grant'|'consume'|'restore'|'expire'|'adjust')`, `delta`, `balanceAfter`, `actorUserId`, `reason`, `createdAt`
 - indexes: `(ticketPackId, createdAt)`, `(organizationId, createdAt)`
 
-#### 8.4.9 `booking_audit_log`
+#### 8.4.9 `ticket_purchase`
+
+- columns: `id`, `organizationId`, `participantId`, `ticketTypeId`, `paymentMethod('stripe'|'cash_on_site'|'bank_transfer')`, `status('pending_payment'|'pending_approval'|'approved'|'rejected'|'cancelled_by_participant')`, `ticketPackId(nullable)`, `stripeCheckoutSessionId(nullable)`, `approvedByUserId(nullable)`, `approvedAt(nullable)`, `rejectedByUserId(nullable)`, `rejectedAt(nullable)`, `rejectReason(nullable)`, `createdAt`, `updatedAt`
+- indexes: `(organizationId, status, createdAt)`, `(organizationId, participantId, createdAt)`, `unique(stripeCheckoutSessionId)`
+
+#### 8.4.10 `booking_audit_log`
 
 - columns: `id`, `bookingId`, `organizationId`, `actorUserId`, `action`, `metadata`, `ipAddress`, `userAgent`, `createdAt`
 - indexes: `(bookingId, action)`, `(organizationId, createdAt)`
@@ -365,6 +422,13 @@
 - `active -> expired`（`expiresAt` 超過）
 - `exhausted`/`expired` は消費不可
 - 戻し対象は `cancelled_by_participant` かつキャンセル期限内のみ
+
+#### 8.5.4 TicketPurchase
+
+- `stripe`: `pending_payment -> approved`（Stripe webhook `checkout.session.completed` 到達時）
+- `cash_on_site`/`bank_transfer`: `pending_approval -> approved | rejected`
+- participant 取下げ: `pending_payment | pending_approval -> cancelled_by_participant`
+- `approved`/`rejected`/`cancelled_by_participant` は終端状態
 
 ### 8.6 権限・認可
 
@@ -447,10 +511,13 @@
 
 - 実装済み画面:
   - `/`（認証LP）
-  - `/dashboard`（サマリー・組織管理）
-  - `/bookings`（予約運用 / 予約申込）
-  - `/participants`（参加者管理）
-  - `/admin-invitations`（管理者招待管理）
+  - `/admin/dashboard`（サマリー・組織管理）
+  - `/admin/bookings`（運営向け予約運用）
+  - `/participant/bookings`（参加者向け予約申込）
+  - `/admin/participants`（参加者管理）
+  - `/participant/invitations`（参加者招待受信）
+  - `/admin/invitations`（管理者招待管理）
+  - `/participant/admin-invitations`（管理者招待受信）
   - `/invitations/accept`（管理者招待受諾）
   - `/participants/invitations/accept`（参加者招待受諾）
 - 実装済み入力UI:
