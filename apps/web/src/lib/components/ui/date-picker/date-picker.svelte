@@ -60,10 +60,10 @@
 </script>
 
 <div class="space-y-2">
-	<Label for={id}>{label}</Label>
+	<Label for={id}>{required ? `${label}*` : label}</Label>
 	<input type="hidden" {name} value={value} />
 	<Popover.Root bind:open>
-		<Popover.Trigger>
+		<Popover.Trigger class="w-full">
 			<Button
 				type="button"
 				variant="outline"
@@ -80,7 +80,4 @@
 			<Calendar value={parsedDate} onValueChange={onDateChange} />
 		</Popover.Content>
 	</Popover.Root>
-	{#if required && !value}
-		<p class="text-xs text-muted-foreground">日付の選択が必要です。</p>
-	{/if}
 </div>
