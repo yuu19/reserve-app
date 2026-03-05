@@ -65,6 +65,8 @@ Sentry 連携用 public 変数:
 ### `/admin/services/new`
 
 - サービス作成フォーム専用
+- 必須項目はラベル末尾 `*` で表示
+- 送信ボタンは sticky 表示で、送信不可時は理由を表示
 - 作成後は `/admin/services` へ遷移
 
 ### `/admin/schedules/slots`
@@ -76,6 +78,12 @@ Sentry 連携用 public 変数:
 ### `/admin/schedules/slots/new`
 
 - 単発 Slot 作成フォーム専用
+- 入力は `日付 + 開始時刻 + 終了時刻` を基本とし、必要時のみ「終了日を別日にする」を展開
+- 日付未選択時は時刻入力を disabled
+- 時刻入力は 15 分刻み（`step=900`）
+- サービス選択 + 開始時刻入力時、所要時間から終了時刻を自動計算（終了時刻を手動変更後は固定）
+- `終了日時 <= 開始日時` はリアルタイムで警告表示し、作成ボタンを disabled
+- 送信ボタンは sticky 表示で、送信不可時は理由を表示
 - 作成後は `/admin/schedules/slots` へ遷移
 
 ### `/admin/schedules/recurring`
@@ -89,6 +97,8 @@ Sentry 連携用 public 変数:
 ### `/admin/schedules/recurring/new`
 
 - 定期 Schedule 作成フォーム専用
+- 必須項目はラベル末尾 `*` で表示
+- 送信ボタンは sticky 表示で、送信不可時は理由を表示
 - 作成後は `/admin/schedules/recurring` へ遷移
 
 ### `/participants`（回数券購入管理）
