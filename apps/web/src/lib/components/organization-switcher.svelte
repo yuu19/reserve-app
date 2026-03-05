@@ -2,10 +2,11 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import OrganizationLogo from '$lib/components/organization-logo.svelte';
 	import * as Popover from '$lib/components/ui/popover';
 	import type { OrganizationPayload } from '$lib/rpc-client';
 	import { cn } from '$lib/utils';
-	import { Building2, Check, ChevronDown, Search } from '@lucide/svelte';
+	import { Check, ChevronDown, Search } from '@lucide/svelte';
 
 	type OrganizationSwitcherProps = {
 		organizations: OrganizationPayload[];
@@ -46,6 +47,9 @@
 		}
 		return activeOrganizationName;
 	});
+	const activeOrganization = $derived.by(() =>
+		organizations.find((organization) => organization.id === activeOrganizationId) ?? null
+	);
 
 	const selectOrganization = async (organizationId: string | null) => {
 		await onSelect(organizationId);
@@ -66,7 +70,11 @@
 		disabled={loading || busy}
 	>
 		<span class="flex min-w-0 items-center gap-2">
-			<Building2 class={compact ? 'size-3.5' : 'size-4'} aria-hidden="true" />
+			<OrganizationLogo
+				name={activeOrganization?.name ?? activeOrganizationName}
+				logo={activeOrganization?.logo}
+				size="sm"
+			/>
 			<span class="truncate">{triggerLabel}</span>
 		</span>
 		<ChevronDown class={compact ? 'size-3.5' : 'size-4'} aria-hidden="true" />
@@ -112,9 +120,12 @@
 							aria-label={`${organization.name}を利用中の組織に設定`}
 						>
 							<div class="flex items-center justify-between gap-2">
-								<div class="min-w-0">
-									<p class="truncate text-sm font-medium text-slate-900">{organization.name}</p>
-									<p class="truncate text-xs text-muted-foreground">slug: {organization.slug}</p>
+								<div class="flex min-w-0 items-center gap-2">
+									<OrganizationLogo name={organization.name} logo={organization.logo} size="sm" />
+									<div class="min-w-0">
+										<p class="truncate text-sm font-medium text-slate-900">{organization.name}</p>
+										<p class="truncate text-xs text-muted-foreground">slug: {organization.slug}</p>
+									</div>
 								</div>
 								{#if organization.id === activeOrganizationId}
 									<span class="flex items-center gap-1">

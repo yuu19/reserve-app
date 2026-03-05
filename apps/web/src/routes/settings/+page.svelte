@@ -8,6 +8,7 @@
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import OrganizationLogo from '$lib/components/organization-logo.svelte';
 	import {
 		createOrganization,
 		loadOrganizations,
@@ -152,9 +153,20 @@
 						<div class="space-y-2">
 							{#each organizations as organization (organization.id)}
 								<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3">
-									<div>
-										<p class="text-sm font-semibold text-slate-900">{organization.name}</p>
-										<p class="text-xs text-muted-foreground">slug: {organization.slug}</p>
+									<div class="flex min-w-0 items-center gap-3">
+										<OrganizationLogo
+											name={organization.name}
+											logo={organization.logo}
+											size="md"
+										/>
+										<div class="min-w-0">
+											<p class="truncate text-sm font-semibold text-slate-900">
+												{organization.name}
+											</p>
+											<p class="truncate text-xs text-muted-foreground">
+												slug: {organization.slug}
+											</p>
+										</div>
 									</div>
 									<div class="flex items-center gap-2">
 										<Badge variant={organization.id === activeOrganizationId ? 'default' : 'outline'}>

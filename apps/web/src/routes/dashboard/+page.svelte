@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
+	import OrganizationLogo from '$lib/components/organization-logo.svelte';
 	import {
 		getCurrentPathWithSearch,
 		loadSession,
@@ -76,6 +77,11 @@
 			<CardContent>
 				{#if loading}
 					<p class="text-sm text-muted-foreground">確認中…</p>
+				{:else if activeOrganization}
+					<div class="flex min-w-0 items-center gap-3">
+						<OrganizationLogo name={activeOrganization.name} logo={activeOrganization.logo} size="lg" />
+						<p class="truncate text-lg font-semibold text-slate-900">{activeOrganization.name}</p>
+					</div>
 				{:else}
 					<p class="text-lg font-semibold text-slate-900">{activeOrganizationLabel}</p>
 				{/if}
