@@ -1,5 +1,6 @@
-import { authRpc, type InvitationPayload, type OrganizationRole } from '$lib/rpc-client';
+import { authRpc, type InvitationPayload, type OrganizationInvitationRole } from '$lib/rpc-client';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import { readWindowScopedRouteContext } from './scoped-routing';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
@@ -10,7 +11,7 @@ const isInvitation = (value: unknown): value is InvitationPayload =>
 const asInvitations = (value: unknown): InvitationPayload[] =>
 	Array.isArray(value) ? value.filter(isInvitation) : [];
 
-const toRole = (value: string): OrganizationRole | null => {
+const toRole = (value: string): OrganizationInvitationRole | null => {
 	if (value === 'admin' || value === 'member') {
 		return value;
 	}
@@ -22,7 +23,8 @@ export const loadAdminInvitations = async (organizationId?: string) => {
 	const userPayload = await parseResponseBody(userResponse);
 	const received = userResponse.ok ? asInvitations(userPayload) : [];
 
-	if (!organizationId) {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
 		return {
 			sent: [] as InvitationPayload[],
 			received,
@@ -30,7 +32,7 @@ export const loadAdminInvitations = async (organizationId?: string) => {
 		};
 	}
 
-	const sentResponse = await authRpc.listInvitations(organizationId);
+	const sentResponse = await authRpc.listInvitationsScoped(context);
 	const sentPayload = await parseResponseBody(sentResponse);
 	if (sentResponse.status === 403) {
 		return { sent: [], received, canManage: false };
@@ -52,7 +54,11 @@ export const createAdminInvitation = async (input: {
 	if (!role) {
 		return { ok: false, status: 422, message: 'ロールは admin / member を指定してください。' };
 	}
-	const response = await authRpc.createInvitation({
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return { ok: false, status: 422, message: 'URL に組織/教室コンテキストがありません。' };
+	}
+	const response = await authRpc.createInvitationScoped(context, {
 		email: input.email,
 		role,
 		organizationId: input.organizationId,

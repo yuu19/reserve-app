@@ -3,10 +3,12 @@ import { getRequestEvent, query } from '$app/server';
 import type {
 	ParticipantInvitationPayload,
 	ParticipantPayload,
+	ScopedApiContext,
 	ServicePayload,
 	TicketPurchasePayload,
 	TicketTypePayload
 } from '$lib/rpc-client';
+import { z } from 'zod';
 
 const defaultBackendUrl = 'http://localhost:3000';
 
@@ -20,7 +22,7 @@ type ApiResult = {
 };
 
 type ParticipantsPageData = {
-	activeOrganizationId: string | null;
+	activeContext: ScopedApiContext;
 	canManage: boolean;
 	participants: ParticipantPayload[];
 	sentInvitations: ParticipantInvitationPayload[];
@@ -143,12 +145,8 @@ const asTicketTypes = (value: unknown): TicketTypePayload[] =>
 const asTicketPurchases = (value: unknown): TicketPurchasePayload[] =>
 	Array.isArray(value) ? value.filter(isTicketPurchase) : [];
 
-const readActiveOrganizationId = (payload: unknown): string | null => {
-	if (!isRecord(payload) || typeof payload.id !== 'string') {
-		return null;
-	}
-	return payload.id;
-};
+const buildScopedPath = (context: ScopedApiContext, suffix: string) =>
+	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms/${encodeURIComponent(context.classroomSlug)}${suffix}`;
 
 const assertAllowedFailure = (
 	result: ApiResult,
@@ -164,27 +162,15 @@ const assertAllowedFailure = (
 	throw new Error(toErrorMessage(result.payload, fallback));
 };
 
-const emptyParticipantsData = (): ParticipantsPageData => ({
-	activeOrganizationId: null,
-	canManage: false,
-	participants: [],
-	sentInvitations: [],
-	receivedInvitations: [],
-	services: [],
-	ticketTypes: [],
-	ticketPurchases: []
+const participantsPageQuerySchema = z.object({
+	orgSlug: z.string().trim().min(1),
+	classroomSlug: z.string().trim().min(1)
 });
 
-export const getParticipantsPageData = query(async (): Promise<ParticipantsPageData> => {
+export const getParticipantsPageData = query(participantsPageQuerySchema, async ({ orgSlug, classroomSlug }): Promise<ParticipantsPageData> => {
 	const getApi = createApiGetter();
-
-	const organizationResult = await getApi('/api/v1/auth/organizations/full');
-	assertAllowedFailure(organizationResult, '利用中の組織情報の取得に失敗しました。');
-
-	const activeOrganizationId = readActiveOrganizationId(organizationResult.payload);
-	if (!activeOrganizationId) {
-		return emptyParticipantsData();
-	}
+	const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+	const scopedPath = (suffix: string) => buildScopedPath(activeContext, suffix);
 
 	const [
 		participantsResult,
@@ -194,16 +180,12 @@ export const getParticipantsPageData = query(async (): Promise<ParticipantsPageD
 		ticketTypesResult,
 		ticketPurchasesResult
 	] = await Promise.all([
-		getApi('/api/v1/auth/organizations/participants', { organizationId: activeOrganizationId }),
-		getApi('/api/v1/auth/organizations/participants/invitations', {
-			organizationId: activeOrganizationId
-		}),
-		getApi('/api/v1/auth/organizations/participants/invitations/user'),
-		getApi('/api/v1/auth/organizations/services', { organizationId: activeOrganizationId }),
-		getApi('/api/v1/auth/organizations/ticket-types', { organizationId: activeOrganizationId }),
-		getApi('/api/v1/auth/organizations/ticket-purchases', {
-			organizationId: activeOrganizationId
-		})
+		getApi(scopedPath('/participants')),
+		getApi(scopedPath('/participants/invitations')),
+		getApi('/api/v1/auth/orgs/participant-invitations/user'),
+		getApi(scopedPath('/services')),
+		getApi(scopedPath('/ticket-types')),
+		getApi(scopedPath('/ticket-purchases'))
 	]);
 
 	assertAllowedFailure(participantsResult, '参加者情報の取得に失敗しました。', {
@@ -224,7 +206,7 @@ export const getParticipantsPageData = query(async (): Promise<ParticipantsPageD
 	});
 
 	return {
-		activeOrganizationId,
+		activeContext,
 		canManage: participantsResult.response.ok && sentInvitationsResult.response.ok,
 		participants: asParticipants(participantsResult.payload),
 		sentInvitations: asParticipantInvitations(sentInvitationsResult.payload),

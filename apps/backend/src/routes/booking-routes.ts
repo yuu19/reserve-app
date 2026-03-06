@@ -6,6 +6,8 @@ import {
   getSessionIdentity,
   hasAdminOrOwnerAccess,
   resolveOrganizationId,
+  resolveOrganizationClassroomAccess,
+  resolveOrganizationClassroomContext,
 } from '../booking/authorization.js';
 import { writeBookingAuditLog } from '../booking/audit.js';
 import {
@@ -71,10 +73,12 @@ const boolStringSchema = z
 
 const orgQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
 });
 
 const serviceCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema,
@@ -92,11 +96,13 @@ const serviceCreateBodySchema = z.object({
 
 const serviceListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   includeArchived: boolStringSchema,
 });
 
 const serviceUpdateBodySchema = z.object({
   serviceId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema.optional(),
@@ -114,6 +120,7 @@ const serviceUpdateBodySchema = z.object({
 
 const serviceImageUploadUrlBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   fileName: z.string().trim().min(1).max(255).optional(),
   contentType: z.string().trim().min(1).max(120),
   size: z.int().min(1),
@@ -125,11 +132,23 @@ const serviceImageUploadTokenParamSchema = z.object({
 
 const serviceArchiveBodySchema = z.object({
   serviceId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
 });
 
 const slotCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   serviceId: z.string().min(1),
+  startAt: isoDateTimeSchema,
+  endAt: isoDateTimeSchema,
+  capacity: z.int().min(1).max(500).optional(),
+  staffLabel: z.string().trim().max(120).optional(),
+  locationLabel: z.string().trim().max(120).optional(),
+});
+
+const slotUpdateBodySchema = z.object({
+  slotId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   startAt: isoDateTimeSchema,
   endAt: isoDateTimeSchema,
   capacity: z.int().min(1).max(500).optional(),
@@ -139,6 +158,7 @@ const slotCreateBodySchema = z.object({
 
 const slotListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema,
   to: isoDateTimeSchema,
@@ -147,6 +167,7 @@ const slotListQuerySchema = z.object({
 
 const slotAvailableQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema,
   to: isoDateTimeSchema,
@@ -154,11 +175,13 @@ const slotAvailableQuerySchema = z.object({
 
 const slotCancelBodySchema = z.object({
   slotId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
 const recurringCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   serviceId: z.string().min(1),
   timezone: z.string().optional(),
   frequency: z.enum(['weekly', 'monthly']),
@@ -174,12 +197,14 @@ const recurringCreateBodySchema = z.object({
 
 const recurringListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   isActive: boolStringSchema,
 });
 
 const recurringUpdateBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   timezone: z.string().optional(),
   frequency: z.enum(['weekly', 'monthly']).optional(),
   interval: z.int().min(1).max(52).optional(),
@@ -195,6 +220,7 @@ const recurringUpdateBodySchema = z.object({
 
 const recurringExceptionBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   date: dateOnlySchema,
   action: z.enum(['skip', 'override']),
   overrideStartTimeLocal: localTimeSchema.optional(),
@@ -204,17 +230,20 @@ const recurringExceptionBodySchema = z.object({
 
 const recurringGenerateBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
 });
 
 const bookingCreateBodySchema = z.object({
   slotId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   participantsCount: z.int().min(1).max(20).optional(),
 });
 
 const bookingMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
   status: bookingStatusSchema.optional(),
@@ -222,6 +251,7 @@ const bookingMineQuerySchema = z.object({
 
 const bookingListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
@@ -231,19 +261,23 @@ const bookingListQuerySchema = z.object({
 
 const bookingActionBodySchema = z.object({
   bookingId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
 const bookingNoShowBodySchema = z.object({
   bookingId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
 });
 
 const bookingApproveBodySchema = z.object({
   bookingId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
 });
 
 const ticketTypeCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(120),
   serviceIds: z.array(z.string().min(1)).optional(),
   totalCount: z.int().min(1).max(1000),
@@ -255,11 +289,13 @@ const ticketTypeCreateBodySchema = z.object({
 
 const ticketTypeListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   isActive: boolStringSchema,
 });
 
 const ticketPackGrantBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   participantId: z.string().min(1),
   ticketTypeId: z.string().min(1),
   count: z.int().min(1).max(1000).optional(),
@@ -268,6 +304,7 @@ const ticketPackGrantBodySchema = z.object({
 
 const ticketPackMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
 });
 
 const ticketPurchaseMethodSchema = z.enum([
@@ -286,17 +323,20 @@ const ticketPurchaseStatusSchema = z.enum([
 
 const ticketPurchaseCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   ticketTypeId: z.string().min(1),
   paymentMethod: ticketPurchaseMethodSchema,
 });
 
 const ticketPurchaseMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   status: ticketPurchaseStatusSchema.optional(),
 });
 
 const ticketPurchaseListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
+  classroomId: z.string().min(1).optional(),
   participantId: z.string().min(1).optional(),
   paymentMethod: ticketPurchaseMethodSchema.optional(),
   status: ticketPurchaseStatusSchema.optional(),
@@ -304,15 +344,18 @@ const ticketPurchaseListQuerySchema = z.object({
 
 const ticketPurchaseApproveBodySchema = z.object({
   purchaseId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
 });
 
 const ticketPurchaseRejectBodySchema = z.object({
   purchaseId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
 const ticketPurchaseCancelBodySchema = z.object({
   purchaseId: z.string().min(1),
+  classroomId: z.string().min(1).optional(),
 });
 
 const createServiceRoute = createRoute({
@@ -481,6 +524,31 @@ const createSlotRoute = createRoute({
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },
+    422: { description: 'Validation error' },
+  },
+});
+
+const updateSlotRoute = createRoute({
+  method: 'post',
+  path: '/organizations/slots/update',
+  tags: ['Slots'],
+  summary: 'Update slot',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: slotUpdateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Slot updated' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
     422: { description: 'Validation error' },
   },
 });
@@ -1140,6 +1208,14 @@ const resolveBookingPolicy = (value: string | null | undefined): 'instant' | 'ap
   return value === 'approval' ? 'approval' : 'instant';
 };
 
+const normalizeOptionalText = (value: string | undefined): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
 const normalizeServiceDescription = (
   value: string | null | undefined,
 ): string | null | undefined => {
@@ -1151,6 +1227,32 @@ const normalizeServiceDescription = (
   }
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+};
+
+const resolveSlotBookingWindow = ({
+  startAt,
+  bookingOpenMinutesBefore,
+  bookingCloseMinutesBefore,
+}: {
+  startAt: Date;
+  bookingOpenMinutesBefore: number | null | undefined;
+  bookingCloseMinutesBefore: number | null | undefined;
+}) => {
+  const bookingOpenAt =
+    typeof bookingOpenMinutesBefore === 'number'
+      ? new Date(startAt.getTime() - bookingOpenMinutesBefore * 60 * 1000)
+      : new Date();
+  const bookingCloseAt =
+    typeof bookingCloseMinutesBefore === 'number'
+      ? new Date(startAt.getTime() - bookingCloseMinutesBefore * 60 * 1000)
+      : startAt;
+  const finalBookingOpenAt =
+    bookingOpenAt.getTime() <= bookingCloseAt.getTime() ? bookingOpenAt : bookingCloseAt;
+
+  return {
+    bookingOpenAt: finalBookingOpenAt,
+    bookingCloseAt,
+  };
 };
 
 export const registerBookingRoutes = ({
@@ -1169,6 +1271,145 @@ export const registerBookingRoutes = ({
   const requireIdentity = async (headers: Headers) => {
     return getSessionIdentity(auth, headers);
   };
+
+  const resolveRequestedClassroomContext = async ({
+    organizationId,
+    classroomId,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+  }) => {
+    if (!classroomId) {
+      return resolveOrganizationClassroomContext({
+        database,
+        organizationId,
+      });
+    }
+
+    const rows = await database
+      .select({
+        organizationId: dbSchema.organization.id,
+        organizationSlug: dbSchema.organization.slug,
+        organizationName: dbSchema.organization.name,
+        classroomId: dbSchema.classroom.id,
+        classroomSlug: dbSchema.classroom.slug,
+        classroomName: dbSchema.classroom.name,
+      })
+      .from(dbSchema.classroom)
+      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.classroom.organizationId))
+      .where(and(eq(dbSchema.classroom.organizationId, organizationId), eq(dbSchema.classroom.id, classroomId)))
+      .limit(1);
+
+    return rows[0] ?? null;
+  };
+
+  const resolveRequestedClassroomAccess = async ({
+    organizationId,
+    classroomId,
+    userId,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+    userId: string;
+  }) => {
+    const context = await resolveRequestedClassroomContext({
+      organizationId,
+      classroomId,
+    });
+    if (!context) {
+      return null;
+    }
+
+    const access = await resolveOrganizationClassroomAccess({
+      database,
+      userId,
+      context,
+    });
+    return {
+      context,
+      access,
+    };
+  };
+
+  const canManageClassroomScope = async ({
+    organizationId,
+    classroomId,
+    userId,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+    userId: string;
+  }) => {
+    if (!classroomId) {
+      return hasAdminOrOwnerAccess({
+        database,
+        organizationId,
+        userId,
+      });
+    }
+
+    const scoped = await resolveRequestedClassroomAccess({
+      organizationId,
+      classroomId,
+      userId,
+    });
+    return scoped?.access.canManageClassroom ?? false;
+  };
+
+  const canManageBookingsScope = async ({
+    organizationId,
+    classroomId,
+    userId,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+    userId: string;
+  }) => {
+    if (!classroomId) {
+      return hasAdminOrOwnerAccess({
+        database,
+        organizationId,
+        userId,
+      });
+    }
+
+    const scoped = await resolveRequestedClassroomAccess({
+      organizationId,
+      classroomId,
+      userId,
+    });
+    return scoped?.access.canManageBookings ?? false;
+  };
+
+  const canManageParticipantsScope = async ({
+    organizationId,
+    classroomId,
+    userId,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+    userId: string;
+  }) => {
+    if (!classroomId) {
+      return hasAdminOrOwnerAccess({
+        database,
+        organizationId,
+        userId,
+      });
+    }
+
+    const scoped = await resolveRequestedClassroomAccess({
+      organizationId,
+      classroomId,
+      userId,
+    });
+    return scoped?.access.canManageParticipants ?? false;
+  };
+
+  const isRequestedClassroomMismatch = (
+    requestedClassroomId: string | null | undefined,
+    actualClassroomId: string,
+  ) => Boolean(requestedClassroomId && requestedClassroomId !== actualClassroomId);
 
   const formatDateTimeLabel = (value: Date, timezone: string) => {
     try {
@@ -1252,11 +1493,13 @@ export const registerBookingRoutes = ({
 
   const consumeTicketPackForParticipant = async ({
     organizationId,
+    classroomId,
     participantId,
     participantsCount,
     now,
   }: {
     organizationId: string;
+    classroomId?: string | null;
     participantId: string;
     participantsCount: number;
     now: Date;
@@ -1273,6 +1516,7 @@ export const registerBookingRoutes = ({
       .where(
         and(
           eq(dbSchema.ticketPack.organizationId, organizationId),
+          ...(classroomId ? [eq(dbSchema.ticketPack.classroomId, classroomId)] : []),
           eq(dbSchema.ticketPack.participantId, participantId),
           eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
           gte(dbSchema.ticketPack.remainingCount, participantsCount),
@@ -1369,6 +1613,7 @@ export const registerBookingRoutes = ({
 
   const issueTicketPackWithLedger = async ({
     organizationId,
+    classroomId,
     participantId,
     ticketTypeId,
     count,
@@ -1378,6 +1623,7 @@ export const registerBookingRoutes = ({
     bookingId,
   }: {
     organizationId: string;
+    classroomId: string;
     participantId: string;
     ticketTypeId: string;
     count: number;
@@ -1395,6 +1641,7 @@ export const registerBookingRoutes = ({
     await database.insert(dbSchema.ticketPack).values({
       id: ticketPackId,
       organizationId,
+      classroomId,
       participantId,
       ticketTypeId,
       initialCount: count,
@@ -1406,6 +1653,7 @@ export const registerBookingRoutes = ({
     await database.insert(dbSchema.ticketLedger).values({
       id: crypto.randomUUID(),
       organizationId,
+      classroomId,
       ticketPackId,
       bookingId: bookingId ?? null,
       action: TICKET_LEDGER_ACTION.GRANT,
@@ -1440,6 +1688,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.ticketPurchase.id,
         organizationId: dbSchema.ticketPurchase.organizationId,
+        classroomId: dbSchema.ticketPurchase.classroomId,
         participantId: dbSchema.ticketPurchase.participantId,
         ticketTypeId: dbSchema.ticketPurchase.ticketTypeId,
         status: dbSchema.ticketPurchase.status,
@@ -1486,6 +1735,7 @@ export const registerBookingRoutes = ({
     const expiresAt = resolveEndDate(ticketType.expiresInDays, undefined);
     const issued = await issueTicketPackWithLedger({
       organizationId: purchase.organizationId,
+      classroomId: purchase.classroomId,
       participantId: purchase.participantId,
       ticketTypeId: purchase.ticketTypeId,
       count: ticketType.totalCount,
@@ -1574,9 +1824,17 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const classroomContext = await resolveRequestedClassroomContext({
       organizationId,
+      classroomId: body.classroomId,
+    });
+    if (!classroomContext) {
+      return c.json({ message: 'Classroom not found.' }, 404);
+    }
+
+    const hasAccess = await canManageClassroomScope({
+      organizationId,
+      classroomId: body.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -1654,14 +1912,22 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
+    const classroomContext = await resolveRequestedClassroomContext({
+      organizationId,
+      classroomId: body.classroomId,
+    });
+    if (!classroomContext) {
+      return c.json({ message: 'Classroom not found.' }, 404);
+    }
+
     const timezone = assertSupportedTimezone(body.timezone);
     if (!timezone) {
       return c.json({ message: `Only ${DEFAULT_TIMEZONE} is supported in MVP.` }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const hasAccess = await canManageClassroomScope({
       organizationId,
+      classroomId: body.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -1672,6 +1938,7 @@ export const registerBookingRoutes = ({
     await database.insert(dbSchema.service).values({
       id: createdId,
       organizationId,
+      classroomId: classroomContext.classroomId,
       name: body.name,
       description: normalizeServiceDescription(body.description) ?? null,
       kind: body.kind,
@@ -1716,9 +1983,9 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const hasAccess = await canManageClassroomScope({
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -1726,6 +1993,9 @@ export const registerBookingRoutes = ({
     }
 
     const filters = [eq(dbSchema.service.organizationId, organizationId)];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.service.classroomId, query.classroomId));
+    }
     if (!query.includeArchived) {
       filters.push(eq(dbSchema.service.isActive, true));
     }
@@ -1757,6 +2027,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.service.id,
         organizationId: dbSchema.service.organizationId,
+        classroomId: dbSchema.service.classroomId,
       })
       .from(dbSchema.service)
       .where(eq(dbSchema.service.id, body.serviceId))
@@ -1766,9 +2037,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Service not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, current.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageClassroomScope({
       organizationId: current.organizationId,
+      classroomId: current.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -1833,6 +2108,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.service.id,
         organizationId: dbSchema.service.organizationId,
+        classroomId: dbSchema.service.classroomId,
       })
       .from(dbSchema.service)
       .where(eq(dbSchema.service.id, body.serviceId))
@@ -1842,9 +2118,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Service not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, service.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageClassroomScope({
       organizationId: service.organizationId,
+      classroomId: service.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -1875,7 +2155,14 @@ export const registerBookingRoutes = ({
     }
 
     const serviceRows = await database
-      .select()
+      .select({
+        id: dbSchema.service.id,
+        organizationId: dbSchema.service.organizationId,
+        classroomId: dbSchema.service.classroomId,
+        bookingOpenMinutesBefore: dbSchema.service.bookingOpenMinutesBefore,
+        bookingCloseMinutesBefore: dbSchema.service.bookingCloseMinutesBefore,
+        capacity: dbSchema.service.capacity,
+      })
       .from(dbSchema.service)
       .where(eq(dbSchema.service.id, body.serviceId))
       .limit(1);
@@ -1889,30 +2176,30 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (body.classroomId && body.classroomId !== service.classroomId) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId,
+      classroomId: service.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const bookingOpenAt =
-      typeof service.bookingOpenMinutesBefore === 'number'
-        ? new Date(startAt.getTime() - service.bookingOpenMinutesBefore * 60 * 1000)
-        : new Date();
-    const bookingCloseAt =
-      typeof service.bookingCloseMinutesBefore === 'number'
-        ? new Date(startAt.getTime() - service.bookingCloseMinutesBefore * 60 * 1000)
-        : startAt;
-    const finalBookingOpenAt =
-      bookingOpenAt.getTime() <= bookingCloseAt.getTime() ? bookingOpenAt : bookingCloseAt;
+    const slotBookingWindow = resolveSlotBookingWindow({
+      startAt,
+      bookingOpenMinutesBefore: service.bookingOpenMinutesBefore,
+      bookingCloseMinutesBefore: service.bookingCloseMinutesBefore,
+    });
 
     const slotId = crypto.randomUUID();
     await database.insert(dbSchema.slot).values({
       id: slotId,
       organizationId,
+      classroomId: service.classroomId,
       serviceId: service.id,
       recurringScheduleId: null,
       startAt,
@@ -1920,10 +2207,10 @@ export const registerBookingRoutes = ({
       capacity: body.capacity ?? service.capacity,
       reservedCount: 0,
       status: SLOT_STATUS.OPEN,
-      staffLabel: body.staffLabel ?? null,
-      locationLabel: body.locationLabel ?? null,
-      bookingOpenAt: finalBookingOpenAt,
-      bookingCloseAt,
+      staffLabel: normalizeOptionalText(body.staffLabel) ?? null,
+      locationLabel: normalizeOptionalText(body.locationLabel) ?? null,
+      bookingOpenAt: slotBookingWindow.bookingOpenAt,
+      bookingCloseAt: slotBookingWindow.bookingCloseAt,
     });
 
     const rows = await database
@@ -1947,6 +2234,117 @@ export const registerBookingRoutes = ({
     );
   });
 
+  authRoutes.openapi(updateSlotRoute, async (c) => {
+    const body = c.req.valid('json');
+    const identity = await requireIdentity(c.req.raw.headers);
+    if (!identity) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+
+    const startAt = parseIsoDateOrNull(body.startAt);
+    const endAt = parseIsoDateOrNull(body.endAt);
+    if (!startAt || !endAt || startAt.getTime() >= endAt.getTime()) {
+      return c.json({ message: 'Invalid slot startAt/endAt.' }, 422);
+    }
+
+    const slotRows = await database
+      .select({
+        id: dbSchema.slot.id,
+        organizationId: dbSchema.slot.organizationId,
+        classroomId: dbSchema.slot.classroomId,
+        serviceId: dbSchema.slot.serviceId,
+        status: dbSchema.slot.status,
+        reservedCount: dbSchema.slot.reservedCount,
+        startAt: dbSchema.slot.startAt,
+        capacity: dbSchema.slot.capacity,
+      })
+      .from(dbSchema.slot)
+      .where(eq(dbSchema.slot.id, body.slotId))
+      .limit(1);
+    const slot = slotRows[0];
+    if (!slot) {
+      return c.json({ message: 'Slot not found.' }, 404);
+    }
+
+    if (isRequestedClassroomMismatch(body.classroomId, slot.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
+      organizationId: slot.organizationId,
+      classroomId: slot.classroomId,
+      userId: identity.userId,
+    });
+    if (!hasAccess) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (slot.status !== SLOT_STATUS.OPEN) {
+      return c.json({ message: 'Slot is not open.' }, 409);
+    }
+    if (slot.reservedCount > 0) {
+      return c.json({ message: 'Slot with reservations cannot be updated.' }, 409);
+    }
+    if (new Date(slot.startAt).getTime() <= Date.now()) {
+      return c.json({ message: 'Started slot cannot be updated.' }, 409);
+    }
+
+    const serviceRows = await database
+      .select({
+        id: dbSchema.service.id,
+        organizationId: dbSchema.service.organizationId,
+        classroomId: dbSchema.service.classroomId,
+        bookingOpenMinutesBefore: dbSchema.service.bookingOpenMinutesBefore,
+        bookingCloseMinutesBefore: dbSchema.service.bookingCloseMinutesBefore,
+      })
+      .from(dbSchema.service)
+      .where(eq(dbSchema.service.id, slot.serviceId))
+      .limit(1);
+    const service = serviceRows[0];
+    if (!service || service.organizationId !== slot.organizationId || service.classroomId !== slot.classroomId) {
+      return c.json({ message: 'Service not found.' }, 404);
+    }
+
+    const slotBookingWindow = resolveSlotBookingWindow({
+      startAt,
+      bookingOpenMinutesBefore: service.bookingOpenMinutesBefore,
+      bookingCloseMinutesBefore: service.bookingCloseMinutesBefore,
+    });
+
+    await database
+      .update(dbSchema.slot)
+      .set({
+        startAt,
+        endAt,
+        capacity: body.capacity ?? slot.capacity,
+        staffLabel: normalizeOptionalText(body.staffLabel) ?? null,
+        locationLabel: normalizeOptionalText(body.locationLabel) ?? null,
+        bookingOpenAt: slotBookingWindow.bookingOpenAt,
+        bookingCloseAt: slotBookingWindow.bookingCloseAt,
+      })
+      .where(eq(dbSchema.slot.id, slot.id));
+
+    const rows = await database
+      .select()
+      .from(dbSchema.slot)
+      .where(eq(dbSchema.slot.id, slot.id))
+      .limit(1);
+    const updatedSlot = rows[0];
+
+    return c.json(
+      {
+        ...updatedSlot,
+        startAt: toIsoDate(updatedSlot?.startAt),
+        endAt: toIsoDate(updatedSlot?.endAt),
+        bookingOpenAt: toIsoDate(updatedSlot?.bookingOpenAt),
+        bookingCloseAt: toIsoDate(updatedSlot?.bookingCloseAt),
+        createdAt: toIsoDate(updatedSlot?.createdAt),
+        updatedAt: toIsoDate(updatedSlot?.updatedAt),
+      },
+      200,
+    );
+  });
+
   authRoutes.openapi(listSlotsRoute, async (c) => {
     const query = c.req.valid('query');
     const identity = await requireIdentity(c.req.raw.headers);
@@ -1959,9 +2357,9 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const hasAccess = await canManageBookingsScope({
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -1979,6 +2377,9 @@ export const registerBookingRoutes = ({
       gte(dbSchema.slot.startAt, from),
       lte(dbSchema.slot.startAt, to),
     ];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.slot.classroomId, query.classroomId));
+    }
     if (query.serviceId) {
       filters.push(eq(dbSchema.slot.serviceId, query.serviceId));
     }
@@ -2018,9 +2419,21 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
+    if (query.classroomId) {
+      const scoped = await resolveRequestedClassroomAccess({
+        organizationId,
+        classroomId: query.classroomId,
+        userId: identity.userId,
+      });
+      if (!scoped || !scoped.access.canUseParticipantBooking) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+    }
+
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!participant) {
@@ -2043,6 +2456,9 @@ export const registerBookingRoutes = ({
       gte(dbSchema.slot.bookingCloseAt, now),
       sql`${dbSchema.slot.reservedCount} < ${dbSchema.slot.capacity}`,
     ];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.slot.classroomId, query.classroomId));
+    }
     if (query.serviceId) {
       filters.push(eq(dbSchema.slot.serviceId, query.serviceId));
     }
@@ -2079,6 +2495,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.slot.id,
         organizationId: dbSchema.slot.organizationId,
+        classroomId: dbSchema.slot.classroomId,
         status: dbSchema.slot.status,
       })
       .from(dbSchema.slot)
@@ -2089,9 +2506,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Slot not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, slot.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId: slot.organizationId,
+      classroomId: slot.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -2143,6 +2564,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.service.id,
         organizationId: dbSchema.service.organizationId,
+        classroomId: dbSchema.service.classroomId,
       })
       .from(dbSchema.service)
       .where(eq(dbSchema.service.id, body.serviceId))
@@ -2157,9 +2579,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (body.classroomId && body.classroomId !== service.classroomId) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId,
+      classroomId: service.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -2189,6 +2615,7 @@ export const registerBookingRoutes = ({
     await database.insert(dbSchema.recurringSchedule).values({
       id: recurringScheduleId,
       organizationId,
+      classroomId: service.classroomId,
       serviceId: body.serviceId,
       timezone,
       frequency: body.frequency,
@@ -2243,9 +2670,9 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const hasAccess = await canManageBookingsScope({
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -2253,6 +2680,9 @@ export const registerBookingRoutes = ({
     }
 
     const filters = [eq(dbSchema.recurringSchedule.organizationId, organizationId)];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.recurringSchedule.classroomId, query.classroomId));
+    }
     if (query.serviceId) {
       filters.push(eq(dbSchema.recurringSchedule.serviceId, query.serviceId));
     }
@@ -2289,6 +2719,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.recurringSchedule.id,
         organizationId: dbSchema.recurringSchedule.organizationId,
+        classroomId: dbSchema.recurringSchedule.classroomId,
       })
       .from(dbSchema.recurringSchedule)
       .where(eq(dbSchema.recurringSchedule.id, body.recurringScheduleId))
@@ -2298,9 +2729,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Recurring schedule not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, schedule.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId: schedule.organizationId,
+      classroomId: schedule.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -2383,6 +2818,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.recurringSchedule.id,
         organizationId: dbSchema.recurringSchedule.organizationId,
+        classroomId: dbSchema.recurringSchedule.classroomId,
       })
       .from(dbSchema.recurringSchedule)
       .where(eq(dbSchema.recurringSchedule.id, body.recurringScheduleId))
@@ -2392,9 +2828,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Recurring schedule not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, schedule.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId: schedule.organizationId,
+      classroomId: schedule.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -2429,6 +2869,7 @@ export const registerBookingRoutes = ({
         id: crypto.randomUUID(),
         recurringScheduleId: body.recurringScheduleId,
         organizationId: schedule.organizationId,
+        classroomId: schedule.classroomId,
         date: body.date,
         action: body.action,
         overrideStartTimeLocal: body.overrideStartTimeLocal ?? null,
@@ -2479,6 +2920,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.recurringSchedule.id,
         organizationId: dbSchema.recurringSchedule.organizationId,
+        classroomId: dbSchema.recurringSchedule.classroomId,
       })
       .from(dbSchema.recurringSchedule)
       .where(eq(dbSchema.recurringSchedule.id, body.recurringScheduleId))
@@ -2488,9 +2930,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Recurring schedule not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, schedule.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId: schedule.organizationId,
+      classroomId: schedule.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -2535,6 +2981,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.slot.id,
         organizationId: dbSchema.slot.organizationId,
+        classroomId: dbSchema.slot.classroomId,
         serviceId: dbSchema.slot.serviceId,
         startAt: dbSchema.slot.startAt,
         status: dbSchema.slot.status,
@@ -2549,9 +2996,14 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Slot not found.' }, 404);
     }
 
+    if (isRequestedClassroomMismatch(body.classroomId, slot.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId: slot.organizationId,
+      classroomId: body.classroomId ?? slot.classroomId,
       userId: identity.userId,
     });
     if (!participant) {
@@ -2588,6 +3040,7 @@ export const registerBookingRoutes = ({
         await database.insert(dbSchema.booking).values({
           id: bookingId,
           organizationId: slot.organizationId,
+          classroomId: slot.classroomId,
           slotId: slot.id,
           serviceId: slot.serviceId,
           participantId: participant.id,
@@ -2600,6 +3053,7 @@ export const registerBookingRoutes = ({
           id: crypto.randomUUID(),
           bookingId,
           organizationId: slot.organizationId,
+          classroomId: slot.classroomId,
           actorUserId: identity.userId,
           action: 'booking.application_received',
           metadata: JSON.stringify({
@@ -2716,6 +3170,7 @@ export const registerBookingRoutes = ({
       if (service.requiresTicket) {
         const consumed = await consumeTicketPackForParticipant({
           organizationId: slot.organizationId,
+          classroomId: slot.classroomId,
           participantId: participant.id,
           participantsCount,
           now,
@@ -2728,6 +3183,7 @@ export const registerBookingRoutes = ({
       await database.insert(dbSchema.booking).values({
         id: bookingId,
         organizationId: slot.organizationId,
+        classroomId: slot.classroomId,
         slotId: slot.id,
         serviceId: slot.serviceId,
         participantId: participant.id,
@@ -2741,6 +3197,7 @@ export const registerBookingRoutes = ({
         await database.insert(dbSchema.ticketLedger).values({
           id: crypto.randomUUID(),
           organizationId: slot.organizationId,
+          classroomId: slot.classroomId,
           ticketPackId: consumedTicketPackId,
           bookingId,
           action: TICKET_LEDGER_ACTION.CONSUME,
@@ -2755,6 +3212,7 @@ export const registerBookingRoutes = ({
         id: crypto.randomUUID(),
         bookingId,
         organizationId: slot.organizationId,
+        classroomId: slot.classroomId,
         actorUserId: identity.userId,
         action: 'booking.created',
         metadata: JSON.stringify({
@@ -2825,6 +3283,7 @@ export const registerBookingRoutes = ({
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!participant) {
@@ -2835,6 +3294,9 @@ export const registerBookingRoutes = ({
       eq(dbSchema.booking.organizationId, organizationId),
       eq(dbSchema.booking.participantId, participant.id),
     ];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.booking.classroomId, query.classroomId));
+    }
     if (query.status) {
       filters.push(eq(dbSchema.booking.status, query.status));
     }
@@ -2878,6 +3340,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.booking.id,
         organizationId: dbSchema.booking.organizationId,
+        classroomId: dbSchema.booking.classroomId,
         participantId: dbSchema.booking.participantId,
         status: dbSchema.booking.status,
         participantsCount: dbSchema.booking.participantsCount,
@@ -2893,9 +3356,14 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Booking not found.' }, 404);
     }
 
+    if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId: booking.organizationId,
+      classroomId: body.classroomId ?? booking.classroomId,
       userId: identity.userId,
     });
     if (!participant || participant.id !== booking.participantId) {
@@ -2983,6 +3451,7 @@ export const registerBookingRoutes = ({
         await database.insert(dbSchema.ticketLedger).values({
           id: crypto.randomUUID(),
           organizationId: booking.organizationId,
+          classroomId: booking.classroomId,
           ticketPackId: booking.ticketPackId,
           bookingId: booking.id,
           action: TICKET_LEDGER_ACTION.RESTORE,
@@ -2998,6 +3467,7 @@ export const registerBookingRoutes = ({
       database,
       bookingId: booking.id,
       organizationId: booking.organizationId,
+      classroomId: booking.classroomId,
       actorUserId: identity.userId,
       action: 'booking.cancelled_by_participant',
       metadata: {
@@ -3027,9 +3497,9 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const hasAccess = await canManageBookingsScope({
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3037,6 +3507,9 @@ export const registerBookingRoutes = ({
     }
 
     const filters = [eq(dbSchema.booking.organizationId, organizationId)];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.booking.classroomId, query.classroomId));
+    }
     if (query.serviceId) {
       filters.push(eq(dbSchema.booking.serviceId, query.serviceId));
     }
@@ -3086,6 +3559,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.booking.id,
         organizationId: dbSchema.booking.organizationId,
+        classroomId: dbSchema.booking.classroomId,
         slotId: dbSchema.booking.slotId,
         participantsCount: dbSchema.booking.participantsCount,
         status: dbSchema.booking.status,
@@ -3098,9 +3572,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Booking not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId: booking.organizationId,
+      classroomId: booking.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3137,6 +3615,7 @@ export const registerBookingRoutes = ({
       database,
       bookingId: booking.id,
       organizationId: booking.organizationId,
+      classroomId: booking.classroomId,
       actorUserId: identity.userId,
       action: 'booking.cancelled_by_staff',
       metadata: {
@@ -3166,6 +3645,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.booking.id,
         organizationId: dbSchema.booking.organizationId,
+        classroomId: dbSchema.booking.classroomId,
         participantId: dbSchema.booking.participantId,
         serviceId: dbSchema.booking.serviceId,
         slotId: dbSchema.booking.slotId,
@@ -3180,9 +3660,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Booking not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId: booking.organizationId,
+      classroomId: booking.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3281,6 +3765,7 @@ export const registerBookingRoutes = ({
       if (service.requiresTicket) {
         const consumed = await consumeTicketPackForParticipant({
           organizationId: booking.organizationId,
+          classroomId: booking.classroomId,
           participantId: booking.participantId,
           participantsCount: booking.participantsCount,
           now,
@@ -3310,6 +3795,7 @@ export const registerBookingRoutes = ({
         await database.insert(dbSchema.ticketLedger).values({
           id: crypto.randomUUID(),
           organizationId: booking.organizationId,
+          classroomId: booking.classroomId,
           ticketPackId: consumedTicketPackId,
           bookingId: booking.id,
           action: TICKET_LEDGER_ACTION.CONSUME,
@@ -3324,6 +3810,7 @@ export const registerBookingRoutes = ({
         database,
         bookingId: booking.id,
         organizationId: booking.organizationId,
+        classroomId: booking.classroomId,
         actorUserId: identity.userId,
         action: 'booking.approved',
         metadata: {
@@ -3370,6 +3857,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.booking.id,
         organizationId: dbSchema.booking.organizationId,
+        classroomId: dbSchema.booking.classroomId,
         status: dbSchema.booking.status,
       })
       .from(dbSchema.booking)
@@ -3380,9 +3868,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Booking not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId: booking.organizationId,
+      classroomId: booking.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3416,6 +3908,7 @@ export const registerBookingRoutes = ({
       database,
       bookingId: booking.id,
       organizationId: booking.organizationId,
+      classroomId: booking.classroomId,
       actorUserId: identity.userId,
       action: 'booking.rejected_by_staff',
       metadata: {
@@ -3445,6 +3938,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.booking.id,
         organizationId: dbSchema.booking.organizationId,
+        classroomId: dbSchema.booking.classroomId,
         status: dbSchema.booking.status,
       })
       .from(dbSchema.booking)
@@ -3455,9 +3949,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Booking not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageBookingsScope({
       organizationId: booking.organizationId,
+      classroomId: booking.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3480,6 +3978,7 @@ export const registerBookingRoutes = ({
       database,
       bookingId: booking.id,
       organizationId: booking.organizationId,
+      classroomId: booking.classroomId,
       actorUserId: identity.userId,
       action: 'booking.no_show',
       headers,
@@ -3505,9 +4004,17 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const classroomContext = await resolveRequestedClassroomContext({
       organizationId,
+      classroomId: body.classroomId,
+    });
+    if (!classroomContext) {
+      return c.json({ message: 'Classroom not found.' }, 404);
+    }
+
+    const hasAccess = await canManageClassroomScope({
+      organizationId,
+      classroomId: body.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3523,6 +4030,7 @@ export const registerBookingRoutes = ({
         .where(
           and(
             eq(dbSchema.service.organizationId, organizationId),
+            eq(dbSchema.service.classroomId, classroomContext.classroomId),
             sql`${dbSchema.service.id} in (${sql.join(
               body.serviceIds.map((id) => sql`${id}`),
               sql`,`,
@@ -3543,6 +4051,7 @@ export const registerBookingRoutes = ({
     await database.insert(dbSchema.ticketType).values({
       id: ticketTypeId,
       organizationId,
+      classroomId: classroomContext.classroomId,
       name: body.name,
       serviceIdsJson: body.serviceIds ? JSON.stringify(body.serviceIds) : null,
       totalCount: body.totalCount,
@@ -3574,9 +4083,9 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const hasAccess = await canManageClassroomScope({
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3584,6 +4093,9 @@ export const registerBookingRoutes = ({
     }
 
     const filters = [eq(dbSchema.ticketType.organizationId, organizationId)];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.ticketType.classroomId, query.classroomId));
+    }
     if (query.isActive !== undefined) {
       filters.push(eq(dbSchema.ticketType.isActive, query.isActive));
     }
@@ -3610,9 +4122,21 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
+    if (query.classroomId) {
+      const scoped = await resolveRequestedClassroomAccess({
+        organizationId,
+        classroomId: query.classroomId,
+        userId: identity.userId,
+      });
+      if (!scoped || !scoped.access.canUseParticipantBooking) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+    }
+
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!participant) {
@@ -3625,6 +4149,7 @@ export const registerBookingRoutes = ({
       .where(
         and(
           eq(dbSchema.ticketType.organizationId, organizationId),
+          ...(query.classroomId ? [eq(dbSchema.ticketType.classroomId, query.classroomId)] : []),
           eq(dbSchema.ticketType.isActive, true),
           eq(dbSchema.ticketType.isForSale, true),
         ),
@@ -3647,9 +4172,21 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
+    if (body.classroomId) {
+      const scoped = await resolveRequestedClassroomAccess({
+        organizationId,
+        classroomId: body.classroomId,
+        userId: identity.userId,
+      });
+      if (!scoped || !scoped.access.canUseParticipantBooking) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+    }
+
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId,
+      classroomId: body.classroomId,
       userId: identity.userId,
     });
     if (!participant) {
@@ -3660,6 +4197,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.ticketType.id,
         organizationId: dbSchema.ticketType.organizationId,
+        classroomId: dbSchema.ticketType.classroomId,
         totalCount: dbSchema.ticketType.totalCount,
         isActive: dbSchema.ticketType.isActive,
         isForSale: dbSchema.ticketType.isForSale,
@@ -3670,12 +4208,16 @@ export const registerBookingRoutes = ({
         and(
           eq(dbSchema.ticketType.id, body.ticketTypeId),
           eq(dbSchema.ticketType.organizationId, organizationId),
+          ...(body.classroomId ? [eq(dbSchema.ticketType.classroomId, body.classroomId)] : []),
         ),
       )
       .limit(1);
     const ticketType = ticketTypeRows[0];
     if (!ticketType) {
       return c.json({ message: 'Ticket type not found.' }, 404);
+    }
+    if (ticketType.classroomId !== participant.classroomId) {
+      return c.json({ message: 'Forbidden' }, 403);
     }
     if (!ticketType.isActive || !ticketType.isForSale) {
       return c.json({ message: 'Ticket type is not purchasable.' }, 409);
@@ -3690,6 +4232,7 @@ export const registerBookingRoutes = ({
     await database.insert(dbSchema.ticketPurchase).values({
       id: purchaseId,
       organizationId,
+      classroomId: ticketType.classroomId,
       participantId: participant.id,
       ticketTypeId: ticketType.id,
       paymentMethod: body.paymentMethod,
@@ -3783,6 +4326,7 @@ export const registerBookingRoutes = ({
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!participant) {
@@ -3793,6 +4337,9 @@ export const registerBookingRoutes = ({
       eq(dbSchema.ticketPurchase.organizationId, organizationId),
       eq(dbSchema.ticketPurchase.participantId, participant.id),
     ];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.ticketPurchase.classroomId, query.classroomId));
+    }
     if (query.status) {
       filters.push(eq(dbSchema.ticketPurchase.status, query.status));
     }
@@ -3819,9 +4366,9 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const hasAccess = await canManageParticipantsScope({
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3829,6 +4376,9 @@ export const registerBookingRoutes = ({
     }
 
     const filters = [eq(dbSchema.ticketPurchase.organizationId, organizationId)];
+    if (query.classroomId) {
+      filters.push(eq(dbSchema.ticketPurchase.classroomId, query.classroomId));
+    }
     if (query.participantId) {
       filters.push(eq(dbSchema.ticketPurchase.participantId, query.participantId));
     }
@@ -3860,6 +4410,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.ticketPurchase.id,
         organizationId: dbSchema.ticketPurchase.organizationId,
+        classroomId: dbSchema.ticketPurchase.classroomId,
       })
       .from(dbSchema.ticketPurchase)
       .where(eq(dbSchema.ticketPurchase.id, body.purchaseId))
@@ -3869,9 +4420,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Ticket purchase not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, purchase.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageParticipantsScope({
       organizationId: purchase.organizationId,
+      classroomId: purchase.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3914,6 +4469,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.ticketPurchase.id,
         organizationId: dbSchema.ticketPurchase.organizationId,
+        classroomId: dbSchema.ticketPurchase.classroomId,
         status: dbSchema.ticketPurchase.status,
       })
       .from(dbSchema.ticketPurchase)
@@ -3924,9 +4480,13 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Ticket purchase not found.' }, 404);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    if (isRequestedClassroomMismatch(body.classroomId, purchase.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const hasAccess = await canManageParticipantsScope({
       organizationId: purchase.organizationId,
+      classroomId: purchase.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -3978,6 +4538,7 @@ export const registerBookingRoutes = ({
       .select({
         id: dbSchema.ticketPurchase.id,
         organizationId: dbSchema.ticketPurchase.organizationId,
+        classroomId: dbSchema.ticketPurchase.classroomId,
         participantId: dbSchema.ticketPurchase.participantId,
         status: dbSchema.ticketPurchase.status,
       })
@@ -3989,9 +4550,14 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Ticket purchase not found.' }, 404);
     }
 
+    if (isRequestedClassroomMismatch(body.classroomId, purchase.classroomId)) {
+      return c.json({ message: 'Forbidden' }, 403);
+    }
+
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId: purchase.organizationId,
+      classroomId: body.classroomId ?? purchase.classroomId,
       userId: identity.userId,
     });
     if (!participant || participant.id !== purchase.participantId) {
@@ -4033,9 +4599,9 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await hasAdminOrOwnerAccess({
-      database,
+    const hasAccess = await canManageParticipantsScope({
       organizationId,
+      classroomId: body.classroomId,
       userId: identity.userId,
     });
     if (!hasAccess) {
@@ -4045,12 +4611,14 @@ export const registerBookingRoutes = ({
     const participantRows = await database
       .select({
         id: dbSchema.participant.id,
+        classroomId: dbSchema.participant.classroomId,
       })
       .from(dbSchema.participant)
       .where(
         and(
           eq(dbSchema.participant.id, body.participantId),
           eq(dbSchema.participant.organizationId, organizationId),
+          ...(body.classroomId ? [eq(dbSchema.participant.classroomId, body.classroomId)] : []),
         ),
       )
       .limit(1);
@@ -4062,6 +4630,7 @@ export const registerBookingRoutes = ({
     const ticketTypeRows = await database
       .select({
         id: dbSchema.ticketType.id,
+        classroomId: dbSchema.ticketType.classroomId,
         totalCount: dbSchema.ticketType.totalCount,
         expiresInDays: dbSchema.ticketType.expiresInDays,
       })
@@ -4070,12 +4639,16 @@ export const registerBookingRoutes = ({
         and(
           eq(dbSchema.ticketType.id, body.ticketTypeId),
           eq(dbSchema.ticketType.organizationId, organizationId),
+          ...(body.classroomId ? [eq(dbSchema.ticketType.classroomId, body.classroomId)] : []),
         ),
       )
       .limit(1);
     const ticketType = ticketTypeRows[0];
     if (!ticketType) {
       return c.json({ message: 'Ticket type not found.' }, 404);
+    }
+    if (participant.classroomId !== ticketType.classroomId) {
+      return c.json({ message: 'Participant and ticket type must belong to the same classroom.' }, 422);
     }
 
     const count = body.count ?? ticketType.totalCount;
@@ -4086,6 +4659,7 @@ export const registerBookingRoutes = ({
 
     const issued = await issueTicketPackWithLedger({
       organizationId,
+      classroomId: participant.classroomId,
       participantId: participant.id,
       ticketTypeId: ticketType.id,
       count,
@@ -4111,6 +4685,7 @@ export const registerBookingRoutes = ({
     const participant = await findParticipantByUserAndOrganization({
       database,
       organizationId,
+      classroomId: query.classroomId,
       userId: identity.userId,
     });
     if (!participant) {
@@ -4126,6 +4701,7 @@ export const registerBookingRoutes = ({
       .where(
         and(
           eq(dbSchema.ticketPack.organizationId, organizationId),
+          ...(query.classroomId ? [eq(dbSchema.ticketPack.classroomId, query.classroomId)] : []),
           eq(dbSchema.ticketPack.participantId, participant.id),
           eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
           lte(dbSchema.ticketPack.expiresAt, now),
@@ -4138,6 +4714,7 @@ export const registerBookingRoutes = ({
       .where(
         and(
           eq(dbSchema.ticketPack.organizationId, organizationId),
+          ...(query.classroomId ? [eq(dbSchema.ticketPack.classroomId, query.classroomId)] : []),
           eq(dbSchema.ticketPack.participantId, participant.id),
         ),
       )

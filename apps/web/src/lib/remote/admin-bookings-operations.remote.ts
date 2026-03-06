@@ -3,6 +3,8 @@ import { query } from '$app/server';
 import { z } from 'zod';
 
 const adminBookingsOperationsQuerySchema = z.object({
+	orgSlug: z.string().trim().min(1),
+	classroomSlug: z.string().trim().min(1),
 	from: z.string().trim().min(1),
 	to: z.string().trim().min(1),
 	serviceId: z.string().trim().min(1).optional()
@@ -10,10 +12,10 @@ const adminBookingsOperationsQuerySchema = z.object({
 
 export const getAdminBookingsOperationsPageData = query(
 	adminBookingsOperationsQuerySchema,
-	async ({ from, to, serviceId }) => {
-		const data = await getBookingsPageData({ from, to, serviceId });
+	async ({ orgSlug, classroomSlug, from, to, serviceId }) => {
+		const data = await getBookingsPageData({ orgSlug, classroomSlug, from, to, serviceId });
 		return {
-			activeOrganizationId: data.activeOrganizationId,
+			activeContext: data.activeContext,
 			canManage: data.canManage,
 			services: data.services,
 			slots: data.slots,

@@ -4,6 +4,7 @@ import type {
 	BookingPayload,
 	ParticipantPayload,
 	RecurringSchedulePayload,
+	ScopedApiContext,
 	ServicePayload,
 	SlotPayload,
 	TicketPackPayload,
@@ -15,6 +16,8 @@ import { z } from 'zod';
 const defaultBackendUrl = 'http://localhost:3000';
 
 const bookingsPageQuerySchema = z.object({
+	orgSlug: z.string().trim().min(1),
+	classroomSlug: z.string().trim().min(1),
 	from: z.string().trim().min(1),
 	to: z.string().trim().min(1),
 	serviceId: z.string().trim().min(1).optional()
@@ -30,7 +33,7 @@ type ApiResult = {
 };
 
 type BookingsPageData = {
-	activeOrganizationId: string | null;
+	activeContext: ScopedApiContext;
 	canManage: boolean;
 	services: ServicePayload[];
 	recurringSchedules: RecurringSchedulePayload[];
@@ -180,12 +183,8 @@ const asTicketTypes = (value: unknown): TicketTypePayload[] =>
 const asTicketPurchases = (value: unknown): TicketPurchasePayload[] =>
 	Array.isArray(value) ? value.filter(isTicketPurchase) : [];
 
-const readActiveOrganizationId = (payload: unknown): string | null => {
-	if (!isRecord(payload) || typeof payload.id !== 'string') {
-		return null;
-	}
-	return payload.id;
-};
+const buildScopedPath = (context: ScopedApiContext, suffix: string) =>
+	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms/${encodeURIComponent(context.classroomSlug)}${suffix}`;
 
 const assertAllowedFailure = (
 	result: ApiResult,
@@ -201,36 +200,12 @@ const assertAllowedFailure = (
 	throw new Error(toErrorMessage(result.payload, fallback));
 };
 
-const emptyBookingsData = (): BookingsPageData => ({
-	activeOrganizationId: null,
-	canManage: false,
-	services: [],
-	recurringSchedules: [],
-	slots: [],
-	availableSlots: [],
-	myBookings: [],
-	myTicketPacks: [],
-	purchasableTicketTypes: [],
-	myTicketPurchases: [],
-	staffBookings: [],
-	staffParticipants: [],
-	staffServices: [],
-	staffRecurringSchedules: [],
-	participantAccessDenied: false
-});
-
 export const getBookingsPageData = query(
 	bookingsPageQuerySchema,
-	async ({ from, to, serviceId }): Promise<BookingsPageData> => {
+	async ({ orgSlug, classroomSlug, from, to, serviceId }): Promise<BookingsPageData> => {
 		const getApi = createApiGetter();
-
-		const organizationResult = await getApi('/api/v1/auth/organizations/full');
-		assertAllowedFailure(organizationResult, '利用中の組織情報の取得に失敗しました。');
-
-		const activeOrganizationId = readActiveOrganizationId(organizationResult.payload);
-		if (!activeOrganizationId) {
-			return emptyBookingsData();
-		}
+		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+		const scopedPath = (suffix: string) => buildScopedPath(activeContext, suffix);
 
 		const [
 			servicesResult,
@@ -244,36 +219,25 @@ export const getBookingsPageData = query(
 			participantsResult,
 			participantInvitationsResult
 		] = await Promise.all([
-			getApi('/api/v1/auth/organizations/services', { organizationId: activeOrganizationId }),
-			getApi('/api/v1/auth/organizations/recurring-schedules', {
-				organizationId: activeOrganizationId,
+			getApi(scopedPath('/services')),
+			getApi(scopedPath('/recurring-schedules'), {
 				isActive: true
 			}),
-			getApi('/api/v1/auth/organizations/slots', {
-				organizationId: activeOrganizationId,
+			getApi(scopedPath('/slots'), {
 				from,
 				to
 			}),
-			getApi('/api/v1/auth/organizations/slots/available', {
-				organizationId: activeOrganizationId,
+			getApi(scopedPath('/slots/available'), {
 				from,
 				to,
 				serviceId
 			}),
-			getApi('/api/v1/auth/organizations/bookings/mine', { organizationId: activeOrganizationId }),
-			getApi('/api/v1/auth/organizations/ticket-packs/mine', {
-				organizationId: activeOrganizationId
-			}),
-			getApi('/api/v1/auth/organizations/ticket-types/purchasable', {
-				organizationId: activeOrganizationId
-			}),
-			getApi('/api/v1/auth/organizations/ticket-purchases/mine', {
-				organizationId: activeOrganizationId
-			}),
-			getApi('/api/v1/auth/organizations/participants', { organizationId: activeOrganizationId }),
-			getApi('/api/v1/auth/organizations/participants/invitations', {
-				organizationId: activeOrganizationId
-			})
+			getApi(scopedPath('/bookings/mine')),
+			getApi(scopedPath('/ticket-packs/mine')),
+			getApi(scopedPath('/ticket-types/purchasable')),
+			getApi(scopedPath('/ticket-purchases/mine')),
+			getApi(scopedPath('/participants')),
+			getApi(scopedPath('/participants/invitations'))
 		]);
 
 		assertAllowedFailure(servicesResult, 'サービス一覧の取得に失敗しました。', {
@@ -321,14 +285,11 @@ export const getBookingsPageData = query(
 
 		if (canManage) {
 			const [staffBookingsResult, staffServicesResult, staffRecurringResult] = await Promise.all([
-				getApi('/api/v1/auth/organizations/bookings', { organizationId: activeOrganizationId }),
-				getApi('/api/v1/auth/organizations/services', {
-					organizationId: activeOrganizationId,
+				getApi(scopedPath('/bookings')),
+				getApi(scopedPath('/services'), {
 					includeArchived: true
 				}),
-				getApi('/api/v1/auth/organizations/recurring-schedules', {
-					organizationId: activeOrganizationId
-				})
+				getApi(scopedPath('/recurring-schedules'))
 			]);
 
 			assertAllowedFailure(staffBookingsResult, '運営予約一覧の取得に失敗しました。');
@@ -341,7 +302,7 @@ export const getBookingsPageData = query(
 		}
 
 		return {
-			activeOrganizationId,
+			activeContext,
 			canManage,
 			services: asServices(servicesResult.payload),
 			recurringSchedules: asRecurring(recurringResult.payload),

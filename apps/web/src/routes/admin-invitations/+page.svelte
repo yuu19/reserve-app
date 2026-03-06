@@ -195,7 +195,13 @@
 		{/if}
 	</section>
 
-	{#if !activeOrganizationId}
+	{#if loading}
+		<Card class="surface-panel border-slate-200/80 shadow-lg"
+			><CardContent class="py-6"
+				><p class="text-sm text-muted-foreground">招待データを読み込み中…</p></CardContent
+			></Card
+		>
+	{:else if !activeOrganizationId}
 		<Card class="surface-panel border-slate-200/80 shadow-lg"
 			><CardContent class="py-6"
 				><p class="text-sm text-muted-foreground">

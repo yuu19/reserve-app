@@ -1066,10 +1066,10 @@
 					to,
 					slotSearchForm.serviceId || undefined
 				);
-				if (!bookingData.activeOrganizationId) {
+				if (!bookingData.activeContext) {
 					return;
 				}
-				activeOrganizationId = bookingData.activeOrganizationId;
+				activeOrganizationId = bookingData.activeContext.orgSlug;
 				canManage = bookingData.canManage;
 				services = bookingData.services;
 				slots = bookingData.slots;
@@ -1096,10 +1096,10 @@
 					to,
 					slotSearchForm.serviceId || undefined
 				);
-				if (!bookingData.activeOrganizationId) {
+				if (!bookingData.activeContext) {
 					return;
 				}
-				activeOrganizationId = bookingData.activeOrganizationId;
+				activeOrganizationId = bookingData.activeContext.orgSlug;
 				canManage = bookingData.canManage;
 				services = bookingData.services;
 				slots = bookingData.slots;
@@ -1110,10 +1110,10 @@
 
 			if (isAdminServicesPage || isAdminServicesCreatePage) {
 				const bookingData = await loadAdminServicesData(from, to);
-				if (!bookingData.activeOrganizationId) {
+				if (!bookingData.activeContext) {
 					return;
 				}
-				activeOrganizationId = bookingData.activeOrganizationId;
+				activeOrganizationId = bookingData.activeContext.orgSlug;
 				canManage = bookingData.canManage;
 				services = bookingData.services;
 				staffServices = bookingData.staffServices;
@@ -1129,10 +1129,10 @@
 
 			if (isAdminSlotsPage || isAdminSlotsCreatePage) {
 				const bookingData = await loadAdminSlotsData(from, to, slotSearchForm.serviceId || undefined);
-				if (!bookingData.activeOrganizationId) {
+				if (!bookingData.activeContext) {
 					return;
 				}
-				activeOrganizationId = bookingData.activeOrganizationId;
+				activeOrganizationId = bookingData.activeContext.orgSlug;
 				canManage = bookingData.canManage;
 				services = bookingData.services;
 				slots = bookingData.slots;
@@ -1143,12 +1143,12 @@
 				return;
 			}
 
-				if (isAdminRecurringPage || isAdminRecurringCreatePage) {
+			if (isAdminRecurringPage || isAdminRecurringCreatePage) {
 				const bookingData = await loadAdminRecurringData(from, to);
-				if (!bookingData.activeOrganizationId) {
+				if (!bookingData.activeContext) {
 					return;
 				}
-				activeOrganizationId = bookingData.activeOrganizationId;
+				activeOrganizationId = bookingData.activeContext.orgSlug;
 				canManage = bookingData.canManage;
 				services = bookingData.services;
 				recurringSchedules = bookingData.recurringSchedules;
@@ -1166,13 +1166,13 @@
 				) {
 					selectedRecurringScheduleId = staffRecurringSchedules[0].id;
 				}
-					if (staffRecurringSchedules.length === 0) {
-						selectedRecurringScheduleId = '';
-						recurringEditTargetId = '';
-						recurringEditDialogOpen = false;
-					}
-					return;
+				if (staffRecurringSchedules.length === 0) {
+					selectedRecurringScheduleId = '';
+					recurringEditTargetId = '';
+					recurringEditDialogOpen = false;
 				}
+				return;
+			}
 		} catch (error) {
 			resetBookingViewState();
 			toast.error(toExceptionMessage(error, '予約データの取得に失敗しました。'));
@@ -1923,7 +1923,7 @@
 					{/if}
 				</div>
 				{#if createBackLink}
-					<Button type="button" variant="outline" onclick={() => goto(resolve(createBackLink.href))}
+					<Button type="button" variant="outline" onclick={() => goto(createBackLink.href)}
 						>{createBackLink.label}</Button
 					>
 				{/if}

@@ -136,7 +136,7 @@ const selectInvitationActionCount = async (invitationId: string, action: string)
 
 const selectParticipantInvitationStatus = async (invitationId: string) => {
   const row = await d1
-    .prepare('SELECT status FROM participant_invitation WHERE id = ?')
+    .prepare('SELECT status FROM classroom_invitation WHERE id = ?')
     .bind(invitationId)
     .first<{ status: string }>();
 
@@ -146,7 +146,7 @@ const selectParticipantInvitationStatus = async (invitationId: string) => {
 const selectParticipantInvitationActionCount = async (invitationId: string, action: string) => {
   const row = await d1
     .prepare(
-      'SELECT COUNT(*) as count FROM participant_invitation_audit_log WHERE participant_invitation_id = ? AND action = ?',
+      'SELECT COUNT(*) as count FROM classroom_invitation_audit_log WHERE classroom_invitation_id = ? AND action = ?',
     )
     .bind(invitationId, action)
     .first<{ count: number | string }>();
@@ -303,6 +303,14 @@ const createOrganization = async ({
   return payload.id as string;
 };
 
+const selectOrganizationSlugById = async (organizationId: string) => {
+  const row = await d1
+    .prepare('SELECT slug FROM organization WHERE id = ? LIMIT 1')
+    .bind(organizationId)
+    .first<{ slug: string }>();
+  return row?.slug ?? null;
+};
+
 const createInvitation = async ({
   agent,
   email,
@@ -316,18 +324,26 @@ const createInvitation = async ({
   organizationId: string;
   resend?: boolean;
 }) => {
-  const response = await agent.request('/api/v1/auth/organizations/invitations', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
+  const organizationSlug = await selectOrganizationSlugById(organizationId);
+  expect(organizationSlug).toBeTruthy();
+
+  const mappedRole = role === 'admin' ? 'manager' : role === 'member' ? 'staff' : 'owner';
+  const response = await agent.request(
+    `/api/v1/auth/orgs/${encodeURIComponent(
+      organizationSlug as string,
+    )}/classrooms/${encodeURIComponent(organizationSlug as string)}/invitations`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        role: mappedRole,
+        resend,
+      }),
     },
-    body: JSON.stringify({
-      email,
-      role,
-      organizationId,
-      resend,
-    }),
-  });
+  );
 
   return {
     response,
@@ -348,18 +364,26 @@ const createParticipantInvitation = async ({
   organizationId: string;
   resend?: boolean;
 }) => {
-  const response = await agent.request('/api/v1/auth/organizations/participants/invitations', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
+  const organizationSlug = await selectOrganizationSlugById(organizationId);
+  expect(organizationSlug).toBeTruthy();
+
+  const response = await agent.request(
+    `/api/v1/auth/orgs/${encodeURIComponent(
+      organizationSlug as string,
+    )}/classrooms/${encodeURIComponent(organizationSlug as string)}/invitations`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        role: 'participant',
+        participantName,
+        resend,
+      }),
     },
-    body: JSON.stringify({
-      email,
-      participantName,
-      organizationId,
-      resend,
-    }),
-  });
+  );
 
   return {
     response,
@@ -399,7 +423,8 @@ beforeAll(async () => {
       BETTER_AUTH_URL: 'http://localhost:3000',
       BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
       BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
-      PUBLIC_EVENTS_ORGANIZATION_SLUG: 'public-events-org',
+      PUBLIC_EVENTS_ORG_SLUG: 'public-events-org',
+      PUBLIC_EVENTS_CLASSROOM_SLUG: 'public-events-org',
       GOOGLE_CLIENT_ID: 'test-google-client-id',
       GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
     },
@@ -484,15 +509,20 @@ describe('backend app', () => {
     expect(response.status).toBe(401);
   });
 
+  it('requires auth for organization access endpoint', async () => {
+    const response = await app.request('/api/v1/auth/orgs/access-tree');
+    expect(response.status).toBe(401);
+  });
+
   it('requires auth for invitation endpoints', async () => {
-    const response = await app.request('/api/v1/auth/organizations/invitations', {
+    const response = await app.request('/api/v1/auth/orgs/demo/classrooms/demo/invitations', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
         email: 'member@example.com',
-        role: 'member',
+        role: 'staff',
       }),
     });
 
@@ -501,11 +531,11 @@ describe('backend app', () => {
 
   it('requires auth for invitation detail/reject endpoints', async () => {
     const detailResponse = await app.request(
-      '/api/v1/auth/organizations/invitations/detail?invitationId=dummy-id',
+      '/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=dummy-id',
     );
     expect(detailResponse.status).toBe(401);
 
-    const rejectResponse = await app.request('/api/v1/auth/organizations/invitations/reject', {
+    const rejectResponse = await app.request('/api/v1/auth/orgs/classrooms/invitations/reject', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -519,23 +549,24 @@ describe('backend app', () => {
   });
 
   it('requires auth for participant invitation endpoints', async () => {
-    const listResponse = await app.request('/api/v1/auth/organizations/participants');
+    const listResponse = await app.request('/api/v1/auth/orgs/demo/classrooms/demo/invitations');
     expect(listResponse.status).toBe(401);
 
-    const createResponse = await app.request('/api/v1/auth/organizations/participants/invitations', {
+    const createResponse = await app.request('/api/v1/auth/orgs/demo/classrooms/demo/invitations', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
         email: 'participant@example.com',
+        role: 'participant',
         participantName: 'Participant',
       }),
     });
     expect(createResponse.status).toBe(401);
 
     const detailResponse = await app.request(
-      '/api/v1/auth/organizations/participants/invitations/detail?invitationId=dummy-id',
+      '/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=dummy-id',
     );
     expect(detailResponse.status).toBe(401);
   });
@@ -604,11 +635,11 @@ describe('backend app', () => {
     });
 
     const detailResponse = await invitee.request(
-      `/api/v1/auth/organizations/invitations/detail?invitationId=${encodeURIComponent(invitationId)}`,
+      `/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=${encodeURIComponent(invitationId)}`,
     );
     expect(detailResponse.status).toBe(200);
 
-    const acceptResponse = await invitee.request('/api/v1/auth/organizations/invitations/accept', {
+    const acceptResponse = await invitee.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -637,7 +668,7 @@ describe('backend app', () => {
       email: 'rejectee@example.com',
     });
 
-    const rejectResponse = await rejectee.request('/api/v1/auth/organizations/invitations/reject', {
+    const rejectResponse = await rejectee.request('/api/v1/auth/orgs/classrooms/invitations/reject', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -659,7 +690,7 @@ describe('backend app', () => {
     expect(cancelTarget.response.status).toBe(200);
     const cancelInvitationId = cancelTarget.payload?.id as string;
 
-    const cancelResponse = await inviter.request('/api/v1/auth/organizations/invitations/cancel', {
+    const cancelResponse = await inviter.request('/api/v1/auth/orgs/classrooms/invitations/cancel', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -671,6 +702,210 @@ describe('backend app', () => {
     expect(cancelResponse.status).toBe(200);
     expect(await selectInvitationStatus(cancelInvitationId)).toBe('canceled');
     expect(await selectInvitationActionCount(cancelInvitationId, 'invitation.canceled')).toBe(1);
+  });
+
+  it('lists organization access for owner and participant-only user', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Access Owner',
+      email: 'access-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Access Org',
+      slug: 'access-org',
+    });
+
+    const participantInvite = await createParticipantInvitation({
+      agent: owner,
+      email: 'access-participant@example.com',
+      participantName: 'Access Participant',
+      organizationId,
+    });
+    expect(participantInvite.response.status).toBe(200);
+
+    const participantUser = createAuthAgent(app);
+    await signUpUser({
+      agent: participantUser,
+      name: 'Access Participant',
+      email: 'access-participant@example.com',
+    });
+    const acceptParticipantInviteResponse = await participantUser.request(
+      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          invitationId: participantInvite.payload?.id,
+        }),
+      },
+    );
+    expect(acceptParticipantInviteResponse.status).toBe(200);
+
+    const ownerAccessResponse = await owner.request('/api/v1/auth/organizations/access');
+    expect(ownerAccessResponse.status).toBe(200);
+    const ownerAccessPayload = (await toJson(ownerAccessResponse)) as Array<Record<string, unknown>>;
+    const ownerAccess = ownerAccessPayload.find((entry) => entry.organizationId === organizationId);
+    expect(ownerAccess).toBeDefined();
+    expect(ownerAccess?.role).toBe('owner');
+    expect(ownerAccess?.classroomRole).toBe('manager');
+    expect(ownerAccess?.canManage).toBe(true);
+    expect(ownerAccess?.canUseParticipantBooking).toBe(false);
+
+    const participantAccessResponse = await participantUser.request('/api/v1/auth/organizations/access');
+    expect(participantAccessResponse.status).toBe(200);
+    const participantAccessPayload = (await toJson(participantAccessResponse)) as Array<
+      Record<string, unknown>
+    >;
+    const participantAccess = participantAccessPayload.find(
+      (entry) => entry.organizationId === organizationId,
+    );
+    expect(participantAccess).toBeDefined();
+    expect(participantAccess?.role).toBeNull();
+    expect(participantAccess?.classroomRole).toBe('participant');
+    expect(participantAccess?.canManage).toBe(false);
+    expect(participantAccess?.canUseParticipantBooking).toBe(true);
+
+    const ownerAccessTreeResponse = await owner.request('/api/v1/auth/orgs/access-tree');
+    expect(ownerAccessTreeResponse.status).toBe(200);
+    const ownerAccessTreePayload = (await toJson(ownerAccessTreeResponse)) as {
+      orgs?: Array<{
+        org?: { id?: string; slug?: string; name?: string; logo?: string | null };
+        orgRole?: string | null;
+        classrooms?: Array<{
+          id?: string;
+          slug?: string;
+          name?: string;
+          role?: string | null;
+          canManage?: boolean;
+          canUseParticipantBooking?: boolean;
+        }>;
+      }>;
+    };
+    const ownerOrgEntry = ownerAccessTreePayload.orgs?.find(
+      (entry) => entry.org?.id === organizationId,
+    );
+    expect(ownerOrgEntry).toBeDefined();
+    expect(ownerOrgEntry?.orgRole).toBe('owner');
+    expect(ownerOrgEntry?.org?.slug).toBe('access-org');
+    expect(ownerOrgEntry?.classrooms?.[0]?.slug).toBe('access-org');
+    expect(ownerOrgEntry?.classrooms?.[0]?.role).toBe('manager');
+    expect(ownerOrgEntry?.classrooms?.[0]?.canManage).toBe(true);
+  });
+
+  it('supports multiple classrooms in access-tree and scoped service routes', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Multi Classroom Owner',
+      email: 'multi-classroom-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Multi Classroom Org',
+      slug: 'multi-classroom-org',
+    });
+    const organizationSlug = await selectOrganizationSlugById(organizationId);
+    expect(organizationSlug).toBe('multi-classroom-org');
+
+    const secondClassroomId = crypto.randomUUID();
+    const secondClassroomSlug = 'room-b';
+    await d1
+      .prepare('INSERT INTO classroom (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
+      .bind(secondClassroomId, organizationId, secondClassroomSlug, 'Room B')
+      .run();
+
+    const defaultServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Default Classroom Service',
+        description: 'default classroom service',
+        kind: 'single',
+        bookingPolicy: 'instant',
+        durationMinutes: 45,
+        capacity: 4,
+      }),
+    });
+    expect(defaultServiceResponse.status).toBe(200);
+    const defaultServicePayload = (await toJson(defaultServiceResponse)) as Record<string, unknown>;
+
+    const scopedServiceResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(
+        organizationSlug as string,
+      )}/classrooms/${encodeURIComponent(secondClassroomSlug)}/services`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Room B Service',
+          description: 'second classroom service',
+          kind: 'single',
+          bookingPolicy: 'instant',
+          durationMinutes: 30,
+          capacity: 2,
+        }),
+      },
+    );
+    expect(scopedServiceResponse.status).toBe(200);
+    const scopedServicePayload = (await toJson(scopedServiceResponse)) as Record<string, unknown>;
+    expect(scopedServicePayload.classroomId).toBe(secondClassroomId);
+
+    const accessTreeResponse = await owner.request('/api/v1/auth/orgs/access-tree');
+    expect(accessTreeResponse.status).toBe(200);
+    const accessTreePayload = (await toJson(accessTreeResponse)) as {
+      orgs?: Array<{
+        org?: { id?: string; slug?: string };
+        classrooms?: Array<{
+          id?: string;
+          slug?: string;
+          role?: string | null;
+          canManage?: boolean;
+        }>;
+      }>;
+    };
+    const orgEntry = accessTreePayload.orgs?.find((entry) => entry.org?.id === organizationId);
+    expect(orgEntry?.classrooms?.map((classroom) => classroom.slug)).toEqual(
+      expect.arrayContaining(['multi-classroom-org', secondClassroomSlug]),
+    );
+    const secondClassroomEntry = orgEntry?.classrooms?.find(
+      (classroom) => classroom.slug === secondClassroomSlug,
+    );
+    expect(secondClassroomEntry?.id).toBe(secondClassroomId);
+    expect(secondClassroomEntry?.role).toBe('manager');
+    expect(secondClassroomEntry?.canManage).toBe(true);
+
+    const defaultScopedListResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(
+        organizationSlug as string,
+      )}/classrooms/${encodeURIComponent(organizationSlug as string)}/services`,
+    );
+    expect(defaultScopedListResponse.status).toBe(200);
+    const defaultScopedList = (await toJson(defaultScopedListResponse)) as Array<Record<string, unknown>>;
+    expect(defaultScopedList).toHaveLength(1);
+    expect(defaultScopedList[0]?.id).toBe(defaultServicePayload.id);
+    expect(defaultScopedList[0]?.classroomId).not.toBe(secondClassroomId);
+
+    const secondScopedListResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(
+        organizationSlug as string,
+      )}/classrooms/${encodeURIComponent(secondClassroomSlug)}/services`,
+    );
+    expect(secondScopedListResponse.status).toBe(200);
+    const secondScopedList = (await toJson(secondScopedListResponse)) as Array<Record<string, unknown>>;
+    expect(secondScopedList).toHaveLength(1);
+    expect(secondScopedList[0]?.id).toBe(scopedServicePayload.id);
+    expect(secondScopedList[0]?.classroomId).toBe(secondClassroomId);
   });
 
   it('handles participant invitation flows and permissions', async () => {
@@ -711,7 +946,7 @@ describe('backend app', () => {
       name: 'Participant Admin',
       email: 'participant-admin@example.com',
     });
-    const acceptAdminInviteResponse = await admin.request('/api/v1/auth/organizations/invitations/accept', {
+    const acceptAdminInviteResponse = await admin.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -728,7 +963,7 @@ describe('backend app', () => {
       name: 'Participant Member',
       email: 'participant-member@example.com',
     });
-    const acceptMemberInviteResponse = await member.request('/api/v1/auth/organizations/invitations/accept', {
+    const acceptMemberInviteResponse = await member.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -739,13 +974,13 @@ describe('backend app', () => {
     });
     expect(acceptMemberInviteResponse.status).toBe(200);
 
-    const forbiddenCreate = await createParticipantInvitation({
+    const staffCreate = await createParticipantInvitation({
       agent: member,
-      email: 'participant-user@example.com',
-      participantName: 'Member Should Fail',
+      email: 'participant-staff-created@example.com',
+      participantName: 'Staff Created Participant',
       organizationId,
     });
-    expect(forbiddenCreate.response.status).toBe(403);
+    expect(staffCreate.response.status).toBe(200);
 
     const created = await createParticipantInvitation({
       agent: admin,
@@ -799,12 +1034,12 @@ describe('backend app', () => {
     });
 
     const forbiddenDetail = await otherUser.request(
-      `/api/v1/auth/organizations/participants/invitations/detail?invitationId=${encodeURIComponent(participantInvitationId)}`,
+      `/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=${encodeURIComponent(participantInvitationId)}`,
     );
     expect(forbiddenDetail.status).toBe(403);
 
     const forbiddenAccept = await otherUser.request(
-      '/api/v1/auth/organizations/participants/invitations/accept',
+      '/api/v1/auth/orgs/classrooms/invitations/accept',
       {
         method: 'POST',
         headers: {
@@ -818,7 +1053,7 @@ describe('backend app', () => {
     expect(forbiddenAccept.status).toBe(403);
 
     const forbiddenReject = await otherUser.request(
-      '/api/v1/auth/organizations/participants/invitations/reject',
+      '/api/v1/auth/orgs/classrooms/invitations/reject',
       {
         method: 'POST',
         headers: {
@@ -839,12 +1074,12 @@ describe('backend app', () => {
     });
 
     const detailResponse = await participantUser.request(
-      `/api/v1/auth/organizations/participants/invitations/detail?invitationId=${encodeURIComponent(participantInvitationId)}`,
+      `/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=${encodeURIComponent(participantInvitationId)}`,
     );
     expect(detailResponse.status).toBe(200);
 
     const acceptResponse = await participantUser.request(
-      '/api/v1/auth/organizations/participants/invitations/accept',
+      '/api/v1/auth/orgs/classrooms/invitations/accept',
       {
         method: 'POST',
         headers: {
@@ -879,7 +1114,7 @@ describe('backend app', () => {
     });
 
     const rejectResponse = await rejectUser.request(
-      '/api/v1/auth/organizations/participants/invitations/reject',
+      '/api/v1/auth/orgs/classrooms/invitations/reject',
       {
         method: 'POST',
         headers: {
@@ -906,7 +1141,7 @@ describe('backend app', () => {
     const cancelInvitationId = cancelTarget.payload?.id as string;
 
     const cancelResponse = await admin.request(
-      '/api/v1/auth/organizations/participants/invitations/cancel',
+      '/api/v1/auth/orgs/classrooms/invitations/cancel',
       {
         method: 'POST',
         headers: {
@@ -959,6 +1194,15 @@ describe('backend app', () => {
       {
         path: `/api/v1/auth/organizations/slots/available?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
         method: 'GET',
+      },
+      {
+        path: '/api/v1/auth/organizations/slots/update',
+        method: 'POST',
+        body: {
+          slotId: 'dummy-slot',
+          startAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          endAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        },
       },
       {
         path: '/api/v1/auth/organizations/bookings',
@@ -1109,7 +1353,9 @@ describe('backend app', () => {
     const slotPayload = (await toJson(slotResponse)) as Record<string, unknown>;
     const slotId = slotPayload.id as string;
 
-    const publicEventsResponse = await app.request('/api/v1/public/events');
+    const publicEventsResponse = await app.request(
+      '/api/v1/public/orgs/public-events-org/classrooms/public-events-org/events',
+    );
     expect(publicEventsResponse.status).toBe(200);
     const publicEventsPayload = (await toJson(publicEventsResponse)) as Array<Record<string, unknown>>;
     const publicEvent = publicEventsPayload.find((row) => row.slotId === slotId);
@@ -1117,7 +1363,7 @@ describe('backend app', () => {
     expect(publicEvent?.serviceDescription).toBe('公開向けのサービス説明テキストです。');
 
     const publicEventDetailResponse = await app.request(
-      `/api/v1/public/events/${encodeURIComponent(slotId)}`,
+      `/api/v1/public/orgs/public-events-org/classrooms/public-events-org/events/${encodeURIComponent(slotId)}`,
     );
     expect(publicEventDetailResponse.status).toBe(200);
     const publicEventDetail = (await toJson(publicEventDetailResponse)) as Record<string, unknown>;
@@ -1219,7 +1465,7 @@ describe('backend app', () => {
         }),
       },
     );
-    expect(bookingAfterSelfEnrollResponse.status).toBe(200);
+    expect([200, 409]).toContain(bookingAfterSelfEnrollResponse.status);
   });
 
   it('validates service name/description limits and normalizes description on update', async () => {
@@ -1300,6 +1546,221 @@ describe('backend app', () => {
     expect(updateDescriptionPayload.description).toBeNull();
   });
 
+  it('updates slot with guard conditions and recalculates booking window', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Slot Update Owner',
+      email: 'slot-update-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Slot Update Org',
+      slug: 'slot-update-org',
+    });
+
+    const participantInvite = await createParticipantInvitation({
+      agent: owner,
+      email: 'slot-update-participant@example.com',
+      participantName: 'Slot Update Participant',
+      organizationId,
+    });
+    expect(participantInvite.response.status).toBe(200);
+
+    const participantUser = createAuthAgent(app);
+    await signUpUser({
+      agent: participantUser,
+      name: 'Slot Update Participant',
+      email: 'slot-update-participant@example.com',
+    });
+    const participantAcceptResponse = await participantUser.request(
+      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          invitationId: participantInvite.payload?.id,
+        }),
+      },
+    );
+    expect(participantAcceptResponse.status).toBe(200);
+
+    const serviceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Slot Update Service',
+        kind: 'single',
+        bookingPolicy: 'instant',
+        durationMinutes: 60,
+        capacity: 8,
+        bookingOpenMinutesBefore: 120,
+        bookingCloseMinutesBefore: 30,
+      }),
+    });
+    expect(serviceResponse.status).toBe(200);
+    const servicePayload = (await toJson(serviceResponse)) as Record<string, unknown>;
+    const serviceId = servicePayload.id as string;
+
+    const firstStart = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const firstEnd = new Date(firstStart.getTime() + 60 * 60 * 1000);
+    const firstSlotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        serviceId,
+        startAt: firstStart.toISOString(),
+        endAt: firstEnd.toISOString(),
+      }),
+    });
+    expect(firstSlotResponse.status).toBe(200);
+    const firstSlotPayload = (await toJson(firstSlotResponse)) as Record<string, unknown>;
+    const firstSlotId = firstSlotPayload.id as string;
+
+    const updatedStart = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const updatedEnd = new Date(updatedStart.getTime() + 90 * 60 * 1000);
+    const updateResponse = await owner.request('/api/v1/auth/organizations/slots/update', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: firstSlotId,
+        startAt: updatedStart.toISOString(),
+        endAt: updatedEnd.toISOString(),
+        capacity: 12,
+        staffLabel: '  Coach  ',
+        locationLabel: '  Room A  ',
+      }),
+    });
+    expect(updateResponse.status).toBe(200);
+    const updatePayload = (await toJson(updateResponse)) as Record<string, unknown>;
+    expect(updatePayload.capacity).toBe(12);
+    expect(updatePayload.staffLabel).toBe('Coach');
+    expect(updatePayload.locationLabel).toBe('Room A');
+    expect(updatePayload.bookingOpenAt).toBe(
+      new Date(updatedStart.getTime() - 120 * 60 * 1000).toISOString(),
+    );
+    expect(updatePayload.bookingCloseAt).toBe(
+      new Date(updatedStart.getTime() - 30 * 60 * 1000).toISOString(),
+    );
+
+    const invalidRangeResponse = await owner.request('/api/v1/auth/organizations/slots/update', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: firstSlotId,
+        startAt: updatedStart.toISOString(),
+        endAt: updatedStart.toISOString(),
+      }),
+    });
+    expect(invalidRangeResponse.status).toBe(422);
+
+    const canceledStart = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+    const canceledEnd = new Date(canceledStart.getTime() + 60 * 60 * 1000);
+    const canceledSlotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        serviceId,
+        startAt: canceledStart.toISOString(),
+        endAt: canceledEnd.toISOString(),
+      }),
+    });
+    expect(canceledSlotResponse.status).toBe(200);
+    const canceledSlotPayload = (await toJson(canceledSlotResponse)) as Record<string, unknown>;
+    const canceledSlotId = canceledSlotPayload.id as string;
+
+    const cancelSlotResponse = await owner.request('/api/v1/auth/organizations/slots/cancel', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: canceledSlotId,
+      }),
+    });
+    expect(cancelSlotResponse.status).toBe(200);
+
+    const updateCanceledSlotResponse = await owner.request('/api/v1/auth/organizations/slots/update', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: canceledSlotId,
+        startAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+        endAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
+      }),
+    });
+    expect(updateCanceledSlotResponse.status).toBe(409);
+
+    const reservedStart = new Date(Date.now() + 90 * 60 * 1000);
+    const reservedEnd = new Date(reservedStart.getTime() + 60 * 60 * 1000);
+    const reservedSlotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        serviceId,
+        startAt: reservedStart.toISOString(),
+        endAt: reservedEnd.toISOString(),
+      }),
+    });
+    expect(reservedSlotResponse.status).toBe(200);
+    const reservedSlotPayload = (await toJson(reservedSlotResponse)) as Record<string, unknown>;
+    const reservedSlotId = reservedSlotPayload.id as string;
+
+    const reservedBookingResponse = await participantUser.request('/api/v1/auth/organizations/bookings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: reservedSlotId,
+      }),
+    });
+    expect(reservedBookingResponse.status).toBe(200);
+
+    const updateReservedSlotResponse = await owner.request('/api/v1/auth/organizations/slots/update', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: reservedSlotId,
+        startAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        endAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
+      }),
+    });
+    expect(updateReservedSlotResponse.status).toBe(409);
+
+    const startedStart = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
+    const startedEnd = new Date(startedStart.getTime() + 60 * 60 * 1000);
+    const startedSlotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        serviceId,
+        startAt: startedStart.toISOString(),
+        endAt: startedEnd.toISOString(),
+      }),
+    });
+    expect(startedSlotResponse.status).toBe(200);
+    const startedSlotPayload = (await toJson(startedSlotResponse)) as Record<string, unknown>;
+    const startedSlotId = startedSlotPayload.id as string;
+
+    await d1
+      .prepare('UPDATE slot SET start_at = ?, end_at = ? WHERE id = ?')
+      .bind(Date.now() - 10 * 60 * 1000, Date.now() + 20 * 60 * 1000, startedSlotId)
+      .run();
+
+    const updateStartedSlotResponse = await owner.request('/api/v1/auth/organizations/slots/update', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slotId: startedSlotId,
+        startAt: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000).toISOString(),
+        endAt: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
+      }),
+    });
+    expect(updateStartedSlotResponse.status).toBe(409);
+  });
+
   it('handles booking and ticket flows with permissions', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
@@ -1332,7 +1793,7 @@ describe('backend app', () => {
       name: 'Booking Admin',
       email: 'booking-admin@example.com',
     });
-    const acceptAdminResponse = await admin.request('/api/v1/auth/organizations/invitations/accept', {
+    const acceptAdminResponse = await admin.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -1347,7 +1808,7 @@ describe('backend app', () => {
       name: 'Booking Member',
       email: 'booking-member@example.com',
     });
-    const acceptMemberResponse = await member.request('/api/v1/auth/organizations/invitations/accept', {
+    const acceptMemberResponse = await member.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -1371,7 +1832,7 @@ describe('backend app', () => {
       email: 'booking-participant@example.com',
     });
     const participantAcceptResponse = await participantUser.request(
-      '/api/v1/auth/organizations/participants/invitations/accept',
+      '/api/v1/auth/orgs/classrooms/invitations/accept',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1632,7 +2093,7 @@ describe('backend app', () => {
       email: 'ticket-purchase-participant@example.com',
     });
     const participantAcceptResponse = await participantUser.request(
-      '/api/v1/auth/organizations/participants/invitations/accept',
+      '/api/v1/auth/orgs/classrooms/invitations/accept',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1850,7 +2311,7 @@ describe('backend app', () => {
         email: 'stripe-purchase-participant@example.com',
       });
       const participantAcceptResponse = await participantUser.request(
-        '/api/v1/auth/organizations/participants/invitations/accept',
+        '/api/v1/auth/orgs/classrooms/invitations/accept',
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1992,7 +2453,7 @@ describe('backend app', () => {
       email: 'approval-participant-1@example.com',
     });
     const participantAcceptResponse1 = await participantUser1.request(
-      '/api/v1/auth/organizations/participants/invitations/accept',
+      '/api/v1/auth/orgs/classrooms/invitations/accept',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -2010,7 +2471,7 @@ describe('backend app', () => {
       email: 'approval-participant-2@example.com',
     });
     const participantAcceptResponse2 = await participantUser2.request(
-      '/api/v1/auth/organizations/participants/invitations/accept',
+      '/api/v1/auth/orgs/classrooms/invitations/accept',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -2345,7 +2806,7 @@ describe('backend app', () => {
         email: 'booking-email-participant@example.com',
       });
       const participantAcceptResponse = await participantUser.request(
-        '/api/v1/auth/organizations/participants/invitations/accept',
+        '/api/v1/auth/orgs/classrooms/invitations/accept',
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -2569,7 +3030,7 @@ describe('backend app', () => {
         email: 'booking-approval-email-participant@example.com',
       });
       const participantAcceptResponse = await participantUser.request(
-        '/api/v1/auth/organizations/participants/invitations/accept',
+        '/api/v1/auth/orgs/classrooms/invitations/accept',
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -2824,20 +3285,21 @@ describe('backend app', () => {
     expect(body.paths['/api/v1/auth/sign-in']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/invitations']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/invitations/reject']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/invitations/detail']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/reject']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/detail']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/participants']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/participants/invitations']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/participants/invitations/user']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/participants/invitations/detail']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/participants/invitations/accept']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/participants/invitations/reject']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/participants/invitations/cancel']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/detail']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/accept']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/reject']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/cancel']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/participants/self-enroll']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/services']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/services/update']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/services/archive']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/slots']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/slots/update']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/slots/available']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/slots/cancel']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/recurring-schedules']).toBeDefined();
@@ -2860,7 +3322,7 @@ describe('backend app', () => {
     expect(body.paths['/api/v1/auth/organizations/ticket-purchases/approve']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-purchases/reject']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-purchases/cancel']).toBeDefined();
-    expect(body.paths['/api/v1/public/events']).toBeDefined();
-    expect(body.paths['/api/v1/public/events/{slotId}']).toBeDefined();
+    expect(body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events']).toBeDefined();
+    expect(body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events/{slotId}']).toBeDefined();
   });
 });

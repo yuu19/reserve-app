@@ -57,6 +57,11 @@ pnpm --filter @apps/backend run dev
 - `SENTRY_ENVIRONMENT` (default: `production`)
 - `SENTRY_RELEASE`
 
+任意 (公開イベント固定コンテキスト):
+
+- `PUBLIC_EVENTS_ORG_SLUG`
+- `PUBLIC_EVENTS_CLASSROOM_SLUG`
+
 ## API endpoints
 
 - OpenAPI JSON: `/api/openapi.json`
@@ -70,6 +75,10 @@ pnpm --filter @apps/backend run dev
   - Service image signed upload URL endpoint: `POST /api/v1/auth/organizations/services/images/upload-url`
   - Service image upload endpoint: `PUT /api/v1/auth/organizations/services/images/upload/:token`
   - Service image delivery endpoint: `GET /api/v1/auth/organizations/services/images/:key`
+  - Access tree endpoint: `GET /api/v1/auth/orgs/access-tree`
+  - Classroom invitation endpoint: `POST/GET /api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations`
+  - Classroom invitation action endpoint: `/api/v1/auth/orgs/classrooms/invitations/{detail|accept|reject|cancel}`
+- Public events routes: `/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events*`
 
 `@better-auth/expo` server plugin を有効化しているため、Expo クライアントからの認証にも対応しています。
 

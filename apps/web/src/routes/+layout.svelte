@@ -5,21 +5,32 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import ClassroomSwitcher from '$lib/components/classroom-switcher.svelte';
 	import OrganizationSwitcher from '$lib/components/organization-switcher.svelte';
 	import { Toaster, toast } from 'svelte-sonner';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { onAuthSessionUpdated } from '$lib/features/auth-lifecycle';
+	import { readLastAuthPortal, writeLastAuthPortal } from '$lib/features/auth-portal-preference';
+	import { isPublicAuthEntryPath, resolveAuthPortalByPath, type AuthPortal } from '$lib/features/auth-portal';
 	import {
+		listClassroomsByOrgSlug,
 		loadOrganizations,
-		setActiveOrganization
+		setActiveOrganization,
+		type ClassroomContextPayload
 	} from '$lib/features/organization-context.svelte';
 	import { authRpc, type AuthSessionPayload, type OrganizationPayload } from '$lib/rpc-client';
 	import {
+		loadPortalAccess,
 		loadSession,
 		parseResponseBody,
-		toErrorMessage
+		toErrorMessage,
+		type PortalAccess
 	} from '$lib/features/auth-session.svelte';
+	import {
+		buildScopedPortalPath,
+		replacePortalPathWithScopedContext
+	} from '$lib/features/scoped-routing';
 	import {
 		Building2,
 		CalendarDays,
@@ -45,8 +56,21 @@
 	let desktopSidebarCollapsed = $state(false);
 	let session = $state<AuthSessionPayload>(null);
 	let organizations = $state<OrganizationPayload[]>([]);
+	let classrooms = $state<ClassroomContextPayload[]>([]);
 	let activeOrganization = $state<OrganizationPayload | null>(null);
+	let activeClassroom = $state<ClassroomContextPayload | null>(null);
+	let portalAccess = $state<PortalAccess>({
+		hasOrganizationAdminAccess: false,
+		hasParticipantAccess: false,
+		canManage: false,
+		canUseParticipantBooking: false,
+		activeOrganizationRole: null,
+		activeClassroomRole: null,
+		hasActiveOrganization: false
+	});
+	let activePortal = $state<AuthPortal | null>(readLastAuthPortal());
 	let switchingOrganization = $state(false);
+	let switchingClassroom = $state(false);
 	let refreshSessionStatePromise: Promise<void> | null = null;
 	let fallbackRefreshPath = '';
 	let sectionOpenState = $state<Record<string, boolean>>({
@@ -91,8 +115,8 @@
 		{ href: '/admin/contracts', label: '契約' }
 	];
 
-	const navSections: NavSection[] = [
-		{
+	const navSectionsByPortal: Record<AuthPortal, NavSection> = {
+		admin: {
 			id: 'admin',
 			label: '管理者',
 			items: [
@@ -107,7 +131,7 @@
 				{ href: '/admin/contracts', label: '契約', icon: Building2 }
 			]
 		},
-		{
+		participant: {
 			id: 'participant',
 			label: '参加者',
 			items: [
@@ -118,11 +142,29 @@
 				{ href: '/participant/admin-invitations', label: '管理者招待', icon: ShieldCheck }
 			]
 		}
-	];
+	};
 
 	const pathname = $derived(page.url.pathname);
-	const isPublicRoot = $derived(pathname === '/');
-	const showSidebarLayout = $derived(!isPublicRoot && isLoggedIn);
+	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
+	const showSidebarLayout = $derived(!isPublicAuthRoute && isLoggedIn);
+	const showAdminSectionTabs = $derived(
+		activePortal === 'admin' && portalAccess.hasOrganizationAdminAccess
+	);
+	const visibleNavSections = $derived.by(() => {
+		if (!activePortal) {
+			return [] as NavSection[];
+		}
+		if (activePortal === 'admin') {
+			return portalAccess.hasOrganizationAdminAccess ? [navSectionsByPortal.admin] : [];
+		}
+		return portalAccess.hasParticipantAccess ? [navSectionsByPortal.participant] : [];
+	});
+	const canSwitchToAdmin = $derived(
+		activePortal !== 'admin' && portalAccess.hasOrganizationAdminAccess
+	);
+	const canSwitchToParticipant = $derived(
+		activePortal !== 'participant' && portalAccess.hasParticipantAccess
+	);
 	const sessionUserName = $derived.by(() => {
 		const rawName = session?.user?.name;
 		if (typeof rawName === 'string' && rawName.length > 0) {
@@ -135,8 +177,36 @@
 		return 'ユーザー';
 	});
 	const activeOrganizationName = $derived(activeOrganization?.name ?? '組織未選択');
+	const activeClassroomName = $derived(activeClassroom?.name ?? '教室未選択');
 
 	const isActive = (href: string): boolean => pathname === href || pathname.startsWith(`${href}/`);
+	const resolveInitialActivePortal = (currentPath: string, nextPortalAccess: PortalAccess): AuthPortal => {
+		const storedPortal = readLastAuthPortal();
+		if (storedPortal === 'admin' && nextPortalAccess.hasOrganizationAdminAccess) {
+			return storedPortal;
+		}
+		if (storedPortal === 'participant' && nextPortalAccess.hasParticipantAccess) {
+			return storedPortal;
+		}
+
+		const pathPortal = resolveAuthPortalByPath(currentPath);
+		if (pathPortal === 'admin' && nextPortalAccess.hasOrganizationAdminAccess) {
+			return pathPortal;
+		}
+		if (pathPortal === 'participant' && nextPortalAccess.hasParticipantAccess) {
+			return pathPortal;
+		}
+
+		if (nextPortalAccess.hasOrganizationAdminAccess) {
+			return 'admin';
+		}
+
+		if (nextPortalAccess.hasParticipantAccess) {
+			return 'participant';
+		}
+
+		return 'participant';
+	};
 
 	const toggleSection = (sectionId: NavSection['id']) => {
 		sectionOpenState = {
@@ -194,13 +264,41 @@
 				isLoggedIn = !!loaded.session;
 				if (!loaded.session) {
 					organizations = [];
+					classrooms = [];
 					activeOrganization = null;
+					activeClassroom = null;
+					portalAccess = {
+						hasOrganizationAdminAccess: false,
+						hasParticipantAccess: false,
+						canManage: false,
+						canUseParticipantBooking: false,
+						activeOrganizationRole: null,
+						activeClassroomRole: null,
+						hasActiveOrganization: false
+					};
 					return;
 				}
-				const { organizations: nextOrganizations, activeOrganization: nextActiveOrganization } =
-					await loadOrganizations();
+				const [
+					{
+						organizations: nextOrganizations,
+						classrooms: nextClassrooms,
+						activeOrganization: nextActiveOrganization,
+						activeClassroom: nextActiveClassroom
+					},
+					nextPortalAccess
+				] = await Promise.all([loadOrganizations(), loadPortalAccess()]);
 				organizations = nextOrganizations;
+				classrooms = nextClassrooms;
 				activeOrganization = nextActiveOrganization;
+				activeClassroom = nextActiveClassroom;
+				portalAccess = nextPortalAccess;
+				if (
+					!activePortal ||
+					(activePortal === 'admin' && !nextPortalAccess.hasOrganizationAdminAccess) ||
+					(activePortal === 'participant' && !nextPortalAccess.hasParticipantAccess)
+				) {
+					activePortal = resolveInitialActivePortal(pathname, nextPortalAccess);
+				}
 			} finally {
 				loadingSession = false;
 			}
@@ -214,8 +312,44 @@
 		}
 	};
 
+	const pickPreferredClassroom = (
+		candidates: ClassroomContextPayload[]
+	): ClassroomContextPayload | null =>
+		candidates.find((classroom) => classroom.canManage) ??
+		candidates.find((classroom) => classroom.canUseParticipantBooking) ??
+		candidates[0] ??
+		null;
+
+	const getCurrentScopedContext = () =>
+		activeOrganization && activeClassroom
+			? {
+					orgSlug: activeOrganization.slug,
+					classroomSlug: activeClassroom.slug
+				}
+			: null;
+
+	const resolveScopedNavigationTarget = (context: { orgSlug: string; classroomSlug: string }) => {
+		const portal = activePortal === 'admin' || activePortal === 'participant' ? activePortal : 'participant';
+		if (typeof window === 'undefined') {
+			return buildScopedPortalPath(context, portal);
+		}
+
+		const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+		const nextPath = replacePortalPathWithScopedContext(currentPath, context);
+		if (nextPath !== currentPath) {
+			return nextPath;
+		}
+		return buildScopedPortalPath(context, portal);
+	};
+
+	const resolvePortalHref = (href: NavItem['href'] | SectionTab['href']) => {
+		const basePath = resolve(href);
+		const context = getCurrentScopedContext();
+		return context ? replacePortalPathWithScopedContext(basePath, context) : basePath;
+	};
+
 	const submitSetActiveOrganizationFromHeader = async (organizationId: string | null) => {
-		if (switchingOrganization) {
+		if (switchingOrganization || switchingClassroom) {
 			return;
 		}
 
@@ -231,17 +365,73 @@
 				toast.error(result.message);
 				return;
 			}
-			await refreshSessionState();
-			if (typeof window !== 'undefined') {
-				window.location.assign(
-					`${window.location.pathname}${window.location.search}${window.location.hash}`
-				);
+
+			if (!organizationId) {
+				await refreshSessionState();
+				return;
 			}
+
+			const nextOrganization =
+				organizations.find((organization) => organization.id === organizationId) ?? null;
+			if (!nextOrganization) {
+				await refreshSessionState();
+				return;
+			}
+
+			const nextClassrooms = await listClassroomsByOrgSlug(nextOrganization.slug);
+			const nextClassroom = pickPreferredClassroom(nextClassrooms);
+			if (!nextClassroom) {
+				toast.error('切り替え先の教室が見つかりません。');
+				await refreshSessionState();
+				return;
+			}
+
+			await goto(
+				resolveScopedNavigationTarget({
+					orgSlug: nextOrganization.slug,
+					classroomSlug: nextClassroom.slug
+				}),
+				{ invalidateAll: true }
+			);
 		} catch {
 			toast.error('組織の切り替えに失敗しました。');
 		} finally {
 			switchingOrganization = false;
 		}
+	};
+
+	const submitSetActiveClassroomFromHeader = async (classroomSlug: string) => {
+		if (switchingOrganization || switchingClassroom || !activeOrganization) {
+			return;
+		}
+		if (classroomSlug === activeClassroom?.slug) {
+			return;
+		}
+
+		switchingClassroom = true;
+		try {
+			await goto(
+				resolveScopedNavigationTarget({
+					orgSlug: activeOrganization.slug,
+					classroomSlug
+				}),
+				{ invalidateAll: true }
+			);
+		} catch {
+			toast.error('教室の切り替えに失敗しました。');
+		} finally {
+			switchingClassroom = false;
+		}
+	};
+
+	const switchPortal = async (nextPortal: AuthPortal) => {
+		if (activePortal === nextPortal) {
+			return;
+		}
+		writeLastAuthPortal(nextPortal);
+		activePortal = nextPortal;
+		mobileMenuOpen = false;
+		await goto(resolvePortalHref(nextPortal === 'admin' ? '/admin/dashboard' : '/participant/home'));
 	};
 
 	const submitSignOut = async () => {
@@ -257,7 +447,9 @@
 			isLoggedIn = false;
 			session = null;
 			organizations = [];
+			classrooms = [];
 			activeOrganization = null;
+			activeClassroom = null;
 			mobileMenuOpen = false;
 			await goto(resolve('/'));
 		} catch {
@@ -316,7 +508,7 @@
 	});
 
 	$effect(() => {
-		if (isPublicRoot || isLoggedIn || loadingSession) {
+		if (isPublicAuthRoute || isLoggedIn || loadingSession) {
 			fallbackRefreshPath = '';
 			return;
 		}
@@ -405,20 +597,22 @@
 				<div
 					class={`space-y-2 transition-[opacity,transform,max-height] duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${desktopSidebarCollapsed ? 'pointer-events-none -translate-x-1 overflow-hidden opacity-0 max-h-0' : 'translate-x-0 opacity-100 max-h-20'}`}
 				>
-					<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
-						{#each sectionTabs as tab (tab.href)}
-							<a
-								href={resolve(tab.href)}
-								class={`rounded px-3 py-1.5 text-sm transition-colors ${
-									activeSectionTab === tab.href
-										? 'font-semibold text-teal-600'
-										: 'text-slate-700 hover:text-slate-900'
-								}`}
-							>
-								{tab.label}
-							</a>
-						{/each}
-					</div>
+					{#if showAdminSectionTabs}
+						<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
+							{#each sectionTabs as tab (tab.href)}
+								<a
+									href={resolvePortalHref(tab.href)}
+									class={`rounded px-3 py-1.5 text-sm transition-colors ${
+										activeSectionTab === tab.href
+											? 'font-semibold text-teal-600'
+											: 'text-slate-700 hover:text-slate-900'
+									}`}
+								>
+									{tab.label}
+								</a>
+							{/each}
+						</div>
+					{/if}
 				</div>
 
 				<nav class="relative min-h-[216px]" aria-label="機能メニュー">
@@ -426,7 +620,7 @@
 						class={`space-y-2 transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${navExpandedClass}`}
 						aria-hidden={desktopSidebarCollapsed}
 					>
-						{#each navSections as section (section.id)}
+						{#each visibleNavSections as section (section.id)}
 							<div class="rounded-lg border border-slate-200/80 bg-white/70">
 								<button
 									type="button"
@@ -450,7 +644,7 @@
 									>
 										{#each section.items as item (item.href)}
 											<a
-												href={resolve(item.href)}
+												href={resolvePortalHref(item.href)}
 												class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
 													isActive(item.href)
 														? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -471,10 +665,10 @@
 						class={`space-y-1 rounded-lg border border-slate-200/80 bg-white/70 p-2 transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${navCollapsedClass}`}
 						aria-hidden={!desktopSidebarCollapsed}
 					>
-						{#each navSections as section (section.id)}
+						{#each visibleNavSections as section (section.id)}
 							{#each section.items as item (item.href)}
 								<a
-									href={resolve(item.href)}
+									href={resolvePortalHref(item.href)}
 									class={`flex items-center justify-center rounded-lg px-3 py-2 transition-colors ${
 										isActive(item.href)
 											? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -513,16 +707,43 @@
 
 		<div class="min-w-0">
 			<header
-				class="sticky top-0 z-30 hidden items-center justify-end gap-3 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:flex"
+				class="sticky top-0 z-30 hidden items-center justify-between gap-3 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:flex"
 			>
-				<OrganizationSwitcher
-					{organizations}
-					activeOrganizationId={activeOrganization?.id ?? null}
-					{activeOrganizationName}
-					loading={loadingSession}
-					busy={switchingOrganization}
-					onSelect={submitSetActiveOrganizationFromHeader}
-				/>
+				<div class="flex items-center gap-2">
+					{#if canSwitchToAdmin}
+						<Button type="button" variant="outline" size="sm" onclick={() => switchPortal('admin')}
+							>管理者へ切替</Button
+						>
+					{/if}
+					{#if canSwitchToParticipant}
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onclick={() => switchPortal('participant')}>参加者へ切替</Button
+						>
+					{/if}
+				</div>
+				<div class="flex items-center gap-2">
+					<OrganizationSwitcher
+						{organizations}
+						activeOrganizationId={activeOrganization?.id ?? null}
+						{activeOrganizationName}
+						loading={loadingSession}
+						busy={switchingOrganization || switchingClassroom}
+						onSelect={submitSetActiveOrganizationFromHeader}
+					/>
+					{#if activeOrganization && classrooms.length > 0}
+						<ClassroomSwitcher
+							{classrooms}
+							activeClassroomId={activeClassroom?.id ?? null}
+							{activeClassroomName}
+							loading={loadingSession}
+							busy={switchingOrganization || switchingClassroom}
+							onSelect={submitSetActiveClassroomFromHeader}
+						/>
+					{/if}
+				</div>
 			</header>
 
 			<header
@@ -540,15 +761,28 @@
 					</Button>
 					<p class="text-sm font-semibold text-slate-900">Reserve App</p>
 				</div>
-				<OrganizationSwitcher
-					{organizations}
-					activeOrganizationId={activeOrganization?.id ?? null}
-					{activeOrganizationName}
-					loading={loadingSession}
-					busy={switchingOrganization}
-					compact={true}
-					onSelect={submitSetActiveOrganizationFromHeader}
-				/>
+				<div class="flex items-center gap-2">
+					<OrganizationSwitcher
+						{organizations}
+						activeOrganizationId={activeOrganization?.id ?? null}
+						{activeOrganizationName}
+						loading={loadingSession}
+						busy={switchingOrganization || switchingClassroom}
+						compact={true}
+						onSelect={submitSetActiveOrganizationFromHeader}
+					/>
+					{#if activeOrganization && classrooms.length > 0}
+						<ClassroomSwitcher
+							{classrooms}
+							activeClassroomId={activeClassroom?.id ?? null}
+							{activeClassroomName}
+							loading={loadingSession}
+							busy={switchingOrganization || switchingClassroom}
+							compact={true}
+							onSelect={submitSetActiveClassroomFromHeader}
+						/>
+					{/if}
+				</div>
 			</header>
 
 			{@render children()}
@@ -581,24 +815,47 @@
 							</Button>
 						</div>
 
-						<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
-							{#each sectionTabs as tab (tab.href)}
-								<a
-									href={resolve(tab.href)}
-									onclick={closeMobileMenu}
-									class={`rounded px-3 py-1.5 text-sm transition-colors ${
-										activeSectionTab === tab.href
-											? 'font-semibold text-teal-600'
-											: 'text-slate-700 hover:text-slate-900'
-									}`}
-								>
-									{tab.label}
-								</a>
-							{/each}
-						</div>
+						{#if canSwitchToAdmin || canSwitchToParticipant}
+							<div class="grid grid-cols-1 gap-2">
+								{#if canSwitchToAdmin}
+									<Button
+										type="button"
+										variant="outline"
+										class="w-full justify-start"
+										onclick={() => switchPortal('admin')}>管理者へ切替</Button
+									>
+								{/if}
+								{#if canSwitchToParticipant}
+									<Button
+										type="button"
+										variant="outline"
+										class="w-full justify-start"
+										onclick={() => switchPortal('participant')}>参加者へ切替</Button
+									>
+								{/if}
+							</div>
+						{/if}
+
+						{#if showAdminSectionTabs}
+							<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
+								{#each sectionTabs as tab (tab.href)}
+									<a
+										href={resolvePortalHref(tab.href)}
+										onclick={closeMobileMenu}
+										class={`rounded px-3 py-1.5 text-sm transition-colors ${
+											activeSectionTab === tab.href
+												? 'font-semibold text-teal-600'
+												: 'text-slate-700 hover:text-slate-900'
+										}`}
+									>
+										{tab.label}
+									</a>
+								{/each}
+							</div>
+						{/if}
 
 						<nav class="space-y-2" aria-label="機能メニュー(モバイル)">
-							{#each navSections as section (section.id)}
+							{#each visibleNavSections as section (section.id)}
 								<div class="rounded-lg border border-slate-200/80 bg-white/70">
 									<button
 										type="button"
@@ -621,7 +878,7 @@
 										>
 											{#each section.items as item (item.href)}
 												<a
-													href={resolve(item.href)}
+													href={resolvePortalHref(item.href)}
 													onclick={closeMobileMenu}
 													class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
 														isActive(item.href)

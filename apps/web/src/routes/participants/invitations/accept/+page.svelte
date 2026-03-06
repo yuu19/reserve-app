@@ -5,7 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '$lib/components/ui/card';
 	import { formatJaDateTime } from '$lib/date/format';
-	import { loadSession } from '$lib/features/auth-session.svelte';
+	import { loadSession, redirectToLoginWithNext } from '$lib/features/auth-session.svelte';
 	import { authRpc } from '$lib/rpc-client';
 
 	type JsonRecord = Record<string, unknown>;
@@ -107,7 +107,7 @@
 		const { session } = await loadSession();
 		if (!session) {
 			const next = `${window.location.pathname}${window.location.search}`;
-			window.location.assign(`${resolve('/')}?next=${encodeURIComponent(next)}`);
+			redirectToLoginWithNext(next);
 			return;
 		}
 

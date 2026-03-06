@@ -10,6 +10,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 type RecurringScheduleRow = {
   id: string;
   organizationId: string;
+  classroomId: string;
   serviceId: string;
   timezone: string;
   frequency: string;
@@ -28,6 +29,7 @@ type RecurringExceptionRow = {
   id: string;
   recurringScheduleId: string;
   organizationId: string;
+  classroomId: string;
   date: string;
   action: string;
   overrideStartTimeLocal: string | null;
@@ -38,6 +40,7 @@ type RecurringExceptionRow = {
 type ServiceRow = {
   id: string;
   organizationId: string;
+  classroomId: string;
   durationMinutes: number;
   capacity: number;
   bookingOpenMinutesBefore: number | null;
@@ -47,6 +50,7 @@ type ServiceRow = {
 type SlotDraft = {
   id: string;
   organizationId: string;
+  classroomId: string;
   serviceId: string;
   recurringScheduleId: string;
   startAt: Date;
@@ -429,6 +433,7 @@ export const buildRecurringSlots = ({
     slots.push({
       id: crypto.randomUUID(),
       organizationId: schedule.organizationId,
+      classroomId: schedule.classroomId,
       serviceId: schedule.serviceId,
       recurringScheduleId: schedule.id,
       startAt: effectiveStartAt,
@@ -464,6 +469,7 @@ export const syncRecurringScheduleSlots = async ({
     .select({
       id: dbSchema.recurringSchedule.id,
       organizationId: dbSchema.recurringSchedule.organizationId,
+      classroomId: dbSchema.recurringSchedule.classroomId,
       serviceId: dbSchema.recurringSchedule.serviceId,
       timezone: dbSchema.recurringSchedule.timezone,
       frequency: dbSchema.recurringSchedule.frequency,
@@ -494,6 +500,7 @@ export const syncRecurringScheduleSlots = async ({
     .select({
       id: dbSchema.service.id,
       organizationId: dbSchema.service.organizationId,
+      classroomId: dbSchema.service.classroomId,
       durationMinutes: dbSchema.service.durationMinutes,
       capacity: dbSchema.service.capacity,
       bookingOpenMinutesBefore: dbSchema.service.bookingOpenMinutesBefore,
@@ -513,6 +520,7 @@ export const syncRecurringScheduleSlots = async ({
       id: dbSchema.recurringScheduleException.id,
       recurringScheduleId: dbSchema.recurringScheduleException.recurringScheduleId,
       organizationId: dbSchema.recurringScheduleException.organizationId,
+      classroomId: dbSchema.recurringScheduleException.classroomId,
       date: dbSchema.recurringScheduleException.date,
       action: dbSchema.recurringScheduleException.action,
       overrideStartTimeLocal: dbSchema.recurringScheduleException.overrideStartTimeLocal,

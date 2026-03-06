@@ -1,38 +1,94 @@
-import { authRpc, type OrganizationPayload } from '$lib/rpc-client';
-import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import type {
+	AccessTreePayload,
+	ClassroomRole,
+	OrganizationPayload,
+	ScopedApiContext
+} from '$lib/rpc-client';
+import {
+	loadPortalAccess,
+	parseResponseBody,
+	readClassroomsFromAccessTree,
+	readOrganizationsFromAccessTree,
+	toErrorMessage
+} from './auth-session.svelte';
+import { authRpc } from '$lib/rpc-client';
 import { writeLastUsedOrganizationId } from './organization-preference';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
 
-const isOrganizationPayload = (value: unknown): value is OrganizationPayload =>
-	isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string' && typeof value.slug === 'string';
+export type ClassroomContextPayload = {
+	id: string;
+	slug: string;
+	name: string;
+	logo?: string | null;
+	role: ClassroomRole | null;
+	canManage: boolean;
+	canUseParticipantBooking: boolean;
+};
 
-const asOrganizations = (value: unknown): OrganizationPayload[] =>
-	Array.isArray(value) ? value.filter(isOrganizationPayload) : [];
+export type OrganizationContextPayload = {
+	organizations: OrganizationPayload[];
+	activeOrganization: OrganizationPayload | null;
+	classrooms: ClassroomContextPayload[];
+	activeClassroom: ClassroomContextPayload | null;
+	activeContext: ScopedApiContext | null;
+	accessTree: AccessTreePayload | null;
+};
 
-const asOrganization = (value: unknown): OrganizationPayload | null =>
-	isOrganizationPayload(value) ? value : null;
+const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | null => {
+	if (!isRecord(value)) {
+		return null;
+	}
+	if (typeof value.id !== 'string' || typeof value.slug !== 'string' || typeof value.name !== 'string') {
+		return null;
+	}
+	const role = value.role;
+	const classroomRole = role === 'manager' || role === 'staff' || role === 'participant' ? role : null;
+	if (typeof value.canManage !== 'boolean' || typeof value.canUseParticipantBooking !== 'boolean') {
+		return null;
+	}
+	return {
+		id: value.id,
+		slug: value.slug,
+		name: value.name,
+		logo: typeof value.logo === 'string' ? value.logo : null,
+		role: classroomRole,
+		canManage: value.canManage,
+		canUseParticipantBooking: value.canUseParticipantBooking
+	};
+};
 
-export const loadOrganizations = async () => {
-	const [listResponse, activeResponse] = await Promise.all([
-		authRpc.listOrganizations(),
-		authRpc.getFullOrganization()
-	]);
-	const [listPayload, activePayload] = await Promise.all([
-		parseResponseBody(listResponse),
-		parseResponseBody(activeResponse)
-	]);
-	const organizations = listResponse.ok ? asOrganizations(listPayload) : [];
-	const activeOrganization = activeResponse.ok ? asOrganization(activePayload) : null;
-
+export const loadOrganizations = async (
+	preferredContext: ScopedApiContext | null = null
+): Promise<OrganizationContextPayload> => {
+	const portalAccess = await loadPortalAccess(preferredContext);
+	const accessTree = portalAccess.accessTree ?? null;
+	const organizations = readOrganizationsFromAccessTree(accessTree);
+	const activeOrganization =
+		portalAccess.activeContext === null
+			? null
+			: organizations.find((organization) => organization.slug === portalAccess.activeContext?.orgSlug) ??
+				null;
 	if (activeOrganization?.id) {
 		writeLastUsedOrganizationId(activeOrganization.id);
 	}
 
+	const classrooms = portalAccess.activeContext?.orgSlug
+		? readClassroomsFromAccessTree(accessTree, portalAccess.activeContext.orgSlug)
+		: [];
+	const activeClassroom =
+		portalAccess.activeContext === null
+			? null
+			: classrooms.find((classroom) => classroom.slug === portalAccess.activeContext?.classroomSlug) ?? null;
+
 	return {
 		organizations,
-		activeOrganization
+		activeOrganization,
+		classrooms,
+		activeClassroom,
+		activeContext: portalAccess.activeContext ?? null,
+		accessTree
 	};
 };
 
@@ -46,6 +102,7 @@ export const createOrganization = async (input: { name: string; slug: string; lo
 	};
 };
 
+// Backward-compat helper for existing settings/layout code path.
 export const setActiveOrganization = async (organizationId: string | null) => {
 	const response = await authRpc.setActiveOrganization({ organizationId });
 	const payload = await parseResponseBody(response);
@@ -78,4 +135,17 @@ export const uploadOrganizationLogo = async (file: File) => {
 		message: '組織ロゴをアップロードしました。',
 		logoUrl: payload.logoUrl
 	};
+};
+
+export const listClassroomsByOrgSlug = async (
+	orgSlug: string
+): Promise<ClassroomContextPayload[]> => {
+	const response = await authRpc.listClassroomsByOrg(orgSlug);
+	const payload = await parseResponseBody(response);
+	if (!response.ok || !Array.isArray(payload)) {
+		return [];
+	}
+	return payload
+		.map((entry) => asClassroomContextPayload(entry))
+		.filter((entry): entry is ClassroomContextPayload => entry !== null);
 };

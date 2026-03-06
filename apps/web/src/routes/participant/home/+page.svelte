@@ -8,6 +8,7 @@
 		getCurrentPathWithSearch,
 		loadPortalAccess,
 		loadSession,
+		resolvePortalHomePath,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
 
@@ -24,6 +25,11 @@
 					return;
 				}
 				const portalAccess = await loadPortalAccess();
+				const homePath = resolvePortalHomePath(portalAccess);
+				if (homePath === '/admin/dashboard') {
+					await goto(resolve(homePath));
+					return;
+				}
 				canUseParticipantBooking = portalAccess.canUseParticipantBooking;
 			} finally {
 				loading = false;

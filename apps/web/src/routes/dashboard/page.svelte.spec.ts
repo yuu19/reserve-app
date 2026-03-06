@@ -5,6 +5,8 @@ import DashboardPage from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
 	loadSession: vi.fn(),
+	loadPortalAccess: vi.fn(),
+	resolvePortalHomePath: vi.fn(),
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/admin/dashboard'),
 	loadOrganizations: vi.fn(),
@@ -33,6 +35,8 @@ vi.mock('$env/dynamic/public', () => ({
 
 vi.mock('$lib/features/auth-session.svelte', () => ({
 	loadSession: mocks.loadSession,
+	loadPortalAccess: mocks.loadPortalAccess,
+	resolvePortalHomePath: mocks.resolvePortalHomePath,
 	redirectToLoginWithNext: mocks.redirectToLoginWithNext,
 	getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
 }));
@@ -48,6 +52,8 @@ vi.mock('$lib/features/invitations-participant.svelte', () => ({
 describe('/dashboard/+page.svelte', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
+		mocks.loadPortalAccess.mockReset();
+		mocks.resolvePortalHomePath.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.loadOrganizations.mockReset();
@@ -57,6 +63,16 @@ describe('/dashboard/+page.svelte', () => {
 			session: { user: { id: 'user-1' }, session: { id: 'session-1' } },
 			status: 200
 		});
+		mocks.loadPortalAccess.mockResolvedValue({
+			hasOrganizationAdminAccess: true,
+			hasParticipantAccess: true,
+			canManage: true,
+			canUseParticipantBooking: true,
+			activeOrganizationRole: 'admin',
+			activeClassroomRole: 'manager',
+			hasActiveOrganization: true
+		});
+		mocks.resolvePortalHomePath.mockReturnValue('/admin/dashboard');
 		mocks.getCurrentPathWithSearch.mockReturnValue('/admin/dashboard');
 		mocks.loadParticipantFeatureData.mockResolvedValue({
 			participants: [],

@@ -227,7 +227,50 @@ export type PublicEventListItemPayload = {
 
 export type PublicEventDetailPayload = PublicEventListItemPayload;
 
-export type OrganizationRole = 'admin' | 'member';
+export type OrganizationMembershipRole = 'owner' | 'admin' | 'member';
+export type OrganizationInvitationRole = 'admin' | 'member';
+export type ClassroomRole = 'manager' | 'staff' | 'participant';
+export type ScopedApiContext = {
+	orgSlug: string;
+	classroomSlug: string;
+};
+export type OrganizationAccessPayload = {
+	organizationId: string;
+	organizationName?: string | null;
+	role?: OrganizationMembershipRole | null;
+	classroomRole?: ClassroomRole;
+	canManage: boolean;
+	canUseParticipantBooking: boolean;
+	[key: string]: unknown;
+};
+export type AccessTreeClassroomPayload = {
+	id: string;
+	slug: string;
+	name: string;
+	logo?: string | null;
+	role: ClassroomRole | null;
+	canManage: boolean;
+	canUseParticipantBooking: boolean;
+	[key: string]: unknown;
+};
+
+export type AccessTreeOrganizationPayload = {
+	org: {
+		id: string;
+		slug: string;
+		name: string;
+		logo?: string | null;
+		[key: string]: unknown;
+	};
+	orgRole: OrganizationMembershipRole | null;
+	classrooms: AccessTreeClassroomPayload[];
+	[key: string]: unknown;
+};
+
+export type AccessTreePayload = {
+	orgs: AccessTreeOrganizationPayload[];
+	[key: string]: unknown;
+};
 export type OrganizationLogoUploadPayload = {
 	key: string;
 	logoUrl: string;
@@ -270,7 +313,7 @@ type SetActiveOrganizationInput = {
 
 type CreateInvitationInput = {
 	email: string;
-	role: OrganizationRole;
+	role: OrganizationInvitationRole;
 	organizationId?: string;
 	resend?: boolean;
 };
@@ -343,6 +386,15 @@ type ListServicesQuery = {
 type CreateSlotInput = {
 	organizationId?: string;
 	serviceId: string;
+	startAt: string;
+	endAt: string;
+	capacity?: number;
+	staffLabel?: string;
+	locationLabel?: string;
+};
+
+type UpdateSlotInput = {
+	slotId: string;
 	startAt: string;
 	endAt: string;
 	capacity?: number;
@@ -532,6 +584,9 @@ type AuthRpcClient = {
 				organizations: {
 					$get: () => Promise<Response>;
 					$post: (args: { json: CreateOrganizationInput }) => Promise<Response>;
+					access: {
+						$get: () => Promise<Response>;
+					};
 					full: {
 						$get: (args?: { query: OrganizationQuery }) => Promise<Response>;
 					};
@@ -595,6 +650,9 @@ type AuthRpcClient = {
 					slots: {
 						$get: (args: { query: ListSlotsQuery }) => Promise<Response>;
 						$post: (args: { json: CreateSlotInput }) => Promise<Response>;
+						update: {
+							$post: (args: { json: UpdateSlotInput }) => Promise<Response>;
+						};
 						available: {
 							$get: (args: { query: ListSlotsQuery }) => Promise<Response>;
 						};
@@ -680,6 +738,53 @@ const rpcClient = hc(backendUrl, {
 	}
 }) as unknown as AuthRpcClient;
 
+type QueryValue = string | number | boolean | null | undefined;
+
+const buildApiUrl = (path: string, query?: Record<string, QueryValue>): URL => {
+	const url = new URL(path, backendUrl);
+	if (query) {
+		for (const [key, value] of Object.entries(query)) {
+			if (value === undefined || value === null) {
+				continue;
+			}
+			url.searchParams.set(key, String(value));
+		}
+	}
+	return url;
+};
+
+const buildScopedAuthPath = (
+	context: ScopedApiContext,
+	suffix: string
+): `/api/v1/auth/orgs/${string}/classrooms/${string}${string}` =>
+	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms/${encodeURIComponent(context.classroomSlug)}${suffix}`;
+
+const buildOrgAuthPath = (orgSlug: string, suffix = ''): `/api/v1/auth/orgs/${string}${string}` =>
+	`/api/v1/auth/orgs/${encodeURIComponent(orgSlug)}${suffix}`;
+
+const authFetch = (
+	path: string,
+	options: {
+		method?: 'GET' | 'POST';
+		query?: Record<string, QueryValue>;
+		json?: unknown;
+		body?: BodyInit;
+		headers?: HeadersInit;
+	} = {}
+) => {
+	const headers = new Headers(options.headers);
+	const shouldUseJson = options.json !== undefined;
+	if (shouldUseJson && !headers.has('content-type')) {
+		headers.set('content-type', 'application/json');
+	}
+	return fetch(buildApiUrl(path, options.query), {
+		method: options.method ?? (shouldUseJson || options.body ? 'POST' : 'GET'),
+		headers,
+		body: shouldUseJson ? JSON.stringify(options.json) : options.body,
+		credentials: 'include'
+	});
+};
+
 export const authRpc = {
 	backendUrl,
 	buildGoogleOidcStartURL: (query?: GoogleOidcQuery) => {
@@ -730,9 +835,12 @@ export const authRpc = {
 	signIn: (json: SignInInput) => rpcClient.api.v1.auth['sign-in'].$post({ json }),
 	signUp: (json: SignUpInput) => rpcClient.api.v1.auth['sign-up'].$post({ json }),
 	signOut: () => rpcClient.api.v1.auth['sign-out'].$post(),
-	listOrganizations: () => rpcClient.api.v1.auth.organizations.$get(),
+	listOrganizations: () => authFetch('/api/v1/auth/organizations'),
+	listOrganizationAccess: () => authFetch('/api/v1/auth/organizations/access'),
+	getAccessTree: () => authFetch('/api/v1/auth/orgs/access-tree'),
+	listClassroomsByOrg: (orgSlug: string) => authFetch(buildOrgAuthPath(orgSlug, '/classrooms')),
 	createOrganization: (json: CreateOrganizationInput) =>
-		rpcClient.api.v1.auth.organizations.$post({ json }),
+		authFetch('/api/v1/auth/organizations', { json }),
 	setActiveOrganization: (json: SetActiveOrganizationInput) =>
 		rpcClient.api.v1.auth.organizations['set-active'].$post({ json }),
 	getFullOrganization: (organizationId?: string) =>
@@ -787,6 +895,8 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations.services.archive.$post({ json }),
 	listSlots: (query: ListSlotsQuery) => rpcClient.api.v1.auth.organizations.slots.$get({ query }),
 	createSlot: (json: CreateSlotInput) => rpcClient.api.v1.auth.organizations.slots.$post({ json }),
+	updateSlot: (json: UpdateSlotInput) =>
+		rpcClient.api.v1.auth.organizations.slots.update.$post({ json }),
 	listAvailableSlots: (query: ListSlotsQuery) =>
 		rpcClient.api.v1.auth.organizations.slots.available.$get({ query }),
 	cancelSlot: (json: CancelSlotInput) =>
@@ -843,5 +953,103 @@ export const authRpc = {
 	rejectTicketPurchase: (json: TicketPurchaseRejectInput) =>
 		rpcClient.api.v1.auth.organizations['ticket-purchases'].reject.$post({ json }),
 	cancelTicketPurchase: (json: TicketPurchaseCancelInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-purchases'].cancel.$post({ json })
+		rpcClient.api.v1.auth.organizations['ticket-purchases'].cancel.$post({ json }),
+	listInvitationsScoped: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/invitations')),
+	createInvitationScoped: (context: ScopedApiContext, json: CreateInvitationInput) =>
+		authFetch(buildScopedAuthPath(context, '/invitations'), { json }),
+	listParticipantsScoped: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/participants')),
+	selfEnrollParticipantScoped: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/participants/self-enroll'), { json: {} }),
+	listParticipantInvitationsScoped: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/participants/invitations')),
+	createParticipantInvitationScoped: (
+		context: ScopedApiContext,
+		json: CreateParticipantInvitationInput
+	) => authFetch(buildScopedAuthPath(context, '/participants/invitations'), { json }),
+	listServicesScoped: (context: ScopedApiContext, query?: Omit<ListServicesQuery, 'organizationId'>) =>
+		authFetch(buildScopedAuthPath(context, '/services'), { query }),
+	createServiceScoped: (context: ScopedApiContext, json: CreateServiceInput) =>
+		authFetch(buildScopedAuthPath(context, '/services'), { json }),
+	updateServiceScoped: (context: ScopedApiContext, json: UpdateServiceInput) =>
+		authFetch(buildScopedAuthPath(context, '/services/update'), { json }),
+	archiveServiceScoped: (context: ScopedApiContext, json: ArchiveServiceInput) =>
+		authFetch(buildScopedAuthPath(context, '/services/archive'), { json }),
+	createServiceImageUploadUrlScoped: (context: ScopedApiContext, json: CreateServiceImageUploadUrlInput) =>
+		authFetch(buildScopedAuthPath(context, '/services/images/upload-url'), { json }),
+	listSlotsScoped: (context: ScopedApiContext, query: Omit<ListSlotsQuery, 'organizationId'>) =>
+		authFetch(buildScopedAuthPath(context, '/slots'), { query }),
+	createSlotScoped: (context: ScopedApiContext, json: CreateSlotInput) =>
+		authFetch(buildScopedAuthPath(context, '/slots'), { json }),
+	updateSlotScoped: (context: ScopedApiContext, json: UpdateSlotInput) =>
+		authFetch(buildScopedAuthPath(context, '/slots/update'), { json }),
+	listAvailableSlotsScoped: (
+		context: ScopedApiContext,
+		query: Omit<ListSlotsQuery, 'organizationId'>
+	) => authFetch(buildScopedAuthPath(context, '/slots/available'), { query }),
+	cancelSlotScoped: (context: ScopedApiContext, json: CancelSlotInput) =>
+		authFetch(buildScopedAuthPath(context, '/slots/cancel'), { json }),
+	listRecurringSchedulesScoped: (
+		context: ScopedApiContext,
+		query?: Omit<ListRecurringSchedulesQuery, 'organizationId'>
+	) => authFetch(buildScopedAuthPath(context, '/recurring-schedules'), { query }),
+	createRecurringScheduleScoped: (context: ScopedApiContext, json: CreateRecurringScheduleInput) =>
+		authFetch(buildScopedAuthPath(context, '/recurring-schedules'), { json }),
+	updateRecurringScheduleScoped: (context: ScopedApiContext, json: UpdateRecurringScheduleInput) =>
+		authFetch(buildScopedAuthPath(context, '/recurring-schedules/update'), { json }),
+	upsertRecurringScheduleExceptionScoped: (
+		context: ScopedApiContext,
+		json: UpsertRecurringExceptionInput
+	) => authFetch(buildScopedAuthPath(context, '/recurring-schedules/exceptions'), { json }),
+	generateRecurringSlotsScoped: (context: ScopedApiContext, json: GenerateRecurringSlotsInput) =>
+		authFetch(buildScopedAuthPath(context, '/recurring-schedules/generate'), { json }),
+	createBookingScoped: (context: ScopedApiContext, json: CreateBookingInput) =>
+		authFetch(buildScopedAuthPath(context, '/bookings'), { json }),
+	listMyBookingsScoped: (
+		context: ScopedApiContext,
+		query?: Omit<ListBookingsQuery, 'organizationId'>
+	) => authFetch(buildScopedAuthPath(context, '/bookings/mine'), { query }),
+	cancelBookingScoped: (context: ScopedApiContext, json: BookingActionInput) =>
+		authFetch(buildScopedAuthPath(context, '/bookings/cancel'), { json }),
+	listBookingsScoped: (
+		context: ScopedApiContext,
+		query?: Omit<ListBookingsQuery, 'organizationId'>
+	) => authFetch(buildScopedAuthPath(context, '/bookings'), { query }),
+	cancelBookingByStaffScoped: (context: ScopedApiContext, json: BookingActionInput) =>
+		authFetch(buildScopedAuthPath(context, '/bookings/cancel-by-staff'), { json }),
+	approveBookingScoped: (context: ScopedApiContext, bookingId: string) =>
+		authFetch(buildScopedAuthPath(context, '/bookings/approve'), { json: { bookingId } }),
+	rejectBookingScoped: (context: ScopedApiContext, json: BookingActionInput) =>
+		authFetch(buildScopedAuthPath(context, '/bookings/reject'), { json }),
+	markBookingNoShowScoped: (context: ScopedApiContext, json: BookingNoShowInput) =>
+		authFetch(buildScopedAuthPath(context, '/bookings/no-show'), { json }),
+	createTicketTypeScoped: (context: ScopedApiContext, json: CreateTicketTypeInput) =>
+		authFetch(buildScopedAuthPath(context, '/ticket-types'), { json }),
+	listTicketTypesScoped: (
+		context: ScopedApiContext,
+		query?: Omit<ListTicketTypesQuery, 'organizationId'>
+	) => authFetch(buildScopedAuthPath(context, '/ticket-types'), { query }),
+	listPurchasableTicketTypesScoped: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/ticket-types/purchasable')),
+	grantTicketPackScoped: (context: ScopedApiContext, json: GrantTicketPackInput) =>
+		authFetch(buildScopedAuthPath(context, '/ticket-packs/grant'), { json }),
+	listMyTicketPacksScoped: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/ticket-packs/mine')),
+	createTicketPurchaseScoped: (context: ScopedApiContext, json: CreateTicketPurchaseInput) =>
+		authFetch(buildScopedAuthPath(context, '/ticket-purchases'), { json }),
+	listMyTicketPurchasesScoped: (
+		context: ScopedApiContext,
+		query?: Omit<ListMyTicketPurchasesQuery, 'organizationId'>
+	) => authFetch(buildScopedAuthPath(context, '/ticket-purchases/mine'), { query }),
+	listTicketPurchasesScoped: (
+		context: ScopedApiContext,
+		query?: Omit<ListTicketPurchasesQuery, 'organizationId'>
+	) => authFetch(buildScopedAuthPath(context, '/ticket-purchases'), { query }),
+	approveTicketPurchaseScoped: (context: ScopedApiContext, json: TicketPurchaseApproveInput) =>
+		authFetch(buildScopedAuthPath(context, '/ticket-purchases/approve'), { json }),
+	rejectTicketPurchaseScoped: (context: ScopedApiContext, json: TicketPurchaseRejectInput) =>
+		authFetch(buildScopedAuthPath(context, '/ticket-purchases/reject'), { json }),
+	cancelTicketPurchaseScoped: (context: ScopedApiContext, json: TicketPurchaseCancelInput) =>
+		authFetch(buildScopedAuthPath(context, '/ticket-purchases/cancel'), { json })
 };

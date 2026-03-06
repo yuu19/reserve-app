@@ -4,6 +4,7 @@ import {
 	type ParticipantPayload
 } from '$lib/rpc-client';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import { readWindowScopedRouteContext } from './scoped-routing';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
@@ -25,7 +26,8 @@ export const loadParticipantFeatureData = async (organizationId?: string) => {
 	const userPayload = await parseResponseBody(userResponse);
 	const received = userResponse.ok ? asParticipantInvitations(userPayload) : [];
 
-	if (!organizationId) {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
 		return {
 			participants: [] as ParticipantPayload[],
 			sent: [] as ParticipantInvitationPayload[],
@@ -35,8 +37,8 @@ export const loadParticipantFeatureData = async (organizationId?: string) => {
 	}
 
 	const [participantResponse, invitationResponse] = await Promise.all([
-		authRpc.listParticipants(organizationId),
-		authRpc.listParticipantInvitations(organizationId)
+		authRpc.listParticipantsScoped(context),
+		authRpc.listParticipantInvitationsScoped(context)
 	]);
 	const [participantPayload, invitationPayload] = await Promise.all([
 		parseResponseBody(participantResponse),
@@ -67,7 +69,11 @@ export const createParticipantInvitation = async (input: {
 	organizationId: string;
 	resend?: boolean;
 }) => {
-	const response = await authRpc.createParticipantInvitation(input);
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return { ok: false, status: 422, message: 'URL に組織/教室コンテキストがありません。' };
+	}
+	const response = await authRpc.createParticipantInvitationScoped(context, input);
 	const payload = await parseResponseBody(response);
 	return {
 		ok: response.ok,

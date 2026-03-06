@@ -8,7 +8,9 @@
 	import OrganizationLogo from '$lib/components/organization-logo.svelte';
 	import {
 		getCurrentPathWithSearch,
+		loadPortalAccess,
 		loadSession,
+		resolvePortalHomePath,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
 	import { loadOrganizations } from '$lib/features/organization-context.svelte';
@@ -48,10 +50,24 @@
 
 	onMount(() => {
 		void (async () => {
-			if (pathname === '/dashboard') {
-				await goto(resolve('/admin/dashboard'));
+			const { session } = await loadSession();
+			if (!session) {
+				redirectToLoginWithNext(getCurrentPathWithSearch());
 				return;
 			}
+
+			const portalAccess = await loadPortalAccess();
+			const homePath = resolvePortalHomePath(portalAccess) ?? '/participant/home';
+
+			if (pathname === '/dashboard') {
+				await goto(resolve(homePath));
+				return;
+			}
+			if (pathname.startsWith('/admin') && homePath !== '/admin/dashboard') {
+				await goto(resolve(homePath));
+				return;
+			}
+
 			loading = true;
 			try {
 				await refreshDashboard();

@@ -1,16 +1,108 @@
-import { page } from 'vitest/browser';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import BookingsPage from './+page.svelte';
 
+const mocks = vi.hoisted(() => ({
+	goto: vi.fn(),
+	readLastAuthPortal: vi.fn(),
+	loadSession: vi.fn(),
+	loadPortalAccess: vi.fn(),
+	resolvePortalHomePath: vi.fn(),
+	redirectToLoginWithNext: vi.fn(),
+	getCurrentPathWithSearch: vi.fn(() => '/bookings')
+}));
+
+vi.mock('$app/navigation', () => ({
+	goto: mocks.goto
+}));
+
+vi.mock('$app/paths', () => ({
+	resolve: (value: string) => value
+}));
+
+vi.mock('$lib/features/auth-portal-preference', () => ({
+	readLastAuthPortal: mocks.readLastAuthPortal
+}));
+
+vi.mock('$lib/features/auth-session.svelte', () => ({
+	loadSession: mocks.loadSession,
+	loadPortalAccess: mocks.loadPortalAccess,
+	resolvePortalHomePath: mocks.resolvePortalHomePath,
+	redirectToLoginWithNext: mocks.redirectToLoginWithNext,
+	getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
+}));
+
 describe('/bookings/+page.svelte', () => {
-	it('should render legacy redirect guidance', async () => {
+	beforeEach(() => {
+		mocks.goto.mockReset();
+		mocks.readLastAuthPortal.mockReset();
+		mocks.loadSession.mockReset();
+		mocks.loadPortalAccess.mockReset();
+		mocks.resolvePortalHomePath.mockReset();
+		mocks.redirectToLoginWithNext.mockReset();
+		mocks.getCurrentPathWithSearch.mockReset();
+
+		mocks.loadSession.mockResolvedValue({
+			session: { user: {}, session: {} },
+			status: 200
+		});
+		mocks.loadPortalAccess.mockResolvedValue({
+			hasOrganizationAdminAccess: true,
+			hasParticipantAccess: true,
+			canManage: true,
+			canUseParticipantBooking: true,
+			activeOrganizationRole: 'admin',
+			activeClassroomRole: 'manager',
+			hasActiveOrganization: true
+		});
+		mocks.resolvePortalHomePath.mockReturnValue('/admin/dashboard');
+		mocks.getCurrentPathWithSearch.mockReturnValue('/bookings');
+	});
+
+	it('redirects to participant bookings when fixed portal is participant', async () => {
+		mocks.readLastAuthPortal.mockReturnValue('participant');
 		render(BookingsPage);
-		await expect
-			.element(page.getByRole('heading', { level: 1, name: '予約ポータルへ移動中' }))
-			.toBeInTheDocument();
-		await expect
-			.element(page.getByText('権限に応じた予約画面へリダイレクトします。'))
-			.toBeInTheDocument();
+
+		await vi.waitFor(() => {
+			expect(mocks.goto).toHaveBeenCalledWith('/participant/bookings');
+		});
+	});
+
+	it('uses participant bookings as default when participant portal is preferred', async () => {
+		mocks.readLastAuthPortal.mockReturnValue(null);
+		mocks.resolvePortalHomePath.mockReturnValue('/participant/home');
+		render(BookingsPage);
+
+		await vi.waitFor(() => {
+			expect(mocks.goto).toHaveBeenCalledWith('/participant/bookings');
+		});
+	});
+
+	it('redirects to admin bookings when fixed portal is admin and manage is allowed', async () => {
+		mocks.readLastAuthPortal.mockReturnValue('admin');
+		render(BookingsPage);
+
+		await vi.waitFor(() => {
+			expect(mocks.goto).toHaveBeenCalledWith('/admin/bookings');
+		});
+	});
+
+	it('falls back to participant bookings when stored admin portal is no longer allowed', async () => {
+		mocks.readLastAuthPortal.mockReturnValue('admin');
+		mocks.loadPortalAccess.mockResolvedValue({
+			hasOrganizationAdminAccess: false,
+			hasParticipantAccess: true,
+			canManage: false,
+			canUseParticipantBooking: true,
+			activeOrganizationRole: null,
+			activeClassroomRole: 'participant',
+			hasActiveOrganization: true
+		});
+		mocks.resolvePortalHomePath.mockReturnValue('/participant/home');
+		render(BookingsPage);
+
+		await vi.waitFor(() => {
+			expect(mocks.goto).toHaveBeenCalledWith('/participant/bookings');
+		});
 	});
 });

@@ -1,11 +1,15 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, asc, eq, gte } from 'drizzle-orm';
+import { resolveOrganizationClassroomContext } from '../booking/authorization.js';
 import { SLOT_STATUS } from '../booking/constants.js';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../db/schema.js';
 
 const publicEventSchema = z.object({
   organizationId: z.string(),
+  organizationSlug: z.string(),
+  classroomId: z.string(),
+  classroomSlug: z.string(),
   serviceId: z.string(),
   serviceName: z.string(),
   serviceDescription: z.string().nullable().optional(),
@@ -27,11 +31,19 @@ const publicEventSchema = z.object({
   locationLabel: z.string().nullable().optional(),
 });
 
+const publicEventRouteParamsSchema = z.object({
+  orgSlug: z.string().min(1),
+  classroomSlug: z.string().min(1),
+});
+
 const listPublicEventsRoute = createRoute({
   method: 'get',
-  path: '/events',
+  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/events',
   tags: ['Public Events'],
   summary: 'List public events',
+  request: {
+    params: publicEventRouteParamsSchema,
+  },
   responses: {
     200: {
       description: 'Public event list',
@@ -42,21 +54,18 @@ const listPublicEventsRoute = createRoute({
       },
     },
     404: {
-      description: 'Public organization not found',
-    },
-    503: {
-      description: 'Public organization slug is not configured',
+      description: 'Public organization or classroom not found',
     },
   },
 });
 
-const publicEventDetailParamsSchema = z.object({
+const publicEventDetailParamsSchema = publicEventRouteParamsSchema.extend({
   slotId: z.string().min(1),
 });
 
 const getPublicEventDetailRoute = createRoute({
   method: 'get',
-  path: '/events/{slotId}',
+  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/events/{slotId}',
   tags: ['Public Events'],
   summary: 'Get a public event detail by slot id',
   request: {
@@ -73,9 +82,6 @@ const getPublicEventDetailRoute = createRoute({
     },
     404: {
       description: 'Public event not found',
-    },
-    503: {
-      description: 'Public organization slug is not configured',
     },
   },
 });
@@ -108,6 +114,9 @@ const isBookableSlot = ({
 const formatPublicEvent = (
   row: {
     organizationId: string;
+    organizationSlug: string;
+    classroomId: string;
+    classroomSlug: string;
     serviceId: string;
     serviceName: string;
     serviceDescription: string | null;
@@ -131,6 +140,9 @@ const formatPublicEvent = (
   const remainingCount = Math.max(row.capacity - row.reservedCount, 0);
   return {
     organizationId: row.organizationId,
+    organizationSlug: row.organizationSlug,
+    classroomId: row.classroomId,
+    classroomSlug: row.classroomSlug,
     serviceId: row.serviceId,
     serviceName: row.serviceName,
     serviceDescription: row.serviceDescription,
@@ -160,47 +172,85 @@ const formatPublicEvent = (
   };
 };
 
-const resolvePublicOrganization = async ({
+const resolvePublicOrganizationClassroom = async ({
   database,
   env,
+  orgSlug,
+  classroomSlug,
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
+  orgSlug: string;
+  classroomSlug: string;
 }) => {
-  const slug = env.PUBLIC_EVENTS_ORGANIZATION_SLUG?.trim();
-  if (!slug) {
-    return {
-      error: {
-        status: 503 as const,
-        message: 'PUBLIC_EVENTS_ORGANIZATION_SLUG is not configured.',
-      },
-      organization: null,
-    };
-  }
-
-  const rows = await database
-    .select({
-      id: dbSchema.organization.id,
-      slug: dbSchema.organization.slug,
-    })
-    .from(dbSchema.organization)
-    .where(eq(dbSchema.organization.slug, slug))
-    .limit(1);
-  const organization = rows[0] ?? null;
-
-  if (!organization) {
+  const configuredOrgSlug = env.PUBLIC_EVENTS_ORG_SLUG?.trim();
+  if (configuredOrgSlug && configuredOrgSlug !== orgSlug) {
     return {
       error: {
         status: 404 as const,
         message: 'Public events organization was not found.',
       },
       organization: null,
+      classroom: null,
+    };
+  }
+
+  const rows = await database
+    .select({ value: dbSchema.organization.id })
+    .from(dbSchema.organization)
+    .where(eq(dbSchema.organization.slug, orgSlug))
+    .limit(1);
+  if (!rows[0]) {
+    return {
+      error: {
+        status: 404 as const,
+        message: 'Public events organization was not found.',
+      },
+      organization: null,
+      classroom: null,
+    };
+  }
+
+  const configuredClassroomSlug = env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim();
+  if (configuredClassroomSlug && classroomSlug !== configuredClassroomSlug) {
+    return {
+      error: {
+        status: 404 as const,
+        message: 'Public events classroom was not found.',
+      },
+      organization: null,
+      classroom: null,
+    };
+  }
+
+  const context = await resolveOrganizationClassroomContext({
+    database,
+    organizationSlug: orgSlug,
+    classroomSlug,
+  });
+  if (!context) {
+    return {
+      error: {
+        status: 404 as const,
+        message: 'Public events classroom was not found.',
+      },
+      organization: null,
+      classroom: null,
     };
   }
 
   return {
     error: null,
-    organization,
+    organization: {
+      id: context.organizationId,
+      slug: context.organizationSlug,
+      name: context.organizationName,
+    },
+    classroom: {
+      id: context.classroomId,
+      slug: context.classroomSlug,
+      name: context.classroomName,
+    },
   };
 };
 
@@ -214,9 +264,15 @@ export const createPublicRoutes = ({
   const publicRoutes = new OpenAPIHono();
 
   publicRoutes.openapi(listPublicEventsRoute, async (c) => {
-    const publicOrganization = await resolvePublicOrganization({ database, env });
-    if (publicOrganization.error) {
-      return c.json({ message: publicOrganization.error.message }, publicOrganization.error.status);
+    const { orgSlug, classroomSlug } = c.req.valid('param');
+    const publicContext = await resolvePublicOrganizationClassroom({
+      database,
+      env,
+      orgSlug,
+      classroomSlug,
+    });
+    if (publicContext.error) {
+      return c.json({ message: publicContext.error.message }, publicContext.error.status);
     }
 
     const now = new Date();
@@ -245,7 +301,8 @@ export const createPublicRoutes = ({
       .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.slot.serviceId))
       .where(
         and(
-          eq(dbSchema.slot.organizationId, publicOrganization.organization.id),
+          eq(dbSchema.slot.organizationId, publicContext.organization.id),
+          eq(dbSchema.slot.classroomId, publicContext.classroom.id),
           eq(dbSchema.service.isActive, true),
           gte(dbSchema.slot.startAt, now),
         ),
@@ -253,14 +310,32 @@ export const createPublicRoutes = ({
       .orderBy(asc(dbSchema.slot.startAt))
       .limit(300);
 
-    return c.json(rows.map((row: (typeof rows)[number]) => formatPublicEvent(row, now)), 200);
+    return c.json(
+      rows.map((row: (typeof rows)[number]) =>
+        formatPublicEvent(
+          {
+            ...row,
+            organizationSlug: publicContext.organization.slug,
+            classroomId: publicContext.classroom.id,
+            classroomSlug: publicContext.classroom.slug,
+          },
+          now,
+        ),
+      ),
+      200,
+    );
   });
 
   publicRoutes.openapi(getPublicEventDetailRoute, async (c) => {
-    const { slotId } = c.req.valid('param');
-    const publicOrganization = await resolvePublicOrganization({ database, env });
-    if (publicOrganization.error) {
-      return c.json({ message: publicOrganization.error.message }, publicOrganization.error.status);
+    const { slotId, orgSlug, classroomSlug } = c.req.valid('param');
+    const publicContext = await resolvePublicOrganizationClassroom({
+      database,
+      env,
+      orgSlug,
+      classroomSlug,
+    });
+    if (publicContext.error) {
+      return c.json({ message: publicContext.error.message }, publicContext.error.status);
     }
 
     const rows = await database
@@ -288,7 +363,8 @@ export const createPublicRoutes = ({
       .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.slot.serviceId))
       .where(
         and(
-          eq(dbSchema.slot.organizationId, publicOrganization.organization.id),
+          eq(dbSchema.slot.organizationId, publicContext.organization.id),
+          eq(dbSchema.slot.classroomId, publicContext.classroom.id),
           eq(dbSchema.slot.id, slotId),
           eq(dbSchema.service.isActive, true),
         ),
@@ -299,7 +375,18 @@ export const createPublicRoutes = ({
       return c.json({ message: 'Public event not found.' }, 404);
     }
 
-    return c.json(formatPublicEvent(row, new Date()), 200);
+    return c.json(
+      formatPublicEvent(
+        {
+          ...row,
+          organizationSlug: publicContext.organization.slug,
+          classroomId: publicContext.classroom.id,
+          classroomSlug: publicContext.classroom.slug,
+        },
+        new Date(),
+      ),
+      200,
+    );
   });
 
   return publicRoutes;

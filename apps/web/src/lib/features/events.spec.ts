@@ -4,9 +4,11 @@ import { parseResponseBody } from './auth-session.svelte';
 import { createBooking } from './bookings.svelte';
 import { ensureParticipantSelfEnrollment, reservePublicEvent } from './events.svelte';
 
+const mockReadWindowScopedRouteContext = vi.hoisted(() => vi.fn());
+
 vi.mock('$lib/rpc-client', () => ({
 	authRpc: {
-		selfEnrollParticipant: vi.fn()
+		selfEnrollParticipantScoped: vi.fn()
 	}
 }));
 
@@ -25,17 +27,25 @@ vi.mock('./bookings.svelte', () => ({
 	createBooking: vi.fn()
 }));
 
+vi.mock('./scoped-routing', () => ({
+	readWindowScopedRouteContext: mockReadWindowScopedRouteContext
+}));
+
 describe('events.svelte', () => {
-	const mockedSelfEnrollParticipant = vi.mocked(authRpc.selfEnrollParticipant);
+	const mockedSelfEnrollParticipantScoped = vi.mocked(authRpc.selfEnrollParticipantScoped);
 	const mockedParseResponseBody = vi.mocked(parseResponseBody);
 	const mockedCreateBooking = vi.mocked(createBooking);
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockReadWindowScopedRouteContext.mockReturnValue({
+			orgSlug: 'org-public',
+			classroomSlug: 'main'
+		});
 	});
 
 	it('calls self-enroll before booking and returns booking result', async () => {
-		mockedSelfEnrollParticipant.mockResolvedValueOnce(
+		mockedSelfEnrollParticipantScoped.mockResolvedValueOnce(
 			new Response(JSON.stringify({ created: true }), {
 				status: 200,
 				headers: { 'content-type': 'application/json' }
@@ -52,11 +62,12 @@ describe('events.svelte', () => {
 			slotId: 'slot-public'
 		});
 
-		expect(mockedSelfEnrollParticipant).toHaveBeenCalledWith({
-			organizationId: 'org-public'
+		expect(mockedSelfEnrollParticipantScoped).toHaveBeenCalledWith({
+			orgSlug: 'org-public',
+			classroomSlug: 'main'
 		});
 		expect(mockedCreateBooking).toHaveBeenCalledWith('slot-public');
-		expect(mockedSelfEnrollParticipant.mock.invocationCallOrder[0]).toBeLessThan(
+		expect(mockedSelfEnrollParticipantScoped.mock.invocationCallOrder[0]).toBeLessThan(
 			mockedCreateBooking.mock.invocationCallOrder[0]
 		);
 		expect(result).toEqual({
@@ -67,7 +78,7 @@ describe('events.svelte', () => {
 	});
 
 	it('does not call booking when self-enroll fails', async () => {
-		mockedSelfEnrollParticipant.mockResolvedValueOnce(
+		mockedSelfEnrollParticipantScoped.mockResolvedValueOnce(
 			new Response(JSON.stringify({ message: 'プロフィールを確認してください。' }), {
 				status: 400,
 				headers: { 'content-type': 'application/json' }
@@ -91,7 +102,7 @@ describe('events.svelte', () => {
 	});
 
 	it('returns created false when participant already exists', async () => {
-		mockedSelfEnrollParticipant.mockResolvedValueOnce(
+		mockedSelfEnrollParticipantScoped.mockResolvedValueOnce(
 			new Response(JSON.stringify({ created: false }), {
 				status: 200,
 				headers: { 'content-type': 'application/json' }

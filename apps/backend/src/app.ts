@@ -138,6 +138,7 @@ export const createApp = ({
       .select({
         id: dbSchema.ticketPurchase.id,
         organizationId: dbSchema.ticketPurchase.organizationId,
+        classroomId: dbSchema.ticketPurchase.classroomId,
         participantId: dbSchema.ticketPurchase.participantId,
         ticketTypeId: dbSchema.ticketPurchase.ticketTypeId,
         status: dbSchema.ticketPurchase.status,
@@ -196,6 +197,7 @@ export const createApp = ({
     await database.insert(dbSchema.ticketPack).values({
       id: ticketPackId,
       organizationId: purchase.organizationId,
+      classroomId: purchase.classroomId,
       participantId: purchase.participantId,
       ticketTypeId: purchase.ticketTypeId,
       initialCount: count,
@@ -207,6 +209,7 @@ export const createApp = ({
     await database.insert(dbSchema.ticketLedger).values({
       id: crypto.randomUUID(),
       organizationId: purchase.organizationId,
+      classroomId: purchase.classroomId,
       ticketPackId,
       bookingId: null,
       action: TICKET_LEDGER_ACTION.GRANT,

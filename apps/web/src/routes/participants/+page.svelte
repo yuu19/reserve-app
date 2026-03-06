@@ -208,11 +208,11 @@
 		}
 		try {
 			const data = await loadParticipantsPageData();
-			if (!data.activeOrganizationId) {
+			if (!data.activeContext) {
 				resetParticipantViewState();
 				return;
 			}
-			activeOrganizationId = data.activeOrganizationId;
+			activeOrganizationId = data.activeContext.orgSlug;
 			canManage = data.canManage;
 			participants = data.participants;
 			sentInvitations = data.sentInvitations;
@@ -459,7 +459,13 @@
 		</p>
 	</header>
 
-	{#if !activeOrganizationId}
+	{#if loading}
+		<Card class="surface-panel border-slate-200/80 shadow-lg"
+			><CardContent class="py-6"
+				><p class="text-sm text-muted-foreground">参加者データを読み込み中…</p></CardContent
+			></Card
+		>
+	{:else if !activeOrganizationId}
 		<Card class="surface-panel border-slate-200/80 shadow-lg"
 			><CardContent class="py-6"
 				><p class="text-sm text-muted-foreground">

@@ -8,6 +8,7 @@ import {
 } from '$lib/rpc-client';
 import dayjs from 'dayjs';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import { readWindowScopedRouteContext } from './scoped-routing';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
@@ -146,8 +147,9 @@ export const toIsoFromDateTimeLocal = (value: string): string | undefined => {
 	return parsed.toISOString();
 };
 
-export const loadTicketManagementData = async (organizationId?: string) => {
-	if (!organizationId) {
+export const loadTicketManagementData = async (_organizationId?: string) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
 		return {
 			participants: [] as ParticipantPayload[],
 			services: [] as ServicePayload[],
@@ -158,9 +160,9 @@ export const loadTicketManagementData = async (organizationId?: string) => {
 	}
 
 	const [participantResponse, serviceResponse, ticketTypeResponse] = await Promise.all([
-		authRpc.listParticipants(organizationId),
-		authRpc.listServices({ organizationId }),
-		authRpc.listTicketTypes({ organizationId })
+		authRpc.listParticipantsScoped(context),
+		authRpc.listServicesScoped(context),
+		authRpc.listTicketTypesScoped(context)
 	]);
 
 	const [participantPayload, servicePayload, ticketTypePayload] = await Promise.all([
@@ -223,7 +225,15 @@ export const createTicketType = async (input: {
 	isForSale?: boolean;
 	stripePriceId?: string;
 }) => {
-	const response = await authRpc.createTicketType({
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			status: 422,
+			message: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.createTicketTypeScoped(context, {
 		organizationId: input.organizationId,
 		name: input.name,
 		totalCount: input.totalCount,
@@ -249,7 +259,15 @@ export const grantTicketPack = async (input: {
 	count?: number;
 	expiresAt?: string;
 }) => {
-	const response = await authRpc.grantTicketPack({
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			status: 422,
+			message: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.grantTicketPackScoped(context, {
 		organizationId: input.organizationId,
 		participantId: input.participantId,
 		ticketTypeId: input.ticketTypeId,
@@ -266,8 +284,9 @@ export const grantTicketPack = async (input: {
 	};
 };
 
-export const loadMyTicketPacks = async (organizationId?: string) => {
-	if (!organizationId) {
+export const loadMyTicketPacks = async (_organizationId?: string) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
 		return {
 			packs: [] as TicketPackPayload[],
 			ok: false,
@@ -276,7 +295,7 @@ export const loadMyTicketPacks = async (organizationId?: string) => {
 		};
 	}
 
-	const response = await authRpc.listMyTicketPacks(organizationId);
+	const response = await authRpc.listMyTicketPacksScoped(context);
 	const payload = await parseResponseBody(response);
 
 	return {
@@ -289,8 +308,9 @@ export const loadMyTicketPacks = async (organizationId?: string) => {
 	};
 };
 
-export const loadPurchasableTicketTypes = async (organizationId?: string) => {
-	if (!organizationId) {
+export const loadPurchasableTicketTypes = async (_organizationId?: string) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
 		return {
 			ticketTypes: [] as TicketTypePayload[],
 			ok: false,
@@ -299,7 +319,7 @@ export const loadPurchasableTicketTypes = async (organizationId?: string) => {
 		};
 	}
 
-	const response = await authRpc.listPurchasableTicketTypes(organizationId);
+	const response = await authRpc.listPurchasableTicketTypesScoped(context);
 	const payload = await parseResponseBody(response);
 	return {
 		ticketTypes: response.ok ? asTicketTypes(payload) : [],
@@ -316,7 +336,17 @@ export const createTicketPurchase = async (input: {
 	ticketTypeId: string;
 	paymentMethod: 'stripe' | 'cash_on_site' | 'bank_transfer';
 }) => {
-	const response = await authRpc.createTicketPurchase({
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			status: 422,
+			purchase: null,
+			checkoutUrl: null,
+			message: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.createTicketPurchaseScoped(context, {
 		organizationId: input.organizationId,
 		ticketTypeId: input.ticketTypeId,
 		paymentMethod: input.paymentMethod
@@ -341,8 +371,9 @@ export const createTicketPurchase = async (input: {
 	};
 };
 
-export const loadMyTicketPurchases = async (organizationId?: string) => {
-	if (!organizationId) {
+export const loadMyTicketPurchases = async (_organizationId?: string) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
 		return {
 			purchases: [] as TicketPurchasePayload[],
 			ok: false,
@@ -351,7 +382,7 @@ export const loadMyTicketPurchases = async (organizationId?: string) => {
 		};
 	}
 
-	const response = await authRpc.listMyTicketPurchases({ organizationId });
+	const response = await authRpc.listMyTicketPurchasesScoped(context);
 	const payload = await parseResponseBody(response);
 	return {
 		purchases: response.ok ? asTicketPurchases(payload) : [],
@@ -369,7 +400,16 @@ export const loadTicketPurchases = async (input: {
 	paymentMethod?: 'stripe' | 'cash_on_site' | 'bank_transfer';
 	status?: 'pending_payment' | 'pending_approval' | 'approved' | 'rejected' | 'cancelled_by_participant';
 }) => {
-	const response = await authRpc.listTicketPurchases(input);
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			purchases: [] as TicketPurchasePayload[],
+			ok: false,
+			status: 422,
+			error: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.listTicketPurchasesScoped(context, input);
 	const payload = await parseResponseBody(response);
 	return {
 		purchases: response.ok ? asTicketPurchases(payload) : [],
@@ -382,7 +422,15 @@ export const loadTicketPurchases = async (input: {
 };
 
 export const approveTicketPurchase = async (purchaseId: string) => {
-	const response = await authRpc.approveTicketPurchase({ purchaseId });
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			status: 422,
+			message: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.approveTicketPurchaseScoped(context, { purchaseId });
 	const payload = await parseResponseBody(response);
 	return {
 		ok: response.ok,
@@ -395,7 +443,18 @@ export const approveTicketPurchase = async (purchaseId: string) => {
 
 export const rejectTicketPurchase = async (purchaseId: string, reason?: string) => {
 	const normalizedReason = reason?.trim() ? reason.trim() : undefined;
-	const response = await authRpc.rejectTicketPurchase({ purchaseId, reason: normalizedReason });
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			status: 422,
+			message: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.rejectTicketPurchaseScoped(context, {
+		purchaseId,
+		reason: normalizedReason
+	});
 	const payload = await parseResponseBody(response);
 	return {
 		ok: response.ok,
@@ -407,7 +466,15 @@ export const rejectTicketPurchase = async (purchaseId: string, reason?: string) 
 };
 
 export const cancelTicketPurchase = async (purchaseId: string) => {
-	const response = await authRpc.cancelTicketPurchase({ purchaseId });
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			status: 422,
+			message: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.cancelTicketPurchaseScoped(context, { purchaseId });
 	const payload = await parseResponseBody(response);
 	return {
 		ok: response.ok,

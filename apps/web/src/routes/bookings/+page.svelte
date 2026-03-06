@@ -3,10 +3,12 @@
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
+	import { readLastAuthPortal } from '$lib/features/auth-portal-preference';
 	import {
 		getCurrentPathWithSearch,
 		loadPortalAccess,
 		loadSession,
+		resolvePortalHomePath,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
 
@@ -18,7 +20,17 @@
 				return;
 			}
 			const portalAccess = await loadPortalAccess();
-			await goto(resolve(portalAccess.canManage ? '/admin/bookings' : '/participant/bookings'));
+			const lastAuthPortal = readLastAuthPortal();
+			const homePath = resolvePortalHomePath(portalAccess);
+			const defaultBookingPath =
+				homePath === '/admin/dashboard' ? '/admin/bookings' : '/participant/bookings';
+			const bookingPath =
+				lastAuthPortal === 'admin' && portalAccess.hasOrganizationAdminAccess
+					? '/admin/bookings'
+					: lastAuthPortal === 'participant' && portalAccess.hasParticipantAccess
+						? '/participant/bookings'
+						: defaultBookingPath;
+			await goto(resolve(bookingPath));
 		})();
 	});
 </script>
