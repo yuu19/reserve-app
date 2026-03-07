@@ -451,6 +451,36 @@ const accessTreeResponseSchema = z.object({
   orgs: z.array(accessTreeOrganizationSchema),
 });
 
+const organizationClassroomsRouteParamsSchema = z.object({
+  orgSlug: z.string().min(1),
+});
+
+const organizationClassroomRouteParamsSchema = z.object({
+  orgSlug: z.string().min(1),
+  classroomSlug: z.string().min(1),
+});
+
+const classroomManagementSchema = z.object({
+  id: z.string().min(1),
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  role: classroomRoleSchema.nullable(),
+  canManage: z.boolean(),
+  canManageBookings: z.boolean(),
+  canManageParticipants: z.boolean(),
+  canUseParticipantBooking: z.boolean(),
+});
+
+const createClassroomBodySchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  slug: z.string().trim().min(1).max(120),
+});
+
+const updateClassroomBodySchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  slug: z.string().trim().min(1).max(120),
+});
+
 const listOrganizationAccessTreeRoute = createRoute({
   method: 'get',
   path: '/orgs/access-tree',
@@ -467,6 +497,115 @@ const listOrganizationAccessTreeRoute = createRoute({
     },
     401: {
       description: 'Unauthorized',
+    },
+  },
+});
+
+const listOrganizationClassroomsRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/classrooms',
+  tags: ['Classroom'],
+  summary: 'List accessible classrooms in an organization',
+  request: {
+    params: organizationClassroomsRouteParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Accessible classroom list',
+      content: {
+        'application/json': {
+          schema: z.array(classroomManagementSchema),
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    403: {
+      description: 'Forbidden',
+    },
+    404: {
+      description: 'Organization not found',
+    },
+  },
+});
+
+const createClassroomRoute = createRoute({
+  method: 'post',
+  path: '/orgs/{orgSlug}/classrooms',
+  tags: ['Classroom'],
+  summary: 'Create a classroom in an organization',
+  request: {
+    params: organizationClassroomsRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: createClassroomBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Created classroom',
+      content: {
+        'application/json': {
+          schema: classroomManagementSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    403: {
+      description: 'Forbidden',
+    },
+    404: {
+      description: 'Organization not found',
+    },
+    409: {
+      description: 'Classroom slug already exists',
+    },
+  },
+});
+
+const updateClassroomRoute = createRoute({
+  method: 'patch',
+  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}',
+  tags: ['Classroom'],
+  summary: 'Update a classroom in an organization',
+  request: {
+    params: organizationClassroomRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: updateClassroomBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated classroom',
+      content: {
+        'application/json': {
+          schema: classroomManagementSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    403: {
+      description: 'Forbidden',
+    },
+    404: {
+      description: 'Organization or classroom not found',
+    },
+    409: {
+      description: 'Classroom slug already exists',
     },
   },
 });
@@ -1669,6 +1808,152 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return rows[0] ?? null;
   };
 
+  const resolveOrganizationBySlug = async (orgSlug: string) => {
+    const rows = await database
+      .select({
+        id: dbSchema.organization.id,
+        slug: dbSchema.organization.slug,
+        name: dbSchema.organization.name,
+      })
+      .from(dbSchema.organization)
+      .where(eq(dbSchema.organization.slug, orgSlug))
+      .limit(1);
+
+    return rows[0] ?? null;
+  };
+
+  const serializeManagedClassroom = async ({
+    context,
+    userId,
+  }: {
+    context: Awaited<ReturnType<typeof resolveOrganizationClassroomContext>>;
+    userId: string;
+  }) => {
+    if (!context) {
+      return null;
+    }
+
+    const access = await resolveOrganizationClassroomAccess({
+      database,
+      userId,
+      context,
+    });
+
+    if (!access.classroomRole && !access.canUseParticipantBooking && !access.canManageClassroom) {
+      return null;
+    }
+
+    return {
+      id: context.classroomId,
+      slug: context.classroomSlug,
+      name: context.classroomName,
+      role: access.classroomRole,
+      canManage: access.canManageClassroom,
+      canManageBookings: access.canManageBookings,
+      canManageParticipants: access.canManageParticipants,
+      canUseParticipantBooking: access.canUseParticipantBooking,
+    };
+  };
+
+  const listAccessibleClassroomsForOrganization = async ({
+    organizationSlug,
+    userId,
+  }: {
+    organizationSlug: string;
+    userId: string;
+  }) => {
+    const organization = await resolveOrganizationBySlug(organizationSlug);
+    if (!organization) {
+      return { organization: null, classrooms: [] as Array<z.infer<typeof classroomManagementSchema>> };
+    }
+
+    const [memberRows, classroomMemberRows, participantRows] = await Promise.all([
+      database
+        .select({
+          role: dbSchema.member.role,
+        })
+        .from(dbSchema.member)
+        .where(
+          and(eq(dbSchema.member.organizationId, organization.id), eq(dbSchema.member.userId, userId)),
+        )
+        .limit(1),
+      database
+        .select({
+          classroomId: dbSchema.classroomMember.classroomId,
+        })
+        .from(dbSchema.classroomMember)
+        .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.classroomMember.classroomId))
+        .where(
+          and(
+            eq(dbSchema.classroom.organizationId, organization.id),
+            eq(dbSchema.classroomMember.userId, userId),
+          ),
+        ),
+      database
+        .select({
+          classroomId: dbSchema.participant.classroomId,
+        })
+        .from(dbSchema.participant)
+        .where(
+          and(
+            eq(dbSchema.participant.organizationId, organization.id),
+            eq(dbSchema.participant.userId, userId),
+          ),
+        ),
+    ]);
+
+    const organizationRole = memberRows[0]?.role;
+    const hasOrganizationAccess =
+      organizationRole === 'owner' ||
+      organizationRole === 'admin' ||
+      organizationRole === 'member' ||
+      classroomMemberRows.length > 0 ||
+      participantRows.length > 0;
+
+    if (!hasOrganizationAccess) {
+      return { organization, classrooms: [] as Array<z.infer<typeof classroomManagementSchema>> };
+    }
+
+    const classroomContexts =
+      organizationRole === 'owner' || organizationRole === 'admin'
+        ? await listOrganizationClassroomContexts({
+            database,
+            organizationId: organization.id,
+          })
+        : (
+            await Promise.all(
+              Array.from(
+                new Set([
+                  ...classroomMemberRows.map(
+                    (row: (typeof classroomMemberRows)[number]) => row.classroomId,
+                  ),
+                  ...participantRows.map((row: (typeof participantRows)[number]) => row.classroomId),
+                ]),
+              ).map((classroomId) =>
+                resolveClassroomContextByIds({
+                  organizationId: organization.id,
+                  classroomId,
+                }),
+              ),
+            )
+          ).filter((context): context is NonNullable<typeof context> => Boolean(context));
+
+    const classrooms = (
+      await Promise.all(
+        classroomContexts.map((context) =>
+          serializeManagedClassroom({
+            context,
+            userId,
+          }),
+        ),
+      )
+    )
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .sort((left, right) => left.name.localeCompare(right.name));
+
+    return { organization, classrooms };
+  };
+
   const findOrganizationInvitationDetailById = async (invitationId: string) => {
     const rows = await database
       .select({
@@ -2032,6 +2317,165 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       headers: c.req.raw.headers,
       asResponse: true,
     });
+  });
+
+  authRoutes.openapi(listOrganizationClassroomsRoute, (c) => {
+    return (async () => {
+      const { orgSlug } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const result = await listAccessibleClassroomsForOrganization({
+        organizationSlug: orgSlug,
+        userId: identity.userId,
+      });
+      if (!result.organization) {
+        return c.json({ message: 'Organization not found.' }, 404);
+      }
+      if (result.classrooms.length === 0) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      return c.json(result.classrooms, 200);
+    })();
+  });
+
+  authRoutes.openapi(createClassroomRoute, (c) => {
+    return (async () => {
+      const { orgSlug } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organization = await resolveOrganizationBySlug(orgSlug);
+      if (!organization) {
+        return c.json({ message: 'Organization not found.' }, 404);
+      }
+
+      const organizationContext = await resolveClassroomContextByOrganizationId(organization.id);
+      if (!organizationContext) {
+        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationClassroomAccess({
+        database,
+        userId: identity.userId,
+        context: organizationContext,
+      });
+      if (!access.canManageOrganization) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const slug = body.slug.trim();
+      const name = body.name.trim();
+      const duplicateRows = await database
+        .select({ id: dbSchema.classroom.id })
+        .from(dbSchema.classroom)
+        .where(and(eq(dbSchema.classroom.organizationId, organization.id), eq(dbSchema.classroom.slug, slug)))
+        .limit(1);
+      if (duplicateRows[0]) {
+        return c.json({ message: 'Classroom slug already exists.' }, 409);
+      }
+
+      const classroomId = crypto.randomUUID();
+      await database.insert(dbSchema.classroom).values({
+        id: classroomId,
+        organizationId: organization.id,
+        slug,
+        name,
+      });
+
+      const classroomContext = await resolveClassroomContextByIds({
+        organizationId: organization.id,
+        classroomId,
+      });
+      const serialized = await serializeManagedClassroom({
+        context: classroomContext,
+        userId: identity.userId,
+      });
+
+      return c.json(
+        serialized ?? {
+          id: classroomId,
+          slug,
+          name,
+          role: 'manager',
+          canManage: true,
+          canManageBookings: true,
+          canManageParticipants: true,
+          canUseParticipantBooking: false,
+        },
+        200,
+      );
+    })();
+  });
+
+  authRoutes.openapi(updateClassroomRoute, (c) => {
+    return (async () => {
+      const { orgSlug, classroomSlug } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
+      if (!classroomContext) {
+        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationClassroomAccess({
+        database,
+        userId: identity.userId,
+        context: classroomContext,
+      });
+      if (!access.canManageOrganization) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const nextSlug = body.slug.trim();
+      const nextName = body.name.trim();
+      const duplicateRows = await database
+        .select({ id: dbSchema.classroom.id })
+        .from(dbSchema.classroom)
+        .where(
+          and(
+            eq(dbSchema.classroom.organizationId, classroomContext.organizationId),
+            eq(dbSchema.classroom.slug, nextSlug),
+          ),
+        )
+        .limit(1);
+      if (duplicateRows[0] && duplicateRows[0].id !== classroomContext.classroomId) {
+        return c.json({ message: 'Classroom slug already exists.' }, 409);
+      }
+
+      await database
+        .update(dbSchema.classroom)
+        .set({
+          slug: nextSlug,
+          name: nextName,
+          updatedAt: new Date(),
+        })
+        .where(eq(dbSchema.classroom.id, classroomContext.classroomId));
+
+      const updatedContext = await resolveClassroomContextByIds({
+        organizationId: classroomContext.organizationId,
+        classroomId: classroomContext.classroomId,
+      });
+      const serialized = await serializeManagedClassroom({
+        context: updatedContext,
+        userId: identity.userId,
+      });
+      if (!serialized) {
+        return c.json({ message: 'Classroom not found.' }, 404);
+      }
+
+      return c.json(serialized, 200);
+    })();
   });
 
   authRoutes.openapi(listOrganizationAccessTreeRoute, (c) => {

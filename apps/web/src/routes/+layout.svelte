@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import ClassroomSwitcher from '$lib/components/classroom-switcher.svelte';
 	import OrganizationSwitcher from '$lib/components/organization-switcher.svelte';
@@ -19,8 +20,14 @@
 		setActiveOrganization,
 		type ClassroomContextPayload
 	} from '$lib/features/organization-context.svelte';
-	import { authRpc, type AuthSessionPayload, type OrganizationPayload } from '$lib/rpc-client';
 	import {
+		authRpc,
+		type AuthSessionPayload,
+		type OrganizationPayload,
+		type ScopedApiContext
+	} from '$lib/rpc-client';
+	import {
+		getScopedContextFromUrlPath,
 		loadPortalAccess,
 		loadSession,
 		parseResponseBody,
@@ -29,6 +36,7 @@
 	} from '$lib/features/auth-session.svelte';
 	import {
 		buildScopedPortalPath,
+		getRoutePathFromUrlPath,
 		replacePortalPathWithScopedContext
 	} from '$lib/features/scoped-routing';
 	import {
@@ -46,6 +54,8 @@
 		Users,
 		X
 	} from '@lucide/svelte';
+
+	type ResolvablePath = Pathname;
 
 	let { children } = $props();
 
@@ -72,7 +82,10 @@
 	let switchingOrganization = $state(false);
 	let switchingClassroom = $state(false);
 	let refreshSessionStatePromise: Promise<void> | null = null;
+	let queuedRefreshContext: ScopedApiContext | null = null;
 	let fallbackRefreshPath = '';
+	let canonicalizingPath = '';
+	let syncingPathContext = '';
 	let sectionOpenState = $state<Record<string, boolean>>({
 		admin: true,
 		participant: true
@@ -82,6 +95,7 @@
 		href:
 			| '/admin/dashboard'
 			| '/admin/bookings'
+			| '/admin/classrooms'
 			| '/admin/services'
 			| '/admin/schedules/slots'
 			| '/admin/schedules/recurring'
@@ -122,6 +136,7 @@
 			items: [
 				{ href: '/admin/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
 				{ href: '/admin/bookings', label: '予約運用', icon: CalendarDays },
+				{ href: '/admin/classrooms', label: '教室管理', icon: Building2 },
 				{ href: '/admin/services', label: 'サービス一覧', icon: CalendarDays },
 				{ href: '/admin/schedules/slots', label: '単発一覧', icon: CalendarDays },
 				{ href: '/admin/schedules/recurring', label: '定期一覧', icon: CalendarDays },
@@ -144,7 +159,8 @@
 		}
 	};
 
-	const pathname = $derived(page.url.pathname);
+	const rawPathname = $derived(page.url.pathname);
+	const pathname = $derived(getRoutePathFromUrlPath(rawPathname));
 	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
 	const showSidebarLayout = $derived(!isPublicAuthRoute && isLoggedIn);
 	const showAdminSectionTabs = $derived(
@@ -251,8 +267,11 @@
 			: 'pointer-events-none absolute inset-0 translate-x-1 opacity-0'
 	);
 
-	const refreshSessionState = async () => {
+	const refreshSessionState = async (preferredContext: ScopedApiContext | null = null) => {
 		if (refreshSessionStatePromise) {
+			if (preferredContext) {
+				queuedRefreshContext = preferredContext;
+			}
 			return refreshSessionStatePromise;
 		}
 
@@ -286,7 +305,10 @@
 						activeClassroom: nextActiveClassroom
 					},
 					nextPortalAccess
-				] = await Promise.all([loadOrganizations(), loadPortalAccess()]);
+				] = await Promise.all([
+					loadOrganizations(preferredContext),
+					loadPortalAccess(preferredContext)
+				]);
 				organizations = nextOrganizations;
 				classrooms = nextClassrooms;
 				activeOrganization = nextActiveOrganization;
@@ -297,7 +319,7 @@
 					(activePortal === 'admin' && !nextPortalAccess.hasOrganizationAdminAccess) ||
 					(activePortal === 'participant' && !nextPortalAccess.hasParticipantAccess)
 				) {
-					activePortal = resolveInitialActivePortal(pathname, nextPortalAccess);
+					activePortal = resolveInitialActivePortal(rawPathname, nextPortalAccess);
 				}
 			} finally {
 				loadingSession = false;
@@ -310,6 +332,18 @@
 		} finally {
 			refreshSessionStatePromise = null;
 		}
+
+		const nextQueuedContext = queuedRefreshContext;
+		queuedRefreshContext = null;
+		if (
+			nextQueuedContext &&
+			!(
+				getActiveStateScopedContext()?.orgSlug === nextQueuedContext.orgSlug &&
+				getActiveStateScopedContext()?.classroomSlug === nextQueuedContext.classroomSlug
+			)
+		) {
+			await refreshSessionState(nextQueuedContext);
+		}
 	};
 
 	const pickPreferredClassroom = (
@@ -320,13 +354,16 @@
 		candidates[0] ??
 		null;
 
-	const getCurrentScopedContext = () =>
+	const getActiveStateScopedContext = (): ScopedApiContext | null =>
 		activeOrganization && activeClassroom
 			? {
 					orgSlug: activeOrganization.slug,
 					classroomSlug: activeClassroom.slug
 				}
-			: null;
+				: null;
+
+	const getCurrentScopedContext = (): ScopedApiContext | null =>
+		getScopedContextFromUrlPath(portalAccess.accessTree, rawPathname) ?? getActiveStateScopedContext();
 
 	const resolveScopedNavigationTarget = (context: { orgSlug: string; classroomSlug: string }) => {
 		const portal = activePortal === 'admin' || activePortal === 'participant' ? activePortal : 'participant';
@@ -343,9 +380,8 @@
 	};
 
 	const resolvePortalHref = (href: NavItem['href'] | SectionTab['href']) => {
-		const basePath = resolve(href);
 		const context = getCurrentScopedContext();
-		return context ? replacePortalPathWithScopedContext(basePath, context) : basePath;
+		return context ? replacePortalPathWithScopedContext(href, context) : href;
 	};
 
 	const submitSetActiveOrganizationFromHeader = async (organizationId: string | null) => {
@@ -386,13 +422,15 @@
 				return;
 			}
 
-			await goto(
-				resolveScopedNavigationTarget({
-					orgSlug: nextOrganization.slug,
-					classroomSlug: nextClassroom.slug
-				}),
-				{ invalidateAll: true }
-			);
+				await goto(
+					resolve(
+						resolveScopedNavigationTarget({
+							orgSlug: nextOrganization.slug,
+							classroomSlug: nextClassroom.slug
+						}) as ResolvablePath
+					),
+					{ invalidateAll: true }
+				);
 		} catch {
 			toast.error('組織の切り替えに失敗しました。');
 		} finally {
@@ -410,13 +448,15 @@
 
 		switchingClassroom = true;
 		try {
-			await goto(
-				resolveScopedNavigationTarget({
-					orgSlug: activeOrganization.slug,
-					classroomSlug
-				}),
-				{ invalidateAll: true }
-			);
+				await goto(
+					resolve(
+						resolveScopedNavigationTarget({
+							orgSlug: activeOrganization.slug,
+							classroomSlug
+						}) as ResolvablePath
+					),
+					{ invalidateAll: true }
+				);
 		} catch {
 			toast.error('教室の切り替えに失敗しました。');
 		} finally {
@@ -431,7 +471,11 @@
 		writeLastAuthPortal(nextPortal);
 		activePortal = nextPortal;
 		mobileMenuOpen = false;
-		await goto(resolvePortalHref(nextPortal === 'admin' ? '/admin/dashboard' : '/participant/home'));
+			await goto(
+				resolve(
+					resolvePortalHref(nextPortal === 'admin' ? '/admin/dashboard' : '/participant/home') as ResolvablePath
+				)
+			);
 	};
 
 	const submitSignOut = async () => {
@@ -505,6 +549,61 @@
 		return () => {
 			stopListeningAuthSession();
 		};
+	});
+
+	$effect(() => {
+		if (loadingSession || !isLoggedIn || isPublicAuthRoute) {
+			syncingPathContext = '';
+			return;
+		}
+		const pathContext = getScopedContextFromUrlPath(portalAccess.accessTree, rawPathname);
+		const activeStateContext = getActiveStateScopedContext();
+		if (
+			!pathContext ||
+			(activeStateContext &&
+				activeStateContext.orgSlug === pathContext.orgSlug &&
+				activeStateContext.classroomSlug === pathContext.classroomSlug)
+		) {
+			syncingPathContext = '';
+			return;
+		}
+		const syncKey = `${pathContext.orgSlug}/${pathContext.classroomSlug}`;
+		if (syncingPathContext === syncKey) {
+			return;
+		}
+		syncingPathContext = syncKey;
+		void refreshSessionState(pathContext).finally(() => {
+			if (syncingPathContext === syncKey) {
+				syncingPathContext = '';
+			}
+		});
+	});
+
+	$effect(() => {
+		if (loadingSession || !isLoggedIn || isPublicAuthRoute) {
+			canonicalizingPath = '';
+			return;
+		}
+		const context = getCurrentScopedContext();
+		if (!context) {
+			canonicalizingPath = '';
+			return;
+		}
+		const currentPath = `${page.url.pathname}${page.url.search}${page.url.hash}`;
+		const nextPath = replacePortalPathWithScopedContext(currentPath, context);
+		if (nextPath === currentPath) {
+			canonicalizingPath = '';
+			return;
+		}
+		if (canonicalizingPath === currentPath) {
+			return;
+		}
+		canonicalizingPath = currentPath;
+			void goto(resolve(nextPath as ResolvablePath), { replaceState: true, noScroll: true, keepFocus: true }).finally(() => {
+			if (canonicalizingPath === currentPath) {
+				canonicalizingPath = '';
+			}
+		});
 	});
 
 	$effect(() => {
@@ -597,15 +696,15 @@
 				<div
 					class={`space-y-2 transition-[opacity,transform,max-height] duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${desktopSidebarCollapsed ? 'pointer-events-none -translate-x-1 overflow-hidden opacity-0 max-h-0' : 'translate-x-0 opacity-100 max-h-20'}`}
 				>
-					{#if showAdminSectionTabs}
-						<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
-							{#each sectionTabs as tab (tab.href)}
-								<a
-									href={resolvePortalHref(tab.href)}
-									class={`rounded px-3 py-1.5 text-sm transition-colors ${
-										activeSectionTab === tab.href
-											? 'font-semibold text-teal-600'
-											: 'text-slate-700 hover:text-slate-900'
+						{#if showAdminSectionTabs}
+							<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
+								{#each sectionTabs as tab (tab.href)}
+									<a
+										href={resolve(resolvePortalHref(tab.href) as ResolvablePath)}
+										class={`rounded px-3 py-1.5 text-sm transition-colors ${
+											activeSectionTab === tab.href
+												? 'font-semibold text-teal-600'
+												: 'text-slate-700 hover:text-slate-900'
 									}`}
 								>
 									{tab.label}
@@ -641,14 +740,14 @@
 									<div
 										id={`sidebar-section-${section.id}`}
 										class="space-y-1 border-t border-slate-200/70 p-2"
-									>
-										{#each section.items as item (item.href)}
-											<a
-												href={resolvePortalHref(item.href)}
-												class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-													isActive(item.href)
-														? 'bg-sidebar-accent text-sidebar-accent-foreground'
-														: 'text-slate-700 hover:bg-slate-100'
+										>
+											{#each section.items as item (item.href)}
+												<a
+													href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
+													class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+														isActive(item.href)
+															? 'bg-sidebar-accent text-sidebar-accent-foreground'
+															: 'text-slate-700 hover:bg-slate-100'
 												}`}
 											>
 												<item.icon class="size-4" aria-hidden="true" />
@@ -664,15 +763,15 @@
 					<div
 						class={`space-y-1 rounded-lg border border-slate-200/80 bg-white/70 p-2 transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${navCollapsedClass}`}
 						aria-hidden={!desktopSidebarCollapsed}
-					>
-						{#each visibleNavSections as section (section.id)}
-							{#each section.items as item (item.href)}
-								<a
-									href={resolvePortalHref(item.href)}
-									class={`flex items-center justify-center rounded-lg px-3 py-2 transition-colors ${
-										isActive(item.href)
-											? 'bg-sidebar-accent text-sidebar-accent-foreground'
-											: 'text-slate-700 hover:bg-slate-100'
+						>
+							{#each visibleNavSections as section (section.id)}
+								{#each section.items as item (item.href)}
+									<a
+										href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
+										class={`flex items-center justify-center rounded-lg px-3 py-2 transition-colors ${
+											isActive(item.href)
+												? 'bg-sidebar-accent text-sidebar-accent-foreground'
+												: 'text-slate-700 hover:bg-slate-100'
 									}`}
 									aria-label={item.label}
 									title={item.label}
@@ -836,15 +935,15 @@
 							</div>
 						{/if}
 
-						{#if showAdminSectionTabs}
-							<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
-								{#each sectionTabs as tab (tab.href)}
-									<a
-										href={resolvePortalHref(tab.href)}
-										onclick={closeMobileMenu}
-										class={`rounded px-3 py-1.5 text-sm transition-colors ${
-											activeSectionTab === tab.href
-												? 'font-semibold text-teal-600'
+							{#if showAdminSectionTabs}
+								<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
+									{#each sectionTabs as tab (tab.href)}
+										<a
+											href={resolve(resolvePortalHref(tab.href) as ResolvablePath)}
+											onclick={closeMobileMenu}
+											class={`rounded px-3 py-1.5 text-sm transition-colors ${
+												activeSectionTab === tab.href
+													? 'font-semibold text-teal-600'
 												: 'text-slate-700 hover:text-slate-900'
 										}`}
 									>
@@ -875,14 +974,14 @@
 										<div
 											id={`mobile-sidebar-section-${section.id}`}
 											class="space-y-1 border-t border-slate-200/70 p-2"
-										>
-											{#each section.items as item (item.href)}
-												<a
-													href={resolvePortalHref(item.href)}
-													onclick={closeMobileMenu}
-													class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-														isActive(item.href)
-															? 'bg-sidebar-accent text-sidebar-accent-foreground'
+											>
+												{#each section.items as item (item.href)}
+													<a
+														href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
+														onclick={closeMobileMenu}
+														class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+															isActive(item.href)
+																? 'bg-sidebar-accent text-sidebar-accent-foreground'
 															: 'text-slate-700 hover:bg-slate-100'
 													}`}
 												>

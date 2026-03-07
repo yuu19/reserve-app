@@ -908,6 +908,118 @@ describe('backend app', () => {
     expect(secondScopedList[0]?.classroomId).toBe(secondClassroomId);
   });
 
+  it('lists, creates, and updates classrooms for org admins', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Classroom Owner',
+      email: 'classroom-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Classroom Admin Org',
+      slug: 'classroom-admin-org',
+    });
+    const organizationSlug = await selectOrganizationSlugById(organizationId);
+    expect(organizationSlug).toBe('classroom-admin-org');
+
+    const initialListResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+    );
+    expect(initialListResponse.status).toBe(200);
+    const initialList = (await toJson(initialListResponse)) as Array<Record<string, unknown>>;
+    expect(initialList).toHaveLength(1);
+    expect(initialList[0]?.slug).toBe('classroom-admin-org');
+    expect(initialList[0]?.canManage).toBe(true);
+
+    const createResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Second Room',
+          slug: 'second-room',
+        }),
+      },
+    );
+    expect(createResponse.status).toBe(200);
+    const createdClassroom = (await toJson(createResponse)) as Record<string, unknown>;
+    expect(createdClassroom.slug).toBe('second-room');
+    expect(createdClassroom.name).toBe('Second Room');
+    expect(createdClassroom.canManage).toBe(true);
+
+    const updateResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(
+        organizationSlug as string,
+      )}/classrooms/${encodeURIComponent('second-room')}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Second Room Updated',
+          slug: 'second-room-renamed',
+        }),
+      },
+    );
+    expect(updateResponse.status).toBe(200);
+    const updatedClassroom = (await toJson(updateResponse)) as Record<string, unknown>;
+    expect(updatedClassroom.slug).toBe('second-room-renamed');
+    expect(updatedClassroom.name).toBe('Second Room Updated');
+
+    const listAfterUpdateResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+    );
+    expect(listAfterUpdateResponse.status).toBe(200);
+    const classroomsAfterUpdate = (await toJson(listAfterUpdateResponse)) as Array<Record<string, unknown>>;
+    expect(classroomsAfterUpdate.map((classroom) => classroom.slug)).toEqual(
+      expect.arrayContaining(['classroom-admin-org', 'second-room-renamed']),
+    );
+
+    const memberInvite = await createInvitation({
+      agent: owner,
+      email: 'classroom-member@example.com',
+      role: 'member',
+      organizationId,
+    });
+    expect(memberInvite.response.status).toBe(200);
+
+    const member = createAuthAgent(app);
+    await signUpUser({
+      agent: member,
+      name: 'Classroom Member',
+      email: 'classroom-member@example.com',
+    });
+    const acceptMemberInviteResponse = await member.request('/api/v1/auth/organizations/invitations/accept', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ invitationId: memberInvite.payload?.id }),
+    });
+    expect(acceptMemberInviteResponse.status).toBe(200);
+
+    const memberCreateResponse = await member.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Forbidden Room',
+          slug: 'forbidden-room',
+        }),
+      },
+    );
+    expect(memberCreateResponse.status).toBe(403);
+  });
+
   it('handles participant invitation flows and permissions', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({

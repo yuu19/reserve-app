@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	getScopedContextFromUrlPath,
 	normalizeAccessTreePayload,
 	redirectToLoginWithNext,
 	resolveLastUsedOrganizationId,
@@ -206,5 +207,72 @@ describe('auth-session.svelte', () => {
 		};
 
 		expect(normalizeAccessTreePayload(payload)).toEqual(payload);
+	});
+
+	it('resolves a scoped context from the current URL path when it exists in the access tree', () => {
+		const accessTree = {
+			orgs: [
+				{
+					org: {
+						id: 'org-1',
+						slug: 'org-one',
+						name: 'Org One'
+					},
+					orgRole: 'owner' as const,
+					classrooms: [
+						{
+							id: 'classroom-1',
+							slug: 'room-a',
+							name: 'Room A',
+							role: 'manager' as const,
+							canManage: true,
+							canUseParticipantBooking: true
+						},
+						{
+							id: 'classroom-2',
+							slug: 'room-b',
+							name: 'Room B',
+							role: 'manager' as const,
+							canManage: true,
+							canUseParticipantBooking: true
+						}
+					]
+				}
+			]
+		};
+
+		expect(
+			getScopedContextFromUrlPath(accessTree, '/org-one/room-b/admin/schedules/slots?month=2026-03')
+		).toEqual({
+			orgSlug: 'org-one',
+			classroomSlug: 'room-b'
+		});
+	});
+
+	it('returns null for unknown scoped contexts in the URL path', () => {
+		const accessTree = {
+			orgs: [
+				{
+					org: {
+						id: 'org-1',
+						slug: 'org-one',
+						name: 'Org One'
+					},
+					orgRole: 'owner' as const,
+					classrooms: [
+						{
+							id: 'classroom-1',
+							slug: 'room-a',
+							name: 'Room A',
+							role: 'manager' as const,
+							canManage: true,
+							canUseParticipantBooking: true
+						}
+					]
+				}
+			]
+		};
+
+		expect(getScopedContextFromUrlPath(accessTree, '/org-one/room-b/admin/dashboard')).toBeNull();
 	});
 });

@@ -14,6 +14,7 @@
 		createAdminInvitation,
 		loadAdminInvitations
 	} from '$lib/features/invitations-admin.svelte';
+	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
 	import {
 		getCurrentPathWithSearch,
 		loadSession,
@@ -29,7 +30,7 @@
 	let busy = $state(false);
 	let activeOrganizationId = $state<string | null>(null);
 	let canManage = $state(false);
-	const pathname = $derived(page.url.pathname);
+	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 	const adminInvitationPageMode = $derived.by(() => {
 		if (routeMode) {
 			return routeMode;

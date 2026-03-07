@@ -19,6 +19,18 @@ export type OrganizationPayload = {
 	[key: string]: unknown;
 };
 
+export type ClassroomPayload = {
+	id: string;
+	slug: string;
+	name: string;
+	role: ClassroomRole | null;
+	canManage: boolean;
+	canManageBookings?: boolean;
+	canManageParticipants?: boolean;
+	canUseParticipantBooking: boolean;
+	[key: string]: unknown;
+};
+
 export type InvitationPayload = {
 	id: string;
 	organizationId: string;
@@ -309,6 +321,16 @@ type CreateOrganizationInput = {
 type SetActiveOrganizationInput = {
 	organizationId?: string | null;
 	organizationSlug?: string;
+};
+
+type CreateClassroomInput = {
+	name: string;
+	slug: string;
+};
+
+type UpdateClassroomInput = {
+	name: string;
+	slug: string;
 };
 
 type CreateInvitationInput = {
@@ -765,7 +787,7 @@ const buildOrgAuthPath = (orgSlug: string, suffix = ''): `/api/v1/auth/orgs/${st
 const authFetch = (
 	path: string,
 	options: {
-		method?: 'GET' | 'POST';
+		method?: 'GET' | 'POST' | 'PATCH';
 		query?: Record<string, QueryValue>;
 		json?: unknown;
 		body?: BodyInit;
@@ -839,6 +861,13 @@ export const authRpc = {
 	listOrganizationAccess: () => authFetch('/api/v1/auth/organizations/access'),
 	getAccessTree: () => authFetch('/api/v1/auth/orgs/access-tree'),
 	listClassroomsByOrg: (orgSlug: string) => authFetch(buildOrgAuthPath(orgSlug, '/classrooms')),
+	createClassroomByOrg: (orgSlug: string, json: CreateClassroomInput) =>
+		authFetch(buildOrgAuthPath(orgSlug, '/classrooms'), { json }),
+	updateClassroomByOrg: (orgSlug: string, classroomSlug: string, json: UpdateClassroomInput) =>
+		authFetch(buildOrgAuthPath(orgSlug, `/classrooms/${encodeURIComponent(classroomSlug)}`), {
+			method: 'PATCH',
+			json
+		}),
 	createOrganization: (json: CreateOrganizationInput) =>
 		authFetch('/api/v1/auth/organizations', { json }),
 	setActiveOrganization: (json: SetActiveOrganizationInput) =>

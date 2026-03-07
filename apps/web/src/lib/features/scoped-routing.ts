@@ -5,6 +5,8 @@ export type ScopedRouteContext = {
 
 export type PortalSection = 'admin' | 'participant';
 
+const scopedRouteRoots = new Set(['admin', 'participant', 'events']);
+
 const ensureLeadingSlash = (value: string): string =>
 	value.startsWith('/') ? value : `/${value}`;
 
@@ -27,8 +29,12 @@ const splitPathAndSuffix = (value: string): { pathname: string; suffix: string }
 
 export const extractScopedRouteContext = (path: string): ScopedRouteContext | null => {
 	const pathname = normalizePathname(path);
-	const match = /^\/([^/]+)\/([^/]+)(?:\/.*)?$/u.exec(pathname);
+	const match = /^\/([^/]+)\/([^/]+)\/([^/]+)(?:\/.*)?$/u.exec(pathname);
 	if (!match) {
+		return null;
+	}
+	const routeRoot = decodeURIComponent(match[3] ?? '').trim();
+	if (!scopedRouteRoots.has(routeRoot)) {
 		return null;
 	}
 	const orgSlug = decodeURIComponent(match[1] ?? '').trim();
@@ -84,23 +90,41 @@ export const buildScopedPortalPath = (
 	portal: PortalSection
 ): string => buildScopedPath(context, portal === 'admin' ? '/admin/dashboard' : '/participant/home');
 
-export const replacePortalPathWithScopedContext = (
-	targetPath: string,
-	context: ScopedRouteContext
-): string => {
-	const { pathname, suffix } = splitPathAndSuffix(targetPath);
-	const normalizedPath = normalizePathname(pathname);
-	const isPortalPath =
+export const isPortalPath = (targetPath: string): boolean => {
+	const normalizedPath = normalizePathname(targetPath);
+	return (
 		normalizedPath === '/admin' ||
 		normalizedPath.startsWith('/admin/') ||
 		normalizedPath === '/participant' ||
 		normalizedPath.startsWith('/participant/') ||
 		normalizedPath === '/events' ||
-		normalizedPath.startsWith('/events/');
-	if (!isPortalPath) {
+		normalizedPath.startsWith('/events/')
+	);
+};
+
+export const getRoutePathFromUrlPath = (path: string): string => {
+	const { context, remainderPath } = splitScopedPath(path);
+	return context && isPortalPath(remainderPath) ? remainderPath : normalizePathname(path);
+};
+
+export const replacePortalPathWithScopedContext = (
+	targetPath: string,
+	context: ScopedRouteContext
+): string => {
+	const { pathname, suffix } = splitPathAndSuffix(targetPath);
+	const { context: currentContext, remainderPath } = splitScopedPath(pathname);
+	const portalPath = currentContext ? remainderPath : normalizePathname(pathname);
+	if (!isPortalPath(portalPath)) {
 		return targetPath;
 	}
-	return `${buildScopedPath(context, normalizedPath)}${suffix}`;
+	if (
+		currentContext &&
+		currentContext.orgSlug === context.orgSlug &&
+		currentContext.classroomSlug === context.classroomSlug
+	) {
+		return `${pathname}${suffix}`;
+	}
+	return `${buildScopedPath(context, portalPath)}${suffix}`;
 };
 
 export const readWindowScopedRouteContext = (): ScopedRouteContext | null => {

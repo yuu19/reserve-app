@@ -6,6 +6,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { getCurrentPathWithSearch, loadSession, redirectToLoginWithNext } from '$lib/features/auth-session.svelte';
+	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
 	import { loadOrganizations } from '$lib/features/organization-context.svelte';
 	import type { OrganizationPayload } from '$lib/rpc-client';
 
@@ -15,7 +16,7 @@
 	const activeOrganizationLabel = $derived(
 		activeOrganization?.name ?? activeOrganization?.id ?? '選択されていません'
 	);
-	const pathname = $derived(page.url.pathname);
+	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 
 	onMount(() => {
 		void (async () => {

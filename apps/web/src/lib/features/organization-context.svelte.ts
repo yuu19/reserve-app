@@ -1,5 +1,6 @@
 import type {
 	AccessTreePayload,
+	ClassroomPayload,
 	ClassroomRole,
 	OrganizationPayload,
 	ScopedApiContext
@@ -148,4 +149,35 @@ export const listClassroomsByOrgSlug = async (
 	return payload
 		.map((entry) => asClassroomContextPayload(entry))
 		.filter((entry): entry is ClassroomContextPayload => entry !== null);
+};
+
+const asCreatedOrUpdatedClassroom = (value: unknown): ClassroomContextPayload | null =>
+	asClassroomContextPayload(value as ClassroomPayload);
+
+export const createClassroom = async (orgSlug: string, input: { name: string; slug: string }) => {
+	const response = await authRpc.createClassroomByOrg(orgSlug, input);
+	const payload = await parseResponseBody(response);
+	const classroom = response.ok ? asCreatedOrUpdatedClassroom(payload) : null;
+	return {
+		ok: response.ok,
+		status: response.status,
+		message: response.ok ? '教室を作成しました。' : toErrorMessage(payload, '教室の作成に失敗しました。'),
+		classroom
+	};
+};
+
+export const updateClassroom = async (
+	orgSlug: string,
+	classroomSlug: string,
+	input: { name: string; slug: string }
+) => {
+	const response = await authRpc.updateClassroomByOrg(orgSlug, classroomSlug, input);
+	const payload = await parseResponseBody(response);
+	const classroom = response.ok ? asCreatedOrUpdatedClassroom(payload) : null;
+	return {
+		ok: response.ok,
+		status: response.status,
+		message: response.ok ? '教室を更新しました。' : toErrorMessage(payload, '教室の更新に失敗しました。'),
+		classroom
+	};
 };

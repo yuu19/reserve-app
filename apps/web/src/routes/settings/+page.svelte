@@ -9,6 +9,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import OrganizationLogo from '$lib/components/organization-logo.svelte';
+	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
 	import {
 		createOrganization,
 		loadOrganizations,
@@ -28,7 +29,7 @@
 
 	const selectedOrganizationLogoFile = $derived(organizationLogoFiles?.item(0) ?? null);
 	const activeOrganizationId = $derived(activeOrganization?.id ?? null);
-	const pathname = $derived(page.url.pathname);
+	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 
 	const refreshSettings = async () => {
 		const { session } = await loadSession();
@@ -116,9 +117,15 @@
 		<Card class="surface-panel border-slate-200/80 shadow-lg">
 			<CardHeader class="space-y-2">
 				<h2 class="text-xl font-semibold text-slate-900">組織設定</h2>
-				<CardDescription>組織の新規作成と利用中組織の切り替えを行います。</CardDescription>
+				<CardDescription>組織の新規作成、利用中組織の切り替え、教室管理への移動を行います。</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-5">
+				<div class="flex flex-wrap gap-2 rounded-lg border border-slate-200/80 bg-white/80 p-4">
+					<Button type="button" variant="secondary" onclick={() => goto(resolve('/admin/classrooms'))}
+						>教室管理へ移動</Button
+					>
+				</div>
+
 				<form class="space-y-4 rounded-lg border border-slate-200/80 bg-white/80 p-4" onsubmit={submitCreateOrganization}>
 					<h3 class="text-sm font-semibold text-slate-900">組織を作成</h3>
 					<div class="space-y-2">

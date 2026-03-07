@@ -8,6 +8,7 @@
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
 	import {
 		actParticipantInvitation,
 		createParticipantInvitation
@@ -40,7 +41,7 @@
 	let busy = $state(false);
 	let activeOrganizationId = $state<string | null>(null);
 	let canManage = $state(false);
-	const pathname = $derived(page.url.pathname);
+	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 	const participantsPageMode = $derived.by(() => {
 		if (routeMode) {
 			return routeMode;

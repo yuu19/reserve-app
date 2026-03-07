@@ -447,6 +447,17 @@ export const getContextFromAccessTree = (
 	return null;
 };
 
+export const getScopedContextFromUrlPath = (
+	accessTree: AccessTreePayload | null | undefined,
+	path: string
+): ScopedApiContext | null => {
+	const pathContext = extractScopedRouteContext(path);
+	if (!pathContext) {
+		return null;
+	}
+	return getContextFromAccessTree(accessTree, pathContext.orgSlug, pathContext.classroomSlug);
+};
+
 export const readOrganizationsFromAccessTree = (accessTree: AccessTreePayload | null): OrganizationPayload[] => {
 	if (!accessTree) {
 		return [];

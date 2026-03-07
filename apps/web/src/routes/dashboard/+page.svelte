@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
+	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
 	import OrganizationLogo from '$lib/components/organization-logo.svelte';
 	import {
 		getCurrentPathWithSearch,
@@ -25,7 +26,7 @@
 	const activeOrganizationLabel = $derived(
 		activeOrganization?.name ?? activeOrganization?.id ?? '選択されていません'
 	);
-	const pathname = $derived(page.url.pathname);
+	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 
 	const refreshDashboard = async () => {
 		const { session } = await loadSession();
@@ -134,6 +135,9 @@
 			<CardContent class="space-y-3">
 				<div class="flex flex-wrap gap-2">
 					<Button type="button" onclick={() => goto(resolve('/admin/settings'))}>設定へ移動</Button>
+					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/classrooms'))}
+						>教室管理へ移動</Button
+					>
 					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/bookings'))}
 						>予約運用へ移動</Button
 					>
