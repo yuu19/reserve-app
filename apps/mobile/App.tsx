@@ -49,7 +49,9 @@ const isInvitationPayload = (value: unknown): value is InvitationPayload => {
     isRecord(value) &&
     typeof value.id === 'string' &&
     typeof value.organizationId === 'string' &&
+    typeof value.organizationSlug === 'string' &&
     typeof value.email === 'string' &&
+    typeof value.subjectKind === 'string' &&
     typeof value.role === 'string' &&
     typeof value.status === 'string'
   );
@@ -289,7 +291,7 @@ const AppConsole = () => {
 
   const loadInvitations = async (
     currentSession: AuthSessionPayload,
-    activeOrgId?: string | null,
+    activeOrgSlug?: string | null,
   ) => {
     if (!currentSession) {
       setOrganizationInvitations([]);
@@ -301,12 +303,16 @@ const AppConsole = () => {
     try {
       const [userInvitationResponse, organizationInvitationResponse] = await Promise.all([
         mobileApi.listUserInvitations(),
-        activeOrgId ? mobileApi.listInvitations(activeOrgId) : Promise.resolve(null),
+        activeOrgSlug ? mobileApi.listInvitations(activeOrgSlug) : Promise.resolve(null),
       ]);
 
       if (userInvitationResponse.ok) {
         const userInvitationPayload = await parseResponseBody(userInvitationResponse);
-        setUserInvitations(asInvitations(userInvitationPayload));
+        setUserInvitations(
+          asInvitations(userInvitationPayload).filter(
+            (invitation) => invitation.subjectKind === 'org_operator',
+          ),
+        );
       } else {
         setUserInvitations([]);
       }
@@ -315,7 +321,11 @@ const AppConsole = () => {
         const organizationInvitationPayload = await parseResponseBody(
           organizationInvitationResponse,
         );
-        setOrganizationInvitations(asInvitations(organizationInvitationPayload));
+        setOrganizationInvitations(
+          asInvitations(organizationInvitationPayload).filter(
+            (invitation) => invitation.subjectKind === 'org_operator',
+          ),
+        );
       } else {
         setOrganizationInvitations([]);
       }
@@ -338,7 +348,7 @@ const AppConsole = () => {
     }
 
     const nextActive = await loadOrganizations(nextSession);
-    await loadInvitations(nextSession, nextActive?.id);
+    await loadInvitations(nextSession, nextActive?.slug);
     setBusyAction(null);
   };
 
@@ -447,7 +457,7 @@ const AppConsole = () => {
 
       const currentSession = await refreshSession();
       const nextActive = await loadOrganizations(currentSession);
-      await loadInvitations(currentSession, nextActive?.id);
+      await loadInvitations(currentSession, nextActive?.slug);
 
       notifySuccess('organization を作成しました。');
     } catch {
@@ -474,7 +484,7 @@ const AppConsole = () => {
 
       const currentSession = await refreshSession();
       const nextActive = await loadOrganizations(currentSession);
-      await loadInvitations(currentSession, nextActive?.id);
+      await loadInvitations(currentSession, nextActive?.slug);
 
       notifySuccess(
         organizationId ? 'active organization を切り替えました。' : 'active を解除しました。',
@@ -487,17 +497,16 @@ const AppConsole = () => {
   };
 
   const submitCreateInvitation = async () => {
-    if (!session || !activeOrganization?.id) {
+    if (!session || !activeOrganization?.slug) {
       notifyError('招待を作成するには active organization を選択してください。');
       return;
     }
 
     setBusyAction('create-invitation');
     try {
-      const response = await mobileApi.createInvitation({
+      const response = await mobileApi.createInvitation(activeOrganization.slug, {
         email: invitationForm.email.trim(),
         role: invitationForm.role,
-        organizationId: activeOrganization.id,
       });
       const payload = await parseResponseBody(response);
 
@@ -507,7 +516,7 @@ const AppConsole = () => {
       }
 
       setInvitationForm((prev) => ({ ...prev, email: '' }));
-      await loadInvitations(session, activeOrganization.id);
+      await loadInvitations(session, activeOrganization.slug);
       notifySuccess('招待を作成しました。');
     } catch {
       notifyError('招待作成中に通信エラーが発生しました。');
@@ -532,7 +541,7 @@ const AppConsole = () => {
 
       const currentSession = await refreshSession();
       const nextActive = await loadOrganizations(currentSession);
-      await loadInvitations(currentSession, nextActive?.id);
+      await loadInvitations(currentSession, nextActive?.slug);
       notifySuccess('招待を承諾しました。');
     } catch {
       notifyError('招待承諾中に通信エラーが発生しました。');
@@ -555,7 +564,7 @@ const AppConsole = () => {
         return;
       }
 
-      await loadInvitations(session, activeOrganization?.id);
+      await loadInvitations(session, activeOrganization?.slug);
       notifySuccess('招待を取り消しました。');
     } catch {
       notifyError('招待取り消し中に通信エラーが発生しました。');

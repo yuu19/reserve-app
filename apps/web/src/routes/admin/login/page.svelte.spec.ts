@@ -68,7 +68,10 @@ describe('/admin/login/+page.svelte', () => {
 			canManage: false,
 			canUseParticipantBooking: false,
 			activeOrganizationRole: null,
-			activeClassroomRole: null,
+			activeFacts: null,
+			activeSources: null,
+			activeDisplay: null,
+			activeDisplayRole: null,
 			hasActiveOrganization: false
 		});
 		mocks.resolvePortalHomePath.mockReturnValue(null);

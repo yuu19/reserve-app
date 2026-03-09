@@ -75,7 +75,10 @@
 		canManage: false,
 		canUseParticipantBooking: false,
 		activeOrganizationRole: null,
-		activeClassroomRole: null,
+		activeFacts: null,
+		activeSources: null,
+		activeDisplay: null,
+		activeDisplayRole: null,
 		hasActiveOrganization: false
 	});
 	let activePortal = $state<AuthPortal | null>(readLastAuthPortal());
@@ -292,7 +295,10 @@
 						canManage: false,
 						canUseParticipantBooking: false,
 						activeOrganizationRole: null,
-						activeClassroomRole: null,
+						activeFacts: null,
+						activeSources: null,
+						activeDisplay: null,
+						activeDisplayRole: null,
 						hasActiveOrganization: false
 					};
 					return;

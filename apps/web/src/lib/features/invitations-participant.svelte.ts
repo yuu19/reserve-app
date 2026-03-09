@@ -13,7 +13,11 @@ const isParticipant = (value: unknown): value is ParticipantPayload =>
 	isRecord(value) && typeof value.id === 'string' && typeof value.organizationId === 'string';
 
 const isParticipantInvitation = (value: unknown): value is ParticipantInvitationPayload =>
-	isRecord(value) && typeof value.id === 'string' && typeof value.organizationId === 'string' && typeof value.email === 'string';
+	isRecord(value) &&
+	typeof value.id === 'string' &&
+	typeof value.organizationId === 'string' &&
+	typeof value.email === 'string' &&
+	value.subjectKind === 'participant';
 
 const asParticipants = (value: unknown): ParticipantPayload[] =>
 	Array.isArray(value) ? value.filter(isParticipant) : [];
@@ -21,7 +25,7 @@ const asParticipants = (value: unknown): ParticipantPayload[] =>
 const asParticipantInvitations = (value: unknown): ParticipantInvitationPayload[] =>
 	Array.isArray(value) ? value.filter(isParticipantInvitation) : [];
 
-export const loadParticipantFeatureData = async (organizationId?: string) => {
+export const loadParticipantFeatureData = async (_organizationId?: string) => {
 	const userResponse = await authRpc.listUserParticipantInvitations();
 	const userPayload = await parseResponseBody(userResponse);
 	const received = userResponse.ok ? asParticipantInvitations(userPayload) : [];

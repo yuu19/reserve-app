@@ -19,13 +19,21 @@ export type OrganizationPayload = {
 export type InvitationPayload = {
   id: string;
   organizationId: string;
-  organizationName?: string;
+  organizationSlug: string;
+  organizationName: string;
+  classroomId?: string | null;
+  classroomSlug?: string | null;
+  classroomName?: string | null;
   email: string;
-  role: string;
-  status: string;
-  inviterId: string;
-  expiresAt: string;
-  createdAt: string;
+  subjectKind: 'org_operator' | 'classroom_operator' | 'participant';
+  role: 'admin' | 'member' | 'manager' | 'staff' | 'participant';
+  participantName?: string | null;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'expired';
+  expiresAt: string | null;
+  createdAt: string | null;
+  invitedByUserId?: string | null;
+  respondedByUserId?: string | null;
+  respondedAt?: string | null;
   [key: string]: unknown;
 };
 
@@ -40,22 +48,10 @@ export type ParticipantPayload = {
   [key: string]: unknown;
 };
 
-export type ParticipantInvitationPayload = {
-  id: string;
-  organizationId: string;
-  organizationName?: string;
-  email: string;
-  participantName: string;
-  status: string;
-  expiresAt: string;
-  createdAt: string;
-  invitedByUserId: string;
-  respondedByUserId?: string | null;
-  respondedAt?: string | null;
-  [key: string]: unknown;
-};
+export type ParticipantInvitationPayload = InvitationPayload;
 
 export type OrganizationRole = 'admin' | 'member';
+export type ClassroomInvitationRole = 'manager' | 'staff' | 'participant';
 
 type CreateOrganizationInput = {
   name: string;
@@ -72,7 +68,7 @@ type SetActiveOrganizationInput = {
 type CreateInvitationInput = {
   email: string;
   role: OrganizationRole;
-  organizationId?: string;
+  resend?: boolean;
 };
 
 type InvitationActionInput = {
@@ -82,12 +78,16 @@ type InvitationActionInput = {
 type CreateParticipantInvitationInput = {
   email: string;
   participantName: string;
-  organizationId?: string;
   resend?: boolean;
 };
 
 type OrganizationQuery = {
   organizationId?: string;
+};
+
+type ClassroomInvitationContext = {
+  orgSlug: string;
+  classroomSlug: string;
 };
 
 const buildHeaders = (initHeaders?: HeadersInit, hasBody?: boolean) => {
@@ -119,6 +119,14 @@ const withQuery = (path: string, query?: OrganizationQuery) => {
   return `${path}?${search.toString()}`;
 };
 
+const encodePathSegment = (value: string) => encodeURIComponent(value);
+
+const getOrgInvitationPath = (orgSlug: string) =>
+  `/api/v1/auth/orgs/${encodePathSegment(orgSlug)}/invitations`;
+
+const getClassroomInvitationPath = (context: ClassroomInvitationContext) =>
+  `/api/v1/auth/orgs/${encodePathSegment(context.orgSlug)}/classrooms/${encodePathSegment(context.classroomSlug)}/invitations`;
+
 export const mobileApi = {
   getSession: () => request('/api/v1/auth/session'),
   listOrganizations: () => request('/api/v1/auth/organizations'),
@@ -134,50 +142,54 @@ export const mobileApi = {
     }),
   getFullOrganization: (organizationId?: string) =>
     request(withQuery('/api/v1/auth/organizations/full', { organizationId })),
-  listInvitations: (organizationId?: string) =>
-    request(withQuery('/api/v1/auth/organizations/invitations', { organizationId })),
-  listUserInvitations: () => request('/api/v1/auth/organizations/invitations/user'),
-  createInvitation: (json: CreateInvitationInput) =>
-    request('/api/v1/auth/organizations/invitations', {
+  listInvitations: (orgSlug: string) => request(getOrgInvitationPath(orgSlug)),
+  listUserInvitations: () => request('/api/v1/auth/invitations/user'),
+  createInvitation: (orgSlug: string, json: CreateInvitationInput) =>
+    request(getOrgInvitationPath(orgSlug), {
       method: 'POST',
       body: JSON.stringify(json),
     }),
+  getInvitationDetail: (invitationId: string) =>
+    request(`/api/v1/auth/invitations/${encodePathSegment(invitationId)}`),
   acceptInvitation: (json: InvitationActionInput) =>
-    request('/api/v1/auth/organizations/invitations/accept', {
+    request(`/api/v1/auth/invitations/${encodePathSegment(json.invitationId)}/accept`, {
+      method: 'POST',
+      body: JSON.stringify(json),
+    }),
+  rejectInvitation: (json: InvitationActionInput) =>
+    request(`/api/v1/auth/invitations/${encodePathSegment(json.invitationId)}/reject`, {
       method: 'POST',
       body: JSON.stringify(json),
     }),
   cancelInvitation: (json: InvitationActionInput) =>
-    request('/api/v1/auth/organizations/invitations/cancel', {
+    request(`/api/v1/auth/invitations/${encodePathSegment(json.invitationId)}/cancel`, {
       method: 'POST',
       body: JSON.stringify(json),
     }),
   listParticipants: (organizationId?: string) =>
     request(withQuery('/api/v1/auth/organizations/participants', { organizationId })),
-  listParticipantInvitations: (organizationId?: string) =>
-    request(withQuery('/api/v1/auth/organizations/participants/invitations', { organizationId })),
-  listUserParticipantInvitations: () => request('/api/v1/auth/organizations/participants/invitations/user'),
-  createParticipantInvitation: (json: CreateParticipantInvitationInput) =>
-    request('/api/v1/auth/organizations/participants/invitations', {
+  listParticipantInvitations: (context: ClassroomInvitationContext) =>
+    request(getClassroomInvitationPath(context)),
+  listUserParticipantInvitations: () => request('/api/v1/auth/invitations/user'),
+  createParticipantInvitation: (context: ClassroomInvitationContext, json: CreateParticipantInvitationInput) =>
+    request(getClassroomInvitationPath(context), {
       method: 'POST',
-      body: JSON.stringify(json),
+      body: JSON.stringify({ ...json, role: 'participant' satisfies ClassroomInvitationRole }),
     }),
   getParticipantInvitationDetail: (invitationId: string) =>
-    request(
-      `/api/v1/auth/organizations/participants/invitations/detail?${new URLSearchParams({ invitationId }).toString()}`,
-    ),
+    request(`/api/v1/auth/invitations/${encodePathSegment(invitationId)}`),
   acceptParticipantInvitation: (json: InvitationActionInput) =>
-    request('/api/v1/auth/organizations/participants/invitations/accept', {
+    request(`/api/v1/auth/invitations/${encodePathSegment(json.invitationId)}/accept`, {
       method: 'POST',
       body: JSON.stringify(json),
     }),
   rejectParticipantInvitation: (json: InvitationActionInput) =>
-    request('/api/v1/auth/organizations/participants/invitations/reject', {
+    request(`/api/v1/auth/invitations/${encodePathSegment(json.invitationId)}/reject`, {
       method: 'POST',
       body: JSON.stringify(json),
     }),
   cancelParticipantInvitation: (json: InvitationActionInput) =>
-    request('/api/v1/auth/organizations/participants/invitations/cancel', {
+    request(`/api/v1/auth/invitations/${encodePathSegment(json.invitationId)}/cancel`, {
       method: 'POST',
       body: JSON.stringify(json),
     }),

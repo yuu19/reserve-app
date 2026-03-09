@@ -53,7 +53,23 @@ describe('/participant/home/+page.svelte', () => {
 			canManage: false,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: null,
-			activeClassroomRole: 'participant',
+			activeFacts: {
+				orgRole: null,
+				classroomStaffRole: null,
+				hasParticipantRecord: true
+			},
+			activeSources: {
+				canManageOrganization: null,
+				canManageClassroom: null,
+				canManageBookings: null,
+				canManageParticipants: null,
+				canUseParticipantBooking: 'participant_record'
+			},
+			activeDisplay: {
+				primaryRole: 'participant',
+				badges: ['participant']
+			},
+			activeDisplayRole: 'participant',
 			hasActiveOrganization: true
 		});
 		mocks.resolvePortalHomePath.mockReturnValue('/participant/home');

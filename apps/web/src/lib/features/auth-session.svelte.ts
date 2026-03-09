@@ -2,8 +2,12 @@ import { getRemoteSession } from '$lib/remote/session.remote';
 import {
 	authRpc,
 	type AccessTreePayload,
+	type AccessDisplayPayload,
+	type AccessDisplayRole,
+	type AccessEffectivePayload,
+	type AccessFactsPayload,
+	type AccessSourcesPayload,
 	type AuthSessionPayload,
-	type ClassroomRole,
 	type OrganizationMembershipRole,
 	type OrganizationPayload,
 	type ScopedApiContext
@@ -30,20 +34,44 @@ const asOrganizationRole = (value: unknown): OrganizationMembershipRole | null =
 	return null;
 };
 
-const asClassroomRole = (value: unknown): ClassroomRole | null => {
-	if (value === 'manager' || value === 'staff' || value === 'participant') {
-		return value;
-	}
-	return null;
-};
-
 const isAccessTreeClassroom = (value: unknown): value is AccessTreePayload['orgs'][number]['classrooms'][number] =>
 	isRecord(value) &&
 	typeof value.id === 'string' &&
 	typeof value.slug === 'string' &&
 	typeof value.name === 'string' &&
-	typeof value.canManage === 'boolean' &&
-	typeof value.canUseParticipantBooking === 'boolean';
+	isRecord(value.facts) &&
+	isRecord(value.effective) &&
+	isRecord(value.sources) &&
+	isRecord(value.display) &&
+	(value.facts.orgRole === null || asOrganizationRole(value.facts.orgRole) !== null) &&
+	(value.facts.classroomStaffRole === null ||
+		value.facts.classroomStaffRole === 'manager' ||
+		value.facts.classroomStaffRole === 'staff') &&
+	typeof value.facts.hasParticipantRecord === 'boolean' &&
+	typeof value.effective.canManageOrganization === 'boolean' &&
+	typeof value.effective.canManageClassroom === 'boolean' &&
+	typeof value.effective.canManageBookings === 'boolean' &&
+	typeof value.effective.canManageParticipants === 'boolean' &&
+	typeof value.effective.canUseParticipantBooking === 'boolean' &&
+	(value.sources.canManageOrganization === null || value.sources.canManageOrganization === 'org_role') &&
+		(value.sources.canManageClassroom === null ||
+			value.sources.canManageClassroom === 'org_role' ||
+			value.sources.canManageClassroom === 'classroom_member') &&
+		(value.sources.canManageBookings === null ||
+			value.sources.canManageBookings === 'org_role' ||
+			value.sources.canManageBookings === 'classroom_member') &&
+		(value.sources.canManageParticipants === null ||
+			value.sources.canManageParticipants === 'org_role' ||
+			value.sources.canManageParticipants === 'classroom_member') &&
+		(value.sources.canUseParticipantBooking === null ||
+			value.sources.canUseParticipantBooking === 'participant_record') &&
+		(value.display.primaryRole === null ||
+			value.display.primaryRole === 'owner' ||
+			value.display.primaryRole === 'admin' ||
+			value.display.primaryRole === 'manager' ||
+			value.display.primaryRole === 'staff' ||
+			value.display.primaryRole === 'participant') &&
+		Array.isArray(value.display.badges);
 
 const isAccessTreeOrg = (value: unknown): value is AccessTreePayload['orgs'][number] =>
 	isRecord(value) &&
@@ -51,7 +79,6 @@ const isAccessTreeOrg = (value: unknown): value is AccessTreePayload['orgs'][num
 	typeof value.org.id === 'string' &&
 	typeof value.org.slug === 'string' &&
 	typeof value.org.name === 'string' &&
-	(value.orgRole === null || asOrganizationRole(value.orgRole) !== null) &&
 	Array.isArray(value.classrooms) &&
 	value.classrooms.every((classroom) => isAccessTreeClassroom(classroom));
 
@@ -65,10 +92,10 @@ const asAccessTreePayload = (value: unknown): AccessTreePayload | null => {
 	return value as AccessTreePayload;
 };
 
-type LegacyAccessTreeClassroom = {
-	classroomId: string;
-	classroomSlug: string;
-	classroomName: string;
+	type LegacyAccessTreeClassroom = {
+		classroomId: string;
+		classroomSlug: string;
+		classroomName: string;
 	role?: unknown;
 	canManage: boolean;
 	canUseParticipantBooking: boolean;
@@ -105,47 +132,66 @@ const normalizeLegacyAccessTreePayload = (value: unknown): AccessTreePayload | n
 		return null;
 	}
 
-	return {
-		orgs: value.map((orgEntry) => ({
-			org: {
-				id: orgEntry.organizationId,
-				slug: orgEntry.organizationSlug,
-				name: orgEntry.organizationName,
-				logo: typeof orgEntry.logo === 'string' ? orgEntry.logo : null
-			},
-			orgRole: asOrganizationRole(orgEntry.role ?? null),
-			classrooms: orgEntry.classrooms.map((classroom) => ({
-				id: classroom.classroomId,
-				slug: classroom.classroomSlug,
-				name: classroom.classroomName,
-				logo: typeof classroom.logo === 'string' ? classroom.logo : null,
-				role: asClassroomRole(classroom.role ?? null),
-				canManage: classroom.canManage,
-				canUseParticipantBooking: classroom.canUseParticipantBooking
+		return {
+			orgs: value.map((orgEntry) => ({
+				org: {
+					id: orgEntry.organizationId,
+					slug: orgEntry.organizationSlug,
+					name: orgEntry.organizationName,
+					logo: typeof orgEntry.logo === 'string' ? orgEntry.logo : null
+				},
+				classrooms: orgEntry.classrooms.map((classroom) => ({
+					id: classroom.classroomId,
+					slug: classroom.classroomSlug,
+					name: classroom.classroomName,
+					logo: typeof classroom.logo === 'string' ? classroom.logo : null,
+					facts: {
+						orgRole: asOrganizationRole(orgEntry.role ?? null),
+						classroomStaffRole:
+							classroom.role === 'manager' || classroom.role === 'staff' ? classroom.role : null,
+						hasParticipantRecord: classroom.canUseParticipantBooking
+					},
+					effective: {
+						canManageOrganization:
+							orgEntry.role === 'owner' || orgEntry.role === 'admin',
+						canManageClassroom: classroom.canManage,
+						canManageBookings: classroom.canManage,
+						canManageParticipants: classroom.canManage,
+						canUseParticipantBooking: classroom.canUseParticipantBooking
+					},
+					sources: {
+						canManageOrganization:
+							orgEntry.role === 'owner' || orgEntry.role === 'admin' ? 'org_role' : null,
+						canManageClassroom: classroom.canManage ? 'classroom_member' : null,
+						canManageBookings: classroom.canManage ? 'classroom_member' : null,
+						canManageParticipants: classroom.canManage ? 'classroom_member' : null,
+						canUseParticipantBooking: classroom.canUseParticipantBooking ? 'participant_record' : null
+					},
+					display: {
+						primaryRole:
+							classroom.role === 'manager' ||
+							classroom.role === 'staff' ||
+							classroom.role === 'participant'
+								? classroom.role
+								: orgEntry.role === 'owner' || orgEntry.role === 'admin'
+									? orgEntry.role
+									: null,
+						badges:
+							classroom.role === 'manager' ||
+							classroom.role === 'staff' ||
+							classroom.role === 'participant'
+								? [classroom.role]
+								: orgEntry.role === 'owner' || orgEntry.role === 'admin'
+									? [orgEntry.role]
+									: []
+					}
+				}))
 			}))
-		}))
+		};
 	};
-};
 
 export const normalizeAccessTreePayload = (value: unknown): AccessTreePayload | null =>
 	asAccessTreePayload(value) ?? normalizeLegacyAccessTreePayload(value);
-
-const resolveActiveClassroomRole = (
-	role: ClassroomRole | null,
-	canManage: boolean,
-	canUseParticipantBooking: boolean
-): ClassroomRole | null => {
-	if (role) {
-		return role;
-	}
-	if (canManage) {
-		return 'manager';
-	}
-	if (canUseParticipantBooking) {
-		return 'participant';
-	}
-	return null;
-};
 
 export const asSessionPayload = (value: unknown): AuthSessionPayload => {
 	if (value === null) {
@@ -252,7 +298,10 @@ export type PortalAccess = {
 	canManage: boolean;
 	canUseParticipantBooking: boolean;
 	activeOrganizationRole: OrganizationMembershipRole | null;
-	activeClassroomRole: ClassroomRole | null;
+	activeFacts: AccessFactsPayload | null;
+	activeSources: AccessSourcesPayload | null;
+	activeDisplay: AccessDisplayPayload | null;
+	activeDisplayRole: AccessDisplayRole | null;
 	hasActiveOrganization: boolean;
 	activeContext?: ScopedApiContext | null;
 	accessTree?: AccessTreePayload | null;
@@ -264,7 +313,10 @@ const emptyPortalAccess = (): PortalAccess => ({
 	canManage: false,
 	canUseParticipantBooking: false,
 	activeOrganizationRole: null,
-	activeClassroomRole: null,
+	activeFacts: null,
+	activeSources: null,
+	activeDisplay: null,
+	activeDisplayRole: null,
 	hasActiveOrganization: false,
 	activeContext: null,
 	accessTree: null
@@ -275,27 +327,32 @@ type FlatAccessEntry = {
 	orgSlug: string;
 	orgRole: OrganizationMembershipRole | null;
 	classroomSlug: string;
-	classroomRole: ClassroomRole | null;
+	facts: AccessFactsPayload;
+	effective: AccessEffectivePayload;
+	sources: AccessSourcesPayload;
+	display: AccessDisplayPayload;
 	canManage: boolean;
 	canUseParticipantBooking: boolean;
 };
 
 const flattenAccessTree = (tree: AccessTreePayload): FlatAccessEntry[] => {
 	const entries: FlatAccessEntry[] = [];
-	for (const orgEntry of tree.orgs) {
-		const orgRole = asOrganizationRole(orgEntry.orgRole);
-		for (const classroom of orgEntry.classrooms) {
-			entries.push({
-				orgId: orgEntry.org.id,
-				orgSlug: orgEntry.org.slug,
-				orgRole,
-				classroomSlug: classroom.slug,
-				classroomRole: asClassroomRole(classroom.role),
-				canManage: classroom.canManage,
-				canUseParticipantBooking: classroom.canUseParticipantBooking
-			});
+		for (const orgEntry of tree.orgs) {
+			for (const classroom of orgEntry.classrooms) {
+				entries.push({
+					orgId: orgEntry.org.id,
+					orgSlug: orgEntry.org.slug,
+					orgRole: classroom.facts.orgRole,
+					classroomSlug: classroom.slug,
+					facts: classroom.facts,
+					effective: classroom.effective,
+					sources: classroom.sources,
+					display: classroom.display,
+					canManage: classroom.effective.canManageClassroom,
+					canUseParticipantBooking: classroom.effective.canUseParticipantBooking
+				});
+			}
 		}
-	}
 	return entries;
 };
 
@@ -375,31 +432,34 @@ export const loadPortalAccess = async (
 			return emptyPortalAccess();
 		}
 
-		const accessTree = normalizeAccessTreePayload(accessTreePayload);
+			const accessTree = normalizeAccessTreePayload(accessTreePayload);
 		if (!accessTree) {
 			return emptyPortalAccess();
 		}
 
-		const entries = flattenAccessTree(accessTree);
-		const hasOrganizationAdminAccess = entries.some((entry) => entry.canManage);
-		const hasParticipantAccess = entries.some((entry) => entry.canUseParticipantBooking);
-		const activeEntry = resolveDefaultEntry(entries, preferredContext);
+			const entries = flattenAccessTree(accessTree);
+			const hasOrganizationAdminAccess = entries.some(
+				(entry) => entry.effective.canManageOrganization
+			);
+			const hasParticipantAccess = entries.some(
+				(entry) => entry.effective.canUseParticipantBooking
+			);
+			const activeEntry = resolveDefaultEntry(entries, preferredContext);
 		if (activeEntry) {
 			writeLastUsedOrganizationId(activeEntry.orgId);
 		}
 
 		return {
-			hasOrganizationAdminAccess,
-			hasParticipantAccess,
-			canManage: activeEntry?.canManage ?? false,
-			canUseParticipantBooking: activeEntry?.canUseParticipantBooking ?? false,
-			activeOrganizationRole: activeEntry?.orgRole ?? null,
-			activeClassroomRole: resolveActiveClassroomRole(
-				activeEntry?.classroomRole ?? null,
-				activeEntry?.canManage ?? false,
-				activeEntry?.canUseParticipantBooking ?? false
-			),
-			hasActiveOrganization: Boolean(activeEntry),
+				hasOrganizationAdminAccess,
+				hasParticipantAccess,
+				canManage: activeEntry?.effective.canManageClassroom ?? false,
+				canUseParticipantBooking: activeEntry?.effective.canUseParticipantBooking ?? false,
+				activeOrganizationRole: activeEntry?.facts.orgRole ?? null,
+				activeFacts: activeEntry?.facts ?? null,
+				activeSources: activeEntry?.sources ?? null,
+				activeDisplay: activeEntry?.display ?? null,
+				activeDisplayRole: activeEntry?.display.primaryRole ?? null,
+				hasActiveOrganization: Boolean(activeEntry),
 			activeContext: activeEntry
 				? {
 					orgSlug: activeEntry.orgSlug,
@@ -480,7 +540,9 @@ export const readClassroomsFromAccessTree = (
 	logo?: string | null;
 	canManage: boolean;
 	canUseParticipantBooking: boolean;
-	role: ClassroomRole | null;
+	display: AccessDisplayPayload;
+	facts: AccessFactsPayload;
+	sources: AccessSourcesPayload;
 }> => {
 	if (!accessTree) {
 		return [];
@@ -489,15 +551,17 @@ export const readClassroomsFromAccessTree = (
 	if (!organization) {
 		return [];
 	}
-	return organization.classrooms.map((classroom) => ({
-		id: classroom.id,
-		slug: classroom.slug,
-		name: classroom.name,
-		logo: typeof classroom.logo === 'string' ? classroom.logo : null,
-		canManage: classroom.canManage,
-		canUseParticipantBooking: classroom.canUseParticipantBooking,
-		role: asClassroomRole(classroom.role)
-	}));
+		return organization.classrooms.map((classroom) => ({
+			id: classroom.id,
+			slug: classroom.slug,
+			name: classroom.name,
+			logo: typeof classroom.logo === 'string' ? classroom.logo : null,
+			canManage: classroom.effective.canManageClassroom,
+			canUseParticipantBooking: classroom.effective.canUseParticipantBooking,
+			display: classroom.display,
+			facts: classroom.facts,
+			sources: classroom.sources
+		}));
 };
 
 export const loadOrganizationsFromAccessTree = async (): Promise<OrganizationPayload[]> => {

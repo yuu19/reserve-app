@@ -23,24 +23,35 @@ export type ClassroomPayload = {
 	id: string;
 	slug: string;
 	name: string;
-	role: ClassroomRole | null;
-	canManage: boolean;
-	canManageBookings?: boolean;
-	canManageParticipants?: boolean;
-	canUseParticipantBooking: boolean;
+	logo?: string | null;
+	facts: AccessFactsPayload;
+	effective: AccessEffectivePayload;
+	sources: AccessSourcesPayload;
+	display: AccessDisplayPayload;
 	[key: string]: unknown;
 };
+
+export type InvitationSubjectKind = 'org_operator' | 'classroom_operator' | 'participant';
+export type InvitationStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'expired';
 
 export type InvitationPayload = {
 	id: string;
 	organizationId: string;
-	organizationName?: string;
+	organizationSlug: string;
+	organizationName: string;
+	classroomId?: string | null;
+	classroomSlug?: string | null;
+	classroomName?: string | null;
 	email: string;
-	role: string;
-	status: string;
-	inviterId: string;
-	expiresAt: string;
-	createdAt: string;
+	subjectKind: InvitationSubjectKind;
+	role: OrganizationInvitationRole | ClassroomInvitationRole;
+	participantName?: string | null;
+	status: InvitationStatus;
+	expiresAt: string | null;
+	createdAt: string | null;
+	invitedByUserId?: string | null;
+	respondedByUserId?: string | null;
+	respondedAt?: string | null;
 	[key: string]: unknown;
 };
 
@@ -55,20 +66,7 @@ export type ParticipantPayload = {
 	[key: string]: unknown;
 };
 
-export type ParticipantInvitationPayload = {
-	id: string;
-	organizationId: string;
-	organizationName?: string;
-	email: string;
-	participantName: string;
-	status: string;
-	expiresAt: string;
-	createdAt: string;
-	invitedByUserId: string;
-	respondedByUserId?: string | null;
-	respondedAt?: string | null;
-	[key: string]: unknown;
-};
+export type ParticipantInvitationPayload = InvitationPayload;
 
 export type ServicePayload = {
 	id: string;
@@ -241,28 +239,47 @@ export type PublicEventDetailPayload = PublicEventListItemPayload;
 
 export type OrganizationMembershipRole = 'owner' | 'admin' | 'member';
 export type OrganizationInvitationRole = 'admin' | 'member';
+export type ClassroomInvitationRole = 'manager' | 'staff' | 'participant';
+export type ClassroomStaffRole = 'manager' | 'staff';
 export type ClassroomRole = 'manager' | 'staff' | 'participant';
+export type AccessDisplayRole = 'owner' | 'admin' | 'manager' | 'staff' | 'participant';
+export type AccessSource = 'org_role' | 'classroom_member' | 'participant_record';
 export type ScopedApiContext = {
 	orgSlug: string;
 	classroomSlug: string;
 };
-export type OrganizationAccessPayload = {
-	organizationId: string;
-	organizationName?: string | null;
-	role?: OrganizationMembershipRole | null;
-	classroomRole?: ClassroomRole;
-	canManage: boolean;
+export type AccessFactsPayload = {
+	orgRole: OrganizationMembershipRole | null;
+	classroomStaffRole: ClassroomStaffRole | null;
+	hasParticipantRecord: boolean;
+};
+export type AccessEffectivePayload = {
+	canManageOrganization: boolean;
+	canManageClassroom: boolean;
+	canManageBookings: boolean;
+	canManageParticipants: boolean;
 	canUseParticipantBooking: boolean;
-	[key: string]: unknown;
+};
+export type AccessSourcesPayload = {
+	canManageOrganization: 'org_role' | null;
+	canManageClassroom: 'org_role' | 'classroom_member' | null;
+	canManageBookings: 'org_role' | 'classroom_member' | null;
+	canManageParticipants: 'org_role' | 'classroom_member' | null;
+	canUseParticipantBooking: 'participant_record' | null;
+};
+export type AccessDisplayPayload = {
+	primaryRole: AccessDisplayRole | null;
+	badges: AccessDisplayRole[];
 };
 export type AccessTreeClassroomPayload = {
 	id: string;
 	slug: string;
 	name: string;
 	logo?: string | null;
-	role: ClassroomRole | null;
-	canManage: boolean;
-	canUseParticipantBooking: boolean;
+	facts: AccessFactsPayload;
+	effective: AccessEffectivePayload;
+	sources: AccessSourcesPayload;
+	display: AccessDisplayPayload;
 	[key: string]: unknown;
 };
 
@@ -274,7 +291,6 @@ export type AccessTreeOrganizationPayload = {
 		logo?: string | null;
 		[key: string]: unknown;
 	};
-	orgRole: OrganizationMembershipRole | null;
 	classrooms: AccessTreeClassroomPayload[];
 	[key: string]: unknown;
 };
@@ -333,10 +349,9 @@ type UpdateClassroomInput = {
 	slug: string;
 };
 
-type CreateInvitationInput = {
+type CreateOrganizationInvitationInput = {
 	email: string;
 	role: OrganizationInvitationRole;
-	organizationId?: string;
 	resend?: boolean;
 };
 
@@ -347,7 +362,13 @@ type InvitationActionInput = {
 type CreateParticipantInvitationInput = {
 	email: string;
 	participantName: string;
-	organizationId?: string;
+	resend?: boolean;
+};
+
+type CreateClassroomInvitationInput = {
+	email: string;
+	role: ClassroomInvitationRole;
+	participantName?: string;
 	resend?: boolean;
 };
 
@@ -617,7 +638,7 @@ type AuthRpcClient = {
 					};
 					invitations: {
 						$get: (args?: { query: OrganizationQuery }) => Promise<Response>;
-						$post: (args: { json: CreateInvitationInput }) => Promise<Response>;
+						$post: (args: { json: CreateOrganizationInvitationInput }) => Promise<Response>;
 						detail: {
 							$get: (args: { query: InvitationDetailQuery }) => Promise<Response>;
 						};
@@ -858,7 +879,6 @@ export const authRpc = {
 	signUp: (json: SignUpInput) => rpcClient.api.v1.auth['sign-up'].$post({ json }),
 	signOut: () => rpcClient.api.v1.auth['sign-out'].$post(),
 	listOrganizations: () => authFetch('/api/v1/auth/organizations'),
-	listOrganizationAccess: () => authFetch('/api/v1/auth/organizations/access'),
 	getAccessTree: () => authFetch('/api/v1/auth/orgs/access-tree'),
 	listClassroomsByOrg: (orgSlug: string) => authFetch(buildOrgAuthPath(orgSlug, '/classrooms')),
 	createClassroomByOrg: (orgSlug: string, json: CreateClassroomInput) =>
@@ -876,45 +896,34 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations.full.$get(
 			organizationId ? { query: { organizationId } } : undefined
 		),
-	listInvitations: (organizationId?: string) =>
-		rpcClient.api.v1.auth.organizations.invitations.$get(
-			organizationId ? { query: { organizationId } } : undefined
-		),
-	createInvitation: (json: CreateInvitationInput) =>
-		rpcClient.api.v1.auth.organizations.invitations.$post({ json }),
-	listUserInvitations: () => rpcClient.api.v1.auth.organizations.invitations.user.$get(),
+	listOrganizationInvitationsByOrg: (orgSlug: string) =>
+		authFetch(buildOrgAuthPath(orgSlug, '/invitations')),
+	createOrganizationInvitationByOrg: (orgSlug: string, json: CreateOrganizationInvitationInput) =>
+		authFetch(buildOrgAuthPath(orgSlug, '/invitations'), { json }),
+	listUserInvitations: () => authFetch('/api/v1/auth/invitations/user'),
 	getInvitationDetail: (invitationId: string) =>
-		rpcClient.api.v1.auth.organizations.invitations.detail.$get({ query: { invitationId } }),
-	acceptInvitation: (json: InvitationActionInput) =>
-		rpcClient.api.v1.auth.organizations.invitations.accept.$post({ json }),
-	rejectInvitation: (json: InvitationActionInput) =>
-		rpcClient.api.v1.auth.organizations.invitations.reject.$post({ json }),
-	cancelInvitation: (json: InvitationActionInput) =>
-		rpcClient.api.v1.auth.organizations.invitations.cancel.$post({ json }),
+		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}`),
+	acceptInvitation: ({ invitationId }: InvitationActionInput) =>
+		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/accept`, { json: {} }),
+	rejectInvitation: ({ invitationId }: InvitationActionInput) =>
+		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/reject`, { json: {} }),
+	cancelInvitation: ({ invitationId }: InvitationActionInput) =>
+		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/cancel`, { json: {} }),
 	listParticipants: (organizationId?: string) =>
 		rpcClient.api.v1.auth.organizations.participants.$get(
 			organizationId ? { query: { organizationId } } : undefined
 		),
 	selfEnrollParticipant: (json: SelfEnrollParticipantInput) =>
 		rpcClient.api.v1.auth.organizations.participants['self-enroll'].$post({ json }),
-	listParticipantInvitations: (organizationId?: string) =>
-		rpcClient.api.v1.auth.organizations.participants.invitations.$get(
-			organizationId ? { query: { organizationId } } : undefined
-		),
-	createParticipantInvitation: (json: CreateParticipantInvitationInput) =>
-		rpcClient.api.v1.auth.organizations.participants.invitations.$post({ json }),
-	listUserParticipantInvitations: () =>
-		rpcClient.api.v1.auth.organizations.participants.invitations.user.$get(),
+	listUserParticipantInvitations: () => authFetch('/api/v1/auth/invitations/user'),
 	getParticipantInvitationDetail: (invitationId: string) =>
-		rpcClient.api.v1.auth.organizations.participants.invitations.detail.$get({
-			query: { invitationId }
-		}),
-	acceptParticipantInvitation: (json: InvitationActionInput) =>
-		rpcClient.api.v1.auth.organizations.participants.invitations.accept.$post({ json }),
-	rejectParticipantInvitation: (json: InvitationActionInput) =>
-		rpcClient.api.v1.auth.organizations.participants.invitations.reject.$post({ json }),
-	cancelParticipantInvitation: (json: InvitationActionInput) =>
-		rpcClient.api.v1.auth.organizations.participants.invitations.cancel.$post({ json }),
+		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}`),
+	acceptParticipantInvitation: ({ invitationId }: InvitationActionInput) =>
+		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/accept`, { json: {} }),
+	rejectParticipantInvitation: ({ invitationId }: InvitationActionInput) =>
+		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/reject`, { json: {} }),
+	cancelParticipantInvitation: ({ invitationId }: InvitationActionInput) =>
+		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/cancel`, { json: {} }),
 	listServices: (query?: ListServicesQuery) =>
 		rpcClient.api.v1.auth.organizations.services.$get(query ? { query } : undefined),
 	createService: (json: CreateServiceInput) => rpcClient.api.v1.auth.organizations.services.$post({ json }),
@@ -985,18 +994,26 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations['ticket-purchases'].cancel.$post({ json }),
 	listInvitationsScoped: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/invitations')),
-	createInvitationScoped: (context: ScopedApiContext, json: CreateInvitationInput) =>
+	createInvitationScoped: (context: ScopedApiContext, json: CreateClassroomInvitationInput) =>
 		authFetch(buildScopedAuthPath(context, '/invitations'), { json }),
 	listParticipantsScoped: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/participants')),
 	selfEnrollParticipantScoped: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/participants/self-enroll'), { json: {} }),
 	listParticipantInvitationsScoped: (context: ScopedApiContext) =>
-		authFetch(buildScopedAuthPath(context, '/participants/invitations')),
+		authFetch(buildScopedAuthPath(context, '/invitations')),
 	createParticipantInvitationScoped: (
 		context: ScopedApiContext,
 		json: CreateParticipantInvitationInput
-	) => authFetch(buildScopedAuthPath(context, '/participants/invitations'), { json }),
+	) =>
+		authFetch(buildScopedAuthPath(context, '/invitations'), {
+			json: {
+				email: json.email,
+				role: 'participant',
+				participantName: json.participantName,
+				resend: json.resend
+			}
+		}),
 	listServicesScoped: (context: ScopedApiContext, query?: Omit<ListServicesQuery, 'organizationId'>) =>
 		authFetch(buildScopedAuthPath(context, '/services'), { query }),
 	createServiceScoped: (context: ScopedApiContext, json: CreateServiceInput) =>

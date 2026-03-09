@@ -52,7 +52,23 @@ describe('/bookings/+page.svelte', () => {
 			canManage: true,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: 'admin',
-			activeClassroomRole: 'manager',
+			activeFacts: {
+				orgRole: 'admin',
+				classroomStaffRole: 'manager',
+				hasParticipantRecord: true
+			},
+			activeSources: {
+				canManageOrganization: 'org_role',
+				canManageClassroom: 'org_role',
+				canManageBookings: 'org_role',
+				canManageParticipants: 'org_role',
+				canUseParticipantBooking: 'participant_record'
+			},
+			activeDisplay: {
+				primaryRole: 'admin',
+				badges: ['admin', 'manager', 'participant']
+			},
+			activeDisplayRole: 'admin',
 			hasActiveOrganization: true
 		});
 		mocks.resolvePortalHomePath.mockReturnValue('/admin/dashboard');
@@ -95,7 +111,23 @@ describe('/bookings/+page.svelte', () => {
 			canManage: false,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: null,
-			activeClassroomRole: 'participant',
+			activeFacts: {
+				orgRole: null,
+				classroomStaffRole: null,
+				hasParticipantRecord: true
+			},
+			activeSources: {
+				canManageOrganization: null,
+				canManageClassroom: null,
+				canManageBookings: null,
+				canManageParticipants: null,
+				canUseParticipantBooking: 'participant_record'
+			},
+			activeDisplay: {
+				primaryRole: 'participant',
+				badges: ['participant']
+			},
+			activeDisplayRole: 'participant',
 			hasActiveOrganization: true
 		});
 		mocks.resolvePortalHomePath.mockReturnValue('/participant/home');

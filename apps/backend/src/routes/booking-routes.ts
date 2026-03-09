@@ -1353,7 +1353,7 @@ export const registerBookingRoutes = ({
       classroomId,
       userId,
     });
-    return scoped?.access.canManageClassroom ?? false;
+    return scoped?.access.effective.canManageClassroom ?? false;
   };
 
   const canManageBookingsScope = async ({
@@ -1378,7 +1378,7 @@ export const registerBookingRoutes = ({
       classroomId,
       userId,
     });
-    return scoped?.access.canManageBookings ?? false;
+    return scoped?.access.effective.canManageBookings ?? false;
   };
 
   const canManageParticipantsScope = async ({
@@ -1403,7 +1403,7 @@ export const registerBookingRoutes = ({
       classroomId,
       userId,
     });
-    return scoped?.access.canManageParticipants ?? false;
+    return scoped?.access.effective.canManageParticipants ?? false;
   };
 
   const isRequestedClassroomMismatch = (
@@ -2425,7 +2425,7 @@ export const registerBookingRoutes = ({
         classroomId: query.classroomId,
         userId: identity.userId,
       });
-      if (!scoped || !scoped.access.canUseParticipantBooking) {
+      if (!scoped || !scoped.access.effective.canUseParticipantBooking) {
         return c.json({ message: 'Forbidden' }, 403);
       }
     }
@@ -4128,7 +4128,7 @@ export const registerBookingRoutes = ({
         classroomId: query.classroomId,
         userId: identity.userId,
       });
-      if (!scoped || !scoped.access.canUseParticipantBooking) {
+      if (!scoped || !scoped.access.effective.canUseParticipantBooking) {
         return c.json({ message: 'Forbidden' }, 403);
       }
     }
@@ -4178,7 +4178,7 @@ export const registerBookingRoutes = ({
         classroomId: body.classroomId,
         userId: identity.userId,
       });
-      if (!scoped || !scoped.access.canUseParticipantBooking) {
+      if (!scoped || !scoped.access.effective.canUseParticipantBooking) {
         return c.json({ message: 'Forbidden' }, 403);
       }
     }

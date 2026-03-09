@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/d1';
 import { Miniflare } from 'miniflare';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,7 @@ type D1DatabaseBinding = Awaited<ReturnType<Miniflare['getD1Database']>>;
 let app: ReturnType<typeof createApp>;
 let mf: Miniflare;
 let d1: D1DatabaseBinding;
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
 const splitSetCookieHeader = (header: string): string[] => {
   return header.split(/,(?=[^;,\s]+=)/g).map((value) => value.trim());
@@ -136,7 +138,7 @@ const selectInvitationActionCount = async (invitationId: string, action: string)
 
 const selectParticipantInvitationStatus = async (invitationId: string) => {
   const row = await d1
-    .prepare('SELECT status FROM classroom_invitation WHERE id = ?')
+    .prepare("SELECT status FROM invitation WHERE id = ? AND subject_kind = 'participant'")
     .bind(invitationId)
     .first<{ status: string }>();
 
@@ -145,9 +147,7 @@ const selectParticipantInvitationStatus = async (invitationId: string) => {
 
 const selectParticipantInvitationActionCount = async (invitationId: string, action: string) => {
   const row = await d1
-    .prepare(
-      'SELECT COUNT(*) as count FROM classroom_invitation_audit_log WHERE classroom_invitation_id = ? AND action = ?',
-    )
+    .prepare('SELECT COUNT(*) as count FROM invitation_audit_log WHERE invitation_id = ? AND action = ?')
     .bind(invitationId, action)
     .first<{ count: number | string }>();
 
@@ -311,6 +311,20 @@ const selectOrganizationSlugById = async (organizationId: string) => {
   return row?.slug ?? null;
 };
 
+const buildOrgInvitationPath = (organizationSlug: string) =>
+  `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug)}/invitations`;
+
+const buildClassroomInvitationPath = (organizationSlug: string, classroomSlug: string) =>
+  `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug)}/classrooms/${encodeURIComponent(classroomSlug)}/invitations`;
+
+const buildInvitationDetailPath = (invitationId: string) =>
+  `/api/v1/auth/invitations/${encodeURIComponent(invitationId)}`;
+
+const buildInvitationActionPath = (
+  invitationId: string,
+  action: 'accept' | 'reject' | 'cancel',
+) => `/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/${action}`;
+
 const createInvitation = async ({
   agent,
   email,
@@ -327,23 +341,17 @@ const createInvitation = async ({
   const organizationSlug = await selectOrganizationSlugById(organizationId);
   expect(organizationSlug).toBeTruthy();
 
-  const mappedRole = role === 'admin' ? 'manager' : role === 'member' ? 'staff' : 'owner';
-  const response = await agent.request(
-    `/api/v1/auth/orgs/${encodeURIComponent(
-      organizationSlug as string,
-    )}/classrooms/${encodeURIComponent(organizationSlug as string)}/invitations`,
-    {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        email,
-        role: mappedRole,
-        resend,
-      }),
+  const response = await agent.request(buildOrgInvitationPath(organizationSlug as string), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
     },
-  );
+    body: JSON.stringify({
+      email,
+      role,
+      resend,
+    }),
+  });
 
   return {
     response,
@@ -368,9 +376,7 @@ const createParticipantInvitation = async ({
   expect(organizationSlug).toBeTruthy();
 
   const response = await agent.request(
-    `/api/v1/auth/orgs/${encodeURIComponent(
-      organizationSlug as string,
-    )}/classrooms/${encodeURIComponent(organizationSlug as string)}/invitations`,
+    buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
     {
       method: 'POST',
       headers: {
@@ -399,7 +405,7 @@ beforeAll(async () => {
   });
 
   d1 = await mf.getD1Database('DB');
-  const migrationDir = path.resolve(process.cwd(), 'drizzle');
+  const migrationDir = path.resolve(currentDir, '../drizzle');
   const migrationFiles = (await fs.readdir(migrationDir))
     .filter((file) => /^\d+_.+\.sql$/.test(file))
     .sort();
@@ -530,12 +536,10 @@ describe('backend app', () => {
   });
 
   it('requires auth for invitation detail/reject endpoints', async () => {
-    const detailResponse = await app.request(
-      '/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=dummy-id',
-    );
+    const detailResponse = await app.request(buildInvitationDetailPath('dummy-id'));
     expect(detailResponse.status).toBe(401);
 
-    const rejectResponse = await app.request('/api/v1/auth/orgs/classrooms/invitations/reject', {
+    const rejectResponse = await app.request(buildInvitationActionPath('dummy-id', 'reject'), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -565,9 +569,7 @@ describe('backend app', () => {
     });
     expect(createResponse.status).toBe(401);
 
-    const detailResponse = await app.request(
-      '/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=dummy-id',
-    );
+    const detailResponse = await app.request(buildInvitationDetailPath('dummy-id'));
     expect(detailResponse.status).toBe(401);
   });
 
@@ -603,7 +605,7 @@ describe('backend app', () => {
     expect(typeof created.payload?.id).toBe('string');
 
     const invitationId = created.payload?.id as string;
-    expect(await selectInvitationActionCount(invitationId, 'invitation.created')).toBe(1);
+    expect(await selectInvitationActionCount(invitationId, 'created')).toBe(1);
 
     for (let index = 0; index < 3; index += 1) {
       const resent = await createInvitation({
@@ -625,7 +627,7 @@ describe('backend app', () => {
       resend: true,
     });
     expect(resendLimit.response.status).toBe(429);
-    expect(await selectInvitationActionCount(invitationId, 'invitation.resent')).toBe(3);
+    expect(await selectInvitationActionCount(invitationId, 'resent')).toBe(3);
 
     const invitee = createAuthAgent(app);
     await signUpUser({
@@ -634,12 +636,10 @@ describe('backend app', () => {
       email: 'invitee@example.com',
     });
 
-    const detailResponse = await invitee.request(
-      `/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=${encodeURIComponent(invitationId)}`,
-    );
+    const detailResponse = await invitee.request(buildInvitationDetailPath(invitationId));
     expect(detailResponse.status).toBe(200);
 
-    const acceptResponse = await invitee.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
+    const acceptResponse = await invitee.request(buildInvitationActionPath(invitationId, 'accept'), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -650,7 +650,7 @@ describe('backend app', () => {
     });
     expect(acceptResponse.status).toBe(200);
     expect(await selectInvitationStatus(invitationId)).toBe('accepted');
-    expect(await selectInvitationActionCount(invitationId, 'invitation.accepted')).toBe(1);
+    expect(await selectInvitationActionCount(invitationId, 'accepted')).toBe(1);
 
     const rejectTarget = await createInvitation({
       agent: inviter,
@@ -668,7 +668,9 @@ describe('backend app', () => {
       email: 'rejectee@example.com',
     });
 
-    const rejectResponse = await rejectee.request('/api/v1/auth/orgs/classrooms/invitations/reject', {
+    const rejectResponse = await rejectee.request(
+      buildInvitationActionPath(rejectInvitationId, 'reject'),
+      {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -676,10 +678,11 @@ describe('backend app', () => {
       body: JSON.stringify({
         invitationId: rejectInvitationId,
       }),
-    });
+      },
+    );
     expect(rejectResponse.status).toBe(200);
     expect(await selectInvitationStatus(rejectInvitationId)).toBe('rejected');
-    expect(await selectInvitationActionCount(rejectInvitationId, 'invitation.rejected')).toBe(1);
+    expect(await selectInvitationActionCount(rejectInvitationId, 'rejected')).toBe(1);
 
     const cancelTarget = await createInvitation({
       agent: inviter,
@@ -690,7 +693,9 @@ describe('backend app', () => {
     expect(cancelTarget.response.status).toBe(200);
     const cancelInvitationId = cancelTarget.payload?.id as string;
 
-    const cancelResponse = await inviter.request('/api/v1/auth/orgs/classrooms/invitations/cancel', {
+    const cancelResponse = await inviter.request(
+      buildInvitationActionPath(cancelInvitationId, 'cancel'),
+      {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -698,10 +703,11 @@ describe('backend app', () => {
       body: JSON.stringify({
         invitationId: cancelInvitationId,
       }),
-    });
+      },
+    );
     expect(cancelResponse.status).toBe(200);
-    expect(await selectInvitationStatus(cancelInvitationId)).toBe('canceled');
-    expect(await selectInvitationActionCount(cancelInvitationId, 'invitation.canceled')).toBe(1);
+    expect(await selectInvitationStatus(cancelInvitationId)).toBe('cancelled');
+    expect(await selectInvitationActionCount(cancelInvitationId, 'cancelled')).toBe(1);
   });
 
   it('lists organization access for owner and participant-only user', async () => {
@@ -733,7 +739,7 @@ describe('backend app', () => {
       email: 'access-participant@example.com',
     });
     const acceptParticipantInviteResponse = await participantUser.request(
-      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      buildInvitationActionPath(participantInvite.payload?.id as string, 'accept'),
       {
         method: 'POST',
         headers: {
@@ -746,43 +752,28 @@ describe('backend app', () => {
     );
     expect(acceptParticipantInviteResponse.status).toBe(200);
 
-    const ownerAccessResponse = await owner.request('/api/v1/auth/organizations/access');
-    expect(ownerAccessResponse.status).toBe(200);
-    const ownerAccessPayload = (await toJson(ownerAccessResponse)) as Array<Record<string, unknown>>;
-    const ownerAccess = ownerAccessPayload.find((entry) => entry.organizationId === organizationId);
-    expect(ownerAccess).toBeDefined();
-    expect(ownerAccess?.role).toBe('owner');
-    expect(ownerAccess?.classroomRole).toBe('manager');
-    expect(ownerAccess?.canManage).toBe(true);
-    expect(ownerAccess?.canUseParticipantBooking).toBe(false);
-
-    const participantAccessResponse = await participantUser.request('/api/v1/auth/organizations/access');
-    expect(participantAccessResponse.status).toBe(200);
-    const participantAccessPayload = (await toJson(participantAccessResponse)) as Array<
-      Record<string, unknown>
-    >;
-    const participantAccess = participantAccessPayload.find(
-      (entry) => entry.organizationId === organizationId,
-    );
-    expect(participantAccess).toBeDefined();
-    expect(participantAccess?.role).toBeNull();
-    expect(participantAccess?.classroomRole).toBe('participant');
-    expect(participantAccess?.canManage).toBe(false);
-    expect(participantAccess?.canUseParticipantBooking).toBe(true);
-
     const ownerAccessTreeResponse = await owner.request('/api/v1/auth/orgs/access-tree');
     expect(ownerAccessTreeResponse.status).toBe(200);
     const ownerAccessTreePayload = (await toJson(ownerAccessTreeResponse)) as {
       orgs?: Array<{
         org?: { id?: string; slug?: string; name?: string; logo?: string | null };
-        orgRole?: string | null;
         classrooms?: Array<{
           id?: string;
           slug?: string;
           name?: string;
-          role?: string | null;
-          canManage?: boolean;
-          canUseParticipantBooking?: boolean;
+          facts?: {
+            orgRole?: string | null;
+            classroomStaffRole?: string | null;
+            hasParticipantRecord?: boolean;
+          };
+          effective?: {
+            canManageOrganization?: boolean;
+            canManageClassroom?: boolean;
+            canUseParticipantBooking?: boolean;
+          };
+          display?: {
+            primaryRole?: string | null;
+          };
         }>;
       }>;
     };
@@ -790,11 +781,43 @@ describe('backend app', () => {
       (entry) => entry.org?.id === organizationId,
     );
     expect(ownerOrgEntry).toBeDefined();
-    expect(ownerOrgEntry?.orgRole).toBe('owner');
     expect(ownerOrgEntry?.org?.slug).toBe('access-org');
     expect(ownerOrgEntry?.classrooms?.[0]?.slug).toBe('access-org');
-    expect(ownerOrgEntry?.classrooms?.[0]?.role).toBe('manager');
-    expect(ownerOrgEntry?.classrooms?.[0]?.canManage).toBe(true);
+    expect(ownerOrgEntry?.classrooms?.[0]?.facts?.orgRole).toBe('owner');
+    expect(ownerOrgEntry?.classrooms?.[0]?.display?.primaryRole).toBe('owner');
+    expect(ownerOrgEntry?.classrooms?.[0]?.effective?.canManageClassroom).toBe(true);
+    expect(ownerOrgEntry?.classrooms?.[0]?.effective?.canUseParticipantBooking).toBe(false);
+
+    const participantAccessTreeResponse = await participantUser.request('/api/v1/auth/orgs/access-tree');
+    expect(participantAccessTreeResponse.status).toBe(200);
+    const participantAccessTreePayload = (await toJson(participantAccessTreeResponse)) as {
+      orgs?: Array<{
+        org?: { id?: string };
+        classrooms?: Array<{
+          facts?: {
+            orgRole?: string | null;
+            classroomStaffRole?: string | null;
+            hasParticipantRecord?: boolean;
+          };
+          effective?: {
+            canManageClassroom?: boolean;
+            canUseParticipantBooking?: boolean;
+          };
+          display?: {
+            primaryRole?: string | null;
+          };
+        }>;
+      }>;
+    };
+    const participantOrgEntry = participantAccessTreePayload.orgs?.find(
+      (entry) => entry.org?.id === organizationId,
+    );
+    expect(participantOrgEntry?.classrooms?.[0]?.facts?.orgRole).toBeNull();
+    expect(participantOrgEntry?.classrooms?.[0]?.facts?.classroomStaffRole).toBeNull();
+    expect(participantOrgEntry?.classrooms?.[0]?.facts?.hasParticipantRecord).toBe(true);
+    expect(participantOrgEntry?.classrooms?.[0]?.display?.primaryRole).toBe('participant');
+    expect(participantOrgEntry?.classrooms?.[0]?.effective?.canManageClassroom).toBe(false);
+    expect(participantOrgEntry?.classrooms?.[0]?.effective?.canUseParticipantBooking).toBe(true);
   });
 
   it('supports multiple classrooms in access-tree and scoped service routes', async () => {
@@ -869,8 +892,16 @@ describe('backend app', () => {
         classrooms?: Array<{
           id?: string;
           slug?: string;
-          role?: string | null;
-          canManage?: boolean;
+          facts?: {
+            orgRole?: string | null;
+            classroomStaffRole?: string | null;
+          };
+          effective?: {
+            canManageClassroom?: boolean;
+          };
+          display?: {
+            primaryRole?: string | null;
+          };
         }>;
       }>;
     };
@@ -882,8 +913,9 @@ describe('backend app', () => {
       (classroom) => classroom.slug === secondClassroomSlug,
     );
     expect(secondClassroomEntry?.id).toBe(secondClassroomId);
-    expect(secondClassroomEntry?.role).toBe('manager');
-    expect(secondClassroomEntry?.canManage).toBe(true);
+    expect(secondClassroomEntry?.facts?.orgRole).toBe('owner');
+    expect(secondClassroomEntry?.display?.primaryRole).toBe('owner');
+    expect(secondClassroomEntry?.effective?.canManageClassroom).toBe(true);
 
     const defaultScopedListResponse = await owner.request(
       `/api/v1/auth/orgs/${encodeURIComponent(
@@ -931,7 +963,9 @@ describe('backend app', () => {
     const initialList = (await toJson(initialListResponse)) as Array<Record<string, unknown>>;
     expect(initialList).toHaveLength(1);
     expect(initialList[0]?.slug).toBe('classroom-admin-org');
-    expect(initialList[0]?.canManage).toBe(true);
+    expect(
+      (initialList[0]?.effective as { canManageClassroom?: boolean } | undefined)?.canManageClassroom,
+    ).toBe(true);
 
     const createResponse = await owner.request(
       `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
@@ -950,7 +984,9 @@ describe('backend app', () => {
     const createdClassroom = (await toJson(createResponse)) as Record<string, unknown>;
     expect(createdClassroom.slug).toBe('second-room');
     expect(createdClassroom.name).toBe('Second Room');
-    expect(createdClassroom.canManage).toBe(true);
+    expect(
+      (createdClassroom.effective as { canManageClassroom?: boolean } | undefined)?.canManageClassroom,
+    ).toBe(true);
 
     const updateResponse = await owner.request(
       `/api/v1/auth/orgs/${encodeURIComponent(
@@ -995,13 +1031,16 @@ describe('backend app', () => {
       name: 'Classroom Member',
       email: 'classroom-member@example.com',
     });
-    const acceptMemberInviteResponse = await member.request('/api/v1/auth/organizations/invitations/accept', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
+    const acceptMemberInviteResponse = await member.request(
+      buildInvitationActionPath(memberInvite.payload?.id as string, 'accept'),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ invitationId: memberInvite.payload?.id }),
       },
-      body: JSON.stringify({ invitationId: memberInvite.payload?.id }),
-    });
+    );
     expect(acceptMemberInviteResponse.status).toBe(200);
 
     const memberCreateResponse = await member.request(
@@ -1058,15 +1097,18 @@ describe('backend app', () => {
       name: 'Participant Admin',
       email: 'participant-admin@example.com',
     });
-    const acceptAdminInviteResponse = await admin.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
+    const acceptAdminInviteResponse = await admin.request(
+      buildInvitationActionPath(adminInvitationId, 'accept'),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          invitationId: adminInvitationId,
+        }),
       },
-      body: JSON.stringify({
-        invitationId: adminInvitationId,
-      }),
-    });
+    );
     expect(acceptAdminInviteResponse.status).toBe(200);
 
     const member = createAuthAgent(app);
@@ -1075,15 +1117,18 @@ describe('backend app', () => {
       name: 'Participant Member',
       email: 'participant-member@example.com',
     });
-    const acceptMemberInviteResponse = await member.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
+    const acceptMemberInviteResponse = await member.request(
+      buildInvitationActionPath(memberInvitationId, 'accept'),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          invitationId: memberInvitationId,
+        }),
       },
-      body: JSON.stringify({
-        invitationId: memberInvitationId,
-      }),
-    });
+    );
     expect(acceptMemberInviteResponse.status).toBe(200);
 
     const staffCreate = await createParticipantInvitation({
@@ -1092,7 +1137,7 @@ describe('backend app', () => {
       participantName: 'Staff Created Participant',
       organizationId,
     });
-    expect(staffCreate.response.status).toBe(200);
+    expect(staffCreate.response.status).toBe(403);
 
     const created = await createParticipantInvitation({
       agent: admin,
@@ -1103,7 +1148,7 @@ describe('backend app', () => {
     expect(created.response.status).toBe(200);
     expect(typeof created.payload?.id).toBe('string');
     const participantInvitationId = created.payload?.id as string;
-    expect(await selectParticipantInvitationActionCount(participantInvitationId, 'participant-invitation.created')).toBe(
+    expect(await selectParticipantInvitationActionCount(participantInvitationId, 'created')).toBe(
       1,
     );
 
@@ -1134,9 +1179,7 @@ describe('backend app', () => {
       resend: true,
     });
     expect(resendLimit.response.status).toBe(429);
-    expect(await selectParticipantInvitationActionCount(participantInvitationId, 'participant-invitation.resent')).toBe(
-      3,
-    );
+    expect(await selectParticipantInvitationActionCount(participantInvitationId, 'resent')).toBe(3);
 
     const otherUser = createAuthAgent(app);
     await signUpUser({
@@ -1145,13 +1188,11 @@ describe('backend app', () => {
       email: 'participant-other@example.com',
     });
 
-    const forbiddenDetail = await otherUser.request(
-      `/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=${encodeURIComponent(participantInvitationId)}`,
-    );
+    const forbiddenDetail = await otherUser.request(buildInvitationDetailPath(participantInvitationId));
     expect(forbiddenDetail.status).toBe(403);
 
     const forbiddenAccept = await otherUser.request(
-      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      buildInvitationActionPath(participantInvitationId, 'accept'),
       {
         method: 'POST',
         headers: {
@@ -1165,7 +1206,7 @@ describe('backend app', () => {
     expect(forbiddenAccept.status).toBe(403);
 
     const forbiddenReject = await otherUser.request(
-      '/api/v1/auth/orgs/classrooms/invitations/reject',
+      buildInvitationActionPath(participantInvitationId, 'reject'),
       {
         method: 'POST',
         headers: {
@@ -1186,12 +1227,12 @@ describe('backend app', () => {
     });
 
     const detailResponse = await participantUser.request(
-      `/api/v1/auth/orgs/classrooms/invitations/detail?invitationId=${encodeURIComponent(participantInvitationId)}`,
+      buildInvitationDetailPath(participantInvitationId),
     );
     expect(detailResponse.status).toBe(200);
 
     const acceptResponse = await participantUser.request(
-      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      buildInvitationActionPath(participantInvitationId, 'accept'),
       {
         method: 'POST',
         headers: {
@@ -1204,9 +1245,7 @@ describe('backend app', () => {
     );
     expect(acceptResponse.status).toBe(200);
     expect(await selectParticipantInvitationStatus(participantInvitationId)).toBe('accepted');
-    expect(await selectParticipantInvitationActionCount(participantInvitationId, 'participant-invitation.accepted')).toBe(
-      1,
-    );
+    expect(await selectParticipantInvitationActionCount(participantInvitationId, 'accepted')).toBe(1);
     expect(await selectParticipantCountByEmail(organizationId, 'participant-user@example.com')).toBe(1);
 
     const rejectTarget = await createParticipantInvitation({
@@ -1226,7 +1265,7 @@ describe('backend app', () => {
     });
 
     const rejectResponse = await rejectUser.request(
-      '/api/v1/auth/orgs/classrooms/invitations/reject',
+      buildInvitationActionPath(rejectInvitationId, 'reject'),
       {
         method: 'POST',
         headers: {
@@ -1239,9 +1278,7 @@ describe('backend app', () => {
     );
     expect(rejectResponse.status).toBe(200);
     expect(await selectParticipantInvitationStatus(rejectInvitationId)).toBe('rejected');
-    expect(await selectParticipantInvitationActionCount(rejectInvitationId, 'participant-invitation.rejected')).toBe(
-      1,
-    );
+    expect(await selectParticipantInvitationActionCount(rejectInvitationId, 'rejected')).toBe(1);
 
     const cancelTarget = await createParticipantInvitation({
       agent: admin,
@@ -1253,7 +1290,7 @@ describe('backend app', () => {
     const cancelInvitationId = cancelTarget.payload?.id as string;
 
     const cancelResponse = await admin.request(
-      '/api/v1/auth/orgs/classrooms/invitations/cancel',
+      buildInvitationActionPath(cancelInvitationId, 'cancel'),
       {
         method: 'POST',
         headers: {
@@ -1265,18 +1302,18 @@ describe('backend app', () => {
       },
     );
     expect(cancelResponse.status).toBe(200);
-    expect(await selectParticipantInvitationStatus(cancelInvitationId)).toBe('canceled');
-    expect(await selectParticipantInvitationActionCount(cancelInvitationId, 'participant-invitation.canceled')).toBe(
-      1,
-    );
+    expect(await selectParticipantInvitationStatus(cancelInvitationId)).toBe('cancelled');
+    expect(await selectParticipantInvitationActionCount(cancelInvitationId, 'cancelled')).toBe(1);
 
     const participantListResponse = await admin.request(
       `/api/v1/auth/organizations/participants?organizationId=${encodeURIComponent(organizationId)}`,
     );
     expect(participantListResponse.status).toBe(200);
 
+    const organizationSlug = await selectOrganizationSlugById(organizationId);
+    expect(organizationSlug).toBe('participant-org');
     const invitationListResponse = await admin.request(
-      `/api/v1/auth/organizations/participants/invitations?organizationId=${encodeURIComponent(organizationId)}`,
+      buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
     );
     expect(invitationListResponse.status).toBe(200);
   });
@@ -1686,7 +1723,7 @@ describe('backend app', () => {
       email: 'slot-update-participant@example.com',
     });
     const participantAcceptResponse = await participantUser.request(
-      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      buildInvitationActionPath(participantInvite.payload?.id as string, 'accept'),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1905,13 +1942,16 @@ describe('backend app', () => {
       name: 'Booking Admin',
       email: 'booking-admin@example.com',
     });
-    const acceptAdminResponse = await admin.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        invitationId: adminInvite.payload?.id,
-      }),
-    });
+    const acceptAdminResponse = await admin.request(
+      buildInvitationActionPath(adminInvite.payload?.id as string, 'accept'),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          invitationId: adminInvite.payload?.id,
+        }),
+      },
+    );
     expect(acceptAdminResponse.status).toBe(200);
 
     const member = createAuthAgent(app);
@@ -1920,13 +1960,16 @@ describe('backend app', () => {
       name: 'Booking Member',
       email: 'booking-member@example.com',
     });
-    const acceptMemberResponse = await member.request('/api/v1/auth/orgs/classrooms/invitations/accept', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        invitationId: memberInvite.payload?.id,
-      }),
-    });
+    const acceptMemberResponse = await member.request(
+      buildInvitationActionPath(memberInvite.payload?.id as string, 'accept'),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          invitationId: memberInvite.payload?.id,
+        }),
+      },
+    );
     expect(acceptMemberResponse.status).toBe(200);
 
     const participantInvite = await createParticipantInvitation({
@@ -1944,7 +1987,7 @@ describe('backend app', () => {
       email: 'booking-participant@example.com',
     });
     const participantAcceptResponse = await participantUser.request(
-      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      buildInvitationActionPath(participantInvite.payload?.id as string, 'accept'),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -2205,7 +2248,7 @@ describe('backend app', () => {
       email: 'ticket-purchase-participant@example.com',
     });
     const participantAcceptResponse = await participantUser.request(
-      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      buildInvitationActionPath(participantInvite.payload?.id as string, 'accept'),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -2423,7 +2466,7 @@ describe('backend app', () => {
         email: 'stripe-purchase-participant@example.com',
       });
       const participantAcceptResponse = await participantUser.request(
-        '/api/v1/auth/orgs/classrooms/invitations/accept',
+        buildInvitationActionPath(participantInvite.payload?.id as string, 'accept'),
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -2565,7 +2608,7 @@ describe('backend app', () => {
       email: 'approval-participant-1@example.com',
     });
     const participantAcceptResponse1 = await participantUser1.request(
-      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      buildInvitationActionPath(participantInvite1.payload?.id as string, 'accept'),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -2583,7 +2626,7 @@ describe('backend app', () => {
       email: 'approval-participant-2@example.com',
     });
     const participantAcceptResponse2 = await participantUser2.request(
-      '/api/v1/auth/orgs/classrooms/invitations/accept',
+      buildInvitationActionPath(participantInvite2.payload?.id as string, 'accept'),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -2918,7 +2961,7 @@ describe('backend app', () => {
         email: 'booking-email-participant@example.com',
       });
       const participantAcceptResponse = await participantUser.request(
-        '/api/v1/auth/orgs/classrooms/invitations/accept',
+        buildInvitationActionPath(participantInvite.payload?.id as string, 'accept'),
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -3142,7 +3185,7 @@ describe('backend app', () => {
         email: 'booking-approval-email-participant@example.com',
       });
       const participantAcceptResponse = await participantUser.request(
-        '/api/v1/auth/orgs/classrooms/invitations/accept',
+        buildInvitationActionPath(participantInvite.payload?.id as string, 'accept'),
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -3396,16 +3439,14 @@ describe('backend app', () => {
     expect(body.openapi).toBe('3.0.0');
     expect(body.paths['/api/v1/auth/sign-in']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/invitations']).toBeDefined();
-    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/reject']).toBeDefined();
-    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/detail']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/{orgSlug}/invitations']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations']).toBeDefined();
+    expect(body.paths['/api/v1/auth/invitations/user']).toBeDefined();
+    expect(body.paths['/api/v1/auth/invitations/{invitationId}']).toBeDefined();
+    expect(body.paths['/api/v1/auth/invitations/{invitationId}/accept']).toBeDefined();
+    expect(body.paths['/api/v1/auth/invitations/{invitationId}/reject']).toBeDefined();
+    expect(body.paths['/api/v1/auth/invitations/{invitationId}/cancel']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/participants']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/participants/invitations']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/participants/invitations/user']).toBeDefined();
-    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/detail']).toBeDefined();
-    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/accept']).toBeDefined();
-    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/reject']).toBeDefined();
-    expect(body.paths['/api/v1/auth/orgs/classrooms/invitations/cancel']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/participants/self-enroll']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/services']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/services/update']).toBeDefined();

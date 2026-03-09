@@ -7,6 +7,50 @@ import {
 	resolvePortalHomePath
 } from './auth-session.svelte';
 
+const buildPortalAccess = (overrides: Record<string, unknown> = {}) => ({
+	hasOrganizationAdminAccess: false,
+	hasParticipantAccess: false,
+	canManage: false,
+	canUseParticipantBooking: false,
+	activeOrganizationRole: null,
+	activeFacts: null,
+	activeSources: null,
+	activeDisplay: null,
+	activeDisplayRole: null,
+	hasActiveOrganization: false,
+	...overrides
+});
+
+const buildClassroomEntry = (overrides: Record<string, unknown> = {}) => ({
+	id: 'classroom-1',
+	slug: 'room-one',
+	name: 'Room One',
+	facts: {
+		orgRole: null,
+		classroomStaffRole: null,
+		hasParticipantRecord: false
+	},
+	effective: {
+		canManageOrganization: false,
+		canManageClassroom: false,
+		canManageBookings: false,
+		canManageParticipants: false,
+		canUseParticipantBooking: false
+	},
+	sources: {
+		canManageOrganization: null,
+		canManageClassroom: null,
+		canManageBookings: null,
+		canManageParticipants: null,
+		canUseParticipantBooking: null
+	},
+	display: {
+		primaryRole: null,
+		badges: []
+	},
+	...overrides
+});
+
 describe('auth-session.svelte', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
@@ -82,58 +126,100 @@ describe('auth-session.svelte', () => {
 
 	it('resolves admin dashboard when manage access exists', () => {
 		expect(
-			resolvePortalHomePath({
-				hasOrganizationAdminAccess: true,
-				hasParticipantAccess: true,
-				canManage: true,
-				canUseParticipantBooking: true,
-				activeOrganizationRole: 'admin',
-				activeClassroomRole: 'manager',
-				hasActiveOrganization: true
-			})
+			resolvePortalHomePath(
+				buildPortalAccess({
+					hasOrganizationAdminAccess: true,
+					hasParticipantAccess: true,
+					canManage: true,
+					canUseParticipantBooking: true,
+					activeOrganizationRole: 'admin',
+					activeFacts: {
+						orgRole: 'admin',
+						classroomStaffRole: 'manager',
+						hasParticipantRecord: true
+					},
+					activeSources: {
+						canManageOrganization: 'org_role',
+						canManageClassroom: 'org_role',
+						canManageBookings: 'org_role',
+						canManageParticipants: 'org_role',
+						canUseParticipantBooking: 'participant_record'
+					},
+					activeDisplay: {
+						primaryRole: 'admin',
+						badges: ['admin', 'manager', 'participant']
+					},
+					activeDisplayRole: 'admin',
+					hasActiveOrganization: true
+				})
+			)
 		).toBe('/admin/dashboard');
 	});
 
 	it('resolves admin dashboard when stage1 admin access exists even if active organization is participant-only', () => {
 		expect(
-			resolvePortalHomePath({
-				hasOrganizationAdminAccess: true,
-				hasParticipantAccess: true,
-				canManage: false,
-				canUseParticipantBooking: true,
-				activeOrganizationRole: null,
-				activeClassroomRole: 'participant',
-				hasActiveOrganization: true
-			})
+			resolvePortalHomePath(
+				buildPortalAccess({
+					hasOrganizationAdminAccess: true,
+					hasParticipantAccess: true,
+					canManage: false,
+					canUseParticipantBooking: true,
+					activeFacts: {
+						orgRole: null,
+						classroomStaffRole: null,
+						hasParticipantRecord: true
+					},
+					activeSources: {
+						canManageOrganization: null,
+						canManageClassroom: null,
+						canManageBookings: null,
+						canManageParticipants: null,
+						canUseParticipantBooking: 'participant_record'
+					},
+					activeDisplay: {
+						primaryRole: 'participant',
+						badges: ['participant']
+					},
+					activeDisplayRole: 'participant',
+					hasActiveOrganization: true
+				})
+			)
 		).toBe('/admin/dashboard');
 	});
 
 	it('resolves participant home when participant-only access exists', () => {
 		expect(
-			resolvePortalHomePath({
-				hasOrganizationAdminAccess: false,
-				hasParticipantAccess: true,
-				canManage: false,
-				canUseParticipantBooking: true,
-				activeOrganizationRole: null,
-				activeClassroomRole: 'participant',
-				hasActiveOrganization: true
-			})
+			resolvePortalHomePath(
+				buildPortalAccess({
+					hasOrganizationAdminAccess: false,
+					hasParticipantAccess: true,
+					canManage: false,
+					canUseParticipantBooking: true,
+					activeFacts: {
+						orgRole: null,
+						classroomStaffRole: null,
+						hasParticipantRecord: true
+					},
+					activeSources: {
+						canManageOrganization: null,
+						canManageClassroom: null,
+						canManageBookings: null,
+						canManageParticipants: null,
+						canUseParticipantBooking: 'participant_record'
+					},
+					activeDisplay: {
+						primaryRole: 'participant',
+						badges: ['participant']
+					},
+					activeDisplayRole: 'participant',
+					hasActiveOrganization: true
+				})
+			)
 		).toBe('/participant/home');
 	});
 
 	it('returns null when no portal access exists', () => {
-		expect(
-			resolvePortalHomePath({
-				hasOrganizationAdminAccess: false,
-				hasParticipantAccess: false,
-				canManage: false,
-				canUseParticipantBooking: false,
-				activeOrganizationRole: null,
-				activeClassroomRole: null,
-				hasActiveOrganization: false
-			})
-		).toBeNull();
+		expect(resolvePortalHomePath(buildPortalAccess())).toBeNull();
 	});
 
 	it('normalizes legacy array access tree payloads', () => {
@@ -165,17 +251,36 @@ describe('auth-session.svelte', () => {
 						name: 'Org One',
 						logo: null
 					},
-					orgRole: 'admin',
 					classrooms: [
-						{
+						buildClassroomEntry({
 							id: 'classroom-1',
 							slug: 'room-one',
 							name: 'Room One',
 							logo: null,
-							role: 'manager',
-							canManage: true,
-							canUseParticipantBooking: false
-						}
+							facts: {
+								orgRole: 'admin',
+								classroomStaffRole: 'manager',
+								hasParticipantRecord: false
+							},
+							effective: {
+								canManageOrganization: true,
+								canManageClassroom: true,
+								canManageBookings: true,
+								canManageParticipants: true,
+								canUseParticipantBooking: false
+							},
+							sources: {
+								canManageOrganization: 'org_role',
+								canManageClassroom: 'classroom_member',
+								canManageBookings: 'classroom_member',
+								canManageParticipants: 'classroom_member',
+								canUseParticipantBooking: null
+							},
+							display: {
+								primaryRole: 'manager',
+								badges: ['manager']
+							}
+						})
 					]
 				}
 			]
@@ -191,16 +296,35 @@ describe('auth-session.svelte', () => {
 						slug: 'org-one',
 						name: 'Org One'
 					},
-					orgRole: 'owner',
 					classrooms: [
-						{
+						buildClassroomEntry({
 							id: 'classroom-1',
 							slug: 'room-one',
 							name: 'Room One',
-							role: 'manager',
-							canManage: true,
-							canUseParticipantBooking: false
-						}
+							facts: {
+								orgRole: 'owner',
+								classroomStaffRole: 'manager',
+								hasParticipantRecord: false
+							},
+							effective: {
+								canManageOrganization: true,
+								canManageClassroom: true,
+								canManageBookings: true,
+								canManageParticipants: true,
+								canUseParticipantBooking: false
+							},
+							sources: {
+								canManageOrganization: 'org_role',
+								canManageClassroom: 'org_role',
+								canManageBookings: 'org_role',
+								canManageParticipants: 'org_role',
+								canUseParticipantBooking: null
+							},
+							display: {
+								primaryRole: 'owner',
+								badges: ['owner', 'manager']
+							}
+						})
 					]
 				}
 			]
@@ -218,24 +342,63 @@ describe('auth-session.svelte', () => {
 						slug: 'org-one',
 						name: 'Org One'
 					},
-					orgRole: 'owner' as const,
 					classrooms: [
-						{
+						buildClassroomEntry({
 							id: 'classroom-1',
 							slug: 'room-a',
 							name: 'Room A',
-							role: 'manager' as const,
-							canManage: true,
-							canUseParticipantBooking: true
-						},
-						{
+							facts: {
+								orgRole: 'owner',
+								classroomStaffRole: 'manager',
+								hasParticipantRecord: true
+							},
+							effective: {
+								canManageOrganization: true,
+								canManageClassroom: true,
+								canManageBookings: true,
+								canManageParticipants: true,
+								canUseParticipantBooking: true
+							},
+							sources: {
+								canManageOrganization: 'org_role',
+								canManageClassroom: 'org_role',
+								canManageBookings: 'org_role',
+								canManageParticipants: 'org_role',
+								canUseParticipantBooking: 'participant_record'
+							},
+							display: {
+								primaryRole: 'owner',
+								badges: ['owner', 'manager', 'participant']
+							}
+						}),
+						buildClassroomEntry({
 							id: 'classroom-2',
 							slug: 'room-b',
 							name: 'Room B',
-							role: 'manager' as const,
-							canManage: true,
-							canUseParticipantBooking: true
-						}
+							facts: {
+								orgRole: 'owner',
+								classroomStaffRole: 'manager',
+								hasParticipantRecord: true
+							},
+							effective: {
+								canManageOrganization: true,
+								canManageClassroom: true,
+								canManageBookings: true,
+								canManageParticipants: true,
+								canUseParticipantBooking: true
+							},
+							sources: {
+								canManageOrganization: 'org_role',
+								canManageClassroom: 'org_role',
+								canManageBookings: 'org_role',
+								canManageParticipants: 'org_role',
+								canUseParticipantBooking: 'participant_record'
+							},
+							display: {
+								primaryRole: 'owner',
+								badges: ['owner', 'manager', 'participant']
+							}
+						})
 					]
 				}
 			]
@@ -258,16 +421,35 @@ describe('auth-session.svelte', () => {
 						slug: 'org-one',
 						name: 'Org One'
 					},
-					orgRole: 'owner' as const,
 					classrooms: [
-						{
+						buildClassroomEntry({
 							id: 'classroom-1',
 							slug: 'room-a',
 							name: 'Room A',
-							role: 'manager' as const,
-							canManage: true,
-							canUseParticipantBooking: true
-						}
+							facts: {
+								orgRole: 'owner',
+								classroomStaffRole: 'manager',
+								hasParticipantRecord: true
+							},
+							effective: {
+								canManageOrganization: true,
+								canManageClassroom: true,
+								canManageBookings: true,
+								canManageParticipants: true,
+								canUseParticipantBooking: true
+							},
+							sources: {
+								canManageOrganization: 'org_role',
+								canManageClassroom: 'org_role',
+								canManageBookings: 'org_role',
+								canManageParticipants: 'org_role',
+								canUseParticipantBooking: 'participant_record'
+							},
+							display: {
+								primaryRole: 'owner',
+								badges: ['owner', 'manager', 'participant']
+							}
+						})
 					]
 				}
 			]

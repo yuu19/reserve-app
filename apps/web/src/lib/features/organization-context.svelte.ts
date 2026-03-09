@@ -1,7 +1,9 @@
 import type {
 	AccessTreePayload,
+	AccessDisplayPayload,
+	AccessFactsPayload,
+	AccessSourcesPayload,
 	ClassroomPayload,
-	ClassroomRole,
 	OrganizationPayload,
 	ScopedApiContext
 } from '$lib/rpc-client';
@@ -23,9 +25,11 @@ export type ClassroomContextPayload = {
 	slug: string;
 	name: string;
 	logo?: string | null;
-	role: ClassroomRole | null;
 	canManage: boolean;
 	canUseParticipantBooking: boolean;
+	display: AccessDisplayPayload;
+	facts: AccessFactsPayload;
+	sources: AccessSourcesPayload;
 };
 
 export type OrganizationContextPayload = {
@@ -44,9 +48,15 @@ const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | nu
 	if (typeof value.id !== 'string' || typeof value.slug !== 'string' || typeof value.name !== 'string') {
 		return null;
 	}
-	const role = value.role;
-	const classroomRole = role === 'manager' || role === 'staff' || role === 'participant' ? role : null;
-	if (typeof value.canManage !== 'boolean' || typeof value.canUseParticipantBooking !== 'boolean') {
+	const effective = isRecord(value.effective) ? value.effective : null;
+	if (
+		!effective ||
+		typeof effective.canManageClassroom !== 'boolean' ||
+		typeof effective.canUseParticipantBooking !== 'boolean' ||
+		!isRecord(value.display) ||
+		!isRecord(value.facts) ||
+		!isRecord(value.sources)
+	) {
 		return null;
 	}
 	return {
@@ -54,9 +64,11 @@ const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | nu
 		slug: value.slug,
 		name: value.name,
 		logo: typeof value.logo === 'string' ? value.logo : null,
-		role: classroomRole,
-		canManage: value.canManage,
-		canUseParticipantBooking: value.canUseParticipantBooking
+		canManage: effective.canManageClassroom,
+		canUseParticipantBooking: effective.canUseParticipantBooking,
+		display: value.display as AccessDisplayPayload,
+		facts: value.facts as AccessFactsPayload,
+		sources: value.sources as AccessSourcesPayload
 	};
 };
 

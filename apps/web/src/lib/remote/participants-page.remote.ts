@@ -110,7 +110,8 @@ const isParticipantInvitation = (value: unknown): value is ParticipantInvitation
 	isRecord(value) &&
 	typeof value.id === 'string' &&
 	typeof value.organizationId === 'string' &&
-	typeof value.email === 'string';
+	typeof value.email === 'string' &&
+	value.subjectKind === 'participant';
 
 const isService = (value: unknown): value is ServicePayload =>
 	isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string';
@@ -181,8 +182,8 @@ export const getParticipantsPageData = query(participantsPageQuerySchema, async 
 		ticketPurchasesResult
 	] = await Promise.all([
 		getApi(scopedPath('/participants')),
-		getApi(scopedPath('/participants/invitations')),
-		getApi('/api/v1/auth/orgs/participant-invitations/user'),
+		getApi(scopedPath('/invitations')),
+		getApi('/api/v1/auth/invitations/user'),
 		getApi(scopedPath('/services')),
 		getApi(scopedPath('/ticket-types')),
 		getApi(scopedPath('/ticket-purchases'))

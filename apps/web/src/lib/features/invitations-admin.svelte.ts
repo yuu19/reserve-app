@@ -6,7 +6,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
 
 const isInvitation = (value: unknown): value is InvitationPayload =>
-	isRecord(value) && typeof value.id === 'string' && typeof value.organizationId === 'string' && typeof value.email === 'string';
+	isRecord(value) &&
+	typeof value.id === 'string' &&
+	typeof value.organizationId === 'string' &&
+	typeof value.organizationSlug === 'string' &&
+	typeof value.email === 'string' &&
+	typeof value.subjectKind === 'string';
 
 const asInvitations = (value: unknown): InvitationPayload[] =>
 	Array.isArray(value) ? value.filter(isInvitation) : [];
@@ -18,10 +23,12 @@ const toRole = (value: string): OrganizationInvitationRole | null => {
 	return null;
 };
 
-export const loadAdminInvitations = async (organizationId?: string) => {
+export const loadAdminInvitations = async (_organizationId?: string) => {
 	const userResponse = await authRpc.listUserInvitations();
 	const userPayload = await parseResponseBody(userResponse);
-	const received = userResponse.ok ? asInvitations(userPayload) : [];
+	const received = userResponse.ok
+		? asInvitations(userPayload).filter((invitation) => invitation.subjectKind === 'org_operator')
+		: [];
 
 	const context = readWindowScopedRouteContext();
 	if (!context) {
@@ -32,13 +39,15 @@ export const loadAdminInvitations = async (organizationId?: string) => {
 		};
 	}
 
-	const sentResponse = await authRpc.listInvitationsScoped(context);
+	const sentResponse = await authRpc.listOrganizationInvitationsByOrg(context.orgSlug);
 	const sentPayload = await parseResponseBody(sentResponse);
 	if (sentResponse.status === 403) {
 		return { sent: [], received, canManage: false };
 	}
 	return {
-		sent: sentResponse.ok ? asInvitations(sentPayload) : [],
+		sent: sentResponse.ok
+			? asInvitations(sentPayload).filter((invitation) => invitation.subjectKind === 'org_operator')
+			: [],
 		received,
 		canManage: sentResponse.ok
 	};
@@ -58,10 +67,9 @@ export const createAdminInvitation = async (input: {
 	if (!context) {
 		return { ok: false, status: 422, message: 'URL に組織/教室コンテキストがありません。' };
 	}
-	const response = await authRpc.createInvitationScoped(context, {
+	const response = await authRpc.createOrganizationInvitationByOrg(context.orgSlug, {
 		email: input.email,
 		role,
-		organizationId: input.organizationId,
 		resend: input.resend
 	});
 	const payload = await parseResponseBody(response);

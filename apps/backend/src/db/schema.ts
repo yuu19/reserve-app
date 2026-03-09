@@ -203,69 +203,57 @@ export const invitation = sqliteTable(
   'invitation',
   {
     id: text('id').primaryKey(),
+    subjectKind: text('subject_kind').notNull(),
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
     classroomId: text('classroom_id').references(() => classroom.id, { onDelete: 'set null' }),
-    classroomRole: text('classroom_role'),
     email: text('email').notNull(),
-    role: text('role'),
+    role: text('role').notNull(),
+    principalKind: text('principal_kind').notNull(),
+    participantName: text('participant_name'),
     status: text('status').default('pending').notNull(),
+    respondedByUserId: text('responded_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    respondedAt: integer('responded_at', { mode: 'timestamp_ms' }),
+    acceptedMemberId: text('accepted_member_id').references(() => member.id, { onDelete: 'set null' }),
+    acceptedClassroomMemberId: text('accepted_classroom_member_id').references(() => classroomMember.id, {
+      onDelete: 'set null',
+    }),
+    acceptedParticipantId: text('accepted_participant_id').references(() => participant.id, {
+      onDelete: 'set null',
+    }),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
-    inviterId: text('inviter_id')
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    invitedByUserId: text('inviter_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
   },
   (table) => [
     index('invitation_organizationId_idx').on(table.organizationId),
+    index('invitation_subject_kind_status_idx').on(table.subjectKind, table.status),
     index('invitation_organization_classroom_status_idx').on(
       table.organizationId,
       table.classroomId,
+      table.status,
+    ),
+    index('invitation_organization_subject_role_status_idx').on(
+      table.organizationId,
+      table.subjectKind,
+      table.role,
       table.status,
     ),
     index('invitation_email_idx').on(table.email),
   ],
 );
 
-export const classroomInvitation = sqliteTable(
-  'classroom_invitation',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
-      .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
-    email: text('email').notNull(),
-    participantName: text('participant_name').notNull(),
-    status: text('status').default('pending').notNull(),
-    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-    invitedByUserId: text('invited_by_user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    respondedByUserId: text('responded_by_user_id').references(() => user.id, { onDelete: 'set null' }),
-    respondedAt: integer('responded_at', { mode: 'timestamp_ms' }),
-  },
-  (table) => [
-    index('classroom_invitation_organization_status_created_idx').on(
-      table.organizationId,
-      table.status,
-      table.createdAt,
-    ),
-    index('classroom_invitation_email_status_idx').on(table.email, table.status),
-    index('classroom_invitation_invited_by_created_idx').on(table.invitedByUserId, table.createdAt),
-  ],
-);
-
-// Backward-compatibility alias while call sites move to classroomInvitation.
-export const participantInvitation = classroomInvitation;
+export const classroomInvitation = invitation;
+export const participantInvitation = invitation;
 
 export const invitationAuditLog = sqliteTable(
   'invitation_audit_log',
@@ -277,11 +265,12 @@ export const invitationAuditLog = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
+    classroomId: text('classroom_id').references(() => classroom.id, { onDelete: 'set null' }),
     actorUserId: text('actor_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     targetEmail: text('target_email').notNull(),
-    action: text('action').notNull(),
+    eventType: text('action').notNull(),
     metadata: text('metadata'),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
@@ -290,52 +279,14 @@ export const invitationAuditLog = sqliteTable(
       .notNull(),
   },
   (table) => [
-    index('invitation_audit_log_invitation_action_idx').on(table.invitationId, table.action),
+    index('invitation_audit_log_invitation_action_idx').on(table.invitationId, table.eventType),
     index('invitation_audit_log_organization_created_idx').on(table.organizationId, table.createdAt),
     index('invitation_audit_log_actor_created_idx').on(table.actorUserId, table.createdAt),
   ],
 );
 
-export const classroomInvitationAuditLog = sqliteTable(
-  'classroom_invitation_audit_log',
-  {
-    id: text('id').primaryKey(),
-    participantInvitationId: text('classroom_invitation_id')
-      .notNull()
-      .references(() => classroomInvitation.id, { onDelete: 'cascade' }),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
-      .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
-    actorUserId: text('actor_user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    targetEmail: text('target_email').notNull(),
-    action: text('action').notNull(),
-    metadata: text('metadata'),
-    ipAddress: text('ip_address'),
-    userAgent: text('user_agent'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-  },
-  (table) => [
-    index('classroom_invitation_audit_log_invitation_action_idx').on(
-      table.participantInvitationId,
-      table.action,
-    ),
-    index('classroom_invitation_audit_log_organization_created_idx').on(
-      table.organizationId,
-      table.createdAt,
-    ),
-    index('classroom_invitation_audit_log_actor_created_idx').on(table.actorUserId, table.createdAt),
-  ],
-);
-
-// Backward-compatibility alias while call sites move to classroomInvitationAuditLog.
-export const participantInvitationAuditLog = classroomInvitationAuditLog;
+export const classroomInvitationAuditLog = invitationAuditLog;
+export const participantInvitationAuditLog = invitationAuditLog;
 
 export const service = sqliteTable(
   'service',
@@ -713,13 +664,6 @@ export const userRelations = relations(user, ({ many }) => ({
   participants: many(participant),
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
-  participantInvitationsSent: many(classroomInvitation, {
-    relationName: 'classroomInvitationInvitedBy',
-  }),
-  participantInvitationsResponded: many(classroomInvitation, {
-    relationName: 'classroomInvitationRespondedBy',
-  }),
-  participantInvitationAuditLogs: many(classroomInvitationAuditLog),
   bookingsCancelledBy: many(booking),
   ticketLedgers: many(ticketLedger),
   ticketPurchasesApproved: many(ticketPurchase, {
@@ -760,9 +704,7 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   ticketLedgers: many(ticketLedger),
   bookingAuditLogs: many(bookingAuditLog),
   invitations: many(invitation),
-  participantInvitations: many(classroomInvitation),
   invitationAuditLogs: many(invitationAuditLog),
-  participantInvitationAuditLogs: many(classroomInvitationAuditLog),
 }));
 
 export const classroomRelations = relations(classroom, ({ one, many }) => ({
@@ -782,8 +724,8 @@ export const classroomRelations = relations(classroom, ({ one, many }) => ({
   ticketPurchases: many(ticketPurchase),
   ticketLedgers: many(ticketLedger),
   bookingAuditLogs: many(bookingAuditLog),
-  invitations: many(classroomInvitation),
-  invitationAuditLogs: many(classroomInvitationAuditLog),
+  invitations: many(invitation),
+  invitationAuditLogs: many(invitationAuditLog),
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({
@@ -1020,35 +962,31 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
     fields: [invitation.organizationId],
     references: [organization.id],
   }),
-  user: one(user, {
-    fields: [invitation.inviterId],
-    references: [user.id],
-  }),
-}));
-
-export const classroomInvitationRelations = relations(classroomInvitation, ({ one, many }) => ({
-  organization: one(organization, {
-    fields: [classroomInvitation.organizationId],
-    references: [organization.id],
-  }),
   classroom: one(classroom, {
-    fields: [classroomInvitation.classroomId],
+    fields: [invitation.classroomId],
     references: [classroom.id],
   }),
   invitedByUser: one(user, {
-    relationName: 'classroomInvitationInvitedBy',
-    fields: [classroomInvitation.invitedByUserId],
+    fields: [invitation.invitedByUserId],
     references: [user.id],
   }),
   respondedByUser: one(user, {
-    relationName: 'classroomInvitationRespondedBy',
-    fields: [classroomInvitation.respondedByUserId],
+    fields: [invitation.respondedByUserId],
     references: [user.id],
   }),
-  auditLogs: many(classroomInvitationAuditLog),
+  acceptedMember: one(member, {
+    fields: [invitation.acceptedMemberId],
+    references: [member.id],
+  }),
+  acceptedClassroomMember: one(classroomMember, {
+    fields: [invitation.acceptedClassroomMemberId],
+    references: [classroomMember.id],
+  }),
+  acceptedParticipant: one(participant, {
+    fields: [invitation.acceptedParticipantId],
+    references: [participant.id],
+  }),
 }));
-
-export const participantInvitationRelations = classroomInvitationRelations;
 
 export const invitationAuditLogRelations = relations(invitationAuditLog, ({ one }) => ({
   invitation: one(invitation, {
@@ -1059,32 +997,12 @@ export const invitationAuditLogRelations = relations(invitationAuditLog, ({ one 
     fields: [invitationAuditLog.organizationId],
     references: [organization.id],
   }),
+  classroom: one(classroom, {
+    fields: [invitationAuditLog.classroomId],
+    references: [classroom.id],
+  }),
   actor: one(user, {
     fields: [invitationAuditLog.actorUserId],
     references: [user.id],
   }),
 }));
-
-export const classroomInvitationAuditLogRelations = relations(
-  classroomInvitationAuditLog,
-  ({ one }) => ({
-    classroomInvitation: one(classroomInvitation, {
-      fields: [classroomInvitationAuditLog.participantInvitationId],
-      references: [classroomInvitation.id],
-    }),
-    organization: one(organization, {
-      fields: [classroomInvitationAuditLog.organizationId],
-      references: [organization.id],
-    }),
-    classroom: one(classroom, {
-      fields: [classroomInvitationAuditLog.classroomId],
-      references: [classroom.id],
-    }),
-    actor: one(user, {
-      fields: [classroomInvitationAuditLog.actorUserId],
-      references: [user.id],
-    }),
-  }),
-);
-
-export const participantInvitationAuditLogRelations = classroomInvitationAuditLogRelations;

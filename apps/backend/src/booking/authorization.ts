@@ -9,7 +9,9 @@ export type SessionIdentity = {
 };
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | null;
-export type ClassroomRole = 'manager' | 'staff' | 'participant' | null;
+export type ClassroomStaffRole = 'manager' | 'staff' | null;
+export type AccessDisplayRole = 'owner' | 'admin' | 'manager' | 'staff' | 'participant' | null;
+export type AccessSource = 'org_role' | 'classroom_member' | 'participant_record' | null;
 
 export type OrganizationClassroomContext = {
   organizationId: string;
@@ -21,14 +23,29 @@ export type OrganizationClassroomContext = {
 };
 
 export type OrganizationClassroomAccess = OrganizationClassroomContext & {
-  organizationRole: OrganizationRole;
-  classroomRole: ClassroomRole;
-  hasParticipantAccess: boolean;
-  canManageOrganization: boolean;
-  canManageClassroom: boolean;
-  canManageBookings: boolean;
-  canManageParticipants: boolean;
-  canUseParticipantBooking: boolean;
+  facts: {
+    orgRole: OrganizationRole;
+    classroomStaffRole: ClassroomStaffRole;
+    hasParticipantRecord: boolean;
+  };
+  effective: {
+    canManageOrganization: boolean;
+    canManageClassroom: boolean;
+    canManageBookings: boolean;
+    canManageParticipants: boolean;
+    canUseParticipantBooking: boolean;
+  };
+  sources: {
+    canManageOrganization: Extract<AccessSource, 'org_role'> | null;
+    canManageClassroom: Extract<AccessSource, 'org_role' | 'classroom_member'> | null;
+    canManageBookings: Extract<AccessSource, 'org_role' | 'classroom_member'> | null;
+    canManageParticipants: Extract<AccessSource, 'org_role' | 'classroom_member'> | null;
+    canUseParticipantBooking: Extract<AccessSource, 'participant_record'> | null;
+  };
+  display: {
+    primaryRole: AccessDisplayRole;
+    badges: Exclude<AccessDisplayRole, null>[];
+  };
 };
 
 export const getStringValue = (value: unknown): string | null => {
@@ -85,16 +102,9 @@ const normalizeOrganizationRole = (value: string | null): OrganizationRole => {
   return null;
 };
 
-const normalizeClassroomRole = (value: string | null): ClassroomRole => {
-  if (value === 'manager' || value === 'staff' || value === 'participant') {
+const normalizeClassroomStaffRole = (value: string | null): ClassroomStaffRole => {
+  if (value === 'manager' || value === 'staff') {
     return value;
-  }
-  return null;
-};
-
-const mapOrganizationRoleToClassroomRole = (role: OrganizationRole): Exclude<ClassroomRole, 'participant' | null> | null => {
-  if (role === 'owner' || role === 'admin') {
-    return 'manager';
   }
   return null;
 };
@@ -115,16 +125,57 @@ export const canManageParticipantsByRole = (role: OrganizationRole): boolean => 
   return role === 'owner' || role === 'admin';
 };
 
-export const canManageClassroomByClassroomRole = (role: ClassroomRole): boolean => {
+export const canManageClassroomByClassroomRole = (role: ClassroomStaffRole): boolean => {
   return role === 'manager';
 };
 
-export const canManageBookingsByClassroomRole = (role: ClassroomRole): boolean => {
+export const canManageBookingsByClassroomRole = (role: ClassroomStaffRole): boolean => {
   return role === 'manager' || role === 'staff';
 };
 
-export const canManageParticipantsByClassroomRole = (role: ClassroomRole): boolean => {
+export const canManageParticipantsByClassroomRole = (role: ClassroomStaffRole): boolean => {
   return role === 'manager' || role === 'staff';
+};
+
+const buildDisplayBadges = ({
+  organizationRole,
+  classroomStaffRole,
+  hasParticipantRecord,
+}: {
+  organizationRole: OrganizationRole;
+  classroomStaffRole: ClassroomStaffRole;
+  hasParticipantRecord: boolean;
+}): Exclude<AccessDisplayRole, null>[] => {
+  const badges: Exclude<AccessDisplayRole, null>[] = [];
+  if (organizationRole === 'owner' || organizationRole === 'admin') {
+    badges.push(organizationRole);
+  }
+  if (classroomStaffRole) {
+    badges.push(classroomStaffRole);
+  }
+  if (hasParticipantRecord) {
+    badges.push('participant');
+  }
+  return Array.from(new Set(badges));
+};
+
+const resolvePrimaryRole = (badges: Exclude<AccessDisplayRole, null>[]): AccessDisplayRole => {
+  if (badges.includes('owner')) {
+    return 'owner';
+  }
+  if (badges.includes('admin')) {
+    return 'admin';
+  }
+  if (badges.includes('manager')) {
+    return 'manager';
+  }
+  if (badges.includes('staff')) {
+    return 'staff';
+  }
+  if (badges.includes('participant')) {
+    return 'participant';
+  }
+  return null;
 };
 
 export const resolveOrganizationClassroomContext = async ({
@@ -292,31 +343,63 @@ export const resolveOrganizationClassroomAccess = async ({
   ]);
 
   const organizationRole = normalizeOrganizationRole(memberRows[0]?.role ?? null);
-  const classroomRoleFromOrganization = mapOrganizationRoleToClassroomRole(organizationRole);
-  const classroomRoleFromMembership = normalizeClassroomRole(classroomMemberRows[0]?.role ?? null);
-  const hasParticipantAccess = Boolean(participantRows[0]);
-
-  const classroomRole: ClassroomRole =
-    classroomRoleFromOrganization ?? classroomRoleFromMembership ?? (hasParticipantAccess ? 'participant' : null);
+  const classroomStaffRole = normalizeClassroomStaffRole(classroomMemberRows[0]?.role ?? null);
+  const hasParticipantRecord = Boolean(participantRows[0]);
 
   const canManageOrganization = canManageOrganizationByRole(organizationRole);
-  const canManageClassroom =
-    canManageClassroomByRole(organizationRole) || canManageClassroomByClassroomRole(classroomRole);
-  const canManageBookings =
-    canManageBookingsByRole(organizationRole) || canManageBookingsByClassroomRole(classroomRole);
-  const canManageParticipants =
-    canManageParticipantsByRole(organizationRole) || canManageParticipantsByClassroomRole(classroomRole);
+  const canManageClassroomFromOrganization = canManageClassroomByRole(organizationRole);
+  const canManageClassroomFromMembership = canManageClassroomByClassroomRole(classroomStaffRole);
+  const canManageBookingsFromOrganization = canManageBookingsByRole(organizationRole);
+  const canManageBookingsFromMembership = canManageBookingsByClassroomRole(classroomStaffRole);
+  const canManageParticipantsFromOrganization = canManageParticipantsByRole(organizationRole);
+  const canManageParticipantsFromMembership = canManageParticipantsByClassroomRole(classroomStaffRole);
+  const canManageClassroom = canManageClassroomFromOrganization || canManageClassroomFromMembership;
+  const canManageBookings = canManageBookingsFromOrganization || canManageBookingsFromMembership;
+  const canManageParticipants = canManageParticipantsFromOrganization || canManageParticipantsFromMembership;
+  const canUseParticipantBooking = hasParticipantRecord;
+  const badges = buildDisplayBadges({
+    organizationRole,
+    classroomStaffRole,
+    hasParticipantRecord,
+  });
 
   return {
     ...context,
-    organizationRole,
-    classroomRole,
-    hasParticipantAccess,
-    canManageOrganization,
-    canManageClassroom,
-    canManageBookings,
-    canManageParticipants,
-    canUseParticipantBooking: hasParticipantAccess,
+    facts: {
+      orgRole: organizationRole,
+      classroomStaffRole,
+      hasParticipantRecord,
+    },
+    effective: {
+      canManageOrganization,
+      canManageClassroom,
+      canManageBookings,
+      canManageParticipants,
+      canUseParticipantBooking,
+    },
+    sources: {
+      canManageOrganization: canManageOrganization ? 'org_role' : null,
+      canManageClassroom: canManageClassroomFromOrganization
+        ? 'org_role'
+        : canManageClassroomFromMembership
+          ? 'classroom_member'
+          : null,
+      canManageBookings: canManageBookingsFromOrganization
+        ? 'org_role'
+        : canManageBookingsFromMembership
+          ? 'classroom_member'
+          : null,
+      canManageParticipants: canManageParticipantsFromOrganization
+        ? 'org_role'
+        : canManageParticipantsFromMembership
+          ? 'classroom_member'
+          : null,
+      canUseParticipantBooking: canUseParticipantBooking ? 'participant_record' : null,
+    },
+    display: {
+      primaryRole: resolvePrimaryRole(badges),
+      badges,
+    },
   };
 };
 
@@ -342,7 +425,7 @@ export const hasAdminOrOwnerAccess = async ({
     userId,
     context,
   });
-  return access.canManageOrganization;
+  return access.effective.canManageOrganization;
 };
 
 export const findParticipantByUserAndOrganization = async ({

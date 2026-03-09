@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
 import {
   canManageParticipantsByRole,
   listOrganizationClassroomContexts,
@@ -8,7 +8,7 @@ import {
 } from '../booking/authorization.js';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../db/schema.js';
-import { sendParticipantInvitationEmail } from '../email/resend.js';
+import { sendOrganizationInvitationEmail, sendParticipantInvitationEmail } from '../email/resend.js';
 import type { OrganizationLogoService } from '../organization-logo-service.js';
 import type { ServiceImageUploadService } from '../service-image-upload-service.js';
 import { registerBookingRoutes } from './booking-routes.js';
@@ -31,46 +31,6 @@ const LOGO_KEY_PATTERN = /^[a-zA-Z0-9._-]+$/;
 
 const isFileEntry = (value: FormDataEntryValue | null): value is File => {
   return typeof File !== 'undefined' && value instanceof File;
-};
-
-type InvitationPayload = {
-  id: string;
-  organizationId: string;
-  email: string;
-  [key: string]: unknown;
-};
-
-const isInvitationPayload = (value: unknown): value is InvitationPayload => {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const payload = value as Record<string, unknown>;
-  return (
-    typeof payload.id === 'string' &&
-    typeof payload.organizationId === 'string' &&
-    typeof payload.email === 'string'
-  );
-};
-
-const parseResponseBody = async (response: Response): Promise<unknown> => {
-  const cloned = response.clone();
-  const contentType = cloned.headers.get('content-type') ?? '';
-
-  if (contentType.includes('application/json')) {
-    return cloned.json();
-  }
-
-  const text = await cloned.text();
-  if (!text) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
 };
 
 const getIpAddress = (headers: Headers): string | null => {
@@ -147,33 +107,6 @@ const getFullOrganizationQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
-const createInvitationBodySchema = z.object({
-  email: z.email(),
-  role: z.enum(['admin', 'member']),
-  resend: z.boolean().optional(),
-  organizationId: z.string().min(1).optional(),
-});
-
-const listInvitationsQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-});
-
-const invitationActionBodySchema = z.object({
-  invitationId: z.string().min(1),
-});
-
-const invitationDetailQuerySchema = z.object({
-  invitationId: z.string().min(1),
-});
-
-const createParticipantInvitationBodySchema = z.object({
-  email: z.email(),
-  participantName: z.string().trim().min(1).max(120),
-  resend: z.boolean().optional(),
-  organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
-});
-
 const listParticipantsQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -182,19 +115,6 @@ const listParticipantsQuerySchema = z.object({
 const selfEnrollParticipantBodySchema = z.object({
   organizationId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
-});
-
-const listParticipantInvitationsQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
-});
-
-const participantInvitationActionBodySchema = z.object({
-  invitationId: z.string().min(1),
-});
-
-const participantInvitationDetailQuerySchema = z.object({
-  invitationId: z.string().min(1),
 });
 
 const signUpRoute = createRoute({
@@ -393,47 +313,59 @@ const getFullOrganizationRoute = createRoute({
 });
 
 const organizationMembershipRoleSchema = z.enum(['owner', 'admin', 'member']);
-const classroomRoleSchema = z.enum(['manager', 'staff', 'participant']);
-
-const organizationAccessSchema = z.object({
-  organizationId: z.string().min(1),
-  organizationName: z.string().nullable(),
-  role: organizationMembershipRoleSchema.nullable(),
-  classroomRole: classroomRoleSchema,
-  canManage: z.boolean(),
-  canUseParticipantBooking: z.boolean(),
+const classroomStaffRoleSchema = z.enum(['manager', 'staff']);
+const accessDisplayRoleSchema = z.enum(['owner', 'admin', 'manager', 'staff', 'participant']);
+const accessSourceSchema = z.enum(['org_role', 'classroom_member', 'participant_record']);
+const messageResponseSchema = z.object({
+  message: z.string().min(1),
 });
+const invitationStatusSchema = z.enum(['pending', 'accepted', 'rejected', 'cancelled', 'expired']);
 
-const listOrganizationAccessRoute = createRoute({
-  method: 'get',
-  path: '/organizations/access',
-  tags: ['Organization'],
-  summary: 'List effective organization access for current user',
-  responses: {
-    200: {
-      description: 'Organization access list',
-      content: {
-        'application/json': {
-          schema: z.array(organizationAccessSchema),
-        },
-      },
-    },
-    401: {
-      description: 'Unauthorized',
+const messageResponse = (description: string) => ({
+  description,
+  content: {
+    'application/json': {
+      schema: messageResponseSchema,
     },
   },
 });
 
-const accessTreeClassroomSchema = z.object({
+const accessFactsSchema = z.object({
+  orgRole: organizationMembershipRoleSchema.nullable(),
+  classroomStaffRole: classroomStaffRoleSchema.nullable(),
+  hasParticipantRecord: z.boolean(),
+});
+
+const accessEffectiveSchema = z.object({
+  canManageOrganization: z.boolean(),
+  canManageClassroom: z.boolean(),
+  canManageBookings: z.boolean(),
+  canManageParticipants: z.boolean(),
+  canUseParticipantBooking: z.boolean(),
+});
+
+const accessSourcesSchema = z.object({
+  canManageOrganization: accessSourceSchema.extract(['org_role']).nullable(),
+  canManageClassroom: accessSourceSchema.extract(['org_role', 'classroom_member']).nullable(),
+  canManageBookings: accessSourceSchema.extract(['org_role', 'classroom_member']).nullable(),
+  canManageParticipants: accessSourceSchema.extract(['org_role', 'classroom_member']).nullable(),
+  canUseParticipantBooking: accessSourceSchema.extract(['participant_record']).nullable(),
+});
+
+const accessDisplaySchema = z.object({
+  primaryRole: accessDisplayRoleSchema.nullable(),
+  badges: z.array(accessDisplayRoleSchema),
+});
+
+const classroomAccessSchema = z.object({
   id: z.string().min(1),
   slug: z.string().min(1),
   name: z.string().min(1),
   logo: z.string().min(1).nullable().optional(),
-  role: classroomRoleSchema.nullable(),
-  canManage: z.boolean(),
-  canManageBookings: z.boolean(),
-  canManageParticipants: z.boolean(),
-  canUseParticipantBooking: z.boolean(),
+  facts: accessFactsSchema,
+  effective: accessEffectiveSchema,
+  sources: accessSourcesSchema,
+  display: accessDisplaySchema,
 });
 
 const accessTreeOrganizationSchema = z.object({
@@ -443,8 +375,10 @@ const accessTreeOrganizationSchema = z.object({
     name: z.string().min(1),
     logo: z.string().min(1).nullable().optional(),
   }),
-  orgRole: organizationMembershipRoleSchema.nullable(),
-  classrooms: z.array(accessTreeClassroomSchema),
+  facts: z.object({
+    orgRole: organizationMembershipRoleSchema.nullable(),
+  }),
+  classrooms: z.array(classroomAccessSchema),
 });
 
 const accessTreeResponseSchema = z.object({
@@ -460,16 +394,7 @@ const organizationClassroomRouteParamsSchema = z.object({
   classroomSlug: z.string().min(1),
 });
 
-const classroomManagementSchema = z.object({
-  id: z.string().min(1),
-  slug: z.string().min(1),
-  name: z.string().min(1),
-  role: classroomRoleSchema.nullable(),
-  canManage: z.boolean(),
-  canManageBookings: z.boolean(),
-  canManageParticipants: z.boolean(),
-  canUseParticipantBooking: z.boolean(),
-});
+const classroomManagementSchema = classroomAccessSchema;
 
 const createClassroomBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -610,11 +535,28 @@ const updateClassroomRoute = createRoute({
   },
 });
 
+const orgInvitationRoleSchema = z.enum(['admin', 'member']);
 const classroomInvitationRoleSchema = z.enum(['manager', 'staff', 'participant']);
+const unifiedInvitationRoleSchema = z.enum(['admin', 'member', 'manager', 'staff', 'participant']);
+const invitationSubjectKindSchema = z.enum(['org_operator', 'classroom_operator', 'participant']);
+
+const organizationInvitationRouteParamsSchema = z.object({
+  orgSlug: z.string().min(1),
+});
 
 const classroomInvitationRouteParamsSchema = z.object({
   orgSlug: z.string().min(1),
   classroomSlug: z.string().min(1),
+});
+
+const invitationIdRouteParamsSchema = z.object({
+  invitationId: z.string().min(1),
+});
+
+const createOrganizationInvitationBodySchema = z.object({
+  email: z.email(),
+  role: orgInvitationRoleSchema,
+  resend: z.boolean().optional(),
 });
 
 const createClassroomInvitationBodySchema = z.object({
@@ -624,19 +566,19 @@ const createClassroomInvitationBodySchema = z.object({
   resend: z.boolean().optional(),
 });
 
-const classroomInvitationSchema = z.object({
+const invitationSchema = z.object({
   id: z.string().min(1),
-  invitationKind: z.enum(['classroom-member', 'participant']),
-  role: classroomInvitationRoleSchema,
+  subjectKind: invitationSubjectKindSchema,
+  role: unifiedInvitationRoleSchema,
   organizationId: z.string().min(1),
   organizationSlug: z.string().min(1),
   organizationName: z.string().min(1),
-  classroomId: z.string().min(1),
-  classroomSlug: z.string().min(1),
-  classroomName: z.string().min(1),
+  classroomId: z.string().min(1).nullable(),
+  classroomSlug: z.string().min(1).nullable(),
+  classroomName: z.string().min(1).nullable(),
   email: z.string().email(),
-  status: z.string(),
   participantName: z.string().nullable(),
+  status: invitationStatusSchema,
   expiresAt: z.string().nullable(),
   createdAt: z.string().nullable(),
   invitedByUserId: z.string().nullable(),
@@ -644,10 +586,77 @@ const classroomInvitationSchema = z.object({
   respondedAt: z.string().nullable(),
 });
 
+const invitationAcceptResponseSchema = z.object({
+  invitation: invitationSchema,
+  accepted: z.object({
+    memberId: z.string().nullable(),
+    classroomMemberId: z.string().nullable(),
+    participantId: z.string().nullable(),
+  }),
+});
+
+const createOrganizationInvitationRoute = createRoute({
+  method: 'post',
+  path: '/orgs/{orgSlug}/invitations',
+  tags: ['Invitations'],
+  summary: 'Create or resend organization operator invitation',
+  request: {
+    params: organizationInvitationRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: createOrganizationInvitationBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Invitation created or resent',
+      content: {
+        'application/json': {
+          schema: invitationSchema,
+        },
+      },
+    },
+    400: messageResponse('Validation error'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization not found'),
+    409: messageResponse('Invitation already exists'),
+    429: messageResponse('Invitation resend limit reached'),
+    500: messageResponse('Unexpected error'),
+  },
+});
+
+const listOrganizationInvitationsRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/invitations',
+  tags: ['Invitations'],
+  summary: 'List organization operator invitations',
+  request: {
+    params: organizationInvitationRouteParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Invitation list',
+      content: {
+        'application/json': {
+          schema: z.array(invitationSchema),
+        },
+      },
+    },
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization not found'),
+  },
+});
+
 const createClassroomInvitationRoute = createRoute({
   method: 'post',
   path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations',
-  tags: ['Classroom Invitations'],
+  tags: ['Invitations'],
   summary: 'Create or resend classroom invitation',
   request: {
     params: classroomInvitationRouteParamsSchema,
@@ -665,388 +674,156 @@ const createClassroomInvitationRoute = createRoute({
       description: 'Invitation created or resent',
       content: {
         'application/json': {
-          schema: classroomInvitationSchema,
+          schema: invitationSchema,
         },
       },
     },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    404: {
-      description: 'Organization or classroom not found',
-    },
-    409: {
-      description: 'Duplicate pending invitation',
-    },
-    429: {
-      description: 'Resend limit reached',
-    },
-    400: {
-      description: 'Validation error',
-    },
+    400: messageResponse('Validation error'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or classroom not found'),
+    409: messageResponse('Invitation already exists'),
+    429: messageResponse('Invitation resend limit reached'),
+    500: messageResponse('Unexpected error'),
   },
 });
 
 const listClassroomInvitationsRoute = createRoute({
   method: 'get',
   path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations',
-  tags: ['Classroom Invitations'],
+  tags: ['Invitations'],
   summary: 'List classroom invitations',
   request: {
     params: classroomInvitationRouteParamsSchema,
   },
   responses: {
     200: {
-      description: 'Classroom invitation list',
-      content: {
-        'application/json': {
-          schema: z.array(classroomInvitationSchema),
-        },
-      },
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    404: {
-      description: 'Organization or classroom not found',
-    },
-  },
-});
-
-const listUserClassroomInvitationsRoute = createRoute({
-  method: 'get',
-  path: '/orgs/classrooms/invitations/user',
-  tags: ['Classroom Invitations'],
-  summary: 'List classroom invitations for current user email',
-  responses: {
-    200: {
-      description: 'Classroom invitation list for current user',
-      content: {
-        'application/json': {
-          schema: z.array(classroomInvitationSchema),
-        },
-      },
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation error',
-    },
-  },
-});
-
-const classroomInvitationDetailQuerySchema = z.object({
-  invitationId: z.string().min(1),
-});
-
-const classroomInvitationActionBodySchema = z.object({
-  invitationId: z.string().min(1),
-});
-
-const classroomInvitationDetailRoute = createRoute({
-  method: 'get',
-  path: '/orgs/classrooms/invitations/detail',
-  tags: ['Classroom Invitations'],
-  summary: 'Get classroom invitation detail',
-  request: {
-    query: classroomInvitationDetailQuerySchema,
-  },
-  responses: {
-    200: {
-      description: 'Classroom invitation detail',
-      content: {
-        'application/json': {
-          schema: classroomInvitationSchema,
-        },
-      },
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    404: {
-      description: 'Invitation not found',
-    },
-  },
-});
-
-const acceptClassroomInvitationRoute = createRoute({
-  method: 'post',
-  path: '/orgs/classrooms/invitations/accept',
-  tags: ['Classroom Invitations'],
-  summary: 'Accept classroom invitation',
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: classroomInvitationActionBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Invitation accepted',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    404: {
-      description: 'Invitation not found',
-    },
-    409: {
-      description: 'Already exists',
-    },
-  },
-});
-
-const rejectClassroomInvitationRoute = createRoute({
-  method: 'post',
-  path: '/orgs/classrooms/invitations/reject',
-  tags: ['Classroom Invitations'],
-  summary: 'Reject classroom invitation',
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: classroomInvitationActionBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Invitation rejected',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    404: {
-      description: 'Invitation not found',
-    },
-  },
-});
-
-const cancelClassroomInvitationRoute = createRoute({
-  method: 'post',
-  path: '/orgs/classrooms/invitations/cancel',
-  tags: ['Classroom Invitations'],
-  summary: 'Cancel classroom invitation',
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: classroomInvitationActionBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Invitation canceled',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    404: {
-      description: 'Invitation not found',
-    },
-  },
-});
-
-const createInvitationRoute = createRoute({
-  method: 'post',
-  path: '/organizations/invitations',
-  tags: ['Organization Invitations'],
-  summary: 'Invite a member to an organization',
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: createInvitationBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Invitation created',
-    },
-    429: {
-      description: 'Invitation resend limit reached',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation or auth error',
-    },
-  },
-});
-
-const listInvitationsRoute = createRoute({
-  method: 'get',
-  path: '/organizations/invitations',
-  tags: ['Organization Invitations'],
-  summary: 'List invitations for an organization',
-  request: {
-    query: listInvitationsQuerySchema,
-  },
-  responses: {
-    200: {
       description: 'Invitation list',
+      content: {
+        'application/json': {
+          schema: z.array(invitationSchema),
+        },
+      },
     },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation or auth error',
-    },
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or classroom not found'),
   },
 });
 
 const listUserInvitationsRoute = createRoute({
   method: 'get',
-  path: '/organizations/invitations/user',
-  tags: ['Organization Invitations'],
-  summary: 'List invitations received by current user',
+  path: '/invitations/user',
+  tags: ['Invitations'],
+  summary: 'List invitations for current user email',
   responses: {
     200: {
-      description: 'User invitation list',
+      description: 'Invitation list',
+      content: {
+        'application/json': {
+          schema: z.array(invitationSchema),
+        },
+      },
     },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation or auth error',
-    },
+    401: messageResponse('Unauthorized'),
+    400: messageResponse('Current user email is unavailable'),
   },
 });
 
 const invitationDetailRoute = createRoute({
   method: 'get',
-  path: '/organizations/invitations/detail',
-  tags: ['Organization Invitations'],
-  summary: 'Get invitation detail for current user',
+  path: '/invitations/{invitationId}',
+  tags: ['Invitations'],
+  summary: 'Get invitation detail',
   request: {
-    query: invitationDetailQuerySchema,
+    params: invitationIdRouteParamsSchema,
   },
   responses: {
     200: {
       description: 'Invitation detail',
+      content: {
+        'application/json': {
+          schema: invitationSchema,
+        },
+      },
     },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation or auth error',
-    },
+    400: messageResponse('Current user email is unavailable'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Invitation not found'),
   },
 });
 
 const acceptInvitationRoute = createRoute({
   method: 'post',
-  path: '/organizations/invitations/accept',
-  tags: ['Organization Invitations'],
-  summary: 'Accept an organization invitation',
+  path: '/invitations/{invitationId}/accept',
+  tags: ['Invitations'],
+  summary: 'Accept invitation',
   request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: invitationActionBodySchema,
-        },
-      },
-    },
+    params: invitationIdRouteParamsSchema,
   },
   responses: {
     200: {
       description: 'Invitation accepted',
+      content: {
+        'application/json': {
+          schema: invitationAcceptResponseSchema,
+        },
+      },
     },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation or auth error',
-    },
+    400: messageResponse('Invitation cannot be accepted'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Invitation not found'),
+    409: messageResponse('Invitation already fulfilled'),
   },
 });
 
 const rejectInvitationRoute = createRoute({
   method: 'post',
-  path: '/organizations/invitations/reject',
-  tags: ['Organization Invitations'],
-  summary: 'Reject an organization invitation',
+  path: '/invitations/{invitationId}/reject',
+  tags: ['Invitations'],
+  summary: 'Reject invitation',
   request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: invitationActionBodySchema,
-        },
-      },
-    },
+    params: invitationIdRouteParamsSchema,
   },
   responses: {
     200: {
       description: 'Invitation rejected',
+      content: {
+        'application/json': {
+          schema: invitationSchema,
+        },
+      },
     },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation or auth error',
-    },
+    400: messageResponse('Invitation cannot be rejected'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Invitation not found'),
   },
 });
 
 const cancelInvitationRoute = createRoute({
   method: 'post',
-  path: '/organizations/invitations/cancel',
-  tags: ['Organization Invitations'],
-  summary: 'Cancel an organization invitation',
+  path: '/invitations/{invitationId}/cancel',
+  tags: ['Invitations'],
+  summary: 'Cancel invitation',
   request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: invitationActionBodySchema,
-        },
-      },
-    },
+    params: invitationIdRouteParamsSchema,
   },
   responses: {
     200: {
       description: 'Invitation canceled',
+      content: {
+        'application/json': {
+          schema: invitationSchema,
+        },
+      },
     },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation or auth error',
-    },
+    400: messageResponse('Invitation cannot be cancelled'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Invitation not found'),
   },
 });
 
@@ -1108,204 +885,6 @@ const selfEnrollParticipantRoute = createRoute({
   },
 });
 
-const createParticipantInvitationRoute = createRoute({
-  method: 'post',
-  path: '/organizations/participants/invitations',
-  tags: ['Participant Invitations'],
-  summary: 'Create or resend participant invitation',
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: createParticipantInvitationBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Participant invitation created or resent',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    409: {
-      description: 'Duplicate pending invitation',
-    },
-    429: {
-      description: 'Resend limit reached',
-    },
-    400: {
-      description: 'Validation error',
-    },
-  },
-});
-
-const listParticipantInvitationsRoute = createRoute({
-  method: 'get',
-  path: '/organizations/participants/invitations',
-  tags: ['Participant Invitations'],
-  summary: 'List participant invitations for an organization',
-  request: {
-    query: listParticipantInvitationsQuerySchema,
-  },
-  responses: {
-    200: {
-      description: 'Participant invitation list',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    400: {
-      description: 'Validation error',
-    },
-  },
-});
-
-const listUserParticipantInvitationsRoute = createRoute({
-  method: 'get',
-  path: '/organizations/participants/invitations/user',
-  tags: ['Participant Invitations'],
-  summary: 'List participant invitations for current user email',
-  responses: {
-    200: {
-      description: 'Participant invitation list for current user',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    400: {
-      description: 'Validation error',
-    },
-  },
-});
-
-const participantInvitationDetailRoute = createRoute({
-  method: 'get',
-  path: '/organizations/participants/invitations/detail',
-  tags: ['Participant Invitations'],
-  summary: 'Get participant invitation detail',
-  request: {
-    query: participantInvitationDetailQuerySchema,
-  },
-  responses: {
-    200: {
-      description: 'Participant invitation detail',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    400: {
-      description: 'Validation error',
-    },
-  },
-});
-
-const acceptParticipantInvitationRoute = createRoute({
-  method: 'post',
-  path: '/organizations/participants/invitations/accept',
-  tags: ['Participant Invitations'],
-  summary: 'Accept participant invitation',
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: participantInvitationActionBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Participant invitation accepted',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    409: {
-      description: 'Participant already exists',
-    },
-    400: {
-      description: 'Validation error',
-    },
-  },
-});
-
-const rejectParticipantInvitationRoute = createRoute({
-  method: 'post',
-  path: '/organizations/participants/invitations/reject',
-  tags: ['Participant Invitations'],
-  summary: 'Reject participant invitation',
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: participantInvitationActionBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Participant invitation rejected',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    400: {
-      description: 'Validation error',
-    },
-  },
-});
-
-const cancelParticipantInvitationRoute = createRoute({
-  method: 'post',
-  path: '/organizations/participants/invitations/cancel',
-  tags: ['Participant Invitations'],
-  summary: 'Cancel participant invitation',
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: participantInvitationActionBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Participant invitation canceled',
-    },
-    401: {
-      description: 'Unauthorized',
-    },
-    403: {
-      description: 'Forbidden',
-    },
-    400: {
-      description: 'Validation error',
-    },
-  },
-});
 
 export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOptions) => {
   const database = options.database;
@@ -1339,109 +918,32 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     }
   };
 
-  const getActorUserId = async (headers: Headers): Promise<string | null> => {
-    const session = await auth.api.getSession({ headers });
-    return getStringValue(session?.user?.id);
-  };
-
-  const findInvitationById = async (invitationId: string) => {
-    const rows = await database
-      .select({
-        id: dbSchema.invitation.id,
-        organizationId: dbSchema.invitation.organizationId,
-        email: dbSchema.invitation.email,
-      })
-      .from(dbSchema.invitation)
-      .where(eq(dbSchema.invitation.id, invitationId))
-      .limit(1);
-
-    return rows[0] ?? null;
-  };
-
-  const findPendingInvitationForResend = async ({
-    organizationId,
-    classroomId,
-    classroomRole,
-    email,
-  }: {
+  type InvitationSubjectKind = z.infer<typeof invitationSubjectKindSchema>;
+  type UnifiedInvitationRole = z.infer<typeof unifiedInvitationRoleSchema>;
+  type InvitationStatus = z.infer<typeof invitationStatusSchema>;
+  type InvitationEventType = 'created' | 'resent' | 'accepted' | 'rejected' | 'cancelled' | 'expired';
+  type InvitationRecord = {
+    id: string;
+    subjectKind: string;
     organizationId: string;
-    classroomId?: string | null;
-    classroomRole?: string | null;
+    organizationSlug: string;
+    organizationName: string;
+    classroomId: string | null;
+    classroomSlug: string | null;
+    classroomName: string | null;
     email: string;
-  }) => {
-    const rows = await database
-      .select({
-        id: dbSchema.invitation.id,
-        organizationId: dbSchema.invitation.organizationId,
-        classroomId: dbSchema.invitation.classroomId,
-        classroomRole: dbSchema.invitation.classroomRole,
-        email: dbSchema.invitation.email,
-      })
-      .from(dbSchema.invitation)
-      .where(
-        and(
-          eq(dbSchema.invitation.organizationId, organizationId),
-          ...(classroomId ? [eq(dbSchema.invitation.classroomId, classroomId)] : []),
-          ...(classroomRole ? [eq(dbSchema.invitation.classroomRole, classroomRole)] : []),
-          eq(dbSchema.invitation.email, email),
-          eq(dbSchema.invitation.status, 'pending'),
-        ),
-      )
-      .limit(1);
-
-    return rows[0] ?? null;
-  };
-
-  const countInvitationAuditAction = async ({
-    invitationId,
-    action,
-  }: {
-    invitationId: string;
-    action: string;
-  }): Promise<number> => {
-    const rows = await database
-      .select({
-        value: sql<number>`count(*)`,
-      })
-      .from(dbSchema.invitationAuditLog)
-      .where(
-        and(
-          eq(dbSchema.invitationAuditLog.invitationId, invitationId),
-          eq(dbSchema.invitationAuditLog.action, action),
-        ),
-      );
-
-    return Number(rows[0]?.value ?? 0);
-  };
-
-  const writeInvitationAuditLog = async ({
-    invitationId,
-    organizationId,
-    actorUserId,
-    targetEmail,
-    action,
-    metadata,
-    headers,
-  }: {
-    invitationId: string;
-    organizationId: string;
-    actorUserId: string;
-    targetEmail: string;
-    action: string;
-    metadata?: Record<string, unknown>;
-    headers: Headers;
-  }) => {
-    await database.insert(dbSchema.invitationAuditLog).values({
-      id: crypto.randomUUID(),
-      invitationId,
-      organizationId,
-      actorUserId,
-      targetEmail,
-      action,
-      metadata: metadata ? JSON.stringify(metadata) : null,
-      ipAddress: getIpAddress(headers),
-      userAgent: headers.get('user-agent'),
-    });
+    role: string;
+    principalKind: string;
+    participantName: string | null;
+    status: string;
+    expiresAt: unknown;
+    createdAt: unknown;
+    invitedByUserId: string;
+    respondedByUserId: string | null;
+    respondedAt: unknown;
+    acceptedMemberId: string | null;
+    acceptedClassroomMemberId: string | null;
+    acceptedParticipantId: string | null;
   };
 
   const normalizeEmail = (value: string): string => value.trim().toLowerCase();
@@ -1493,165 +995,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     );
   };
 
-  const findParticipantInvitationById = async (invitationId: string) => {
-    const rows = await database
-      .select({
-        id: dbSchema.participantInvitation.id,
-        organizationId: dbSchema.participantInvitation.organizationId,
-        classroomId: dbSchema.participantInvitation.classroomId,
-        organizationSlug: dbSchema.organization.slug,
-        classroomSlug: dbSchema.classroom.slug,
-        classroomName: dbSchema.classroom.name,
-        organizationName: dbSchema.organization.name,
-        email: dbSchema.participantInvitation.email,
-        participantName: dbSchema.participantInvitation.participantName,
-        status: dbSchema.participantInvitation.status,
-        expiresAt: dbSchema.participantInvitation.expiresAt,
-        createdAt: dbSchema.participantInvitation.createdAt,
-        invitedByUserId: dbSchema.participantInvitation.invitedByUserId,
-        respondedByUserId: dbSchema.participantInvitation.respondedByUserId,
-        respondedAt: dbSchema.participantInvitation.respondedAt,
-      })
-      .from(dbSchema.participantInvitation)
-      .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.participantInvitation.classroomId))
-      .innerJoin(
-        dbSchema.organization,
-        eq(dbSchema.organization.id, dbSchema.participantInvitation.organizationId),
-      )
-      .where(eq(dbSchema.participantInvitation.id, invitationId))
-      .limit(1);
-
-    return rows[0] ?? null;
-  };
-
-  const findPendingParticipantInvitationForResend = async ({
-    organizationId,
-    classroomId,
-    email,
-  }: {
-    organizationId: string;
-    classroomId?: string | null;
-    email: string;
-  }) => {
-    const rows = await database
-      .select({
-        id: dbSchema.participantInvitation.id,
-        organizationId: dbSchema.participantInvitation.organizationId,
-        classroomId: dbSchema.participantInvitation.classroomId,
-        organizationSlug: dbSchema.organization.slug,
-        classroomSlug: dbSchema.classroom.slug,
-        classroomName: dbSchema.classroom.name,
-        organizationName: dbSchema.organization.name,
-        email: dbSchema.participantInvitation.email,
-        participantName: dbSchema.participantInvitation.participantName,
-        status: dbSchema.participantInvitation.status,
-        expiresAt: dbSchema.participantInvitation.expiresAt,
-        createdAt: dbSchema.participantInvitation.createdAt,
-        invitedByUserId: dbSchema.participantInvitation.invitedByUserId,
-        respondedByUserId: dbSchema.participantInvitation.respondedByUserId,
-        respondedAt: dbSchema.participantInvitation.respondedAt,
-      })
-      .from(dbSchema.participantInvitation)
-      .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.participantInvitation.classroomId))
-      .innerJoin(
-        dbSchema.organization,
-        eq(dbSchema.organization.id, dbSchema.participantInvitation.organizationId),
-      )
-      .where(
-        and(
-          eq(dbSchema.participantInvitation.organizationId, organizationId),
-          ...(classroomId ? [eq(dbSchema.participantInvitation.classroomId, classroomId)] : []),
-          eq(dbSchema.participantInvitation.email, email),
-          eq(dbSchema.participantInvitation.status, 'pending'),
-        ),
-      )
-      .limit(1);
-
-    return rows[0] ?? null;
-  };
-
-  const findDuplicatePendingParticipantInvitation = async ({
-    organizationId,
-    classroomId,
-    email,
-  }: {
-    organizationId: string;
-    classroomId?: string | null;
-    email: string;
-  }) => {
-    const rows = await database
-      .select({
-        id: dbSchema.participantInvitation.id,
-      })
-      .from(dbSchema.participantInvitation)
-      .where(
-        and(
-          eq(dbSchema.participantInvitation.organizationId, organizationId),
-          ...(classroomId ? [eq(dbSchema.participantInvitation.classroomId, classroomId)] : []),
-          eq(dbSchema.participantInvitation.email, email),
-          eq(dbSchema.participantInvitation.status, 'pending'),
-        ),
-      )
-      .limit(1);
-
-    return rows[0] ?? null;
-  };
-
-  const countParticipantInvitationAuditAction = async ({
-    participantInvitationId,
-    action,
-  }: {
-    participantInvitationId: string;
-    action: string;
-  }): Promise<number> => {
-    const rows = await database
-      .select({
-        value: sql<number>`count(*)`,
-      })
-      .from(dbSchema.participantInvitationAuditLog)
-      .where(
-        and(
-          eq(dbSchema.participantInvitationAuditLog.participantInvitationId, participantInvitationId),
-          eq(dbSchema.participantInvitationAuditLog.action, action),
-        ),
-      );
-
-    return Number(rows[0]?.value ?? 0);
-  };
-
-  const writeParticipantInvitationAuditLog = async ({
-    participantInvitationId,
-    organizationId,
-    classroomId,
-    actorUserId,
-    targetEmail,
-    action,
-    metadata,
-    headers,
-  }: {
-    participantInvitationId: string;
-    organizationId: string;
-    classroomId?: string;
-    actorUserId: string;
-    targetEmail: string;
-    action: string;
-    metadata?: Record<string, unknown>;
-    headers: Headers;
-  }) => {
-    await database.insert(dbSchema.participantInvitationAuditLog).values({
-      id: crypto.randomUUID(),
-      participantInvitationId,
-      organizationId,
-      classroomId: classroomId ?? organizationId,
-      actorUserId,
-      targetEmail,
-      action,
-      metadata: metadata ? JSON.stringify(metadata) : null,
-      ipAddress: getIpAddress(headers),
-      userAgent: headers.get('user-agent'),
-    });
-  };
-
   const toIsoDateString = (value: unknown): string | null => {
     if (value instanceof Date) {
       return value.toISOString();
@@ -1663,6 +1006,23 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
     if (typeof value === 'string') {
       return value;
+    }
+
+    return null;
+  };
+
+  const toTimestamp = (value: unknown): number | null => {
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? null : parsed;
     }
 
     return null;
@@ -1702,65 +1062,630 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     };
   };
 
-  const serializeParticipantInvitation = (
-    invitation:
-      | {
-          id: string;
-          organizationId: string;
-          classroomId?: string;
-          classroomSlug?: string | null;
-          classroomName?: string | null;
-          organizationName: string;
-          email: string;
-          participantName: string;
-          status: string;
-          expiresAt: unknown;
-          createdAt: unknown;
-          invitedByUserId: string;
-          respondedByUserId: string | null;
-          respondedAt: unknown;
-        }
-      | null,
-  ) => {
+  const normalizeInvitationSubjectKind = (value: string | null): InvitationSubjectKind | null => {
+    if (value === 'org_operator' || value === 'classroom_operator' || value === 'participant') {
+      return value;
+    }
+
+    return null;
+  };
+
+  const normalizeUnifiedInvitationRole = (value: string | null): UnifiedInvitationRole | null => {
+    if (
+      value === 'admin'
+      || value === 'member'
+      || value === 'manager'
+      || value === 'staff'
+      || value === 'participant'
+    ) {
+      return value;
+    }
+
+    return null;
+  };
+
+  const normalizeInvitationStatus = (
+    value: string | null,
+    expiresAt: unknown,
+  ): InvitationStatus | null => {
+    const normalized = value === 'canceled' ? 'cancelled' : value;
+    if (
+      normalized !== 'pending'
+      && normalized !== 'accepted'
+      && normalized !== 'rejected'
+      && normalized !== 'cancelled'
+      && normalized !== 'expired'
+    ) {
+      return null;
+    }
+
+    if (normalized === 'pending') {
+      const expiresAtTimestamp = toTimestamp(expiresAt);
+      if (expiresAtTimestamp !== null && expiresAtTimestamp <= Date.now()) {
+        return 'expired';
+      }
+    }
+
+    return normalized;
+  };
+
+  const invitationRecordSelection = {
+    id: dbSchema.invitation.id,
+    subjectKind: dbSchema.invitation.subjectKind,
+    organizationId: dbSchema.invitation.organizationId,
+    organizationSlug: dbSchema.organization.slug,
+    organizationName: dbSchema.organization.name,
+    classroomId: dbSchema.invitation.classroomId,
+    classroomSlug: dbSchema.classroom.slug,
+    classroomName: dbSchema.classroom.name,
+    email: dbSchema.invitation.email,
+    role: dbSchema.invitation.role,
+    principalKind: dbSchema.invitation.principalKind,
+    participantName: dbSchema.invitation.participantName,
+    status: dbSchema.invitation.status,
+    expiresAt: dbSchema.invitation.expiresAt,
+    createdAt: dbSchema.invitation.createdAt,
+    invitedByUserId: dbSchema.invitation.invitedByUserId,
+    respondedByUserId: dbSchema.invitation.respondedByUserId,
+    respondedAt: dbSchema.invitation.respondedAt,
+    acceptedMemberId: dbSchema.invitation.acceptedMemberId,
+    acceptedClassroomMemberId: dbSchema.invitation.acceptedClassroomMemberId,
+    acceptedParticipantId: dbSchema.invitation.acceptedParticipantId,
+  };
+
+  const selectInvitationRecords = async (whereClause: SQL<unknown> | undefined) => {
+    const query = database
+      .select(invitationRecordSelection)
+      .from(dbSchema.invitation)
+      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.invitation.organizationId))
+      .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId));
+
+    return (
+      whereClause ? query.where(whereClause) : query
+    ).orderBy(desc(dbSchema.invitation.createdAt));
+  };
+
+  const serializeInvitation = (invitation: InvitationRecord | null) => {
     if (!invitation) {
+      return null;
+    }
+
+    const subjectKind = normalizeInvitationSubjectKind(invitation.subjectKind);
+    const role = normalizeUnifiedInvitationRole(invitation.role);
+    const status = normalizeInvitationStatus(invitation.status, invitation.expiresAt);
+    if (!subjectKind || !role || !status) {
       return null;
     }
 
     return {
       id: invitation.id,
+      subjectKind,
+      role,
       organizationId: invitation.organizationId,
-      classroomId: invitation.classroomId ?? null,
-      classroomSlug: invitation.classroomSlug ?? null,
-      classroomName: invitation.classroomName ?? null,
+      organizationSlug: invitation.organizationSlug,
       organizationName: invitation.organizationName,
+      classroomId: invitation.classroomId,
+      classroomSlug: invitation.classroomSlug,
+      classroomName: invitation.classroomName,
       email: invitation.email,
-      participantName: invitation.participantName,
-      status: invitation.status,
+      participantName: invitation.participantName ?? null,
+      status,
       expiresAt: toIsoDateString(invitation.expiresAt),
       createdAt: toIsoDateString(invitation.createdAt),
-      invitedByUserId: invitation.invitedByUserId,
-      respondedByUserId: invitation.respondedByUserId,
+      invitedByUserId: invitation.invitedByUserId ?? null,
+      respondedByUserId: invitation.respondedByUserId ?? null,
       respondedAt: toIsoDateString(invitation.respondedAt),
-    };
+    } satisfies z.infer<typeof invitationSchema>;
   };
 
-  const normalizeClassroomInvitationRole = (
-    value: string | null,
-  ): 'manager' | 'staff' | 'participant' | null => {
-    if (value === 'manager' || value === 'admin') {
+  const findInvitationRecordById = async (invitationId: string) => {
+    const rows = await selectInvitationRecords(eq(dbSchema.invitation.id, invitationId));
+    return (rows[0] as InvitationRecord | undefined) ?? null;
+  };
+
+  const findPendingInvitationForResend = async ({
+    organizationId,
+    classroomId,
+    subjectKind,
+    role,
+    email,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+    subjectKind: InvitationSubjectKind;
+    role: UnifiedInvitationRole;
+    email: string;
+  }) => {
+    const rows = await database
+      .select(invitationRecordSelection)
+      .from(dbSchema.invitation)
+      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.invitation.organizationId))
+      .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId))
+      .where(
+        and(
+          eq(dbSchema.invitation.organizationId, organizationId),
+          eq(dbSchema.invitation.subjectKind, subjectKind),
+          eq(dbSchema.invitation.role, role),
+          ...(classroomId ? [eq(dbSchema.invitation.classroomId, classroomId)] : []),
+          eq(dbSchema.invitation.email, email),
+          eq(dbSchema.invitation.status, 'pending'),
+        ),
+      )
+      .limit(1);
+
+    return (rows[0] as InvitationRecord | undefined) ?? null;
+  };
+
+  const countInvitationEvent = async ({
+    invitationId,
+    eventType,
+  }: {
+    invitationId: string;
+    eventType: InvitationEventType;
+  }): Promise<number> => {
+    const rows = await database
+      .select({
+        value: sql<number>`count(*)`,
+      })
+      .from(dbSchema.invitationAuditLog)
+      .where(
+        and(
+          eq(dbSchema.invitationAuditLog.invitationId, invitationId),
+          eq(dbSchema.invitationAuditLog.eventType, eventType),
+        ),
+      );
+
+    return Number(rows[0]?.value ?? 0);
+  };
+
+  const writeInvitationEvent = async ({
+    invitationId,
+    organizationId,
+    classroomId,
+    actorUserId,
+    targetEmail,
+    eventType,
+    metadata,
+    headers,
+  }: {
+    invitationId: string;
+    organizationId: string;
+    classroomId?: string | null;
+    actorUserId: string;
+    targetEmail: string;
+    eventType: InvitationEventType;
+    metadata?: Record<string, unknown>;
+    headers: Headers;
+  }) => {
+    await database.insert(dbSchema.invitationAuditLog).values({
+      id: crypto.randomUUID(),
+      invitationId,
+      organizationId,
+      classroomId: classroomId ?? null,
+      actorUserId,
+      targetEmail,
+      eventType,
+      metadata: metadata ? JSON.stringify(metadata) : null,
+      ipAddress: getIpAddress(headers),
+      userAgent: headers.get('user-agent'),
+    });
+  };
+
+  const resolveInvitationPrincipalKind = async (
+    email: string,
+  ): Promise<'email' | 'existing_user'> => {
+    const rows = await database
+      .select({
+        id: dbSchema.user.id,
+      })
+      .from(dbSchema.user)
+      .where(eq(dbSchema.user.email, email))
+      .limit(1);
+
+    return rows[0] ? 'existing_user' : 'email';
+  };
+
+  const createInvitationRecord = async ({
+    subjectKind,
+    role,
+    organizationId,
+    classroomId,
+    email,
+    participantName,
+    invitedByUserId,
+  }: {
+    subjectKind: InvitationSubjectKind;
+    role: UnifiedInvitationRole;
+    organizationId: string;
+    classroomId?: string | null;
+    email: string;
+    participantName?: string | null;
+    invitedByUserId: string;
+  }) => {
+    const invitationId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 172_800_000);
+    await database.insert(dbSchema.invitation).values({
+      id: invitationId,
+      subjectKind,
+      organizationId,
+      classroomId: classroomId ?? null,
+      email,
+      role,
+      principalKind: await resolveInvitationPrincipalKind(email),
+      participantName: participantName ?? null,
+      status: 'pending',
+      expiresAt,
+      invitedByUserId,
+    });
+
+    return findInvitationRecordById(invitationId);
+  };
+
+  const sendInvitationEmailForRecord = async ({
+    invitation,
+    headers,
+  }: {
+    invitation: InvitationRecord;
+    headers: Headers;
+  }) => {
+    const session = await auth.api.getSession({ headers });
+    const inviterName = getStringValue(session?.user?.name);
+    const inviterEmail = getStringValue(session?.user?.email);
+
+    if (normalizeInvitationSubjectKind(invitation.subjectKind) === 'participant') {
+      if (!invitation.participantName) {
+        throw new Error('Participant invitation is missing participantName.');
+      }
+
+      await sendParticipantInvitationEmail({
+        env,
+        invitationId: invitation.id,
+        inviteeEmail: invitation.email,
+        participantName: invitation.participantName,
+        inviterName,
+        inviterEmail,
+        organizationName: invitation.organizationName,
+      });
+      return;
+    }
+
+    await sendOrganizationInvitationEmail({
+      env,
+      invitationId: invitation.id,
+      inviteeEmail: invitation.email,
+      inviterName,
+      inviterEmail,
+      organizationName: invitation.organizationName,
+      role: invitation.role,
+    });
+  };
+
+  const markInvitationExpiredIfNeeded = async (invitation: InvitationRecord | null) => {
+    if (!invitation) {
+      return null;
+    }
+
+    if (normalizeInvitationStatus(invitation.status, invitation.expiresAt) !== 'expired') {
+      return invitation;
+    }
+
+    if (invitation.status !== 'expired') {
+      await database
+        .update(dbSchema.invitation)
+        .set({
+          status: 'expired',
+          updatedAt: new Date(),
+        })
+        .where(and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')));
+      return findInvitationRecordById(invitation.id);
+    }
+
+    return invitation;
+  };
+
+  const mergeOrganizationInvitationRole = (
+    currentRole: string | null,
+    invitedRole: 'admin' | 'member',
+  ): 'owner' | 'admin' | 'member' => {
+    if (currentRole === 'owner') {
+      return 'owner';
+    }
+    if (currentRole === 'admin' || invitedRole === 'admin') {
+      return 'admin';
+    }
+    return 'member';
+  };
+
+  const mergeClassroomInvitationRole = (
+    currentRole: string | null,
+    invitedRole: 'manager' | 'staff',
+  ): 'manager' | 'staff' => {
+    if (currentRole === 'manager' || invitedRole === 'manager') {
       return 'manager';
     }
-    if (value === 'staff' || value === 'member') {
-      return 'staff';
-    }
-    if (value === 'participant') {
-      return 'participant';
-    }
-    return null;
+    return 'staff';
   };
 
-  const mapClassroomInvitationRoleToAuthRole = (value: 'manager' | 'staff'): 'admin' | 'member' => {
-    return value === 'manager' ? 'admin' : 'member';
+  const ensureOrganizationMemberFromInvitation = async ({
+    tx,
+    invitation,
+    userId,
+  }: {
+    tx: AuthRuntimeDatabase;
+    invitation: InvitationRecord;
+    userId: string;
+  }) => {
+    const invitedRole = normalizeUnifiedInvitationRole(invitation.role);
+    if (invitedRole !== 'admin' && invitedRole !== 'member') {
+      throw new Error('Organization invitation role is invalid.');
+    }
+
+    const rows = await tx
+      .select({
+        id: dbSchema.member.id,
+        role: dbSchema.member.role,
+      })
+      .from(dbSchema.member)
+      .where(
+        and(
+          eq(dbSchema.member.organizationId, invitation.organizationId),
+          eq(dbSchema.member.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    const existing = rows[0] as { id: string; role: string } | undefined;
+    const nextRole = mergeOrganizationInvitationRole(existing?.role ?? null, invitedRole);
+    if (existing) {
+      if (nextRole !== existing.role) {
+        await tx
+          .update(dbSchema.member)
+          .set({
+            role: nextRole,
+          })
+          .where(eq(dbSchema.member.id, existing.id));
+      }
+      return existing.id;
+    }
+
+    const memberId = crypto.randomUUID();
+    await tx.insert(dbSchema.member).values({
+      id: memberId,
+      organizationId: invitation.organizationId,
+      userId,
+      role: nextRole,
+      createdAt: new Date(),
+    });
+    return memberId;
+  };
+
+  const ensureOrganizationMemberForClassroomOperator = async ({
+    tx,
+    invitation,
+    userId,
+  }: {
+    tx: AuthRuntimeDatabase;
+    invitation: InvitationRecord;
+    userId: string;
+  }) => {
+    const rows = await tx
+      .select({
+        id: dbSchema.member.id,
+      })
+      .from(dbSchema.member)
+      .where(
+        and(
+          eq(dbSchema.member.organizationId, invitation.organizationId),
+          eq(dbSchema.member.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    const existing = rows[0] as { id: string } | undefined;
+    if (existing) {
+      return existing.id;
+    }
+
+    const memberId = crypto.randomUUID();
+    await tx.insert(dbSchema.member).values({
+      id: memberId,
+      organizationId: invitation.organizationId,
+      userId,
+      role: 'member',
+      createdAt: new Date(),
+    });
+    return memberId;
+  };
+
+  const ensureClassroomMemberFromInvitation = async ({
+    tx,
+    invitation,
+    userId,
+  }: {
+    tx: AuthRuntimeDatabase;
+    invitation: InvitationRecord;
+    userId: string;
+  }) => {
+    const invitedRole = normalizeUnifiedInvitationRole(invitation.role);
+    if ((invitedRole !== 'manager' && invitedRole !== 'staff') || !invitation.classroomId) {
+      throw new Error('Classroom invitation role is invalid.');
+    }
+
+    const rows = await tx
+      .select({
+        id: dbSchema.classroomMember.id,
+        role: dbSchema.classroomMember.role,
+      })
+      .from(dbSchema.classroomMember)
+      .where(
+        and(
+          eq(dbSchema.classroomMember.classroomId, invitation.classroomId),
+          eq(dbSchema.classroomMember.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    const existing = rows[0] as { id: string; role: string } | undefined;
+    const nextRole = mergeClassroomInvitationRole(existing?.role ?? null, invitedRole);
+    if (existing) {
+      if (nextRole !== existing.role) {
+        await tx
+          .update(dbSchema.classroomMember)
+          .set({
+            role: nextRole,
+          })
+          .where(eq(dbSchema.classroomMember.id, existing.id));
+      }
+      return existing.id;
+    }
+
+    const classroomMemberId = crypto.randomUUID();
+    await tx.insert(dbSchema.classroomMember).values({
+      id: classroomMemberId,
+      classroomId: invitation.classroomId,
+      userId,
+      role: nextRole,
+      createdAt: new Date(),
+    });
+    return classroomMemberId;
+  };
+
+  const ensureParticipantFromInvitation = async ({
+    tx,
+    invitation,
+    userId,
+  }: {
+    tx: AuthRuntimeDatabase;
+    invitation: InvitationRecord;
+    userId: string;
+  }) => {
+    if (!invitation.classroomId || !invitation.participantName) {
+      throw new Error('Participant invitation is incomplete.');
+    }
+
+    const rows = await tx
+      .select({
+        id: dbSchema.participant.id,
+      })
+      .from(dbSchema.participant)
+      .where(
+        and(
+          eq(dbSchema.participant.organizationId, invitation.organizationId),
+          eq(dbSchema.participant.classroomId, invitation.classroomId),
+          or(
+            eq(dbSchema.participant.userId, userId),
+            eq(dbSchema.participant.email, invitation.email),
+          ),
+        ),
+      )
+      .limit(1);
+
+    const existing = rows[0] as { id: string } | undefined;
+    if (existing) {
+      return existing.id;
+    }
+
+    const participantId = crypto.randomUUID();
+    await tx.insert(dbSchema.participant).values({
+      id: participantId,
+      organizationId: invitation.organizationId,
+      classroomId: invitation.classroomId,
+      userId,
+      email: invitation.email,
+      name: invitation.participantName,
+    });
+    return participantId;
+  };
+
+  const acceptInvitationRecord = async ({
+    invitation,
+    userId,
+  }: {
+    invitation: InvitationRecord;
+    userId: string;
+  }) => {
+    const refreshedRows = await database
+      .select({
+        id: dbSchema.invitation.id,
+        status: dbSchema.invitation.status,
+      })
+      .from(dbSchema.invitation)
+      .where(eq(dbSchema.invitation.id, invitation.id))
+      .limit(1);
+
+    const refreshed = refreshedRows[0] as { id: string; status: string } | undefined;
+    if (!refreshed || refreshed.status !== 'pending') {
+      return null;
+    }
+
+    let acceptedMemberId: string | null = null;
+    let acceptedClassroomMemberId: string | null = null;
+    let acceptedParticipantId: string | null = null;
+
+    const subjectKind = normalizeInvitationSubjectKind(invitation.subjectKind);
+    if (subjectKind === 'org_operator') {
+      acceptedMemberId = await ensureOrganizationMemberFromInvitation({
+        tx: database,
+        invitation,
+        userId,
+      });
+    } else if (subjectKind === 'classroom_operator') {
+      acceptedMemberId = await ensureOrganizationMemberForClassroomOperator({
+        tx: database,
+        invitation,
+        userId,
+      });
+      acceptedClassroomMemberId = await ensureClassroomMemberFromInvitation({
+        tx: database,
+        invitation,
+        userId,
+      });
+    } else if (subjectKind === 'participant') {
+      acceptedParticipantId = await ensureParticipantFromInvitation({
+        tx: database,
+        invitation,
+        userId,
+      });
+    } else {
+      throw new Error('Invitation subjectKind is invalid.');
+    }
+
+    const updateResult = await database
+      .update(dbSchema.invitation)
+      .set({
+        status: 'accepted',
+        respondedByUserId: userId,
+        respondedAt: new Date(),
+        acceptedMemberId,
+        acceptedClassroomMemberId,
+        acceptedParticipantId,
+      })
+      .where(and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')));
+
+    const updatedCount = Number(
+      (
+        updateResult as {
+          rowsAffected?: number;
+          meta?: { changes?: number };
+        }
+      ).rowsAffected ??
+        (
+          updateResult as {
+            rowsAffected?: number;
+            meta?: { changes?: number };
+          }
+        ).meta?.changes ??
+        0,
+    );
+    if (updatedCount === 0) {
+      return null;
+    }
+
+    return {
+      memberId: acceptedMemberId,
+      classroomMemberId: acceptedClassroomMemberId,
+      participantId: acceptedParticipantId,
+    };
   };
 
   const resolveClassroomContextBySlugs = async ({
@@ -1839,7 +1764,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       context,
     });
 
-    if (!access.classroomRole && !access.canUseParticipantBooking && !access.canManageClassroom) {
+    if (
+      !access.display.primaryRole &&
+      !access.effective.canUseParticipantBooking &&
+      !access.effective.canManageClassroom
+    ) {
       return null;
     }
 
@@ -1847,11 +1776,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       id: context.classroomId,
       slug: context.classroomSlug,
       name: context.classroomName,
-      role: access.classroomRole,
-      canManage: access.canManageClassroom,
-      canManageBookings: access.canManageBookings,
-      canManageParticipants: access.canManageParticipants,
-      canUseParticipantBooking: access.canUseParticipantBooking,
+      logo: null,
+      facts: access.facts,
+      effective: access.effective,
+      sources: access.sources,
+      display: access.display,
     };
   };
 
@@ -1954,147 +1883,77 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return { organization, classrooms };
   };
 
-  const findOrganizationInvitationDetailById = async (invitationId: string) => {
-    const rows = await database
-      .select({
-        id: dbSchema.invitation.id,
-        organizationId: dbSchema.invitation.organizationId,
-        organizationSlug: dbSchema.organization.slug,
-        organizationName: dbSchema.organization.name,
-        classroomId: dbSchema.invitation.classroomId,
-        classroomSlug: dbSchema.classroom.slug,
-        classroomName: dbSchema.classroom.name,
-        organizationRole: dbSchema.invitation.role,
-        classroomRole: dbSchema.invitation.classroomRole,
-        email: dbSchema.invitation.email,
-        status: dbSchema.invitation.status,
-        expiresAt: dbSchema.invitation.expiresAt,
-        createdAt: dbSchema.invitation.createdAt,
-        invitedByUserId: dbSchema.invitation.inviterId,
-      })
-      .from(dbSchema.invitation)
-      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.invitation.organizationId))
-      .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId))
-      .where(eq(dbSchema.invitation.id, invitationId))
-      .limit(1);
-
-    return rows[0] ?? null;
+  const hydrateInvitationRecord = async (invitationId: string) => {
+    const invitation = await markInvitationExpiredIfNeeded(await findInvitationRecordById(invitationId));
+    return invitation;
   };
 
-  const serializeClassroomMemberInvitation = (
-    invitation:
-      | {
-          id: string;
-          organizationId: string;
-          organizationSlug: string;
-          organizationName: string;
-          classroomId: string | null;
-          classroomSlug: string | null;
-          classroomName: string | null;
-          organizationRole: string | null;
-          classroomRole: string | null;
-          email: string;
-          status: string;
-          expiresAt: unknown;
-          createdAt: unknown;
-          invitedByUserId: string;
-        }
-      | null,
-  ) => {
-    if (!invitation) {
-      return null;
-    }
+  const listSerializedInvitations = async (whereClause: SQL<unknown> | undefined) => {
+    const invitations = await selectInvitationRecords(whereClause);
+    const serialized: Array<z.infer<typeof invitationSchema>> = [];
 
-    const role = normalizeClassroomInvitationRole(invitation.classroomRole ?? invitation.organizationRole);
-    if (!role || role === 'participant') {
-      return null;
-    }
-
-    return {
-      id: invitation.id,
-      invitationKind: 'classroom-member' as const,
-      role,
-      organizationId: invitation.organizationId,
-      organizationSlug: invitation.organizationSlug,
-      organizationName: invitation.organizationName,
-      classroomId: invitation.classroomId ?? invitation.organizationId,
-      classroomSlug: invitation.classroomSlug ?? invitation.organizationSlug,
-      classroomName: invitation.classroomName ?? invitation.organizationName,
-      email: invitation.email,
-      status: invitation.status,
-      participantName: null,
-      expiresAt: toIsoDateString(invitation.expiresAt),
-      createdAt: toIsoDateString(invitation.createdAt),
-      invitedByUserId: invitation.invitedByUserId,
-      respondedByUserId: null,
-      respondedAt: null,
-    };
-  };
-
-  const serializeClassroomParticipantInvitation = (
-    invitation:
-      | {
-          id: string;
-          organizationId: string;
-          classroomId: string;
-          classroomSlug: string;
-          classroomName: string;
-          organizationName: string;
-          email: string;
-          participantName: string;
-          status: string;
-          expiresAt: unknown;
-          createdAt: unknown;
-          invitedByUserId: string;
-          respondedByUserId: string | null;
-          respondedAt: unknown;
-        }
-      | null,
-    organizationSlug: string,
-  ) => {
-    if (!invitation) {
-      return null;
-    }
-
-    return {
-      id: invitation.id,
-      invitationKind: 'participant' as const,
-      role: 'participant' as const,
-      organizationId: invitation.organizationId,
-      organizationSlug,
-      organizationName: invitation.organizationName,
-      classroomId: invitation.classroomId,
-      classroomSlug: invitation.classroomSlug,
-      classroomName: invitation.classroomName,
-      email: invitation.email,
-      status: invitation.status,
-      participantName: invitation.participantName,
-      expiresAt: toIsoDateString(invitation.expiresAt),
-      createdAt: toIsoDateString(invitation.createdAt),
-      invitedByUserId: invitation.invitedByUserId,
-      respondedByUserId: invitation.respondedByUserId,
-      respondedAt: toIsoDateString(invitation.respondedAt),
-    };
-  };
-
-  const findClassroomInvitationDetailById = async (invitationId: string) => {
-    const organizationInvitation = await findOrganizationInvitationDetailById(invitationId);
-    if (organizationInvitation) {
-      const serialized = serializeClassroomMemberInvitation(organizationInvitation);
-      if (serialized) {
-        return serialized;
+    for (const invitation of invitations as InvitationRecord[]) {
+      const hydrated = await markInvitationExpiredIfNeeded(invitation);
+      const next = serializeInvitation(hydrated);
+      if (next) {
+        serialized.push(next);
       }
     }
 
-    const participantInvitation = await findParticipantInvitationById(invitationId);
-    if (!participantInvitation) {
-      return null;
+    return serialized;
+  };
+
+  const isInvitationRecipient = ({
+    invitation,
+    email,
+  }: {
+    invitation: InvitationRecord;
+    email: string | null;
+  }) => {
+    return Boolean(email && normalizeEmail(invitation.email) === email);
+  };
+
+  const canCancelInvitation = async ({
+    invitation,
+    userId,
+  }: {
+    invitation: InvitationRecord;
+    userId: string;
+  }) => {
+    if (invitation.invitedByUserId === userId) {
+      return true;
     }
 
-    return serializeClassroomParticipantInvitation(
-      participantInvitation,
-      participantInvitation.organizationSlug,
-    );
+    const subjectKind = normalizeInvitationSubjectKind(invitation.subjectKind);
+    if (subjectKind === 'org_operator') {
+      return hasOrganizationAdminAccess({
+        organizationId: invitation.organizationId,
+        userId,
+      });
+    }
+
+    if (!invitation.classroomId) {
+      return false;
+    }
+
+    const classroomContext = await resolveClassroomContextByIds({
+      organizationId: invitation.organizationId,
+      classroomId: invitation.classroomId,
+    });
+    if (!classroomContext) {
+      return false;
+    }
+
+    const access = await resolveOrganizationClassroomAccess({
+      database,
+      userId,
+      context: classroomContext,
+    });
+    if (subjectKind === 'participant') {
+      return access.effective.canManageParticipants || access.effective.canManageClassroom;
+    }
+
+    return access.effective.canManageClassroom;
   };
 
   authRoutes.use('/session', async (c, next) => {
@@ -2366,7 +2225,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         userId: identity.userId,
         context: organizationContext,
       });
-      if (!access.canManageOrganization) {
+      if (!access.effective.canManageOrganization) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
@@ -2403,11 +2262,30 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           id: classroomId,
           slug,
           name,
-          role: 'manager',
-          canManage: true,
-          canManageBookings: true,
-          canManageParticipants: true,
-          canUseParticipantBooking: false,
+          logo: null,
+          facts: {
+            orgRole: access.facts.orgRole,
+            classroomStaffRole: null,
+            hasParticipantRecord: false,
+          },
+          effective: {
+            canManageOrganization: true,
+            canManageClassroom: true,
+            canManageBookings: true,
+            canManageParticipants: true,
+            canUseParticipantBooking: false,
+          },
+          sources: {
+            canManageOrganization: 'org_role',
+            canManageClassroom: 'org_role',
+            canManageBookings: 'org_role',
+            canManageParticipants: 'org_role',
+            canUseParticipantBooking: null,
+          },
+          display: {
+            primaryRole: access.display.primaryRole,
+            badges: access.display.badges,
+          },
         },
         200,
       );
@@ -2433,7 +2311,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         userId: identity.userId,
         context: classroomContext,
       });
-      if (!access.canManageOrganization) {
+      if (!access.effective.canManageOrganization) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
@@ -2632,7 +2510,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             userId: identity.userId,
             context,
           });
-          if (!access.classroomRole && !access.canUseParticipantBooking && !access.canManageClassroom) {
+          if (
+            !access.display.primaryRole &&
+            !access.effective.canUseParticipantBooking &&
+            !access.effective.canManageClassroom
+          ) {
             continue;
           }
           classrooms.push({
@@ -2640,11 +2522,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             slug: context.classroomSlug,
             name: context.classroomName,
             logo: null,
-            role: access.classroomRole,
-            canManage: access.canManageClassroom,
-            canManageBookings: access.canManageBookings,
-            canManageParticipants: access.canManageParticipants,
-            canUseParticipantBooking: access.canUseParticipantBooking,
+            facts: access.facts,
+            effective: access.effective,
+            sources: access.sources,
+            display: access.display,
           });
         }
 
@@ -2660,98 +2541,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             name: row.organizationName,
             logo: row.organizationLogo,
           },
-          orgRole: row.organizationRole,
+          facts: {
+            orgRole: row.organizationRole,
+          },
           classrooms,
         });
       }
 
       tree.sort((left, right) => left.org.name.localeCompare(right.org.name));
       return c.json({ orgs: tree }, 200);
-    })();
-  });
-
-  authRoutes.openapi(listOrganizationAccessRoute, (c) => {
-    return (async () => {
-      const identity = await getSessionIdentity(c.req.raw.headers);
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-
-      const memberRows = await database
-        .select({
-          organizationId: dbSchema.member.organizationId,
-          organizationName: dbSchema.organization.name,
-          role: dbSchema.member.role,
-        })
-        .from(dbSchema.member)
-        .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.member.organizationId))
-        .where(eq(dbSchema.member.userId, identity.userId));
-
-      const participantRows = await database
-        .select({
-          organizationId: dbSchema.participant.organizationId,
-          classroomId: dbSchema.participant.classroomId,
-          organizationName: dbSchema.organization.name,
-        })
-        .from(dbSchema.participant)
-        .innerJoin(
-          dbSchema.organization,
-          eq(dbSchema.organization.id, dbSchema.participant.organizationId),
-        )
-        .where(eq(dbSchema.participant.userId, identity.userId));
-
-      const normalizeMembershipRole = (value: string | null): 'owner' | 'admin' | 'member' | null => {
-        if (value === 'owner' || value === 'admin' || value === 'member') {
-          return value;
-        }
-        return null;
-      };
-
-      const accessByOrganizationId = new Map<
-        string,
-        {
-          organizationId: string;
-          organizationName: string | null;
-          role: 'owner' | 'admin' | 'member' | null;
-          classroomRole: 'manager' | 'staff' | 'participant';
-          canManage: boolean;
-          canUseParticipantBooking: boolean;
-        }
-      >();
-
-      for (const row of memberRows) {
-        const role = normalizeMembershipRole(row.role);
-        const canManage = role === 'owner' || role === 'admin';
-        const classroomRole = canManage ? 'manager' : 'staff';
-        accessByOrganizationId.set(row.organizationId, {
-          organizationId: row.organizationId,
-          organizationName: row.organizationName,
-          role,
-          classroomRole,
-          canManage,
-          canUseParticipantBooking:
-            accessByOrganizationId.get(row.organizationId)?.canUseParticipantBooking ?? false,
-        });
-      }
-
-      for (const row of participantRows) {
-        const current = accessByOrganizationId.get(row.organizationId);
-        accessByOrganizationId.set(row.organizationId, {
-          organizationId: row.organizationId,
-          organizationName: current?.organizationName ?? row.organizationName,
-          role: current?.role ?? null,
-          classroomRole: current?.classroomRole ?? 'participant',
-          canManage: current?.canManage ?? false,
-          canUseParticipantBooking: true,
-        });
-      }
-
-      const entries = Array.from(accessByOrganizationId.values()).sort((left, right) =>
-        (left.organizationName ?? left.organizationId).localeCompare(
-          right.organizationName ?? right.organizationId,
-        ),
-      );
-      return c.json(entries, 200);
     })();
   });
 
@@ -2773,6 +2571,145 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       headers: c.req.raw.headers,
       asResponse: true,
     });
+  });
+
+  authRoutes.openapi(createOrganizationInvitationRoute, (c) => {
+    return (async () => {
+      const { orgSlug } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const headers = c.req.raw.headers;
+      const identity = await getSessionIdentity(headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organization = await resolveOrganizationBySlug(orgSlug);
+      if (!organization) {
+        return c.json({ message: 'Organization not found.' }, 404);
+      }
+
+      const hasAccess = await hasOrganizationAdminAccess({
+        organizationId: organization.id,
+        userId: identity.userId,
+      });
+      if (!hasAccess) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const normalizedEmail = normalizeEmail(body.email);
+      const pendingInvitation = await markInvitationExpiredIfNeeded(
+        await findPendingInvitationForResend({
+          organizationId: organization.id,
+          subjectKind: 'org_operator',
+          role: body.role,
+          email: normalizedEmail,
+        }),
+      );
+      const pendingSerialized = serializeInvitation(pendingInvitation);
+
+      if (body.resend) {
+        if (!pendingInvitation || pendingSerialized?.status !== 'pending') {
+          return c.json({ message: 'Pending invitation for resend was not found.' }, 400);
+        }
+
+        const resentCount = await countInvitationEvent({
+          invitationId: pendingInvitation.id,
+          eventType: 'resent',
+        });
+        if (resentCount >= 3) {
+          return c.json({ message: 'Invitation resend limit reached (3).' }, 429);
+        }
+
+        await sendInvitationEmailForRecord({
+          invitation: pendingInvitation,
+          headers,
+        });
+        await writeInvitationEvent({
+          invitationId: pendingInvitation.id,
+          organizationId: pendingInvitation.organizationId,
+          actorUserId: identity.userId,
+          targetEmail: pendingInvitation.email,
+          eventType: 'resent',
+          metadata: {
+            subjectKind: 'org_operator',
+            role: body.role,
+          },
+          headers,
+        });
+
+        return c.json(pendingSerialized, 200);
+      }
+
+      if (pendingInvitation && pendingSerialized?.status === 'pending') {
+        return c.json({ message: 'Pending invitation already exists for this email.' }, 409);
+      }
+
+      const createdInvitation = await createInvitationRecord({
+        subjectKind: 'org_operator',
+        role: body.role,
+        organizationId: organization.id,
+        email: normalizedEmail,
+        invitedByUserId: identity.userId,
+      });
+      if (!createdInvitation) {
+        return c.json({ message: 'Failed to create invitation.' }, 500);
+      }
+
+      const serializedInvitation = serializeInvitation(createdInvitation);
+      if (!serializedInvitation) {
+        return c.json({ message: 'Failed to serialize invitation.' }, 500);
+      }
+
+      await sendInvitationEmailForRecord({
+        invitation: createdInvitation,
+        headers,
+      });
+      await writeInvitationEvent({
+        invitationId: createdInvitation.id,
+        organizationId: createdInvitation.organizationId,
+        actorUserId: identity.userId,
+        targetEmail: createdInvitation.email,
+        eventType: 'created',
+        metadata: {
+          subjectKind: 'org_operator',
+          role: body.role,
+        },
+        headers,
+      });
+
+      return c.json(serializedInvitation, 200);
+    })();
+  });
+
+  authRoutes.openapi(listOrganizationInvitationsRoute, (c) => {
+    return (async () => {
+      const { orgSlug } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organization = await resolveOrganizationBySlug(orgSlug);
+      if (!organization) {
+        return c.json({ message: 'Organization not found.' }, 404);
+      }
+
+      const hasAccess = await hasOrganizationAdminAccess({
+        organizationId: organization.id,
+        userId: identity.userId,
+      });
+      if (!hasAccess) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const invitations = await listSerializedInvitations(
+        and(
+          eq(dbSchema.invitation.organizationId, organization.id),
+          eq(dbSchema.invitation.subjectKind, 'org_operator'),
+        ),
+      );
+      return c.json(invitations, 200);
+    })();
   });
 
   authRoutes.openapi(createClassroomInvitationRoute, (c) => {
@@ -2797,259 +2734,116 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       });
 
       const normalizedEmail = normalizeEmail(body.email);
-      if (body.role === 'participant') {
-        if (!access.canManageParticipants) {
+      const subjectKind: InvitationSubjectKind =
+        body.role === 'participant' ? 'participant' : 'classroom_operator';
+
+      if (subjectKind === 'participant') {
+        if (!access.effective.canManageParticipants) {
           return c.json({ message: 'Forbidden' }, 403);
         }
-        if (!body.participantName) {
+        if (!body.participantName || body.participantName.trim().length === 0) {
           return c.json({ message: 'participantName is required for participant invitations.' }, 400);
         }
+      } else if (!access.effective.canManageClassroom) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
 
-        const currentSession = await auth.api.getSession({ headers });
-        const participantName = body.participantName.trim();
-
-        if (body.resend) {
-          const resendTargetInvitation = await findPendingParticipantInvitationForResend({
-            organizationId: classroomContext.organizationId,
-            email: normalizedEmail,
-          });
-
-          if (!resendTargetInvitation) {
-            return c.json({ message: 'Pending invitation for resend was not found.' }, 400);
-          }
-
-          const resentCount = await countParticipantInvitationAuditAction({
-            participantInvitationId: resendTargetInvitation.id,
-            action: 'participant-invitation.resent',
-          });
-          if (resentCount >= 3) {
-            return c.json({ message: 'Participant invitation resend limit reached (3).' }, 429);
-          }
-
-          await sendParticipantInvitationEmail({
-            env,
-            invitationId: resendTargetInvitation.id,
-            inviteeEmail: resendTargetInvitation.email,
-            participantName: resendTargetInvitation.participantName,
-            inviterName: getStringValue(currentSession?.user?.name),
-            inviterEmail: getStringValue(currentSession?.user?.email),
-            organizationName: resendTargetInvitation.organizationName,
-          });
-
-          await writeParticipantInvitationAuditLog({
-            participantInvitationId: resendTargetInvitation.id,
-            organizationId: resendTargetInvitation.organizationId,
-            actorUserId: identity.userId,
-            targetEmail: resendTargetInvitation.email,
-            action: 'participant-invitation.resent',
-            metadata: {
-              resend: true,
-              classroomSlug: classroomContext.classroomSlug,
-            },
-            headers,
-          });
-
-          return c.json(
-            serializeClassroomParticipantInvitation(
-              resendTargetInvitation,
-              classroomContext.organizationSlug,
-            ),
-            200,
-          );
-        }
-
-        const duplicatePending = await findDuplicatePendingParticipantInvitation({
-          organizationId: classroomContext.organizationId,
-          email: normalizedEmail,
-        });
-        if (duplicatePending) {
-          return c.json({ message: 'Pending invitation already exists for this email.' }, 409);
-        }
-
-        const invitationId = crypto.randomUUID();
-        const expiresAt = new Date(Date.now() + 172_800_000);
-        await database.insert(dbSchema.participantInvitation).values({
-          id: invitationId,
+      const pendingInvitation = await markInvitationExpiredIfNeeded(
+        await findPendingInvitationForResend({
           organizationId: classroomContext.organizationId,
           classroomId: classroomContext.classroomId,
+          subjectKind,
+          role: body.role,
           email: normalizedEmail,
-          participantName,
-          status: 'pending',
-          expiresAt,
-          invitedByUserId: identity.userId,
-        });
+        }),
+      );
+      const pendingSerialized = serializeInvitation(pendingInvitation);
 
-        const createdInvitation = await findParticipantInvitationById(invitationId);
-        if (!createdInvitation) {
-          return c.json({ message: 'Failed to create participant invitation.' }, 500);
+      if (body.resend) {
+        if (!pendingInvitation || pendingSerialized?.status !== 'pending') {
+          return c.json({ message: 'Pending invitation for resend was not found.' }, 400);
         }
 
-        await sendParticipantInvitationEmail({
-          env,
-          invitationId: createdInvitation.id,
-          inviteeEmail: createdInvitation.email,
-          participantName: createdInvitation.participantName,
-          inviterName: getStringValue(currentSession?.user?.name),
-          inviterEmail: getStringValue(currentSession?.user?.email),
-          organizationName: createdInvitation.organizationName,
+        const resentCount = await countInvitationEvent({
+          invitationId: pendingInvitation.id,
+          eventType: 'resent',
         });
+        if (resentCount >= 3) {
+          return c.json({ message: 'Invitation resend limit reached (3).' }, 429);
+        }
 
-        await writeParticipantInvitationAuditLog({
-          participantInvitationId: createdInvitation.id,
-          organizationId: createdInvitation.organizationId,
+        await sendInvitationEmailForRecord({
+          invitation: pendingInvitation,
+          headers,
+        });
+        await writeInvitationEvent({
+          invitationId: pendingInvitation.id,
+          organizationId: pendingInvitation.organizationId,
+          classroomId: pendingInvitation.classroomId,
           actorUserId: identity.userId,
-          targetEmail: createdInvitation.email,
-          action: 'participant-invitation.created',
+          targetEmail: pendingInvitation.email,
+          eventType: 'resent',
           metadata: {
-            resend: false,
-            participantName,
+            subjectKind,
+            role: body.role,
             classroomSlug: classroomContext.classroomSlug,
           },
           headers,
         });
 
-        return c.json(
-          serializeClassroomParticipantInvitation(createdInvitation, classroomContext.organizationSlug),
-          200,
-        );
+        return c.json(pendingSerialized, 200);
       }
 
-      if (!access.canManageClassroom) {
-        return c.json({ message: 'Forbidden' }, 403);
+      if (pendingInvitation && pendingSerialized?.status === 'pending') {
+        return c.json({ message: 'Pending invitation already exists for this email.' }, 409);
       }
 
-      const authRole = mapClassroomInvitationRoleToAuthRole(body.role);
-      let resendTargetInvitation:
-        | {
-            id: string;
-            organizationId: string;
-            email: string;
-          }
-        | null = null;
-
-      if (body.resend) {
-        resendTargetInvitation = await findPendingInvitationForResend({
-          organizationId: classroomContext.organizationId,
-          classroomId: classroomContext.classroomId,
-          classroomRole: body.role,
-          email: normalizedEmail,
-        });
-
-        if (!resendTargetInvitation) {
-          return c.json({ message: 'Pending invitation for resend was not found.' }, 400);
-        }
-
-        const resendTargetDetail = await findOrganizationInvitationDetailById(resendTargetInvitation.id);
-        const resendTargetRole = normalizeClassroomInvitationRole(
-          resendTargetDetail?.classroomRole ?? resendTargetDetail?.organizationRole ?? null,
-        );
-        if (!resendTargetRole || resendTargetRole === 'participant' || resendTargetRole !== body.role) {
-          return c.json({ message: 'Pending invitation role does not match resend role.' }, 400);
-        }
-
-        const resentCount = await countInvitationAuditAction({
-          invitationId: resendTargetInvitation.id,
-          action: 'invitation.resent',
-        });
-        if (resentCount >= 3) {
-          return c.json({ message: 'Invitation resend limit reached (3).' }, 429);
-        }
+      const createdInvitation = await createInvitationRecord({
+        subjectKind,
+        role: body.role,
+        organizationId: classroomContext.organizationId,
+        classroomId: classroomContext.classroomId,
+        email: normalizedEmail,
+        participantName: body.role === 'participant' ? body.participantName?.trim() ?? null : null,
+        invitedByUserId: identity.userId,
+      });
+      if (!createdInvitation) {
+        return c.json({ message: 'Failed to create invitation.' }, 500);
       }
 
-      const actorUserId = await getActorUserId(headers);
-      if (!actorUserId) {
-        return c.json({ message: 'Unauthorized' }, 401);
+      const serializedInvitation = serializeInvitation(createdInvitation);
+      if (!serializedInvitation) {
+        return c.json({ message: 'Failed to serialize invitation.' }, 500);
       }
 
-      let invitationPayload:
-        | {
-            id: string;
-            organizationId: string;
-            email: string;
-          }
-        | null = null;
-      if (body.resend && resendTargetInvitation) {
-        invitationPayload = {
-          id: resendTargetInvitation.id,
-          organizationId: resendTargetInvitation.organizationId,
-          email: resendTargetInvitation.email,
-        };
-      } else {
-        const response = await auth.api.createInvitation({
-          body: {
-            email: normalizedEmail,
-            role: authRole,
-            organizationId: classroomContext.organizationId,
-          },
-          headers,
-          asResponse: true,
-        });
-
-        if (!response.ok) {
-          return response;
-        }
-
-        const payload = await parseResponseBody(response);
-        invitationPayload = isInvitationPayload(payload) ? payload : null;
-        if (!invitationPayload) {
-          return response;
-        }
-
-        await database
-          .update(dbSchema.invitation)
-          .set({
-            classroomId: classroomContext.classroomId,
-            classroomRole: body.role,
-          })
-          .where(eq(dbSchema.invitation.id, invitationPayload.id));
-      }
-
-      await writeInvitationAuditLog({
-        invitationId: invitationPayload.id,
-        organizationId: invitationPayload.organizationId,
-        actorUserId,
-        targetEmail: invitationPayload.email,
-        action: body.resend ? 'invitation.resent' : 'invitation.created',
+      await sendInvitationEmailForRecord({
+        invitation: createdInvitation,
+        headers,
+      });
+      await writeInvitationEvent({
+        invitationId: createdInvitation.id,
+        organizationId: createdInvitation.organizationId,
+        classroomId: createdInvitation.classroomId,
+        actorUserId: identity.userId,
+        targetEmail: createdInvitation.email,
+        eventType: 'created',
         metadata: {
-          resend: body.resend ?? false,
+          subjectKind,
+          role: body.role,
           classroomSlug: classroomContext.classroomSlug,
-          classroomRole: body.role,
+          participantName: body.role === 'participant' ? body.participantName?.trim() ?? null : null,
         },
         headers,
       });
 
-      const detail = await findOrganizationInvitationDetailById(invitationPayload.id);
-      const serialized = serializeClassroomMemberInvitation(detail);
-      return c.json(
-        serialized ?? {
-          id: invitationPayload.id,
-          invitationKind: 'classroom-member',
-          role: body.role,
-          organizationId: classroomContext.organizationId,
-          organizationSlug: classroomContext.organizationSlug,
-          organizationName: classroomContext.organizationName,
-          classroomId: classroomContext.classroomId,
-          classroomSlug: classroomContext.classroomSlug,
-          classroomName: classroomContext.classroomName,
-          email: normalizedEmail,
-          status: 'pending',
-          participantName: null,
-          expiresAt: null,
-          createdAt: null,
-          invitedByUserId: actorUserId,
-          respondedByUserId: null,
-          respondedAt: null,
-        },
-        200,
-      );
+      return c.json(serializedInvitation, 200);
     })();
   });
 
   authRoutes.openapi(listClassroomInvitationsRoute, (c) => {
     return (async () => {
       const { orgSlug, classroomSlug } = c.req.valid('param');
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
+      const identity = await getSessionIdentity(c.req.raw.headers);
       if (!identity) {
         return c.json({ message: 'Unauthorized' }, 401);
       }
@@ -3064,98 +2858,31 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         userId: identity.userId,
         context: classroomContext,
       });
-
-      if (!access.canManageParticipants && !access.canManageClassroom) {
+      if (!access.effective.canManageParticipants && !access.effective.canManageClassroom) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const [organizationInvitationRows, participantInvitationRows] = await Promise.all([
-        access.canManageClassroom
-          ? database
-              .select({
-                id: dbSchema.invitation.id,
-                organizationId: dbSchema.invitation.organizationId,
-                organizationSlug: dbSchema.organization.slug,
-                organizationName: dbSchema.organization.name,
-                classroomId: dbSchema.invitation.classroomId,
-                classroomSlug: dbSchema.classroom.slug,
-                classroomName: dbSchema.classroom.name,
-                organizationRole: dbSchema.invitation.role,
-                classroomRole: dbSchema.invitation.classroomRole,
-                email: dbSchema.invitation.email,
-                status: dbSchema.invitation.status,
-                expiresAt: dbSchema.invitation.expiresAt,
-                createdAt: dbSchema.invitation.createdAt,
-                invitedByUserId: dbSchema.invitation.inviterId,
-              })
-              .from(dbSchema.invitation)
-              .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.invitation.organizationId))
-              .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId))
-              .where(
-                and(
-                  eq(dbSchema.invitation.organizationId, classroomContext.organizationId),
-                  eq(dbSchema.invitation.classroomId, classroomContext.classroomId),
-                ),
-              )
-              .orderBy(desc(dbSchema.invitation.createdAt))
-          : Promise.resolve([]),
-        database
-          .select({
-            id: dbSchema.participantInvitation.id,
-            organizationId: dbSchema.participantInvitation.organizationId,
-            classroomId: dbSchema.participantInvitation.classroomId,
-            classroomSlug: dbSchema.classroom.slug,
-            classroomName: dbSchema.classroom.name,
-            organizationName: dbSchema.organization.name,
-            email: dbSchema.participantInvitation.email,
-            participantName: dbSchema.participantInvitation.participantName,
-            status: dbSchema.participantInvitation.status,
-            expiresAt: dbSchema.participantInvitation.expiresAt,
-            createdAt: dbSchema.participantInvitation.createdAt,
-            invitedByUserId: dbSchema.participantInvitation.invitedByUserId,
-            respondedByUserId: dbSchema.participantInvitation.respondedByUserId,
-            respondedAt: dbSchema.participantInvitation.respondedAt,
-          })
-          .from(dbSchema.participantInvitation)
-          .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.participantInvitation.classroomId))
-          .innerJoin(
-            dbSchema.organization,
-            eq(dbSchema.organization.id, dbSchema.participantInvitation.organizationId),
-          )
-          .where(
-            and(
-              eq(dbSchema.participantInvitation.organizationId, classroomContext.organizationId),
-              eq(dbSchema.participantInvitation.classroomId, classroomContext.classroomId),
-            ),
-          )
-          .orderBy(desc(dbSchema.participantInvitation.createdAt)),
-      ]);
+      const invitations = await listSerializedInvitations(
+        and(
+          eq(dbSchema.invitation.organizationId, classroomContext.organizationId),
+          eq(dbSchema.invitation.classroomId, classroomContext.classroomId),
+        ),
+      );
+      const filteredInvitations = invitations.filter((invitation) => {
+        if (invitation.subjectKind === 'participant') {
+          return access.effective.canManageParticipants || access.effective.canManageClassroom;
+        }
 
-      const memberInvitations = organizationInvitationRows
-        .map((row: (typeof organizationInvitationRows)[number]) => serializeClassroomMemberInvitation(row))
-        .filter(
-          (
-            row: ReturnType<typeof serializeClassroomMemberInvitation>,
-          ): row is NonNullable<ReturnType<typeof serializeClassroomMemberInvitation>> => Boolean(row),
-        );
-      const participantInvitations = participantInvitationRows
-        .map((row: (typeof participantInvitationRows)[number]) =>
-          serializeClassroomParticipantInvitation(row, classroomContext.organizationSlug),
-        )
-        .filter(
-          (
-            row: ReturnType<typeof serializeClassroomParticipantInvitation>,
-          ): row is NonNullable<ReturnType<typeof serializeClassroomParticipantInvitation>> => Boolean(row),
-        );
+        return access.effective.canManageClassroom;
+      });
 
-      return c.json([...memberInvitations, ...participantInvitations], 200);
+      return c.json(filteredInvitations, 200);
     })();
   });
 
-  authRoutes.openapi(listUserClassroomInvitationsRoute, (c) => {
+  authRoutes.openapi(listUserInvitationsRoute, (c) => {
     return (async () => {
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
+      const identity = await getSessionIdentity(c.req.raw.headers);
       if (!identity) {
         return c.json({ message: 'Unauthorized' }, 401);
       }
@@ -3163,83 +2890,17 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Current user email is unavailable.' }, 400);
       }
 
-      const [organizationInvitationRows, participantInvitationRows] = await Promise.all([
-        database
-          .select({
-            id: dbSchema.invitation.id,
-            organizationId: dbSchema.invitation.organizationId,
-            organizationSlug: dbSchema.organization.slug,
-            organizationName: dbSchema.organization.name,
-            classroomId: dbSchema.invitation.classroomId,
-            classroomSlug: dbSchema.classroom.slug,
-            classroomName: dbSchema.classroom.name,
-            organizationRole: dbSchema.invitation.role,
-            classroomRole: dbSchema.invitation.classroomRole,
-            email: dbSchema.invitation.email,
-            status: dbSchema.invitation.status,
-            expiresAt: dbSchema.invitation.expiresAt,
-            createdAt: dbSchema.invitation.createdAt,
-            invitedByUserId: dbSchema.invitation.inviterId,
-          })
-          .from(dbSchema.invitation)
-          .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.invitation.organizationId))
-          .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId))
-          .where(eq(dbSchema.invitation.email, identity.email))
-          .orderBy(desc(dbSchema.invitation.createdAt)),
-        database
-          .select({
-            id: dbSchema.participantInvitation.id,
-            organizationId: dbSchema.participantInvitation.organizationId,
-            classroomId: dbSchema.participantInvitation.classroomId,
-            classroomSlug: dbSchema.classroom.slug,
-            classroomName: dbSchema.classroom.name,
-            organizationSlug: dbSchema.organization.slug,
-            organizationName: dbSchema.organization.name,
-            email: dbSchema.participantInvitation.email,
-            participantName: dbSchema.participantInvitation.participantName,
-            status: dbSchema.participantInvitation.status,
-            expiresAt: dbSchema.participantInvitation.expiresAt,
-            createdAt: dbSchema.participantInvitation.createdAt,
-            invitedByUserId: dbSchema.participantInvitation.invitedByUserId,
-            respondedByUserId: dbSchema.participantInvitation.respondedByUserId,
-            respondedAt: dbSchema.participantInvitation.respondedAt,
-          })
-          .from(dbSchema.participantInvitation)
-          .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.participantInvitation.classroomId))
-          .innerJoin(
-            dbSchema.organization,
-            eq(dbSchema.organization.id, dbSchema.participantInvitation.organizationId),
-          )
-          .where(eq(dbSchema.participantInvitation.email, identity.email))
-          .orderBy(desc(dbSchema.participantInvitation.createdAt)),
-      ]);
-
-      const memberInvitations = organizationInvitationRows
-        .map((row: (typeof organizationInvitationRows)[number]) => serializeClassroomMemberInvitation(row))
-        .filter(
-          (
-            row: ReturnType<typeof serializeClassroomMemberInvitation>,
-          ): row is NonNullable<ReturnType<typeof serializeClassroomMemberInvitation>> => Boolean(row),
-        );
-      const participantInvitations = participantInvitationRows
-        .map((row: (typeof participantInvitationRows)[number]) =>
-          serializeClassroomParticipantInvitation(row, row.organizationSlug),
-        )
-        .filter(
-          (
-            row: ReturnType<typeof serializeClassroomParticipantInvitation>,
-          ): row is NonNullable<ReturnType<typeof serializeClassroomParticipantInvitation>> => Boolean(row),
-        );
-
-      return c.json([...memberInvitations, ...participantInvitations], 200);
+      const invitations = await listSerializedInvitations(
+        eq(dbSchema.invitation.email, identity.email),
+      );
+      return c.json(invitations, 200);
     })();
   });
 
-  authRoutes.openapi(classroomInvitationDetailRoute, (c) => {
+  authRoutes.openapi(invitationDetailRoute, (c) => {
     return (async () => {
-      const query = c.req.valid('query');
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
+      const { invitationId } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
       if (!identity) {
         return c.json({ message: 'Unauthorized' }, 401);
       }
@@ -3247,22 +2908,26 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Current user email is unavailable.' }, 400);
       }
 
-      const invitation = await findClassroomInvitationDetailById(query.invitationId);
+      const invitation = await hydrateInvitationRecord(invitationId);
       if (!invitation) {
-        return c.json({ message: 'Classroom invitation not found.' }, 404);
+        return c.json({ message: 'Invitation not found.' }, 404);
       }
-
-      if (normalizeEmail(invitation.email) !== identity.email) {
+      if (!isInvitationRecipient({ invitation, email: identity.email })) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      return c.json(invitation, 200);
+      const serializedInvitation = serializeInvitation(invitation);
+      if (!serializedInvitation) {
+        return c.json({ message: 'Invitation not found.' }, 404);
+      }
+
+      return c.json(serializedInvitation, 200);
     })();
   });
 
-  authRoutes.openapi(acceptClassroomInvitationRoute, (c) => {
+  authRoutes.openapi(acceptInvitationRoute, (c) => {
     return (async () => {
-      const body = c.req.valid('json');
+      const { invitationId } = c.req.valid('param');
       const headers = c.req.raw.headers;
       const identity = await getSessionIdentity(headers);
       if (!identity) {
@@ -3272,146 +2937,56 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Current user email is unavailable.' }, 400);
       }
 
-      const organizationInvitation = await findOrganizationInvitationDetailById(body.invitationId);
-      if (organizationInvitation) {
-        if (normalizeEmail(organizationInvitation.email) !== identity.email) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
-
-        const response = await auth.api.acceptInvitation({
-          body: { invitationId: body.invitationId },
-          headers,
-          asResponse: true,
-        });
-        if (!response.ok) {
-          return response;
-        }
-
-        const mappedRole = normalizeClassroomInvitationRole(
-          organizationInvitation.classroomRole ?? organizationInvitation.organizationRole,
-        );
-        if (
-          (mappedRole === 'manager' || mappedRole === 'staff') &&
-          typeof organizationInvitation.classroomId === 'string'
-        ) {
-          await database
-            .insert(dbSchema.classroomMember)
-            .values({
-              id: crypto.randomUUID(),
-              classroomId: organizationInvitation.classroomId,
-              userId: identity.userId,
-              role: mappedRole,
-              createdAt: new Date(),
-            })
-            .onConflictDoUpdate({
-              target: [dbSchema.classroomMember.classroomId, dbSchema.classroomMember.userId],
-              set: {
-                role: mappedRole,
-              },
-            });
-        }
-
-        await writeInvitationAuditLog({
-          invitationId: organizationInvitation.id,
-          organizationId: organizationInvitation.organizationId,
-          actorUserId: identity.userId,
-          targetEmail: organizationInvitation.email,
-          action: 'invitation.accepted',
-          metadata: {
-            classroomRole: mappedRole,
-            classroomId: organizationInvitation.classroomId,
-            classroomSlug: organizationInvitation.classroomSlug,
-          },
-          headers,
-        });
-
-        return response;
-      }
-
-      const invitation = await findParticipantInvitationById(body.invitationId);
+      const invitation = await hydrateInvitationRecord(invitationId);
       if (!invitation) {
-        return c.json({ message: 'Classroom invitation not found.' }, 404);
+        return c.json({ message: 'Invitation not found.' }, 404);
       }
-      if (normalizeEmail(invitation.email) !== identity.email) {
+      if (!isInvitationRecipient({ invitation, email: identity.email })) {
         return c.json({ message: 'Forbidden' }, 403);
       }
-      if (invitation.status !== 'pending') {
+
+      const serializedBeforeAccept = serializeInvitation(invitation);
+      if (!serializedBeforeAccept || serializedBeforeAccept.status !== 'pending') {
         return c.json({ message: 'Invitation is not pending.' }, 400);
       }
 
-      const existingParticipant = await database
-        .select({
-          id: dbSchema.participant.id,
-        })
-        .from(dbSchema.participant)
-        .where(
-          and(
-            eq(dbSchema.participant.organizationId, invitation.organizationId),
-            or(
-              eq(dbSchema.participant.userId, identity.userId),
-              eq(dbSchema.participant.email, invitation.email),
-            ),
-          ),
-        )
-        .limit(1);
-      if (existingParticipant[0]) {
-        return c.json({ message: 'Participant already exists for organization.' }, 409);
+      const accepted = await acceptInvitationRecord({
+        invitation,
+        userId: identity.userId,
+      });
+      if (!accepted) {
+        return c.json({ message: 'Invitation has already been processed.' }, 409);
       }
 
-      const participantId = crypto.randomUUID();
-      const now = new Date();
-      await database.insert(dbSchema.participant).values({
-        id: participantId,
+      const updatedInvitation = await hydrateInvitationRecord(invitationId);
+      const serializedInvitation = serializeInvitation(updatedInvitation);
+      if (!serializedInvitation) {
+        return c.json({ message: 'Invitation could not be loaded after acceptance.' }, 400);
+      }
+
+      await writeInvitationEvent({
+        invitationId: invitation.id,
         organizationId: invitation.organizationId,
         classroomId: invitation.classroomId,
-        userId: identity.userId,
-        email: invitation.email,
-        name: invitation.participantName,
-      });
-      await database
-        .update(dbSchema.participantInvitation)
-        .set({
-          status: 'accepted',
-          respondedByUserId: identity.userId,
-          respondedAt: now,
-        })
-        .where(
-          and(
-            eq(dbSchema.participantInvitation.id, invitation.id),
-            eq(dbSchema.participantInvitation.status, 'pending'),
-          ),
-        );
-
-      await writeParticipantInvitationAuditLog({
-        participantInvitationId: invitation.id,
-        organizationId: invitation.organizationId,
         actorUserId: identity.userId,
         targetEmail: invitation.email,
-        action: 'participant-invitation.accepted',
+        eventType: 'accepted',
         headers,
       });
 
-      const updatedInvitation = await findParticipantInvitationById(invitation.id);
       return c.json(
         {
-          invitation: serializeParticipantInvitation(updatedInvitation),
-          participant: {
-            id: participantId,
-            organizationId: invitation.organizationId,
-            userId: identity.userId,
-            email: invitation.email,
-            name: invitation.participantName,
-            createdAt: now.toISOString(),
-          },
+          invitation: serializedInvitation,
+          accepted,
         },
         200,
       );
     })();
   });
 
-  authRoutes.openapi(rejectClassroomInvitationRoute, (c) => {
+  authRoutes.openapi(rejectInvitationRoute, (c) => {
     return (async () => {
-      const body = c.req.valid('json');
+      const { invitationId } = c.req.valid('param');
       const headers = c.req.raw.headers;
       const identity = await getSessionIdentity(headers);
       if (!identity) {
@@ -3421,363 +2996,101 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Current user email is unavailable.' }, 400);
       }
 
-      const organizationInvitation = await findOrganizationInvitationDetailById(body.invitationId);
-      if (organizationInvitation) {
-        if (normalizeEmail(organizationInvitation.email) !== identity.email) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
-        const response = await auth.api.rejectInvitation({
-          body: { invitationId: body.invitationId },
-          headers,
-          asResponse: true,
-        });
-        if (response.ok) {
-          await writeInvitationAuditLog({
-            invitationId: organizationInvitation.id,
-            organizationId: organizationInvitation.organizationId,
-            actorUserId: identity.userId,
-            targetEmail: organizationInvitation.email,
-            action: 'invitation.rejected',
-            headers,
-          });
-        }
-        return response;
-      }
-
-      const invitation = await findParticipantInvitationById(body.invitationId);
+      const invitation = await hydrateInvitationRecord(invitationId);
       if (!invitation) {
-        return c.json({ message: 'Classroom invitation not found.' }, 404);
+        return c.json({ message: 'Invitation not found.' }, 404);
       }
-      if (normalizeEmail(invitation.email) !== identity.email) {
+      if (!isInvitationRecipient({ invitation, email: identity.email })) {
         return c.json({ message: 'Forbidden' }, 403);
       }
-      if (invitation.status !== 'pending') {
+
+      const serializedInvitation = serializeInvitation(invitation);
+      if (!serializedInvitation || serializedInvitation.status !== 'pending') {
         return c.json({ message: 'Invitation is not pending.' }, 400);
       }
 
       await database
-        .update(dbSchema.participantInvitation)
+        .update(dbSchema.invitation)
         .set({
           status: 'rejected',
           respondedByUserId: identity.userId,
           respondedAt: new Date(),
         })
-        .where(
-          and(
-            eq(dbSchema.participantInvitation.id, invitation.id),
-            eq(dbSchema.participantInvitation.status, 'pending'),
-          ),
-        );
+        .where(and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')));
 
-      await writeParticipantInvitationAuditLog({
-        participantInvitationId: invitation.id,
+      const updatedInvitation = await hydrateInvitationRecord(invitation.id);
+      const nextInvitation = serializeInvitation(updatedInvitation);
+      if (!nextInvitation) {
+        return c.json({ message: 'Invitation could not be loaded after rejection.' }, 400);
+      }
+
+      await writeInvitationEvent({
+        invitationId: invitation.id,
         organizationId: invitation.organizationId,
+        classroomId: invitation.classroomId,
         actorUserId: identity.userId,
         targetEmail: invitation.email,
-        action: 'participant-invitation.rejected',
+        eventType: 'rejected',
         headers,
       });
 
-      const updatedInvitation = await findParticipantInvitationById(invitation.id);
-      return c.json(serializeParticipantInvitation(updatedInvitation), 200);
+      return c.json(nextInvitation, 200);
     })();
   });
 
-  authRoutes.openapi(cancelClassroomInvitationRoute, (c) => {
+  authRoutes.openapi(cancelInvitationRoute, (c) => {
     return (async () => {
-      const body = c.req.valid('json');
+      const { invitationId } = c.req.valid('param');
       const headers = c.req.raw.headers;
       const identity = await getSessionIdentity(headers);
       if (!identity) {
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationInvitation = await findOrganizationInvitationDetailById(body.invitationId);
-      if (organizationInvitation) {
-        const classroomContext =
-          typeof organizationInvitation.classroomId === 'string'
-            ? await resolveClassroomContextByIds({
-                organizationId: organizationInvitation.organizationId,
-                classroomId: organizationInvitation.classroomId,
-              })
-            : await resolveClassroomContextByOrganizationId(organizationInvitation.organizationId);
-        if (!classroomContext) {
-          return c.json({ message: 'Organization or classroom not found.' }, 404);
-        }
-        const access = await resolveOrganizationClassroomAccess({
-          database,
-          userId: identity.userId,
-          context: classroomContext,
-        });
-        if (!access.canManageClassroom) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
-
-        const response = await auth.api.cancelInvitation({
-          body: { invitationId: body.invitationId },
-          headers,
-          asResponse: true,
-        });
-        if (response.ok) {
-          await writeInvitationAuditLog({
-            invitationId: organizationInvitation.id,
-            organizationId: organizationInvitation.organizationId,
-            actorUserId: identity.userId,
-            targetEmail: organizationInvitation.email,
-            action: 'invitation.canceled',
-            headers,
-          });
-        }
-        return response;
-      }
-
-      const invitation = await findParticipantInvitationById(body.invitationId);
+      const invitation = await hydrateInvitationRecord(invitationId);
       if (!invitation) {
-        return c.json({ message: 'Classroom invitation not found.' }, 404);
+        return c.json({ message: 'Invitation not found.' }, 404);
       }
 
-      const classroomContext = await resolveClassroomContextByIds({
-        organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
-      });
-      if (!classroomContext) {
-        return c.json({ message: 'Organization or classroom not found.' }, 404);
-      }
-      const access = await resolveOrganizationClassroomAccess({
-        database,
-        userId: identity.userId,
-        context: classroomContext,
-      });
-      if (!access.canManageParticipants) {
-        return c.json({ message: 'Forbidden' }, 403);
-      }
-      if (invitation.status !== 'pending') {
+      const serializedInvitation = serializeInvitation(invitation);
+      if (!serializedInvitation || serializedInvitation.status !== 'pending') {
         return c.json({ message: 'Invitation is not pending.' }, 400);
       }
 
+      const authorized = await canCancelInvitation({
+        invitation,
+        userId: identity.userId,
+      });
+      if (!authorized) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
       await database
-        .update(dbSchema.participantInvitation)
+        .update(dbSchema.invitation)
         .set({
-          status: 'canceled',
+          status: 'cancelled',
           respondedByUserId: identity.userId,
           respondedAt: new Date(),
         })
-        .where(
-          and(
-            eq(dbSchema.participantInvitation.id, invitation.id),
-            eq(dbSchema.participantInvitation.status, 'pending'),
-          ),
-        );
+        .where(and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')));
 
-      await writeParticipantInvitationAuditLog({
-        participantInvitationId: invitation.id,
+      const updatedInvitation = await hydrateInvitationRecord(invitation.id);
+      const nextInvitation = serializeInvitation(updatedInvitation);
+      if (!nextInvitation) {
+        return c.json({ message: 'Invitation could not be loaded after cancellation.' }, 400);
+      }
+
+      await writeInvitationEvent({
+        invitationId: invitation.id,
         organizationId: invitation.organizationId,
+        classroomId: invitation.classroomId,
         actorUserId: identity.userId,
         targetEmail: invitation.email,
-        action: 'participant-invitation.canceled',
+        eventType: 'cancelled',
         headers,
       });
 
-      const updatedInvitation = await findParticipantInvitationById(invitation.id);
-      return c.json(serializeParticipantInvitation(updatedInvitation), 200);
-    })();
-  });
-
-  authRoutes.openapi(createInvitationRoute, (c) => {
-    return (async () => {
-      const body = c.req.valid('json');
-      const headers = c.req.raw.headers;
-      const normalizedEmail = body.email.trim().toLowerCase();
-      const actorUserId = await getActorUserId(headers);
-
-      if (!actorUserId) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-
-      const currentSession = await auth.api.getSession({ headers });
-      const activeOrganizationId = getActiveOrganizationId(currentSession?.session);
-      const organizationId = body.organizationId ?? activeOrganizationId;
-
-      if (!organizationId) {
-        return c.json({ message: 'organizationId is required.' }, 400);
-      }
-
-      let resendTargetInvitation:
-        | {
-            id: string;
-            organizationId: string;
-            email: string;
-          }
-        | null = null;
-
-      if (body.resend) {
-        resendTargetInvitation = await findPendingInvitationForResend({
-          organizationId,
-          email: normalizedEmail,
-        });
-
-        if (!resendTargetInvitation) {
-          return c.json({ message: 'Pending invitation for resend was not found.' }, 400);
-        }
-
-        const resentCount = await countInvitationAuditAction({
-          invitationId: resendTargetInvitation.id,
-          action: 'invitation.resent',
-        });
-
-        if (resentCount >= 3) {
-          return c.json({ message: 'Invitation resend limit reached (3).' }, 429);
-        }
-      }
-
-      const response = await auth.api.createInvitation({
-        body: {
-          ...body,
-          email: normalizedEmail,
-          organizationId,
-        },
-        headers,
-        asResponse: true,
-      });
-
-      if (!response.ok) {
-        return response;
-      }
-
-      const payload = await parseResponseBody(response);
-      const invitationPayload = isInvitationPayload(payload)
-        ? payload
-        : resendTargetInvitation
-          ? {
-              id: resendTargetInvitation.id,
-              organizationId: resendTargetInvitation.organizationId,
-              email: resendTargetInvitation.email,
-            }
-          : null;
-
-      if (invitationPayload) {
-        await writeInvitationAuditLog({
-          invitationId: invitationPayload.id,
-          organizationId: invitationPayload.organizationId,
-          actorUserId,
-          targetEmail: invitationPayload.email,
-          action: body.resend ? 'invitation.resent' : 'invitation.created',
-          metadata: {
-            resend: body.resend ?? false,
-          },
-          headers,
-        });
-      }
-
-      return response;
-    })();
-  });
-
-  authRoutes.openapi(listInvitationsRoute, (c) => {
-    const query = c.req.valid('query');
-
-    return auth.api.listInvitations({
-      query,
-      headers: c.req.raw.headers,
-      asResponse: true,
-    });
-  });
-
-  authRoutes.openapi(listUserInvitationsRoute, (c) => {
-    return auth.api.listUserInvitations({
-      headers: c.req.raw.headers,
-      asResponse: true,
-    });
-  });
-
-  authRoutes.openapi(invitationDetailRoute, (c) => {
-    const query = c.req.valid('query');
-
-    return auth.api.getInvitation({
-      query: { id: query.invitationId },
-      headers: c.req.raw.headers,
-      asResponse: true,
-    });
-  });
-
-  authRoutes.openapi(acceptInvitationRoute, (c) => {
-    return (async () => {
-      const body = c.req.valid('json');
-      const headers = c.req.raw.headers;
-      const actorUserId = await getActorUserId(headers);
-      const invitationBeforeAction = await findInvitationById(body.invitationId);
-      const response = await auth.api.acceptInvitation({
-        body,
-        headers,
-        asResponse: true,
-      });
-
-      if (response.ok && actorUserId && invitationBeforeAction) {
-        await writeInvitationAuditLog({
-          invitationId: invitationBeforeAction.id,
-          organizationId: invitationBeforeAction.organizationId,
-          actorUserId,
-          targetEmail: invitationBeforeAction.email,
-          action: 'invitation.accepted',
-          headers,
-        });
-      }
-
-      return response;
-    })();
-  });
-
-  authRoutes.openapi(rejectInvitationRoute, (c) => {
-    return (async () => {
-      const body = c.req.valid('json');
-      const headers = c.req.raw.headers;
-      const actorUserId = await getActorUserId(headers);
-      const invitationBeforeAction = await findInvitationById(body.invitationId);
-      const response = await auth.api.rejectInvitation({
-        body,
-        headers,
-        asResponse: true,
-      });
-
-      if (response.ok && actorUserId && invitationBeforeAction) {
-        await writeInvitationAuditLog({
-          invitationId: invitationBeforeAction.id,
-          organizationId: invitationBeforeAction.organizationId,
-          actorUserId,
-          targetEmail: invitationBeforeAction.email,
-          action: 'invitation.rejected',
-          headers,
-        });
-      }
-
-      return response;
-    })();
-  });
-
-  authRoutes.openapi(cancelInvitationRoute, (c) => {
-    return (async () => {
-      const body = c.req.valid('json');
-      const headers = c.req.raw.headers;
-      const actorUserId = await getActorUserId(headers);
-      const invitationBeforeAction = await findInvitationById(body.invitationId);
-      const response = await auth.api.cancelInvitation({
-        body,
-        headers,
-        asResponse: true,
-      });
-
-      if (response.ok && actorUserId && invitationBeforeAction) {
-        await writeInvitationAuditLog({
-          invitationId: invitationBeforeAction.id,
-          organizationId: invitationBeforeAction.organizationId,
-          actorUserId,
-          targetEmail: invitationBeforeAction.email,
-          action: 'invitation.canceled',
-          headers,
-        });
-      }
-
-      return response;
+      return c.json(nextInvitation, 200);
     })();
   });
 
@@ -3810,7 +3123,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           userId: identity.userId,
           context: classroomContext,
         });
-        if (!access.canManageParticipants && !access.canManageClassroom) {
+        if (!access.effective.canManageParticipants && !access.effective.canManageClassroom) {
           return c.json({ message: 'Forbidden' }, 403);
         }
       } else {
@@ -4005,540 +3318,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         },
         200,
       );
-    })();
-  });
-
-  authRoutes.openapi(createParticipantInvitationRoute, (c) => {
-    return (async () => {
-      const body = c.req.valid('json');
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
-      const currentSession = await auth.api.getSession({ headers });
-
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-
-      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
-      if (!organizationId) {
-        return c.json({ message: 'organizationId is required.' }, 400);
-      }
-
-      let classroomContext:
-        | Awaited<ReturnType<typeof resolveClassroomContextByIds>>
-        | Awaited<ReturnType<typeof resolveClassroomContextByOrganizationId>>
-        | null = null;
-      if (body.classroomId) {
-        classroomContext = await resolveClassroomContextByIds({
-          organizationId,
-          classroomId: body.classroomId,
-        });
-        if (!classroomContext) {
-          return c.json({ message: 'Classroom not found.' }, 404);
-        }
-
-        const access = await resolveOrganizationClassroomAccess({
-          database,
-          userId: identity.userId,
-          context: classroomContext,
-        });
-        if (!access.canManageParticipants && !access.canManageClassroom) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
-      } else {
-        const hasAccess = await hasOrganizationAdminAccess({
-          organizationId,
-          userId: identity.userId,
-        });
-        if (!hasAccess) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
-
-        classroomContext = await resolveClassroomContextByOrganizationId(organizationId);
-      }
-
-      if (!classroomContext) {
-        return c.json({ message: 'Classroom not found.' }, 404);
-      }
-
-      const normalizedEmail = normalizeEmail(body.email);
-      const participantName = body.participantName.trim();
-
-      if (body.resend) {
-        const resendTargetInvitation = await findPendingParticipantInvitationForResend({
-          organizationId,
-          classroomId: classroomContext.classroomId,
-          email: normalizedEmail,
-        });
-
-        if (!resendTargetInvitation) {
-          return c.json({ message: 'Pending invitation for resend was not found.' }, 400);
-        }
-
-        const resentCount = await countParticipantInvitationAuditAction({
-          participantInvitationId: resendTargetInvitation.id,
-          action: 'participant-invitation.resent',
-        });
-
-        if (resentCount >= 3) {
-          return c.json({ message: 'Participant invitation resend limit reached (3).' }, 429);
-        }
-
-        await sendParticipantInvitationEmail({
-          env,
-          invitationId: resendTargetInvitation.id,
-          inviteeEmail: resendTargetInvitation.email,
-          participantName: resendTargetInvitation.participantName,
-          inviterName: getStringValue(currentSession?.user?.name),
-          inviterEmail: getStringValue(currentSession?.user?.email),
-          organizationName: resendTargetInvitation.organizationName,
-        });
-
-        await writeParticipantInvitationAuditLog({
-          participantInvitationId: resendTargetInvitation.id,
-          organizationId: resendTargetInvitation.organizationId,
-          actorUserId: identity.userId,
-          targetEmail: resendTargetInvitation.email,
-          action: 'participant-invitation.resent',
-          metadata: {
-            resend: true,
-            classroomSlug: classroomContext.classroomSlug,
-          },
-          headers,
-        });
-
-        return c.json(serializeParticipantInvitation(resendTargetInvitation), 200);
-      }
-
-      const duplicatePending = await findDuplicatePendingParticipantInvitation({
-        organizationId,
-        classroomId: classroomContext.classroomId,
-        email: normalizedEmail,
-      });
-      if (duplicatePending) {
-        return c.json({ message: 'Pending invitation already exists for this email.' }, 409);
-      }
-
-      const invitationId = crypto.randomUUID();
-      const expiresAt = new Date(Date.now() + 172_800_000);
-
-      await database.insert(dbSchema.participantInvitation).values({
-        id: invitationId,
-        organizationId,
-        classroomId: classroomContext.classroomId,
-        email: normalizedEmail,
-        participantName,
-        status: 'pending',
-        expiresAt,
-        invitedByUserId: identity.userId,
-      });
-
-      const createdInvitation = await findParticipantInvitationById(invitationId);
-      if (!createdInvitation) {
-        return c.json({ message: 'Failed to create participant invitation.' }, 500);
-      }
-
-      await sendParticipantInvitationEmail({
-        env,
-        invitationId: createdInvitation.id,
-        inviteeEmail: createdInvitation.email,
-        participantName: createdInvitation.participantName,
-        inviterName: getStringValue(currentSession?.user?.name),
-        inviterEmail: getStringValue(currentSession?.user?.email),
-        organizationName: createdInvitation.organizationName,
-      });
-
-      await writeParticipantInvitationAuditLog({
-        participantInvitationId: createdInvitation.id,
-        organizationId: createdInvitation.organizationId,
-        actorUserId: identity.userId,
-        targetEmail: createdInvitation.email,
-        action: 'participant-invitation.created',
-        metadata: {
-          resend: false,
-          participantName,
-          classroomSlug: classroomContext.classroomSlug,
-        },
-        headers,
-      });
-
-      return c.json(serializeParticipantInvitation(createdInvitation), 200);
-    })();
-  });
-
-  authRoutes.openapi(listParticipantInvitationsRoute, (c) => {
-    return (async () => {
-      const query = c.req.valid('query');
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
-
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-
-      const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
-      if (!organizationId) {
-        return c.json({ message: 'organizationId is required.' }, 400);
-      }
-
-      if (query.classroomId) {
-        const classroomContext = await resolveClassroomContextByIds({
-          organizationId,
-          classroomId: query.classroomId,
-        });
-        if (!classroomContext) {
-          return c.json({ message: 'Classroom not found.' }, 404);
-        }
-
-        const access = await resolveOrganizationClassroomAccess({
-          database,
-          userId: identity.userId,
-          context: classroomContext,
-        });
-        if (!access.canManageParticipants && !access.canManageClassroom) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
-      } else {
-        const hasAccess = await hasOrganizationAdminAccess({
-          organizationId,
-          userId: identity.userId,
-        });
-        if (!hasAccess) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
-      }
-
-      const filters = [eq(dbSchema.participantInvitation.organizationId, organizationId)];
-      if (query.classroomId) {
-        filters.push(eq(dbSchema.participantInvitation.classroomId, query.classroomId));
-      }
-
-      const rows = await database
-        .select({
-          id: dbSchema.participantInvitation.id,
-          organizationId: dbSchema.participantInvitation.organizationId,
-          classroomId: dbSchema.participantInvitation.classroomId,
-          classroomSlug: dbSchema.classroom.slug,
-          classroomName: dbSchema.classroom.name,
-          organizationName: dbSchema.organization.name,
-          email: dbSchema.participantInvitation.email,
-          participantName: dbSchema.participantInvitation.participantName,
-          status: dbSchema.participantInvitation.status,
-          expiresAt: dbSchema.participantInvitation.expiresAt,
-          createdAt: dbSchema.participantInvitation.createdAt,
-          invitedByUserId: dbSchema.participantInvitation.invitedByUserId,
-          respondedByUserId: dbSchema.participantInvitation.respondedByUserId,
-          respondedAt: dbSchema.participantInvitation.respondedAt,
-        })
-        .from(dbSchema.participantInvitation)
-        .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.participantInvitation.classroomId))
-        .innerJoin(
-          dbSchema.organization,
-          eq(dbSchema.organization.id, dbSchema.participantInvitation.organizationId),
-        )
-        .where(and(...filters))
-        .orderBy(desc(dbSchema.participantInvitation.createdAt));
-
-      return c.json(
-        rows.map((row: any) =>
-          serializeParticipantInvitation(row as Parameters<typeof serializeParticipantInvitation>[0]),
-        ),
-        200,
-      );
-    })();
-  });
-
-  authRoutes.openapi(listUserParticipantInvitationsRoute, (c) => {
-    return (async () => {
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
-
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-      if (!identity.email) {
-        return c.json({ message: 'Current user email is unavailable.' }, 400);
-      }
-
-      const rows = await database
-        .select({
-          id: dbSchema.participantInvitation.id,
-          organizationId: dbSchema.participantInvitation.organizationId,
-          classroomId: dbSchema.participantInvitation.classroomId,
-          classroomSlug: dbSchema.classroom.slug,
-          classroomName: dbSchema.classroom.name,
-          organizationName: dbSchema.organization.name,
-          email: dbSchema.participantInvitation.email,
-          participantName: dbSchema.participantInvitation.participantName,
-          status: dbSchema.participantInvitation.status,
-          expiresAt: dbSchema.participantInvitation.expiresAt,
-          createdAt: dbSchema.participantInvitation.createdAt,
-          invitedByUserId: dbSchema.participantInvitation.invitedByUserId,
-          respondedByUserId: dbSchema.participantInvitation.respondedByUserId,
-          respondedAt: dbSchema.participantInvitation.respondedAt,
-        })
-        .from(dbSchema.participantInvitation)
-        .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.participantInvitation.classroomId))
-        .innerJoin(
-          dbSchema.organization,
-          eq(dbSchema.organization.id, dbSchema.participantInvitation.organizationId),
-        )
-        .where(eq(dbSchema.participantInvitation.email, identity.email))
-        .orderBy(desc(dbSchema.participantInvitation.createdAt));
-
-      return c.json(
-        rows.map((row: any) =>
-          serializeParticipantInvitation(row as Parameters<typeof serializeParticipantInvitation>[0]),
-        ),
-        200,
-      );
-    })();
-  });
-
-  authRoutes.openapi(participantInvitationDetailRoute, (c) => {
-    return (async () => {
-      const query = c.req.valid('query');
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
-
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-      if (!identity.email) {
-        return c.json({ message: 'Current user email is unavailable.' }, 400);
-      }
-
-      const invitation = await findParticipantInvitationById(query.invitationId);
-      if (!invitation) {
-        return c.json({ message: 'Participant invitation not found.' }, 404);
-      }
-
-      if (normalizeEmail(invitation.email) !== identity.email) {
-        return c.json({ message: 'Forbidden' }, 403);
-      }
-
-      return c.json(serializeParticipantInvitation(invitation), 200);
-    })();
-  });
-
-  authRoutes.openapi(acceptParticipantInvitationRoute, (c) => {
-    return (async () => {
-      const body = c.req.valid('json');
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
-
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-      if (!identity.email) {
-        return c.json({ message: 'Current user email is unavailable.' }, 400);
-      }
-
-      const invitation = await findParticipantInvitationById(body.invitationId);
-      if (!invitation) {
-        return c.json({ message: 'Participant invitation not found.' }, 404);
-      }
-
-      if (normalizeEmail(invitation.email) !== identity.email) {
-        return c.json({ message: 'Forbidden' }, 403);
-      }
-
-      if (invitation.status !== 'pending') {
-        return c.json({ message: 'Invitation is not pending.' }, 400);
-      }
-
-      const existingParticipant = await database
-        .select({
-          id: dbSchema.participant.id,
-        })
-        .from(dbSchema.participant)
-        .where(
-          and(
-            eq(dbSchema.participant.organizationId, invitation.organizationId),
-            eq(dbSchema.participant.classroomId, invitation.classroomId),
-            or(
-              eq(dbSchema.participant.userId, identity.userId),
-              eq(dbSchema.participant.email, invitation.email),
-            ),
-          ),
-        )
-        .limit(1);
-
-      if (existingParticipant[0]) {
-        return c.json({ message: 'Participant already exists for organization.' }, 409);
-      }
-
-      const participantId = crypto.randomUUID();
-      const now = new Date();
-
-      await database.insert(dbSchema.participant).values({
-        id: participantId,
-        organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
-        userId: identity.userId,
-        email: invitation.email,
-        name: invitation.participantName,
-      });
-
-      await database
-        .update(dbSchema.participantInvitation)
-        .set({
-          status: 'accepted',
-          respondedByUserId: identity.userId,
-          respondedAt: now,
-        })
-        .where(
-          and(
-            eq(dbSchema.participantInvitation.id, invitation.id),
-            eq(dbSchema.participantInvitation.status, 'pending'),
-          ),
-        );
-
-      await writeParticipantInvitationAuditLog({
-        participantInvitationId: invitation.id,
-        organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
-        actorUserId: identity.userId,
-        targetEmail: invitation.email,
-        action: 'participant-invitation.accepted',
-        headers,
-      });
-
-      const updatedInvitation = await findParticipantInvitationById(invitation.id);
-      return c.json(
-        {
-          invitation: serializeParticipantInvitation(updatedInvitation),
-          participant: {
-            id: participantId,
-            organizationId: invitation.organizationId,
-            userId: identity.userId,
-            email: invitation.email,
-            name: invitation.participantName,
-            createdAt: now.toISOString(),
-          },
-        },
-        200,
-      );
-    })();
-  });
-
-  authRoutes.openapi(rejectParticipantInvitationRoute, (c) => {
-    return (async () => {
-      const body = c.req.valid('json');
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
-
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-      if (!identity.email) {
-        return c.json({ message: 'Current user email is unavailable.' }, 400);
-      }
-
-      const invitation = await findParticipantInvitationById(body.invitationId);
-      if (!invitation) {
-        return c.json({ message: 'Participant invitation not found.' }, 404);
-      }
-
-      if (normalizeEmail(invitation.email) !== identity.email) {
-        return c.json({ message: 'Forbidden' }, 403);
-      }
-
-      if (invitation.status !== 'pending') {
-        return c.json({ message: 'Invitation is not pending.' }, 400);
-      }
-
-      await database
-        .update(dbSchema.participantInvitation)
-        .set({
-          status: 'rejected',
-          respondedByUserId: identity.userId,
-          respondedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(dbSchema.participantInvitation.id, invitation.id),
-            eq(dbSchema.participantInvitation.status, 'pending'),
-          ),
-        );
-
-      await writeParticipantInvitationAuditLog({
-        participantInvitationId: invitation.id,
-        organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
-        actorUserId: identity.userId,
-        targetEmail: invitation.email,
-        action: 'participant-invitation.rejected',
-        headers,
-      });
-
-      const updatedInvitation = await findParticipantInvitationById(invitation.id);
-      return c.json(serializeParticipantInvitation(updatedInvitation), 200);
-    })();
-  });
-
-  authRoutes.openapi(cancelParticipantInvitationRoute, (c) => {
-    return (async () => {
-      const body = c.req.valid('json');
-      const headers = c.req.raw.headers;
-      const identity = await getSessionIdentity(headers);
-
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-
-      const invitation = await findParticipantInvitationById(body.invitationId);
-      if (!invitation) {
-        return c.json({ message: 'Participant invitation not found.' }, 404);
-      }
-
-      const classroomContext = await resolveClassroomContextByIds({
-        organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
-      });
-      if (!classroomContext) {
-        return c.json({ message: 'Classroom not found.' }, 404);
-      }
-
-      const access = await resolveOrganizationClassroomAccess({
-        database,
-        userId: identity.userId,
-        context: classroomContext,
-      });
-      if (!access.canManageParticipants && !access.canManageClassroom) {
-        return c.json({ message: 'Forbidden' }, 403);
-      }
-
-      if (invitation.status !== 'pending') {
-        return c.json({ message: 'Invitation is not pending.' }, 400);
-      }
-
-      await database
-        .update(dbSchema.participantInvitation)
-        .set({
-          status: 'canceled',
-          respondedByUserId: identity.userId,
-          respondedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(dbSchema.participantInvitation.id, invitation.id),
-            eq(dbSchema.participantInvitation.status, 'pending'),
-          ),
-        );
-
-      await writeParticipantInvitationAuditLog({
-        participantInvitationId: invitation.id,
-        organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
-        actorUserId: identity.userId,
-        targetEmail: invitation.email,
-        action: 'participant-invitation.canceled',
-        headers,
-      });
-
-      const updatedInvitation = await findParticipantInvitationById(invitation.id);
-      return c.json(serializeParticipantInvitation(updatedInvitation), 200);
     })();
   });
 

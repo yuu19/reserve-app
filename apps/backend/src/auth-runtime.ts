@@ -3,7 +3,7 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { organization } from 'better-auth/plugins/organization';
 import * as schema from './db/schema.js';
-import { sendOrganizationInvitationEmail, type ResendEnv } from './email/resend.js';
+import type { ResendEnv } from './email/resend.js';
 
 export type AuthRuntimeEnv = {
   BETTER_AUTH_URL?: string;
@@ -131,17 +131,6 @@ export const createAuthRuntime = ({
     plugins: [
       organization({
         invitationExpiresIn: 172800,
-        async sendInvitationEmail(data) {
-          await sendOrganizationInvitationEmail({
-            env,
-            invitationId: data.id,
-            inviteeEmail: data.email,
-            inviterName: data.inviter.user.name,
-            inviterEmail: data.inviter.user.email,
-            organizationName: data.organization.name,
-            role: data.role,
-          });
-        },
       }),
       expoPlugin(),
     ],
