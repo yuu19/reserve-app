@@ -1,6 +1,6 @@
 # DB説明とER（Org + Classroom）
 
-最終更新: 2026-03-06  
+最終更新: 2026-03-10
 参照: `apps/backend/src/db/schema.ts`
 
 ## 1. 概要
@@ -10,6 +10,7 @@
 - `organization`: 全体Org
 - `classroom`: 教室
 - 予約ドメインの主要テーブルは `classroom_id` を必須保持
+- 招待は `invitation` / `invitation_audit_log` に統一済み
 
 ## 2. 主要テーブル
 
@@ -25,15 +26,18 @@
 - `organization`
 - `classroom`
 - `member`（Org member）
-- `classroom_member`（Classroom role）
+- `classroom_member`（Classroom staff role）
 - `participant`
 
 ### 招待
 
-- `invitation`（organization plugin 招待）
+- `invitation`
+  - `subject_kind`: `org_operator | classroom_operator | participant`
+  - `role`: `admin | member | manager | staff | participant`
+  - `principal_kind`: `email | existing_user`
+  - `accepted_member_id | accepted_classroom_member_id | accepted_participant_id`
 - `invitation_audit_log`
-- `classroom_invitation`（participant 招待）
-- `classroom_invitation_audit_log`
+  - `action`: `created | resent | accepted | rejected | cancelled | expired`
 
 ### 予約/回数券
 
@@ -48,16 +52,28 @@
 - `ticket_purchase`
 - `ticket_ledger`
 
-## 3. 制約の要点
+## 3. 制約とインデックスの要点
 
 - `participant` unique:
-  - `(organization_id, user_id)`
-  - `(organization_id, email)`
+  - `(organization_id, classroom_id, user_id)`
+  - `(organization_id, classroom_id, email)`
 - `slot` unique:
   - `(organization_id, recurring_schedule_id, start_at)`
 - `booking` unique:
   - `(slot_id, participant_id)`
-- `classroom_invitation` / `classroom_invitation_audit_log` は `classroom_id` 必須
+- `invitation`:
+  - `organization_id` は必須
+  - `classroom_id` は org operator 招待では `null`、classroom/participant 招待では設定
+  - `subject_kind + status`
+  - `(organization_id, classroom_id, status)`
+  - `(organization_id, subject_kind, role, status)`
+  - `email`
+- `invitation_audit_log`:
+  - `(invitation_id, action)`
+  - `(organization_id, created_at)`
+  - `(actor_user_id, created_at)`
+
+`apps/backend/drizzle/0011_unified_invitations.sql` で legacy `invitation` と `classroom_invitation` を単一モデルへ移行している。
 
 ## 4. ER図（簡略）
 
@@ -72,11 +88,11 @@ erDiagram
   USER ||--o{ PARTICIPANT : owns
 
   ORGANIZATION ||--o{ INVITATION : has
+  CLASSROOM ||--o{ INVITATION : scopes
+  MEMBER ||--o{ INVITATION : accepted_as
+  CLASSROOM_MEMBER ||--o{ INVITATION : accepted_as
+  PARTICIPANT ||--o{ INVITATION : accepted_as
   INVITATION ||--o{ INVITATION_AUDIT_LOG : logged
-
-  ORGANIZATION ||--o{ CLASSROOM_INVITATION : has
-  CLASSROOM ||--o{ CLASSROOM_INVITATION : has
-  CLASSROOM_INVITATION ||--o{ CLASSROOM_INVITATION_AUDIT_LOG : logged
 
   ORGANIZATION ||--o{ SERVICE : has
   CLASSROOM ||--o{ SERVICE : has

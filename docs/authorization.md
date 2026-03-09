@@ -1,6 +1,6 @@
 # 権限設計（全体Org + 複数Classroom）
 
-最終更新: 2026-03-07
+最終更新: 2026-03-10
 
 ## 1. 目的
 
@@ -8,8 +8,9 @@
 
 - Org 層: 組織全体の管理責務
 - Classroom 層: 教室単位の運用責務
+- Participant: 教室ロールではなく、参加者レコードの有無で扱う
 
-## 2. ロールモデル
+## 2. 事実モデル
 
 ### OrgRole
 
@@ -17,35 +18,62 @@
 - `admin`
 - `member`
 
-### ClassroomRole
+### ClassroomStaffRole
 
 - `manager`
 - `staff`
-- `participant`
 
-## 3. 実効権限
+### Participant fact
 
-### OrgRole 由来
+- `hasParticipantRecord: boolean`
+- participant は `classroom_member.role` には入れない
+- participant-only user は `orgRole = null | member` かつ `classroomStaffRole = null` になりうる
 
-- `owner/admin`
-  - 全教室の管理（教室作成・招待・設定）
-  - 管理者ダッシュボード導線
-- `member`
-  - Org 全体管理は不可
+## 3. 認可の4層
 
-### ClassroomRole 由来
+`GET /api/v1/auth/orgs/access-tree` とサーバ内部の認可は、単一ロールではなく次の4層で扱う。
 
-- `manager`
-  - 当該教室の管理操作を許可
-- `staff`
-  - 予約運用・参加者管理を許可
-  - サービス/枠/定期の管理は不可
-- `participant`
-  - 参加者導線のみ許可
+### facts
 
-## 4. ロール別権限一覧
+入力事実。権限の根拠そのもの。
 
-### 4-1. OrgRole 単独
+- `facts.orgRole: owner | admin | member | null`
+- `facts.classroomStaffRole: manager | staff | null`
+- `facts.hasParticipantRecord: boolean`
+
+### effective
+
+実際に判定へ使う capability。
+
+- `effective.canManageOrganization`
+- `effective.canManageClassroom`
+- `effective.canManageBookings`
+- `effective.canManageParticipants`
+- `effective.canUseParticipantBooking`
+
+### sources
+
+各 capability がどこから導出されたか。
+
+- `sources.canManageOrganization: org_role | null`
+- `sources.canManageClassroom: org_role | classroom_member | null`
+- `sources.canManageBookings: org_role | classroom_member | null`
+- `sources.canManageParticipants: org_role | classroom_member | null`
+- `sources.canUseParticipantBooking: participant_record | null`
+
+### display
+
+UI 表示専用の補助値。権限判定の正本には使わない。
+
+- `display.primaryRole: owner | admin | manager | staff | participant | null`
+- `display.badges: ('owner' | 'admin' | 'manager' | 'staff' | 'participant')[]`
+
+`primaryRole` の優先順は `owner/admin > manager > staff > participant`。
+`badges` は複数保持できるため、`staff + participant` のような重なりを潰さない。
+
+## 4. 実効権限
+
+### 4-1. OrgRole 由来
 
 | OrgRole | Org全体管理 | 全教室の設定/招待 | 予約運用 | 参加者管理 | participant導線 |
 | --- | --- | --- | --- | --- | --- |
@@ -55,98 +83,168 @@
 
 補足:
 
-- `owner` / `admin` は実装上、全教室で `manager` 相当として扱う。
-- `member` は Org 所属を表すだけで、単独では管理権限も participant 権限も持たない。
+- `owner` / `admin` は classroom member がなくても全教室で管理権限を持つ。
+- ただし `display.primaryRole` が `manager` に偽装されることはない。根拠は `sources.* = org_role` で追う。
 
-### 4-2. ClassroomRole 単独
+### 4-2. ClassroomStaffRole 由来
 
-前提: OrgRole は `member` または `null` で、教室側ロールだけが効いているケース。
+前提: OrgRole は `member` または `null` で、教室スタッフ権限だけが効いているケース。
 
-| ClassroomRole | 対象教室の設定/招待 | 予約運用 | 参加者管理 | participant導線 |
+| ClassroomStaffRole | 対象教室の設定/招待 | 予約運用 | 参加者管理 | participant導線 |
 | --- | --- | --- | --- | --- |
 | `manager` | 可 | 可 | 可 | 不可 |
 | `staff` | 不可 | 可 | 可 | 不可 |
-| `participant` | 不可 | 不可 | 不可 | 可 |
 
 補足:
 
 - `manager` は教室単位の管理操作を実行できる。
 - `staff` は予約運用と参加者管理までで、サービス/枠/定期の管理はできない。
-- `participant` は自分の予約導線だけを利用できる。
 
-### 4-3. 実効権限の優先ルール
+### 4-3. Participant record 由来
 
-| 条件 | `activeOrganizationRole` | `activeClassroomRole` | 実効権限 |
-| --- | --- | --- | --- |
-| OrgRole が `owner` / `admin` | `owner` / `admin` | `manager` | Org 管理 + 教室管理 + 予約運用 + 参加者管理 |
-| OrgRole が `member` かつ classroom member が `manager` | `member` | `manager` | 対象教室の管理 + 予約運用 + 参加者管理 |
-| OrgRole が `member` かつ classroom member が `staff` | `member` | `staff` | 対象教室の予約運用 + 参加者管理 |
-| participant レコードのみ存在 | `member` または `null` | `participant` | participant 導線のみ |
-| OrgRole `member` のみ | `member` | `null` | 権限なし |
+| 条件 | participant導線 |
+| --- | --- |
+| `hasParticipantRecord = true` | 可 |
+| `hasParticipantRecord = false` | 不可 |
 
 補足:
 
-- `activeClassroomRole` は `OrgRole -> classroom member -> participant` の順で解決する。
-- `canUseParticipantBooking` は `participant` レコードがある教室だけで `true` になる。
-- `manager` / `staff` であっても、participant レコードがなければ participant 画面の利用権は付かない。
+- `manager` / `staff` であっても、participant レコードがなければ `effective.canUseParticipantBooking = false`。
+- participant 導線の厳格仕様は維持する。管理者向けの代理閲覧・代理予約は別フェーズ。
 
-## 5. 判定フェーズ
-
-### Stage 1: 全体アクセス（cross-org）
-
-- `hasOrganizationAdminAccess`
-- `hasParticipantAccess`
-
-用途:
-
-- ログイン直後のポータル振り分け
-- 管理者/参加者導線の可否
-
-### Stage 2: active context（org + classroom）
-
-- `canManage`
-- `canManageBookings`
-- `canManageParticipants`
-- `canUseParticipantBooking`
-- `activeOrganizationRole`
-- `activeClassroomRole`
-
-用途:
-
-- 画面内ボタン表示
-- API 実行可否
-
-## 6. アクセスAPI
+## 5. access-tree API
 
 ### `GET /api/v1/auth/orgs/access-tree`
 
 ログインユーザーのアクセス木を返す。
 
-- `orgs[].org`: `{ id, slug, name }`
-- `orgs[].orgRole`: `owner | admin | member | null`
+- `orgs[].org`
+  - `{ id, slug, name, logo? }`
+- `orgs[].facts`
+  - `{ orgRole }`
 - `orgs[].classrooms[]`
-  - `id`, `slug`, `name`
-  - `role`: `manager | staff | participant | null`
-  - `canManage`, `canManageBookings`, `canManageParticipants`, `canUseParticipantBooking`
+  - `id`, `slug`, `name`, `logo?`
+  - `facts`
+  - `effective`
+  - `sources`
+  - `display`
 
-## 7. 招待モデル
+例:
 
-### 教室メンバー招待
+```json
+{
+  "orgs": [
+    {
+      "org": {
+        "id": "org_123",
+        "slug": "tokyo-school",
+        "name": "Tokyo School"
+      },
+      "facts": {
+        "orgRole": "admin"
+      },
+      "classrooms": [
+        {
+          "id": "cls_123",
+          "slug": "tokyo-school",
+          "name": "Default Classroom",
+          "facts": {
+            "orgRole": "admin",
+            "classroomStaffRole": "staff",
+            "hasParticipantRecord": true
+          },
+          "effective": {
+            "canManageOrganization": true,
+            "canManageClassroom": true,
+            "canManageBookings": true,
+            "canManageParticipants": true,
+            "canUseParticipantBooking": true
+          },
+          "sources": {
+            "canManageOrganization": "org_role",
+            "canManageClassroom": "org_role",
+            "canManageBookings": "org_role",
+            "canManageParticipants": "org_role",
+            "canUseParticipantBooking": "participant_record"
+          },
+          "display": {
+            "primaryRole": "admin",
+            "badges": ["admin", "staff", "participant"]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 
-- API: `/api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations`
-- role: `manager | staff`
-- 内部的には Better Auth の `invitation` を利用
+## 6. 招待モデル
 
-### 教室参加者招待
+招待の正本は自前DBの unified invitation モデルに統一する。Better Auth invitation は業務招待フローでは使わない。
 
-- API: 上記と同一（`role: participant`）
-- DB: `classroom_invitation`
-- 監査ログ: `classroom_invitation_audit_log`
+### invitation
 
-### 承諾・拒否・取消
+- `subjectKind: org_operator | classroom_operator | participant`
+- `role: admin | member | manager | staff | participant`
+- `organizationId`
+- `classroomId | null`
+- `email`
+- `principalKind: email | existing_user`
+- `participantName | null`
+- `status: pending | accepted | rejected | cancelled | expired`
+- `respondedByUserId | null`
+- `respondedAt | null`
+- `acceptedMemberId | null`
+- `acceptedClassroomMemberId | null`
+- `acceptedParticipantId | null`
+- `invitedByUserId`
+- `expiresAt`, `createdAt`, `updatedAt`
 
-- `/api/v1/auth/orgs/classrooms/invitations/{accept|reject|cancel}`
-- 受諾時、participant は Org member を自動付与しない
+### invitation_audit_log
+
+- `eventType: created | resent | accepted | rejected | cancelled | expired`
+- `invitationId`
+- `organizationId`
+- `classroomId | null`
+- `actorUserId`
+- `targetEmail`
+- `metadata`
+- `createdAt`
+
+### 受諾時の挙動
+
+- `subjectKind = org_operator`
+  - `role = admin | member`
+  - `member` を upsert
+- `subjectKind = classroom_operator`
+  - `role = manager | staff`
+  - org member を最低 `member` として存在保証し、`classroom_member` を upsert
+  - `manager -> admin` のような org 権限昇格は行わない
+- `subjectKind = participant`
+  - `participant` を upsert
+  - Org member は自動付与しない
+
+## 7. 招待API
+
+### Org operator 招待
+
+- `POST /api/v1/auth/orgs/{orgSlug}/invitations`
+- `GET /api/v1/auth/orgs/{orgSlug}/invitations`
+
+### Classroom 招待
+
+- `POST /api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations`
+- `GET /api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations`
+
+`role = participant` は participant 招待、`role = manager | staff` は classroom operator 招待として同じ endpoint を使う。
+
+### ユーザー操作
+
+- `GET /api/v1/auth/invitations/user`
+- `GET /api/v1/auth/invitations/{invitationId}`
+- `POST /api/v1/auth/invitations/{invitationId}/accept`
+- `POST /api/v1/auth/invitations/{invitationId}/reject`
+- `POST /api/v1/auth/invitations/{invitationId}/cancel`
 
 ## 8. 画面導線
 
@@ -154,12 +252,14 @@
   - `/admin/dashboard` へ誘導
   - Org/Classroom 切替 UI を表示
 - Classroom staff/manager
-  - 管理導線を表示（許可範囲に限定）
+  - 管理導線を表示
 - participant-only
   - `/participant/home` へ誘導
 
+招待受諾 UI は API が統一されていても、現状の Web では管理者向け `/invitations/accept` と participant 向け `/participants/invitations/accept` を使い分ける。
+
 ## 9. 実装メモ
 
-- 既存 organization 作成時、既定 classroom を自動作成する。
+- organization 作成時、既定 classroom を自動作成する。
 - `classroom_id` は予約ドメイン全テーブルで必須。
-- 旧 organization 単位 API は段階的に縮退し、org/classroom スコープAPIへ移行する。
+- 旧 `activeClassroomRole` ベースの判定と旧 `/api/v1/auth/organizations/access` は廃止済み。

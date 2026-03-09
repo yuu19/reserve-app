@@ -76,8 +76,11 @@ pnpm --filter @apps/backend run dev
   - Service image upload endpoint: `PUT /api/v1/auth/organizations/services/images/upload/:token`
   - Service image delivery endpoint: `GET /api/v1/auth/organizations/services/images/:key`
   - Access tree endpoint: `GET /api/v1/auth/orgs/access-tree`
+  - Organization invitation endpoint: `POST/GET /api/v1/auth/orgs/{orgSlug}/invitations`
   - Classroom invitation endpoint: `POST/GET /api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations`
-  - Classroom invitation action endpoint: `/api/v1/auth/orgs/classrooms/invitations/{detail|accept|reject|cancel}`
+  - User invitation endpoint: `GET /api/v1/auth/invitations/user`
+  - Invitation detail endpoint: `GET /api/v1/auth/invitations/{invitationId}`
+  - Invitation action endpoints: `POST /api/v1/auth/invitations/{invitationId}/{accept|reject|cancel}`
 - Public events routes: `/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events*`
 
 `@better-auth/expo` server plugin を有効化しているため、Expo クライアントからの認証にも対応しています。
