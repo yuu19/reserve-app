@@ -7,13 +7,14 @@
 - [architecture.md](./architecture.md)
 - [authorization.md](./authorization.md)
 - [database-er.md](./database-er.md)
+- [test-strategy.md](./test-strategy.md)
 
 ## 現在の移行ステータス（2026-03）
 
 - Backend/DB は `organization + classroom` の2階層へ移行済み（`classroom_id` 必須）。
 - 認可/招待/Public Events API は classroom スコープ API を導入済み。
 - booking API / 一部Webルートは段階移行中（互換エンドポイントを一時併用）。
-- Mobile は今回の2階層権限移行の対象外。
+- Mobile は access/invitation DTO の新モデルに追従済み。自動テストは未設定。
 
 ## アプリ構成
 
