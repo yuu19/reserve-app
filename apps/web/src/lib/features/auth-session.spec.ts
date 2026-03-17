@@ -9,8 +9,12 @@ import {
 
 const buildPortalAccess = (overrides: Record<string, unknown> = {}) => ({
 	hasOrganizationAdminAccess: false,
+	hasAdminPortalAccess: false,
 	hasParticipantAccess: false,
 	canManage: false,
+	canManageClassroom: false,
+	canManageBookings: false,
+	canManageParticipants: false,
 	canUseParticipantBooking: false,
 	activeOrganizationRole: null,
 	activeFacts: null,
@@ -67,7 +71,7 @@ describe('auth-session.svelte', () => {
 
 		redirectToLoginWithNext('/events/slot-1?from=public#reserve');
 		expect(assign).toHaveBeenCalledWith(
-			'/login/participant?next=%2Fevents%2Fslot-1%3Ffrom%3Dpublic%23reserve'
+			'/participant/login?next=%2Fevents%2Fslot-1%3Ffrom%3Dpublic%23reserve'
 		);
 	});
 
@@ -81,7 +85,7 @@ describe('auth-session.svelte', () => {
 
 		redirectToLoginWithNext('/admin/bookings?from=2026-03-01');
 		expect(assign).toHaveBeenCalledWith(
-			'/login/admin?next=%2Fadmin%2Fbookings%3Ffrom%3D2026-03-01'
+			'/admin/login?next=%2Fadmin%2Fbookings%3Ffrom%3D2026-03-01'
 		);
 	});
 
@@ -107,7 +111,7 @@ describe('auth-session.svelte', () => {
 
 		redirectToLoginWithNext('/participants/invitations/accept?invitationId=test-invitation');
 		expect(assign).toHaveBeenCalledWith(
-			'/login/participant?next=%2Fparticipants%2Finvitations%2Faccept%3FinvitationId%3Dtest-invitation'
+			'/participant/login?next=%2Fparticipants%2Finvitations%2Faccept%3FinvitationId%3Dtest-invitation'
 		);
 	});
 
@@ -129,8 +133,12 @@ describe('auth-session.svelte', () => {
 			resolvePortalHomePath(
 				buildPortalAccess({
 					hasOrganizationAdminAccess: true,
+					hasAdminPortalAccess: true,
 					hasParticipantAccess: true,
 					canManage: true,
+					canManageClassroom: true,
+					canManageBookings: true,
+					canManageParticipants: true,
 					canUseParticipantBooking: true,
 					activeOrganizationRole: 'admin',
 					activeFacts: {
@@ -161,8 +169,12 @@ describe('auth-session.svelte', () => {
 			resolvePortalHomePath(
 				buildPortalAccess({
 					hasOrganizationAdminAccess: true,
+					hasAdminPortalAccess: true,
 					hasParticipantAccess: true,
 					canManage: false,
+					canManageClassroom: false,
+					canManageBookings: false,
+					canManageParticipants: false,
 					canUseParticipantBooking: true,
 					activeFacts: {
 						orgRole: null,
@@ -192,8 +204,12 @@ describe('auth-session.svelte', () => {
 			resolvePortalHomePath(
 				buildPortalAccess({
 					hasOrganizationAdminAccess: false,
+					hasAdminPortalAccess: false,
 					hasParticipantAccess: true,
 					canManage: false,
+					canManageClassroom: false,
+					canManageBookings: false,
+					canManageParticipants: false,
 					canUseParticipantBooking: true,
 					activeFacts: {
 						orgRole: null,
@@ -216,6 +232,41 @@ describe('auth-session.svelte', () => {
 				})
 			)
 		).toBe('/participant/home');
+	});
+
+	it('resolves admin bookings when staff booking access exists', () => {
+		expect(
+			resolvePortalHomePath(
+				buildPortalAccess({
+					hasOrganizationAdminAccess: false,
+					hasAdminPortalAccess: true,
+					hasParticipantAccess: false,
+					canManage: false,
+					canManageClassroom: false,
+					canManageBookings: true,
+					canManageParticipants: true,
+					canUseParticipantBooking: false,
+					activeFacts: {
+						orgRole: null,
+						classroomStaffRole: 'staff',
+						hasParticipantRecord: false
+					},
+					activeSources: {
+						canManageOrganization: null,
+						canManageClassroom: null,
+						canManageBookings: 'classroom_member',
+						canManageParticipants: 'classroom_member',
+						canUseParticipantBooking: null
+					},
+					activeDisplay: {
+						primaryRole: 'staff',
+						badges: ['staff']
+					},
+					activeDisplayRole: 'staff',
+					hasActiveOrganization: true
+				})
+			)
+		).toBe('/admin/bookings');
 	});
 
 	it('returns null when no portal access exists', () => {
@@ -279,6 +330,71 @@ describe('auth-session.svelte', () => {
 							display: {
 								primaryRole: 'manager',
 								badges: ['manager']
+							}
+						})
+					]
+				}
+			]
+		});
+	});
+
+	it('preserves staff booking and participant capabilities in legacy payload normalization', () => {
+		expect(
+			normalizeAccessTreePayload([
+				{
+					organizationId: 'org-1',
+					organizationSlug: 'org-one',
+					organizationName: 'Org One',
+					role: 'member',
+					classrooms: [
+						{
+							classroomId: 'classroom-1',
+							classroomSlug: 'room-one',
+							classroomName: 'Room One',
+							role: 'staff',
+							canManage: true,
+							canUseParticipantBooking: false
+						}
+					]
+				}
+			])
+		).toEqual({
+			orgs: [
+				{
+					org: {
+						id: 'org-1',
+						slug: 'org-one',
+						name: 'Org One',
+						logo: null
+					},
+					classrooms: [
+						buildClassroomEntry({
+							id: 'classroom-1',
+							slug: 'room-one',
+							name: 'Room One',
+							logo: null,
+							facts: {
+								orgRole: 'member',
+								classroomStaffRole: 'staff',
+								hasParticipantRecord: false
+							},
+							effective: {
+								canManageOrganization: false,
+								canManageClassroom: false,
+								canManageBookings: true,
+								canManageParticipants: true,
+								canUseParticipantBooking: false
+							},
+							sources: {
+								canManageOrganization: null,
+								canManageClassroom: null,
+								canManageBookings: 'classroom_member',
+								canManageParticipants: 'classroom_member',
+								canUseParticipantBooking: null
+							},
+							display: {
+								primaryRole: 'staff',
+								badges: ['staff']
 							}
 						})
 					]

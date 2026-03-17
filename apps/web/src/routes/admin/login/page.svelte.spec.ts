@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
 	goto: vi.fn(),
 	loadSession: vi.fn(),
 	loadPortalAccess: vi.fn(),
-	resolvePortalHomePath: vi.fn()
+	resolvePortalHomePath: vi.fn(),
+	loadPendingInvitationHomePath: vi.fn()
 }));
 
 vi.mock('$app/navigation', () => ({
@@ -20,7 +21,7 @@ vi.mock('$app/paths', () => ({
 
 vi.mock('$app/state', () => ({
 	page: {
-		url: new URL('https://example.com/login/admin')
+		url: new URL('https://example.com/admin/login')
 	}
 }));
 
@@ -31,6 +32,7 @@ vi.mock('$env/dynamic/public', () => ({
 vi.mock('$lib/features/auth-session.svelte', () => ({
 	loadSession: mocks.loadSession,
 	loadPortalAccess: mocks.loadPortalAccess,
+	loadPendingInvitationHomePath: mocks.loadPendingInvitationHomePath,
 	resolvePortalHomePath: mocks.resolvePortalHomePath,
 	parseResponseBody: async (response: Response) => response.json(),
 	toErrorMessage: (payload: unknown, fallback: string) =>
@@ -43,11 +45,13 @@ describe('/admin/login/+page.svelte', () => {
 		mocks.loadSession.mockReset();
 		mocks.loadPortalAccess.mockReset();
 		mocks.resolvePortalHomePath.mockReset();
+		mocks.loadPendingInvitationHomePath.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
 			session: null,
 			status: 200
 		});
+		mocks.loadPendingInvitationHomePath.mockResolvedValue(null);
 	});
 
 	it('should render admin login heading', async () => {
@@ -57,15 +61,19 @@ describe('/admin/login/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('redirects newly signed-in users without organization access to admin settings', async () => {
+	it('redirects newly signed-in users without admin portal access to onboarding', async () => {
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { id: 'user-1' }, session: { id: 'session-1' } },
 			status: 200
 		});
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false,
+			hasAdminPortalAccess: false,
 			hasParticipantAccess: false,
 			canManage: false,
+			canManageClassroom: false,
+			canManageBookings: false,
+			canManageParticipants: false,
 			canUseParticipantBooking: false,
 			activeOrganizationRole: null,
 			activeFacts: null,
@@ -80,6 +88,36 @@ describe('/admin/login/+page.svelte', () => {
 
 		await expect
 			.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null)
-			.toBe('/admin/settings');
+			.toBe('/admin/onboarding');
+	});
+
+	it('prefers participant home when the user only has participant access', async () => {
+		mocks.loadSession.mockResolvedValue({
+			session: { user: { id: 'user-2' }, session: { id: 'session-2' } },
+			status: 200
+		});
+		mocks.loadPortalAccess.mockResolvedValue({
+			hasOrganizationAdminAccess: false,
+			hasAdminPortalAccess: false,
+			hasParticipantAccess: true,
+			canManage: false,
+			canManageClassroom: false,
+			canManageBookings: false,
+			canManageParticipants: false,
+			canUseParticipantBooking: true,
+			activeOrganizationRole: null,
+			activeFacts: null,
+			activeSources: null,
+			activeDisplay: null,
+			activeDisplayRole: 'participant',
+			hasActiveOrganization: true
+		});
+		mocks.resolvePortalHomePath.mockReturnValue('/participant/home');
+
+		render(AdminLoginPage);
+
+		await expect
+			.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null)
+			.toBe('/participant/home');
 	});
 });

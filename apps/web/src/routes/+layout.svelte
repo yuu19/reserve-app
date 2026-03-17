@@ -71,8 +71,12 @@
 	let activeClassroom = $state<ClassroomContextPayload | null>(null);
 	let portalAccess = $state<PortalAccess>({
 		hasOrganizationAdminAccess: false,
+		hasAdminPortalAccess: false,
 		hasParticipantAccess: false,
 		canManage: false,
+		canManageClassroom: false,
+		canManageBookings: false,
+		canManageParticipants: false,
 		canUseParticipantBooking: false,
 		activeOrganizationRole: null,
 		activeFacts: null,
@@ -165,21 +169,65 @@
 	const rawPathname = $derived(page.url.pathname);
 	const pathname = $derived(getRoutePathFromUrlPath(rawPathname));
 	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
-	const showSidebarLayout = $derived(!isPublicAuthRoute && isLoggedIn);
+	const showSidebarLayout = $derived(!isPublicAuthRoute && pathname !== '/admin/onboarding' && isLoggedIn);
 	const showAdminSectionTabs = $derived(
 		activePortal === 'admin' && portalAccess.hasOrganizationAdminAccess
 	);
+	const canAccessAdminRoute = (href: NavItem['href'] | SectionTab['href']) => {
+		switch (href) {
+			case '/admin/dashboard':
+			case '/admin/classrooms':
+			case '/admin/invitations':
+			case '/admin/settings':
+			case '/admin/contracts':
+				return portalAccess.hasOrganizationAdminAccess;
+			case '/admin/bookings':
+				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageBookings;
+			case '/admin/services':
+			case '/admin/schedules/slots':
+			case '/admin/schedules/recurring':
+				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageClassroom;
+			case '/admin/participants':
+				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageParticipants;
+			default:
+				return false;
+		}
+	};
 	const visibleNavSections = $derived.by(() => {
 		if (!activePortal) {
 			return [] as NavSection[];
 		}
 		if (activePortal === 'admin') {
-			return portalAccess.hasOrganizationAdminAccess ? [navSectionsByPortal.admin] : [];
+			if (!portalAccess.hasAdminPortalAccess) {
+				return [] as NavSection[];
+			}
+			const adminItems = navSectionsByPortal.admin.items
+				.filter((item) => canAccessAdminRoute(item.href))
+				.map((item) =>
+					item.href === '/admin/invitations' && getCurrentScopedContext()
+						? { ...item, label: '教室招待' }
+						: item
+				);
+			return adminItems.length > 0
+				? [{ ...navSectionsByPortal.admin, items: adminItems }]
+				: [];
 		}
-		return portalAccess.hasParticipantAccess ? [navSectionsByPortal.participant] : [];
+		if (!portalAccess.hasParticipantAccess) {
+			return [];
+		}
+		return [
+			{
+				...navSectionsByPortal.participant,
+				items: navSectionsByPortal.participant.items.map((item) =>
+					item.href === '/participant/admin-invitations'
+						? { ...item, label: '運営招待' }
+						: item
+				)
+			}
+		];
 	});
 	const canSwitchToAdmin = $derived(
-		activePortal !== 'admin' && portalAccess.hasOrganizationAdminAccess
+		activePortal !== 'admin' && portalAccess.hasAdminPortalAccess
 	);
 	const canSwitchToParticipant = $derived(
 		activePortal !== 'participant' && portalAccess.hasParticipantAccess
@@ -201,7 +249,7 @@
 	const isActive = (href: string): boolean => pathname === href || pathname.startsWith(`${href}/`);
 	const resolveInitialActivePortal = (currentPath: string, nextPortalAccess: PortalAccess): AuthPortal => {
 		const storedPortal = readLastAuthPortal();
-		if (storedPortal === 'admin' && nextPortalAccess.hasOrganizationAdminAccess) {
+		if (storedPortal === 'admin' && nextPortalAccess.hasAdminPortalAccess) {
 			return storedPortal;
 		}
 		if (storedPortal === 'participant' && nextPortalAccess.hasParticipantAccess) {
@@ -209,14 +257,14 @@
 		}
 
 		const pathPortal = resolveAuthPortalByPath(currentPath);
-		if (pathPortal === 'admin' && nextPortalAccess.hasOrganizationAdminAccess) {
+		if (pathPortal === 'admin' && nextPortalAccess.hasAdminPortalAccess) {
 			return pathPortal;
 		}
 		if (pathPortal === 'participant' && nextPortalAccess.hasParticipantAccess) {
 			return pathPortal;
 		}
 
-		if (nextPortalAccess.hasOrganizationAdminAccess) {
+		if (nextPortalAccess.hasAdminPortalAccess) {
 			return 'admin';
 		}
 
@@ -291,8 +339,12 @@
 					activeClassroom = null;
 					portalAccess = {
 						hasOrganizationAdminAccess: false,
+						hasAdminPortalAccess: false,
 						hasParticipantAccess: false,
 						canManage: false,
+						canManageClassroom: false,
+						canManageBookings: false,
+						canManageParticipants: false,
 						canUseParticipantBooking: false,
 						activeOrganizationRole: null,
 						activeFacts: null,
@@ -322,7 +374,7 @@
 				portalAccess = nextPortalAccess;
 				if (
 					!activePortal ||
-					(activePortal === 'admin' && !nextPortalAccess.hasOrganizationAdminAccess) ||
+					(activePortal === 'admin' && !nextPortalAccess.hasAdminPortalAccess) ||
 					(activePortal === 'participant' && !nextPortalAccess.hasParticipantAccess)
 				) {
 					activePortal = resolveInitialActivePortal(rawPathname, nextPortalAccess);
@@ -355,7 +407,9 @@
 	const pickPreferredClassroom = (
 		candidates: ClassroomContextPayload[]
 	): ClassroomContextPayload | null =>
-		candidates.find((classroom) => classroom.canManage) ??
+		candidates.find((classroom) => classroom.canManageClassroom) ??
+		candidates.find((classroom) => classroom.canManageBookings) ??
+		candidates.find((classroom) => classroom.canManageParticipants) ??
 		candidates.find((classroom) => classroom.canUseParticipantBooking) ??
 		candidates[0] ??
 		null;

@@ -8,6 +8,7 @@ import {
 	type AccessFactsPayload,
 	type AccessSourcesPayload,
 	type AuthSessionPayload,
+	type InvitationPayload,
 	type OrganizationMembershipRole,
 	type OrganizationPayload,
 	type ScopedApiContext
@@ -26,6 +27,16 @@ const isOrganizationPayload = (value: unknown): value is OrganizationPayload =>
 
 const asOrganizations = (value: unknown): OrganizationPayload[] =>
 	Array.isArray(value) ? value.filter(isOrganizationPayload) : [];
+
+const isInvitationPayload = (value: unknown): value is InvitationPayload =>
+	isRecord(value) &&
+	typeof value.id === 'string' &&
+	typeof value.email === 'string' &&
+	typeof value.subjectKind === 'string' &&
+	typeof value.status === 'string';
+
+const asInvitations = (value: unknown): InvitationPayload[] =>
+	Array.isArray(value) ? value.filter(isInvitationPayload) : [];
 
 const asOrganizationRole = (value: unknown): OrganizationMembershipRole | null => {
 	if (value === 'owner' || value === 'admin' || value === 'member') {
@@ -140,55 +151,66 @@ const normalizeLegacyAccessTreePayload = (value: unknown): AccessTreePayload | n
 					name: orgEntry.organizationName,
 					logo: typeof orgEntry.logo === 'string' ? orgEntry.logo : null
 				},
-				classrooms: orgEntry.classrooms.map((classroom) => ({
-					id: classroom.classroomId,
-					slug: classroom.classroomSlug,
-					name: classroom.classroomName,
-					logo: typeof classroom.logo === 'string' ? classroom.logo : null,
-					facts: {
-						orgRole: asOrganizationRole(orgEntry.role ?? null),
-						classroomStaffRole:
-							classroom.role === 'manager' || classroom.role === 'staff' ? classroom.role : null,
-						hasParticipantRecord: classroom.canUseParticipantBooking
-					},
-					effective: {
-						canManageOrganization:
-							orgEntry.role === 'owner' || orgEntry.role === 'admin',
-						canManageClassroom: classroom.canManage,
-						canManageBookings: classroom.canManage,
-						canManageParticipants: classroom.canManage,
-						canUseParticipantBooking: classroom.canUseParticipantBooking
-					},
-					sources: {
-						canManageOrganization:
-							orgEntry.role === 'owner' || orgEntry.role === 'admin' ? 'org_role' : null,
-						canManageClassroom: classroom.canManage ? 'classroom_member' : null,
-						canManageBookings: classroom.canManage ? 'classroom_member' : null,
-						canManageParticipants: classroom.canManage ? 'classroom_member' : null,
-						canUseParticipantBooking: classroom.canUseParticipantBooking ? 'participant_record' : null
-					},
-					display: {
-						primaryRole:
-							classroom.role === 'manager' ||
-							classroom.role === 'staff' ||
-							classroom.role === 'participant'
-								? classroom.role
-								: orgEntry.role === 'owner' || orgEntry.role === 'admin'
-									? orgEntry.role
-									: null,
-						badges:
-							classroom.role === 'manager' ||
-							classroom.role === 'staff' ||
-							classroom.role === 'participant'
-								? [classroom.role]
-								: orgEntry.role === 'owner' || orgEntry.role === 'admin'
-									? [orgEntry.role]
-									: []
-					}
-				}))
+				classrooms: orgEntry.classrooms.map((classroom) => {
+					const isLegacyManager = classroom.role === 'manager';
+					const isLegacyStaff = classroom.role === 'staff';
+					const hasLegacyRole = isLegacyManager || isLegacyStaff || classroom.role === 'participant';
+					const canManageClassroom = isLegacyManager || (!hasLegacyRole && classroom.canManage);
+					const canManageBookings =
+						isLegacyManager || isLegacyStaff || (!hasLegacyRole && classroom.canManage);
+					const canManageParticipants =
+						isLegacyManager || isLegacyStaff || (!hasLegacyRole && classroom.canManage);
+
+					return {
+						id: classroom.classroomId,
+						slug: classroom.classroomSlug,
+						name: classroom.classroomName,
+						logo: typeof classroom.logo === 'string' ? classroom.logo : null,
+						facts: {
+							orgRole: asOrganizationRole(orgEntry.role ?? null),
+							classroomStaffRole:
+								classroom.role === 'manager' || classroom.role === 'staff' ? classroom.role : null,
+							hasParticipantRecord: classroom.canUseParticipantBooking
+						},
+						effective: {
+							canManageOrganization:
+								orgEntry.role === 'owner' || orgEntry.role === 'admin',
+							canManageClassroom,
+							canManageBookings,
+							canManageParticipants,
+							canUseParticipantBooking: classroom.canUseParticipantBooking
+						},
+						sources: {
+							canManageOrganization:
+								orgEntry.role === 'owner' || orgEntry.role === 'admin' ? 'org_role' : null,
+							canManageClassroom: canManageClassroom ? 'classroom_member' : null,
+							canManageBookings: canManageBookings ? 'classroom_member' : null,
+							canManageParticipants: canManageParticipants ? 'classroom_member' : null,
+							canUseParticipantBooking: classroom.canUseParticipantBooking ? 'participant_record' : null
+						},
+						display: {
+							primaryRole:
+								classroom.role === 'manager' ||
+								classroom.role === 'staff' ||
+								classroom.role === 'participant'
+									? classroom.role
+									: orgEntry.role === 'owner' || orgEntry.role === 'admin'
+										? orgEntry.role
+										: null,
+							badges:
+								classroom.role === 'manager' ||
+								classroom.role === 'staff' ||
+								classroom.role === 'participant'
+									? [classroom.role]
+									: orgEntry.role === 'owner' || orgEntry.role === 'admin'
+										? [orgEntry.role]
+										: []
+						}
+					};
+				})
 			}))
 		};
-	};
+};
 
 export const normalizeAccessTreePayload = (value: unknown): AccessTreePayload | null =>
 	asAccessTreePayload(value) ?? normalizeLegacyAccessTreePayload(value);
@@ -257,6 +279,41 @@ export const navigateToNextIfNeeded = (): boolean => {
 	return true;
 };
 
+export type PendingInvitationHomePath =
+	| '/participant/admin-invitations'
+	| '/participant/invitations';
+
+export const resolvePendingInvitationHomePath = (
+	invitations: InvitationPayload[]
+): PendingInvitationHomePath | null => {
+	const pendingInvitations = invitations.filter((invitation) => invitation.status === 'pending');
+	if (
+		pendingInvitations.some(
+			(invitation) =>
+				invitation.subjectKind === 'org_operator' || invitation.subjectKind === 'classroom_operator'
+		)
+	) {
+		return '/participant/admin-invitations';
+	}
+	if (pendingInvitations.some((invitation) => invitation.subjectKind === 'participant')) {
+		return '/participant/invitations';
+	}
+	return null;
+};
+
+export const loadPendingInvitationHomePath = async (): Promise<PendingInvitationHomePath | null> => {
+	try {
+		const response = await authRpc.listUserInvitations();
+		const payload = await parseResponseBody(response);
+		if (!response.ok) {
+			return null;
+		}
+		return resolvePendingInvitationHomePath(asInvitations(payload));
+	} catch {
+		return null;
+	}
+};
+
 export const redirectToLoginWithNext = (nextPath: string) => {
 	if (typeof window === 'undefined') {
 		return;
@@ -293,9 +350,13 @@ export const loadSession = async (): Promise<{ session: AuthSessionPayload; stat
 export type PortalAccess = {
 	// Stage 1: across organizations/classrooms
 	hasOrganizationAdminAccess: boolean;
+	hasAdminPortalAccess: boolean;
 	hasParticipantAccess: boolean;
 	// Stage 2: active classroom in URL context (or inferred default)
 	canManage: boolean;
+	canManageClassroom: boolean;
+	canManageBookings: boolean;
+	canManageParticipants: boolean;
 	canUseParticipantBooking: boolean;
 	activeOrganizationRole: OrganizationMembershipRole | null;
 	activeFacts: AccessFactsPayload | null;
@@ -309,8 +370,12 @@ export type PortalAccess = {
 
 const emptyPortalAccess = (): PortalAccess => ({
 	hasOrganizationAdminAccess: false,
+	hasAdminPortalAccess: false,
 	hasParticipantAccess: false,
 	canManage: false,
+	canManageClassroom: false,
+	canManageBookings: false,
+	canManageParticipants: false,
 	canUseParticipantBooking: false,
 	activeOrganizationRole: null,
 	activeFacts: null,
@@ -332,6 +397,10 @@ type FlatAccessEntry = {
 	sources: AccessSourcesPayload;
 	display: AccessDisplayPayload;
 	canManage: boolean;
+	canManageClassroom: boolean;
+	canManageBookings: boolean;
+	canManageParticipants: boolean;
+	canAccessAdminPortal: boolean;
 	canUseParticipantBooking: boolean;
 };
 
@@ -349,6 +418,14 @@ const flattenAccessTree = (tree: AccessTreePayload): FlatAccessEntry[] => {
 					sources: classroom.sources,
 					display: classroom.display,
 					canManage: classroom.effective.canManageClassroom,
+					canManageClassroom: classroom.effective.canManageClassroom,
+					canManageBookings: classroom.effective.canManageBookings,
+					canManageParticipants: classroom.effective.canManageParticipants,
+					canAccessAdminPortal:
+						classroom.effective.canManageOrganization ||
+						classroom.effective.canManageClassroom ||
+						classroom.effective.canManageBookings ||
+						classroom.effective.canManageParticipants,
 					canUseParticipantBooking: classroom.effective.canUseParticipantBooking
 				});
 			}
@@ -393,7 +470,7 @@ const resolveDefaultEntry = (
 	const lastUsedOrgId = readLastUsedOrganizationId();
 	if (lastUsedOrgId) {
 		const sameOrgEntry =
-			entries.find((entry) => entry.orgId === lastUsedOrgId && entry.canManage) ??
+			entries.find((entry) => entry.orgId === lastUsedOrgId && entry.canAccessAdminPortal) ??
 			entries.find((entry) => entry.orgId === lastUsedOrgId && entry.canUseParticipantBooking) ??
 			entries.find((entry) => entry.orgId === lastUsedOrgId) ??
 			null;
@@ -403,7 +480,7 @@ const resolveDefaultEntry = (
 	}
 
 	return (
-		entries.find((entry) => entry.canManage) ??
+		entries.find((entry) => entry.canAccessAdminPortal) ??
 		entries.find((entry) => entry.canUseParticipantBooking) ??
 		entries[0] ??
 		null
@@ -441,6 +518,7 @@ export const loadPortalAccess = async (
 			const hasOrganizationAdminAccess = entries.some(
 				(entry) => entry.effective.canManageOrganization
 			);
+			const hasAdminPortalAccess = entries.some((entry) => entry.canAccessAdminPortal);
 			const hasParticipantAccess = entries.some(
 				(entry) => entry.effective.canUseParticipantBooking
 			);
@@ -451,8 +529,12 @@ export const loadPortalAccess = async (
 
 		return {
 				hasOrganizationAdminAccess,
+				hasAdminPortalAccess,
 				hasParticipantAccess,
 				canManage: activeEntry?.effective.canManageClassroom ?? false,
+				canManageClassroom: activeEntry?.effective.canManageClassroom ?? false,
+				canManageBookings: activeEntry?.effective.canManageBookings ?? false,
+				canManageParticipants: activeEntry?.effective.canManageParticipants ?? false,
 				canUseParticipantBooking: activeEntry?.effective.canUseParticipantBooking ?? false,
 				activeOrganizationRole: activeEntry?.facts.orgRole ?? null,
 				activeFacts: activeEntry?.facts ?? null,
@@ -474,13 +556,28 @@ export const loadPortalAccess = async (
 };
 
 export const hasAnyPortalAccess = (portalAccess: PortalAccess): boolean =>
-	portalAccess.hasOrganizationAdminAccess || portalAccess.hasParticipantAccess;
+	portalAccess.hasAdminPortalAccess || portalAccess.hasParticipantAccess;
+
+export type PortalHomePath =
+	| '/admin/dashboard'
+	| '/admin/bookings'
+	| '/admin/participants'
+	| '/participant/home';
 
 export const resolvePortalHomePath = (
 	portalAccess: PortalAccess
-): '/admin/dashboard' | '/participant/home' | null => {
-	if (portalAccess.hasOrganizationAdminAccess || portalAccess.canManage) {
+): PortalHomePath | null => {
+	if (portalAccess.hasOrganizationAdminAccess) {
 		return '/admin/dashboard';
+	}
+	if (portalAccess.canManageClassroom || portalAccess.canManageBookings) {
+		return '/admin/bookings';
+	}
+	if (portalAccess.canManageParticipants) {
+		return '/admin/participants';
+	}
+	if (portalAccess.hasAdminPortalAccess) {
+		return '/admin/bookings';
 	}
 	if (portalAccess.hasParticipantAccess || portalAccess.canUseParticipantBooking) {
 		return '/participant/home';
@@ -539,6 +636,9 @@ export const readClassroomsFromAccessTree = (
 	name: string;
 	logo?: string | null;
 	canManage: boolean;
+	canManageClassroom: boolean;
+	canManageBookings: boolean;
+	canManageParticipants: boolean;
 	canUseParticipantBooking: boolean;
 	display: AccessDisplayPayload;
 	facts: AccessFactsPayload;
@@ -557,6 +657,9 @@ export const readClassroomsFromAccessTree = (
 			name: classroom.name,
 			logo: typeof classroom.logo === 'string' ? classroom.logo : null,
 			canManage: classroom.effective.canManageClassroom,
+			canManageClassroom: classroom.effective.canManageClassroom,
+			canManageBookings: classroom.effective.canManageBookings,
+			canManageParticipants: classroom.effective.canManageParticipants,
 			canUseParticipantBooking: classroom.effective.canUseParticipantBooking,
 			display: classroom.display,
 			facts: classroom.facts,

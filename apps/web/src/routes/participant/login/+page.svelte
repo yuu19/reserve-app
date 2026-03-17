@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -13,6 +14,7 @@
 	import { writeLastAuthPortal } from '$lib/features/auth-portal-preference';
 	import { isInviteAcceptancePath, resolveAuthPortalByPath } from '$lib/features/auth-portal';
 	import {
+		loadPendingInvitationHomePath,
 		loadPortalAccess,
 		loadSession,
 		parseResponseBody,
@@ -25,6 +27,7 @@
 
 	type Mode = 'sign-in' | 'sign-up';
 	type SubmittingAction = null | 'sign-in' | 'sign-up' | 'sign-in-google';
+	type ResolvablePath = Pathname;
 
 	let mode = $state<Mode>('sign-in');
 	let loadingSession = $state(true);
@@ -52,6 +55,7 @@
 	});
 
 	const isBusy = $derived(submittingAction !== null);
+	const participantFallbackPath = resolve('/events');
 
 	const completeSignIn = async () => {
 		const targetNextPath = nextPath;
@@ -65,17 +69,19 @@
 		const portalAccess = await loadPortalAccess();
 		const homePath = resolvePortalHomePath(portalAccess);
 		if (!homePath) {
-			accessFeedback = 'このアカウントは利用可能な組織アクセス権限を持っていません。';
-			toast.error(accessFeedback);
+			const invitationHomePath = await loadPendingInvitationHomePath();
+			writeLastAuthPortal('participant');
+			emitAuthSessionUpdated();
+			await goto(resolve((invitationHomePath ?? '/events') as ResolvablePath));
 			return;
 		}
 
-		const homePortal = homePath === '/admin/dashboard' ? 'admin' : 'participant';
+		const homePortal = homePath.startsWith('/admin') ? 'admin' : 'participant';
 		const nextPortal = targetNextPath ? resolveAuthPortalByPath(targetNextPath) : null;
 		const canUseNextPath =
 			!nextPortal ||
 			(nextPortal === 'admin'
-				? portalAccess.hasOrganizationAdminAccess
+				? portalAccess.hasAdminPortalAccess
 				: portalAccess.hasParticipantAccess);
 
 		writeLastAuthPortal(canUseNextPath && nextPortal ? nextPortal : homePortal);

@@ -5,7 +5,13 @@
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
-	import { getCurrentPathWithSearch, loadSession, redirectToLoginWithNext } from '$lib/features/auth-session.svelte';
+	import {
+		getCurrentPathWithSearch,
+		loadPortalAccess,
+		loadSession,
+		redirectToLoginWithNext,
+		resolvePortalHomePath
+	} from '$lib/features/auth-session.svelte';
 	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
 	import { loadOrganizations } from '$lib/features/organization-context.svelte';
 	import type { OrganizationPayload } from '$lib/rpc-client';
@@ -20,15 +26,23 @@
 
 	onMount(() => {
 		void (async () => {
-			if (pathname === '/contracts') {
-				await goto(resolve('/admin/contracts'));
-				return;
-			}
 			loading = true;
 			try {
 				const { session } = await loadSession();
 				if (!session) {
 					redirectToLoginWithNext(getCurrentPathWithSearch());
+					return;
+				}
+				const portalAccess = await loadPortalAccess();
+				if (pathname === '/contracts') {
+					const nextPath = portalAccess.hasOrganizationAdminAccess
+						? '/admin/contracts'
+						: (resolvePortalHomePath(portalAccess) ?? '/participant/home');
+					await goto(resolve(nextPath));
+					return;
+				}
+				if (!portalAccess.hasOrganizationAdminAccess) {
+					await goto(resolve(resolvePortalHomePath(portalAccess) ?? '/participant/home'));
 					return;
 				}
 				const { activeOrganization: nextActiveOrganization } = await loadOrganizations();

@@ -1,5 +1,4 @@
-import { env } from '$env/dynamic/public';
-import { getRequestEvent, query } from '$app/server';
+import { query } from '$app/server';
 import type {
 	BookingPayload,
 	ParticipantPayload,
@@ -11,9 +10,13 @@ import type {
 	TicketPurchasePayload,
 	TicketTypePayload
 } from '$lib/rpc-client';
+import {
+	buildScopedInvitationPath,
+	createApiGetter,
+	resolveScopedApiIdentifiers,
+	type ApiResult
+} from '$lib/server/scoped-api';
 import { z } from 'zod';
-
-const defaultBackendUrl = 'http://localhost:3000';
 
 const bookingsPageQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
@@ -23,14 +26,7 @@ const bookingsPageQuerySchema = z.object({
 	serviceId: z.string().trim().min(1).optional()
 });
 
-type QueryValue = string | number | boolean | undefined;
-
 type JsonRecord = Record<string, unknown>;
-
-type ApiResult = {
-	response: Response;
-	payload: unknown;
-};
 
 type BookingsPageData = {
 	activeContext: ScopedApiContext;
@@ -64,61 +60,6 @@ const toErrorMessage = (payload: unknown, fallback: string): string => {
 		return payload;
 	}
 	return fallback;
-};
-
-const parseResponseBody = async (response: Response): Promise<unknown> => {
-	const contentType = response.headers.get('content-type') ?? '';
-	if (contentType.includes('application/json')) {
-		return response.json();
-	}
-	const text = await response.text();
-	if (!text) {
-		return null;
-	}
-	try {
-		return JSON.parse(text);
-	} catch {
-		return text;
-	}
-};
-
-const createApiUrl = (path: string, query: Record<string, QueryValue> = {}): string => {
-	const backendUrl = env.PUBLIC_BACKEND_URL || defaultBackendUrl;
-	const url = new URL(path, backendUrl);
-	for (const [key, value] of Object.entries(query)) {
-		if (value === undefined) {
-			continue;
-		}
-		url.searchParams.set(key, String(value));
-	}
-	return url.toString();
-};
-
-const createForwardHeaders = () => {
-	const event = getRequestEvent();
-	const headers = new Headers();
-	const cookie = event.request.headers.get('cookie');
-	if (cookie) {
-		headers.set('cookie', cookie);
-	}
-	const userAgent = event.request.headers.get('user-agent');
-	if (userAgent) {
-		headers.set('user-agent', userAgent);
-	}
-	return headers;
-};
-
-const createApiGetter = () => {
-	const event = getRequestEvent();
-	const headers = createForwardHeaders();
-	return async (path: string, query?: Record<string, QueryValue>): Promise<ApiResult> => {
-		const response = await event.fetch(createApiUrl(path, query), {
-			method: 'GET',
-			headers
-		});
-		const payload = await parseResponseBody(response);
-		return { response, payload };
-	};
 };
 
 const isService = (value: unknown): value is ServicePayload =>
@@ -183,9 +124,6 @@ const asTicketTypes = (value: unknown): TicketTypePayload[] =>
 const asTicketPurchases = (value: unknown): TicketPurchasePayload[] =>
 	Array.isArray(value) ? value.filter(isTicketPurchase) : [];
 
-const buildScopedPath = (context: ScopedApiContext, suffix: string) =>
-	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms/${encodeURIComponent(context.classroomSlug)}${suffix}`;
-
 const assertAllowedFailure = (
 	result: ApiResult,
 	fallback: string,
@@ -205,7 +143,14 @@ export const getBookingsPageData = query(
 	async ({ orgSlug, classroomSlug, from, to, serviceId }): Promise<BookingsPageData> => {
 		const getApi = createApiGetter();
 		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
-		const scopedPath = (suffix: string) => buildScopedPath(activeContext, suffix);
+		const scopedIdentifiers = await resolveScopedApiIdentifiers(getApi, activeContext);
+		if (!scopedIdentifiers) {
+			throw new Error('組織または教室コンテキストの解決に失敗しました。');
+		}
+		const scopedQuery = {
+			organizationId: scopedIdentifiers.organizationId,
+			classroomId: scopedIdentifiers.classroomId
+		};
 
 		const [
 			servicesResult,
@@ -219,25 +164,33 @@ export const getBookingsPageData = query(
 			participantsResult,
 			participantInvitationsResult
 		] = await Promise.all([
-			getApi(scopedPath('/services')),
-			getApi(scopedPath('/recurring-schedules'), {
+			getApi('/api/v1/auth/organizations/services', scopedQuery),
+			getApi('/api/v1/auth/organizations/recurring-schedules', {
+				...scopedQuery,
 				isActive: true
 			}),
-			getApi(scopedPath('/slots'), {
+			getApi('/api/v1/auth/organizations/slots', {
+				...scopedQuery,
 				from,
 				to
 			}),
-			getApi(scopedPath('/slots/available'), {
+			getApi('/api/v1/auth/organizations/slots/available', {
+				...scopedQuery,
 				from,
 				to,
 				serviceId
 			}),
-			getApi(scopedPath('/bookings/mine')),
-			getApi(scopedPath('/ticket-packs/mine')),
-			getApi(scopedPath('/ticket-types/purchasable')),
-			getApi(scopedPath('/ticket-purchases/mine')),
-			getApi(scopedPath('/participants')),
-			getApi(scopedPath('/participants/invitations'))
+			getApi('/api/v1/auth/organizations/bookings/mine', {
+				...scopedQuery,
+				from,
+				to,
+				serviceId
+			}),
+			getApi('/api/v1/auth/organizations/ticket-packs/mine', scopedQuery),
+			getApi('/api/v1/auth/organizations/ticket-types/purchasable', scopedQuery),
+			getApi('/api/v1/auth/organizations/ticket-purchases/mine', scopedQuery),
+			getApi('/api/v1/auth/organizations/participants', scopedQuery),
+			getApi(buildScopedInvitationPath(activeContext))
 		]);
 
 		assertAllowedFailure(servicesResult, 'サービス一覧の取得に失敗しました。', {
@@ -285,11 +238,17 @@ export const getBookingsPageData = query(
 
 		if (canManage) {
 			const [staffBookingsResult, staffServicesResult, staffRecurringResult] = await Promise.all([
-				getApi(scopedPath('/bookings')),
-				getApi(scopedPath('/services'), {
+				getApi('/api/v1/auth/organizations/bookings', {
+					...scopedQuery,
+					from,
+					to,
+					serviceId
+				}),
+				getApi('/api/v1/auth/organizations/services', {
+					...scopedQuery,
 					includeArchived: true
 				}),
-				getApi(scopedPath('/recurring-schedules'))
+				getApi('/api/v1/auth/organizations/recurring-schedules', scopedQuery)
 			]);
 
 			assertAllowedFailure(staffBookingsResult, '運営予約一覧の取得に失敗しました。');

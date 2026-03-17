@@ -1,5 +1,4 @@
-import { env } from '$env/dynamic/public';
-import { getRequestEvent, query } from '$app/server';
+import { query } from '$app/server';
 import type {
 	ParticipantInvitationPayload,
 	ParticipantPayload,
@@ -8,22 +7,21 @@ import type {
 	TicketPurchasePayload,
 	TicketTypePayload
 } from '$lib/rpc-client';
+import {
+	buildScopedInvitationPath,
+	createApiGetter,
+	resolveScopedAccessContext,
+	type ApiResult
+} from '$lib/server/scoped-api';
 import { z } from 'zod';
-
-const defaultBackendUrl = 'http://localhost:3000';
-
-type QueryValue = string | number | boolean | undefined;
 
 type JsonRecord = Record<string, unknown>;
 
-type ApiResult = {
-	response: Response;
-	payload: unknown;
-};
-
 type ParticipantsPageData = {
-	activeContext: ScopedApiContext;
+	activeContext: ScopedApiContext | null;
 	canManage: boolean;
+	canManageParticipants: boolean;
+	canManageClassroom: boolean;
 	participants: ParticipantPayload[];
 	sentInvitations: ParticipantInvitationPayload[];
 	receivedInvitations: ParticipantInvitationPayload[];
@@ -46,61 +44,6 @@ const toErrorMessage = (payload: unknown, fallback: string): string => {
 		return payload;
 	}
 	return fallback;
-};
-
-const parseResponseBody = async (response: Response): Promise<unknown> => {
-	const contentType = response.headers.get('content-type') ?? '';
-	if (contentType.includes('application/json')) {
-		return response.json();
-	}
-	const text = await response.text();
-	if (!text) {
-		return null;
-	}
-	try {
-		return JSON.parse(text);
-	} catch {
-		return text;
-	}
-};
-
-const createApiUrl = (path: string, query: Record<string, QueryValue> = {}) => {
-	const backendUrl = env.PUBLIC_BACKEND_URL || defaultBackendUrl;
-	const url = new URL(path, backendUrl);
-	for (const [key, value] of Object.entries(query)) {
-		if (value === undefined) {
-			continue;
-		}
-		url.searchParams.set(key, String(value));
-	}
-	return url.toString();
-};
-
-const createForwardHeaders = () => {
-	const event = getRequestEvent();
-	const headers = new Headers();
-	const cookie = event.request.headers.get('cookie');
-	if (cookie) {
-		headers.set('cookie', cookie);
-	}
-	const userAgent = event.request.headers.get('user-agent');
-	if (userAgent) {
-		headers.set('user-agent', userAgent);
-	}
-	return headers;
-};
-
-const createApiGetter = () => {
-	const event = getRequestEvent();
-	const headers = createForwardHeaders();
-	return async (path: string, query?: Record<string, QueryValue>): Promise<ApiResult> => {
-		const response = await event.fetch(createApiUrl(path, query), {
-			method: 'GET',
-			headers
-		});
-		const payload = await parseResponseBody(response);
-		return { response, payload };
-	};
 };
 
 const isParticipant = (value: unknown): value is ParticipantPayload =>
@@ -146,12 +89,10 @@ const asTicketTypes = (value: unknown): TicketTypePayload[] =>
 const asTicketPurchases = (value: unknown): TicketPurchasePayload[] =>
 	Array.isArray(value) ? value.filter(isTicketPurchase) : [];
 
-const buildScopedPath = (context: ScopedApiContext, suffix: string) =>
-	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms/${encodeURIComponent(context.classroomSlug)}${suffix}`;
-
 const assertAllowedFailure = (
 	result: ApiResult,
 	fallback: string,
+	label: string,
 	options: { allowForbidden?: boolean } = {}
 ) => {
 	if (result.response.ok) {
@@ -160,7 +101,8 @@ const assertAllowedFailure = (
 	if (options.allowForbidden && result.response.status === 403) {
 		return;
 	}
-	throw new Error(toErrorMessage(result.payload, fallback));
+	const detail = toErrorMessage(result.payload, fallback);
+	throw new Error(`${label} (${result.response.status}): ${detail}`);
 };
 
 const participantsPageQuerySchema = z.object({
@@ -168,52 +110,113 @@ const participantsPageQuerySchema = z.object({
 	classroomSlug: z.string().trim().min(1)
 });
 
-export const getParticipantsPageData = query(participantsPageQuerySchema, async ({ orgSlug, classroomSlug }): Promise<ParticipantsPageData> => {
-	const getApi = createApiGetter();
-	const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
-	const scopedPath = (suffix: string) => buildScopedPath(activeContext, suffix);
+export const getParticipantsPageData = query(
+	participantsPageQuerySchema,
+	async ({ orgSlug, classroomSlug }): Promise<ParticipantsPageData> => {
+		const getApi = createApiGetter();
+		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+		const scopedAccess = await resolveScopedAccessContext(getApi, activeContext);
+		if (!scopedAccess) {
+			return {
+				activeContext: null,
+				canManage: false,
+				canManageParticipants: false,
+				canManageClassroom: false,
+				participants: [],
+				sentInvitations: [],
+				receivedInvitations: [],
+				services: [],
+				ticketTypes: [],
+				ticketPurchases: []
+			};
+		}
 
-	const [
-		participantsResult,
-		sentInvitationsResult,
-		receivedInvitationsResult,
-		servicesResult,
-		ticketTypesResult,
-		ticketPurchasesResult
-	] = await Promise.all([
-		getApi(scopedPath('/participants')),
-		getApi(scopedPath('/invitations')),
-		getApi('/api/v1/auth/invitations/user'),
-		getApi(scopedPath('/services')),
-		getApi(scopedPath('/ticket-types')),
-		getApi(scopedPath('/ticket-purchases'))
-	]);
+		const scopedQuery = {
+			organizationId: scopedAccess.organizationId,
+			classroomId: scopedAccess.classroomId
+		};
 
-	assertAllowedFailure(participantsResult, '参加者情報の取得に失敗しました。', {
-		allowForbidden: true
-	});
-	assertAllowedFailure(sentInvitationsResult, '参加者招待情報の取得に失敗しました。', {
-		allowForbidden: true
-	});
-	assertAllowedFailure(receivedInvitationsResult, '受信した参加者招待の取得に失敗しました。');
-	assertAllowedFailure(servicesResult, 'サービス情報の取得に失敗しました。', {
-		allowForbidden: true
-	});
-	assertAllowedFailure(ticketTypesResult, '回数券種別の取得に失敗しました。', {
-		allowForbidden: true
-	});
-	assertAllowedFailure(ticketPurchasesResult, '回数券購入申請の取得に失敗しました。', {
-		allowForbidden: true
-	});
+		const [
+			participantsResult,
+			sentInvitationsResult,
+			receivedInvitationsResult,
+			servicesResult,
+			ticketTypesResult,
+			ticketPurchasesResult
+		] = await Promise.all([
+			getApi('/api/v1/auth/organizations/participants', scopedQuery),
+			getApi(buildScopedInvitationPath(activeContext)),
+			getApi('/api/v1/auth/invitations/user'),
+			getApi('/api/v1/auth/organizations/services', scopedQuery),
+			getApi('/api/v1/auth/organizations/ticket-types', scopedQuery),
+			getApi('/api/v1/auth/organizations/ticket-purchases', scopedQuery)
+		]);
 
-	return {
-		activeContext,
-		canManage: participantsResult.response.ok && sentInvitationsResult.response.ok,
-		participants: asParticipants(participantsResult.payload),
-		sentInvitations: asParticipantInvitations(sentInvitationsResult.payload),
-		receivedInvitations: asParticipantInvitations(receivedInvitationsResult.payload),
-		services: asServices(servicesResult.payload),
-		ticketTypes: asTicketTypes(ticketTypesResult.payload),
-		ticketPurchases: asTicketPurchases(ticketPurchasesResult.payload)
-	};
-});
+		const debugResults = [
+			['participants', participantsResult],
+			['classroom invitations', sentInvitationsResult],
+			['user invitations', receivedInvitationsResult],
+			['services', servicesResult],
+			['ticket types', ticketTypesResult],
+			['ticket purchases', ticketPurchasesResult]
+		] as const;
+		for (const [label, result] of debugResults) {
+			if (result.response.ok || result.response.status === 403) {
+				continue;
+			}
+			console.error('getParticipantsPageData dependency failed', {
+				label,
+				status: result.response.status,
+				payload: result.payload,
+				orgSlug,
+				classroomSlug
+			});
+		}
+
+		assertAllowedFailure(participantsResult, '参加者情報の取得に失敗しました。', 'participants', {
+			allowForbidden: true
+		});
+		assertAllowedFailure(
+			sentInvitationsResult,
+			'参加者招待情報の取得に失敗しました。',
+			'classroom invitations',
+			{
+			allowForbidden: true
+			}
+		);
+		assertAllowedFailure(
+			receivedInvitationsResult,
+			'受信した参加者招待の取得に失敗しました。',
+			'user invitations'
+		);
+		assertAllowedFailure(servicesResult, 'サービス情報の取得に失敗しました。', 'services', {
+			allowForbidden: true
+		});
+		assertAllowedFailure(ticketTypesResult, '回数券種別の取得に失敗しました。', 'ticket types', {
+			allowForbidden: true
+		});
+		assertAllowedFailure(
+			ticketPurchasesResult,
+			'回数券購入申請の取得に失敗しました。',
+			'ticket purchases',
+			{
+			allowForbidden: true
+			}
+		);
+
+		return {
+			activeContext,
+			canManage:
+				scopedAccess.effective.canManageParticipants ||
+				scopedAccess.effective.canManageClassroom,
+			canManageParticipants: scopedAccess.effective.canManageParticipants,
+			canManageClassroom: scopedAccess.effective.canManageClassroom,
+			participants: asParticipants(participantsResult.payload),
+			sentInvitations: asParticipantInvitations(sentInvitationsResult.payload),
+			receivedInvitations: asParticipantInvitations(receivedInvitationsResult.payload),
+			services: asServices(servicesResult.payload),
+			ticketTypes: asTicketTypes(ticketTypesResult.payload),
+			ticketPurchases: asTicketPurchases(ticketPurchasesResult.payload)
+		};
+	}
+);

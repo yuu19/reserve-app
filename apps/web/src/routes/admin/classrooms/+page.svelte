@@ -27,7 +27,8 @@
 		getCurrentPathWithSearch,
 		loadPortalAccess,
 		loadSession,
-		redirectToLoginWithNext
+		redirectToLoginWithNext,
+		resolvePortalHomePath
 	} from '$lib/features/auth-session.svelte';
 	import { buildScopedPath } from '$lib/features/scoped-routing';
 	import type { OrganizationPayload } from '$lib/rpc-client';
@@ -52,6 +53,14 @@
 		participant: 'participant'
 	} as const;
 
+	const resolveClassroomRoleLabel = (classroom: ClassroomContextPayload) => {
+		const primaryRole = classroom.display.primaryRole;
+		if (primaryRole === 'manager' || primaryRole === 'staff' || primaryRole === 'participant') {
+			return roleLabelMap[primaryRole];
+		}
+		return null;
+	};
+
 	const refresh = async () => {
 		const { session } = await loadSession();
 		if (!session) {
@@ -65,6 +74,11 @@
 		activeOrganization = nextOrganization;
 		activeClassroom = nextClassroom;
 		canManageOrganization = portalAccess.hasOrganizationAdminAccess;
+		if (!portalAccess.hasOrganizationAdminAccess) {
+			classrooms = [];
+			await goto(resolve(resolvePortalHomePath(portalAccess) ?? '/participant/home'));
+			return;
+		}
 
 		if (!nextOrganization?.slug) {
 			classrooms = [];
@@ -253,6 +267,7 @@
 					{:else}
 						<div class="space-y-3">
 							{#each classrooms as classroom (classroom.id)}
+								{@const classroomRoleLabel = resolveClassroomRoleLabel(classroom)}
 								<div class="rounded-lg border border-slate-200/80 bg-white/80 p-4">
 									<div class="flex flex-wrap items-start justify-between gap-3">
 										<div class="space-y-2">
@@ -261,8 +276,8 @@
 												{#if classroom.slug === activeClassroom?.slug}
 													<Badge variant="default">利用中</Badge>
 												{/if}
-												{#if classroom.role}
-													<Badge variant="outline">{roleLabelMap[classroom.role]}</Badge>
+												{#if classroomRoleLabel}
+													<Badge variant="outline">{classroomRoleLabel}</Badge>
 												{/if}
 											</div>
 											<p class="text-xs text-slate-500">slug: {classroom.slug}</p>

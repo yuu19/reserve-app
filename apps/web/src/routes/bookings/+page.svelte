@@ -23,9 +23,9 @@
 			const lastAuthPortal = readLastAuthPortal();
 			const homePath = resolvePortalHomePath(portalAccess);
 			const defaultBookingPath =
-				homePath === '/admin/dashboard' ? '/admin/bookings' : '/participant/bookings';
+				homePath?.startsWith('/admin') ? '/admin/bookings' : '/participant/bookings';
 			const bookingPath =
-				lastAuthPortal === 'admin' && portalAccess.hasOrganizationAdminAccess
+				lastAuthPortal === 'admin' && portalAccess.hasAdminPortalAccess
 					? '/admin/bookings'
 					: lastAuthPortal === 'participant' && portalAccess.hasParticipantAccess
 						? '/participant/bookings'

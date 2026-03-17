@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
 	loadSession: vi.fn(),
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/admin/services/new'),
-	getAdminServicesPageData: vi.fn()
+	getAdminServicesPageData: vi.fn(),
+	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', classroomSlug: 'room-1' }))
 }));
 
 vi.mock('$env/dynamic/public', () => ({
@@ -32,20 +33,38 @@ vi.mock('$lib/remote/admin-services-page.remote', () => ({
 	getAdminServicesPageData: mocks.getAdminServicesPageData
 }));
 
+vi.mock('$lib/features/scoped-routing', async () => {
+	const actual = await vi.importActual<typeof import('$lib/features/scoped-routing')>(
+		'$lib/features/scoped-routing'
+	);
+	return {
+		...actual,
+		readWindowScopedRouteContext: mocks.readWindowScopedRouteContext
+	};
+});
+
 describe('/admin/services/new/+page.svelte', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.getAdminServicesPageData.mockReset();
+		mocks.readWindowScopedRouteContext.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { id: 'user-1' }, session: { id: 'session-1' } },
 			status: 200
 		});
 		mocks.getCurrentPathWithSearch.mockReturnValue('/admin/services/new');
+		mocks.readWindowScopedRouteContext.mockReturnValue({
+			orgSlug: 'org-1',
+			classroomSlug: 'room-1'
+		});
 		mocks.getAdminServicesPageData.mockResolvedValue({
-			activeOrganizationId: 'org-1',
+			activeContext: {
+				orgSlug: 'org-1',
+				classroomSlug: 'room-1'
+			},
 			canManage: true,
 			services: [],
 			staffServices: []
@@ -105,7 +124,7 @@ describe('/admin/services/new/+page.svelte', () => {
 
 	it('should show organization-required message after load when no active organization', async () => {
 		mocks.getAdminServicesPageData.mockResolvedValue({
-			activeOrganizationId: null,
+			activeContext: null,
 			canManage: false,
 			services: [],
 			staffServices: []

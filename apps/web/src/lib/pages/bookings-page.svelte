@@ -90,6 +90,7 @@
 	let loading = $state(true);
 	let bookingAction = $state<{ kind: 'create' | 'cancel'; id: string } | null>(null);
 	let tab = $state<'operations' | 'participant'>('operations');
+	let adminView = $state<'list' | 'calendar'>('list');
 	let participantView = $state<'calendar' | 'schedule'>('calendar');
 	let schedulePeriod = $state<'upcoming' | 'past'>('upcoming');
 	let canManage = $state(false);
@@ -137,7 +138,8 @@
 	let operationsFilter = $state({
 		status: 'all' as 'all' | BookingPayload['status'],
 		serviceId: '',
-		participantId: ''
+		participantId: '',
+		selectedDate: ''
 	});
 
 	let serviceForm = $state({
@@ -649,6 +651,16 @@
 		slot?: SlotPayload;
 		participant?: ParticipantPayload;
 	};
+	type AdminCalendarSummary = {
+		slotCount: number;
+		openSlotCount: number;
+		canceledSlotCount: number;
+		completedSlotCount: number;
+		bookingCount: number;
+		pendingCount: number;
+		confirmedCount: number;
+		otherBookingCount: number;
+	};
 
 	const statusLabelMap: Record<SlotPayload['status'], string> = {
 		open: '受付中',
@@ -741,6 +753,12 @@
 	});
 	const filteredOperationRows = $derived.by(() => {
 		return operationRows.filter((row) => {
+			if (operationsFilter.selectedDate) {
+				const slotDateKey = row.slot ? toDateKeyFromIso(row.slot.startAt) : null;
+				if (slotDateKey !== operationsFilter.selectedDate) {
+					return false;
+				}
+			}
 			if (operationsFilter.status !== 'all' && row.booking.status !== operationsFilter.status) {
 				return false;
 			}
@@ -777,6 +795,65 @@
 	const myTicketPurchaseRows = $derived.by(() =>
 		[...myTicketPurchases].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 	);
+	const adminCalendarSummaryByDate = $derived.by(() => {
+		const map = new Map<string, AdminCalendarSummary>();
+		const ensureSummary = (dateKey: string): AdminCalendarSummary => {
+			const existing = map.get(dateKey);
+			if (existing) {
+				return existing;
+			}
+			const created: AdminCalendarSummary = {
+				slotCount: 0,
+				openSlotCount: 0,
+				canceledSlotCount: 0,
+				completedSlotCount: 0,
+				bookingCount: 0,
+				pendingCount: 0,
+				confirmedCount: 0,
+				otherBookingCount: 0
+			};
+			map.set(dateKey, created);
+			return created;
+		};
+
+		for (const slot of slots) {
+			const dateKey = toDateKeyFromIso(slot.startAt);
+			if (!dateKey) {
+				continue;
+			}
+			const summary = ensureSummary(dateKey);
+			summary.slotCount += 1;
+			if (slot.status === 'open') {
+				summary.openSlotCount += 1;
+			} else if (slot.status === 'canceled') {
+				summary.canceledSlotCount += 1;
+			} else {
+				summary.completedSlotCount += 1;
+			}
+		}
+
+		for (const booking of staffBookings) {
+			const slot = slotMapById.get(booking.slotId);
+			if (!slot) {
+				continue;
+			}
+			const dateKey = toDateKeyFromIso(slot.startAt);
+			if (!dateKey) {
+				continue;
+			}
+			const summary = ensureSummary(dateKey);
+			summary.bookingCount += 1;
+			if (booking.status === 'pending_approval') {
+				summary.pendingCount += 1;
+			} else if (booking.status === 'confirmed') {
+				summary.confirmedCount += 1;
+			} else {
+				summary.otherBookingCount += 1;
+			}
+		}
+
+		return map;
+	});
 
 	const calendarItemsByDate = $derived.by(() => {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -826,6 +903,17 @@
 
 	const getItemsForDay = (date: Date): CalendarItem[] =>
 		calendarItemsByDate.get(toDateKey(date)) ?? [];
+	const getAdminCalendarSummary = (date: Date): AdminCalendarSummary =>
+		adminCalendarSummaryByDate.get(toDateKey(date)) ?? {
+			slotCount: 0,
+			openSlotCount: 0,
+			canceledSlotCount: 0,
+			completedSlotCount: 0,
+			bookingCount: 0,
+			pendingCount: 0,
+			confirmedCount: 0,
+			otherBookingCount: 0
+		};
 	const isBookingCreateInProgress = (slotId: string): boolean =>
 		bookingAction?.kind === 'create' && bookingAction.id === slotId;
 	const isBookingCancelInProgress = (bookingId: string | undefined): boolean =>
@@ -842,6 +930,9 @@
 		}
 		return scheduleDateFormatter.format(parsed);
 	};
+	const selectedOperationDateLabel = $derived(
+		operationsFilter.selectedDate ? formatScheduleDateLabel(operationsFilter.selectedDate) : ''
+	);
 	const formatDateTime = (value: string): string => {
 		const parsed = new Date(value);
 		if (Number.isNaN(parsed.getTime())) {
@@ -936,6 +1027,16 @@
 	};
 	const isResourceActionInProgress = (kind: ResourceActionKind, id: string): boolean =>
 		resourceAction?.kind === kind && resourceAction.id === id;
+	const selectOperationDate = (date: Date) => {
+		if (!isCurrentMonthDay(date)) {
+			return;
+		}
+		const dateKey = toDateKey(date);
+		operationsFilter.selectedDate = operationsFilter.selectedDate === dateKey ? '' : dateKey;
+	};
+	const clearSelectedOperationDate = () => {
+		operationsFilter.selectedDate = '';
+	};
 	const selectServiceForEdit = (service: ServicePayload) => {
 		serviceEditTargetId = service.id;
 		serviceEditDialogOpen = true;
@@ -1036,6 +1137,7 @@
 
 	const shiftVisibleMonth = async (delta: number) => {
 		visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + delta, 1);
+		operationsFilter.selectedDate = '';
 		busy = true;
 		try {
 			await refresh();
@@ -2352,6 +2454,153 @@
 
 				{#if canManage}
 					{#if isAdminOperationsPage}
+						<section>
+							<Card class="surface-panel border-slate-200/80 shadow-lg">
+								<CardHeader class="space-y-3">
+									<div class="flex flex-wrap items-center justify-between gap-3">
+										<div>
+											<h2 class="text-lg font-semibold">予約運用ビュー</h2>
+											<CardDescription>
+												月間カレンダーから日別に運営予約一覧を絞り込みできます。
+											</CardDescription>
+										</div>
+										<div class="flex items-center gap-2">
+											<Button
+												type="button"
+												variant={adminView === 'list' ? 'default' : 'outline'}
+												onclick={() => (adminView = 'list')}
+											>
+												一覧
+											</Button>
+											<Button
+												type="button"
+												variant={adminView === 'calendar' ? 'default' : 'outline'}
+												onclick={() => (adminView = 'calendar')}
+											>
+												月間カレンダー
+											</Button>
+										</div>
+									</div>
+								</CardHeader>
+								{#if adminView === 'calendar'}
+									<CardContent class="space-y-4">
+										<div class="flex flex-wrap items-center justify-between gap-3">
+											<div class="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+												<Badge variant="outline">枠数</Badge>
+												<Badge variant="secondary">承認待ち</Badge>
+												<Badge variant="secondary">確定</Badge>
+												<span>
+													セルを選択すると下の運営予約一覧を日別で絞り込みます。
+												</span>
+											</div>
+											<div class="flex items-center gap-2">
+												<Button
+													type="button"
+													variant="outline"
+													size="icon"
+													aria-label="前月へ移動"
+													onclick={() => shiftVisibleMonth(-1)}
+													disabled={busy}
+												>
+													<ChevronLeft class="size-4" />
+												</Button>
+												<p class="min-w-32 text-center text-lg font-semibold text-slate-900">
+													{monthLabel}
+												</p>
+												<Button
+													type="button"
+													variant="outline"
+													size="icon"
+													aria-label="次月へ移動"
+													onclick={() => shiftVisibleMonth(1)}
+													disabled={busy}
+												>
+													<ChevronRight class="size-4" />
+												</Button>
+											</div>
+										</div>
+
+										{#if operationsFilter.selectedDate}
+											<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-200 bg-cyan-50/80 px-3 py-2 text-sm text-slate-700">
+												<p>絞り込み日: {selectedOperationDateLabel}</p>
+												<Button type="button" variant="outline" size="sm" onclick={clearSelectedOperationDate}>
+													絞り込み解除
+												</Button>
+											</div>
+										{/if}
+
+										<div class="grid grid-cols-7 gap-1 rounded-lg border border-slate-200/80 bg-slate-50/60 p-2 text-center text-xs font-semibold text-slate-600">
+											{#each weekdayLabels as dayLabel (dayLabel)}
+												<div>{dayLabel}</div>
+											{/each}
+										</div>
+
+										<div class="grid grid-cols-7 gap-1">
+											{#each calendarDays as day (`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`)}
+												{@const summary = getAdminCalendarSummary(day)}
+												{@const isSelectedDate = operationsFilter.selectedDate === toDateKey(day)}
+												{@const hasActivity = summary.slotCount > 0 || summary.bookingCount > 0}
+												<button
+													type="button"
+													class={`min-h-36 rounded-lg border p-3 text-left transition-colors ${
+														isCurrentMonthDay(day)
+															? isSelectedDate
+																? 'border-cyan-400 bg-cyan-50'
+																: 'border-slate-200/80 bg-white hover:border-cyan-300 hover:bg-cyan-50/40'
+															: 'border-slate-100 bg-slate-50 text-slate-400'
+													}`}
+													disabled={!isCurrentMonthDay(day)}
+													onclick={() => selectOperationDate(day)}
+												>
+													<p class="mb-3 text-sm font-semibold">{day.getDate()}</p>
+													<div class="space-y-2 text-xs">
+														{#if hasActivity}
+															<div class="rounded-md border border-slate-200/80 bg-slate-50/80 px-2 py-1">
+																<p class="text-slate-500">枠</p>
+																<p class="font-semibold text-slate-900">
+																	{summary.slotCount}
+																	<span class="font-normal text-slate-500">
+																		(open {summary.openSlotCount})
+																	</span>
+																</p>
+															</div>
+															<div class="grid gap-2">
+																<div class="rounded-md border border-amber-200/80 bg-amber-50 px-2 py-1">
+																	<p class="text-amber-700">承認待ち</p>
+																	<p class="font-semibold text-slate-900">{summary.pendingCount}</p>
+																</div>
+																<div class="rounded-md border border-sky-200/80 bg-sky-50 px-2 py-1">
+																	<p class="text-sky-700">確定</p>
+																	<p class="font-semibold text-slate-900">{summary.confirmedCount}</p>
+																</div>
+															</div>
+															{#if summary.canceledSlotCount > 0 || summary.otherBookingCount > 0}
+																<p class="text-[11px] text-slate-500">
+																	{#if summary.canceledSlotCount > 0}
+																		停止枠 {summary.canceledSlotCount}
+																	{/if}
+																	{#if summary.canceledSlotCount > 0 && summary.otherBookingCount > 0}
+																		/
+																	{/if}
+																	{#if summary.otherBookingCount > 0}
+																		その他予約 {summary.otherBookingCount}
+																	{/if}
+																</p>
+															{/if}
+														{:else}
+															<p class="text-slate-500">予定なし</p>
+														{/if}
+													</div>
+												</button>
+											{/each}
+										</div>
+									</CardContent>
+								{/if}
+							</Card>
+						</section>
+					{/if}
+
+					{#if isAdminOperationsPage}
 					<section>
 						<Card class="surface-panel border-slate-200/80 shadow-lg">
 							<CardHeader>
@@ -2359,6 +2608,9 @@
 								<CardDescription>
 									表示月の枠に紐づく予約を一覧表示し、承認・却下・運営キャンセル・No-show
 									を実行できます。
+									{#if operationsFilter.selectedDate}
+										現在は {selectedOperationDateLabel} のみ表示しています。
+									{/if}
 								</CardDescription>
 							</CardHeader>
 							<CardContent class="space-y-4">
@@ -2416,6 +2668,14 @@
 											</select>
 										</div>
 									</div>
+									{#if operationsFilter.selectedDate}
+										<div class="flex flex-wrap items-center gap-2">
+											<Badge variant="outline">日付: {selectedOperationDateLabel}</Badge>
+											<Button type="button" variant="outline" size="sm" onclick={clearSelectedOperationDate}>
+												日付絞り込み解除
+											</Button>
+										</div>
+									{/if}
 									<p class="text-xs text-slate-600">
 										承認待ちは「承認 / 却下」、予約確定は「運営キャンセル /
 										No-show」を実行できます。

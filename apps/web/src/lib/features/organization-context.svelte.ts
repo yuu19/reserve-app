@@ -20,12 +20,21 @@ import { writeLastUsedOrganizationId } from './organization-preference';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
 
+const isOrganizationPayload = (value: unknown): value is OrganizationPayload =>
+	isRecord(value) &&
+	typeof value.id === 'string' &&
+	typeof value.name === 'string' &&
+	typeof value.slug === 'string';
+
 export type ClassroomContextPayload = {
 	id: string;
 	slug: string;
 	name: string;
 	logo?: string | null;
 	canManage: boolean;
+	canManageClassroom: boolean;
+	canManageBookings: boolean;
+	canManageParticipants: boolean;
 	canUseParticipantBooking: boolean;
 	display: AccessDisplayPayload;
 	facts: AccessFactsPayload;
@@ -52,6 +61,8 @@ const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | nu
 	if (
 		!effective ||
 		typeof effective.canManageClassroom !== 'boolean' ||
+		typeof effective.canManageBookings !== 'boolean' ||
+		typeof effective.canManageParticipants !== 'boolean' ||
 		typeof effective.canUseParticipantBooking !== 'boolean' ||
 		!isRecord(value.display) ||
 		!isRecord(value.facts) ||
@@ -65,6 +76,9 @@ const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | nu
 		name: value.name,
 		logo: typeof value.logo === 'string' ? value.logo : null,
 		canManage: effective.canManageClassroom,
+		canManageClassroom: effective.canManageClassroom,
+		canManageBookings: effective.canManageBookings,
+		canManageParticipants: effective.canManageParticipants,
 		canUseParticipantBooking: effective.canUseParticipantBooking,
 		display: value.display as AccessDisplayPayload,
 		facts: value.facts as AccessFactsPayload,
@@ -108,10 +122,88 @@ export const loadOrganizations = async (
 export const createOrganization = async (input: { name: string; slug: string; logo?: string }) => {
 	const response = await authRpc.createOrganization(input);
 	const payload = await parseResponseBody(response);
+	const organization = isOrganizationPayload(payload) ? payload : null;
 	return {
 		ok: response.ok,
 		status: response.status,
-		message: response.ok ? '組織を作成しました。' : toErrorMessage(payload, '組織作成に失敗しました。')
+		message: response.ok ? '組織を作成しました。' : toErrorMessage(payload, '組織作成に失敗しました。'),
+		organization
+	};
+};
+
+export const createOrganizationWithInitialClassroom = async (input: {
+	organizationName: string;
+	organizationSlug: string;
+	classroomName?: string;
+	classroomSlug?: string;
+	logo?: string;
+}) => {
+	const organizationResult = await createOrganization({
+		name: input.organizationName,
+		slug: input.organizationSlug,
+		logo: input.logo
+	});
+	if (!organizationResult.ok || !organizationResult.organization) {
+		return {
+			ok: false,
+			status: organizationResult.status,
+			message: organizationResult.message,
+			organization: null as OrganizationPayload | null,
+			classroom: null as ClassroomContextPayload | null
+		};
+	}
+
+	await setActiveOrganization(organizationResult.organization.id);
+
+	const classroomName = input.classroomName?.trim() ?? '';
+	const classroomSlug = input.classroomSlug?.trim() ?? '';
+	if (!classroomName && !classroomSlug) {
+		const classrooms = await listClassroomsByOrgSlug(organizationResult.organization.slug);
+		const defaultClassroom = classrooms[0] ?? null;
+		return {
+			ok: defaultClassroom !== null,
+			status: defaultClassroom ? 200 : 500,
+			message: defaultClassroom
+				? '組織を作成しました。初期教室はあとから設定できます。'
+				: '初期教室の取得に失敗しました。',
+			organization: organizationResult.organization,
+			classroom: defaultClassroom
+		};
+	}
+	if (!classroomName || !classroomSlug) {
+		return {
+			ok: false,
+			status: 422,
+			message: '初期教室を設定する場合は、教室名と slug の両方を入力してください。',
+			organization: organizationResult.organization,
+			classroom: null as ClassroomContextPayload | null
+		};
+	}
+
+	const classroomResult = await updateClassroom(
+		organizationResult.organization.slug,
+		organizationResult.organization.slug,
+		{
+			name: classroomName,
+			slug: classroomSlug
+		}
+	);
+	if (!classroomResult.ok || !classroomResult.classroom) {
+		return {
+			ok: false,
+			status: classroomResult.status,
+			message: classroomResult.message,
+			organization: organizationResult.organization,
+			classroom: null as ClassroomContextPayload | null
+		};
+	}
+
+	return {
+		ok: true,
+		status: classroomResult.status,
+		message: '組織と初期教室を作成しました。',
+		organization: organizationResult.organization,
+		classroom: classroomResult.classroom
 	};
 };
 

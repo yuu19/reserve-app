@@ -57,8 +57,13 @@ describe('/participants/+page.svelte', () => {
 		});
 		mocks.getCurrentPathWithSearch.mockReturnValue('/admin/participants');
 		mocks.loadParticipantsPageData.mockResolvedValue({
-			activeOrganizationId: 'org-1',
+			activeContext: {
+				orgSlug: 'org-1',
+				classroomSlug: 'room-1'
+			},
 			canManage: true,
+			canManageParticipants: true,
+			canManageClassroom: true,
 			participants: [],
 			sentInvitations: [],
 			receivedInvitations: [],
@@ -88,8 +93,10 @@ describe('/participants/+page.svelte', () => {
 
 	it('should show organization-required message after load when no active organization', async () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
-			activeOrganizationId: null,
+			activeContext: null,
 			canManage: false,
+			canManageParticipants: false,
+			canManageClassroom: false,
 			participants: [],
 			sentInvitations: [],
 			receivedInvitations: [],
@@ -103,5 +110,56 @@ describe('/participants/+page.svelte', () => {
 		await expect
 			.element(page.getByText('利用中の組織を `/admin/dashboard` で選択してください。'))
 			.toBeInTheDocument();
+	});
+
+	it('shows participant operations for staff while hiding ticket type creation', async () => {
+		mocks.loadParticipantsPageData.mockResolvedValue({
+			activeContext: {
+				orgSlug: 'org-1',
+				classroomSlug: 'room-1'
+			},
+			canManage: true,
+			canManageParticipants: true,
+			canManageClassroom: false,
+			participants: [
+				{
+					id: 'participant-1',
+					organizationId: 'org-1',
+					userId: 'user-1',
+					name: 'Participant One',
+					email: 'participant@example.com',
+					createdAt: '2026-03-01T00:00:00.000Z',
+					updatedAt: '2026-03-01T00:00:00.000Z'
+				}
+			],
+			sentInvitations: [],
+			receivedInvitations: [],
+			services: [],
+			ticketTypes: [
+				{
+					id: 'ticket-type-1',
+					organizationId: 'org-1',
+					classroomId: 'room-1',
+					name: '5回券',
+					totalCount: 5,
+					expiresInDays: null,
+					serviceIds: [],
+					isActive: true,
+					isForSale: false,
+					stripePriceId: null,
+					createdAt: '2026-03-01T00:00:00.000Z',
+					updatedAt: '2026-03-01T00:00:00.000Z'
+				}
+			],
+			ticketPurchases: []
+		});
+
+		render(ParticipantsPage);
+
+		await expect.element(page.getByText('回数券付与')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('回数券種別の作成には教室管理権限が必要です。'))
+			.toBeInTheDocument();
+		await expect.element(page.getByText('回数券購入管理')).toBeInTheDocument();
 	});
 });

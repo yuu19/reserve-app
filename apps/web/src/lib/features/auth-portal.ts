@@ -1,7 +1,7 @@
 export type AuthPortal = 'admin' | 'participant';
 
-export const ADMIN_LOGIN_PATH = '/login/admin' as const;
-export const PARTICIPANT_LOGIN_PATH = '/login/participant' as const;
+export const ADMIN_LOGIN_PATH = '/admin/login' as const;
+export const PARTICIPANT_LOGIN_PATH = '/participant/login' as const;
 export const AUTH_ENTRY_SELECTION_PATH = '/' as const;
 
 const ADMIN_LEGACY_PATH_PREFIXES = [

@@ -995,6 +995,61 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     );
   };
 
+  const canCreateOrganizationForIdentity = async ({
+    userId,
+    email,
+  }: {
+    userId: string;
+    email: string | null;
+  }): Promise<boolean> => {
+    const ownerMembership = await database
+      .select({ id: dbSchema.member.id })
+      .from(dbSchema.member)
+      .where(and(eq(dbSchema.member.userId, userId), eq(dbSchema.member.role, 'owner')))
+      .limit(1);
+    if (ownerMembership[0]) {
+      return true;
+    }
+
+    const [memberRows, classroomMemberRows, participantRows, pendingInvitationRows] = await Promise.all([
+      database
+        .select({ id: dbSchema.member.id })
+        .from(dbSchema.member)
+        .where(eq(dbSchema.member.userId, userId))
+        .limit(1),
+      database
+        .select({ id: dbSchema.classroomMember.id })
+        .from(dbSchema.classroomMember)
+        .where(eq(dbSchema.classroomMember.userId, userId))
+        .limit(1),
+      database
+        .select({ id: dbSchema.participant.id })
+        .from(dbSchema.participant)
+        .where(eq(dbSchema.participant.userId, userId))
+        .limit(1),
+      email
+        ? database
+            .select({ id: dbSchema.invitation.id })
+            .from(dbSchema.invitation)
+            .where(
+              and(
+                eq(dbSchema.invitation.status, 'pending'),
+                sql`lower(${dbSchema.invitation.email}) = ${email}`,
+                sql`${dbSchema.invitation.expiresAt} > ${Date.now()}`,
+              ),
+            )
+            .limit(1)
+        : Promise.resolve([] as { id: string }[]),
+    ]);
+
+    return (
+      !memberRows[0]
+      && !classroomMemberRows[0]
+      && !participantRows[0]
+      && !pendingInvitationRows[0]
+    );
+  };
+
   const toIsoDateString = (value: unknown): string | null => {
     if (value instanceof Date) {
       return value.toISOString();
@@ -2139,6 +2194,21 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
   authRoutes.openapi(createOrganizationRoute, (c) => {
     return (async () => {
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const canCreateOrganization = await canCreateOrganizationForIdentity(identity);
+      if (!canCreateOrganization) {
+        return c.json(
+          {
+            message: '招待参加ユーザーは組織を作成できません。招待先の組織に参加してください。'
+          },
+          403,
+        );
+      }
+
       const body = c.req.valid('json');
 
       const response = await auth.api.createOrganization({

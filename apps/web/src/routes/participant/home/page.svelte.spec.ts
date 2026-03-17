@@ -49,8 +49,12 @@ describe('/participant/home/+page.svelte', () => {
 		});
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false,
+			hasAdminPortalAccess: false,
 			hasParticipantAccess: true,
 			canManage: false,
+			canManageClassroom: false,
+			canManageBookings: false,
+			canManageParticipants: false,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: null,
 			activeFacts: {

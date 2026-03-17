@@ -2,10 +2,15 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
+	import {
+		extractScopedRouteContext,
+		getRoutePathFromUrlPath,
+		replacePortalPathWithScopedContext
+	} from '$lib/features/scoped-routing';
 	import OrganizationLogo from '$lib/components/organization-logo.svelte';
 	import {
 		getCurrentPathWithSearch,
@@ -27,6 +32,11 @@
 		activeOrganization?.name ?? activeOrganization?.id ?? '選択されていません'
 	);
 	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
+	const resolveDashboardTarget = (targetPath: string): string => {
+		const scopedContext = extractScopedRouteContext(page.url.pathname);
+		return scopedContext ? replacePortalPathWithScopedContext(targetPath, scopedContext) : targetPath;
+	};
+	const toResolvablePath = (targetPath: string): Pathname => resolveDashboardTarget(targetPath) as Pathname;
 
 	const refreshDashboard = async () => {
 		const { session } = await loadSession();
@@ -134,33 +144,50 @@
 			</CardHeader>
 			<CardContent class="space-y-3">
 				<div class="flex flex-wrap gap-2">
-					<Button type="button" onclick={() => goto(resolve('/admin/settings'))}>設定へ移動</Button>
-					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/classrooms'))}
+					<Button type="button" onclick={() => goto(resolve(toResolvablePath('/admin/settings')))}
+						>設定へ移動</Button
+					>
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve(toResolvablePath('/admin/classrooms')))}
 						>教室管理へ移動</Button
 					>
-					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/bookings'))}
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve(toResolvablePath('/admin/bookings')))}
 						>予約運用へ移動</Button
 					>
-					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/services'))}
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve(toResolvablePath('/admin/services')))}
 						>サービス一覧へ移動</Button
 					>
 					<Button
 						type="button"
 						variant="outline"
-						onclick={() => goto(resolve('/admin/schedules/slots'))}>単発一覧へ移動</Button
+						onclick={() => goto(resolve(toResolvablePath('/admin/schedules/slots')))}
+						>単発一覧へ移動</Button
 					>
 					<Button
 						type="button"
 						variant="outline"
-						onclick={() => goto(resolve('/admin/schedules/recurring'))}>定期一覧へ移動</Button
+						onclick={() => goto(resolve(toResolvablePath('/admin/schedules/recurring')))}
+						>定期一覧へ移動</Button
 					>
-					<Button type="button" variant="outline" onclick={() => goto(resolve('/admin/participants'))}
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve(toResolvablePath('/admin/participants')))}
 						>参加者へ移動</Button
 					>
 					<Button
 						type="button"
 						variant="outline"
-						onclick={() => goto(resolve('/admin/invitations'))}>管理者招待へ移動</Button
+						onclick={() => goto(resolve(toResolvablePath('/admin/invitations')))}
+						>管理者招待へ移動</Button
 					>
 				</div>
 			</CardContent>
@@ -175,13 +202,22 @@
 			</CardHeader>
 			<CardContent class="space-y-3">
 				<div class="flex flex-wrap gap-2">
-					<Button type="button" variant="outline" onclick={() => goto(resolve('/events'))}
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve(toResolvablePath('/events')))}
 						>イベント一覧へ移動</Button
 					>
-					<Button type="button" variant="outline" onclick={() => goto(resolve('/participant/bookings'))}
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve(toResolvablePath('/participant/bookings')))}
 						>予約確認へ移動</Button
 					>
-					<Button type="button" variant="outline" onclick={() => goto(resolve('/participant/invitations'))}
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => goto(resolve(toResolvablePath('/participant/invitations')))}
 						>参加者招待へ移動</Button
 					>
 				</div>

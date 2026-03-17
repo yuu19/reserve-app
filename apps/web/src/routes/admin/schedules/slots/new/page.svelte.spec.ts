@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
 	loadSession: vi.fn(),
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/admin/schedules/slots/new'),
-	getAdminSlotsPageData: vi.fn()
+	getAdminSlotsPageData: vi.fn(),
+	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', classroomSlug: 'room-1' }))
 }));
 
 vi.mock('$env/dynamic/public', () => ({
@@ -31,6 +32,16 @@ vi.mock('$lib/features/auth-session.svelte', async () => {
 vi.mock('$lib/remote/admin-slots-page.remote', () => ({
 	getAdminSlotsPageData: mocks.getAdminSlotsPageData
 }));
+
+vi.mock('$lib/features/scoped-routing', async () => {
+	const actual = await vi.importActual<typeof import('$lib/features/scoped-routing')>(
+		'$lib/features/scoped-routing'
+	);
+	return {
+		...actual,
+		readWindowScopedRouteContext: mocks.readWindowScopedRouteContext
+	};
+});
 
 const testServices = [
 	{
@@ -96,14 +107,22 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.getAdminSlotsPageData.mockReset();
+		mocks.readWindowScopedRouteContext.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { id: 'user-1' }, session: { id: 'session-1' } },
 			status: 200
 		});
 		mocks.getCurrentPathWithSearch.mockReturnValue('/admin/schedules/slots/new');
+		mocks.readWindowScopedRouteContext.mockReturnValue({
+			orgSlug: 'org-1',
+			classroomSlug: 'room-1'
+		});
 		mocks.getAdminSlotsPageData.mockResolvedValue({
-			activeOrganizationId: 'org-1',
+			activeContext: {
+				orgSlug: 'org-1',
+				classroomSlug: 'room-1'
+			},
 			canManage: true,
 			services: [...testServices],
 			slots: []

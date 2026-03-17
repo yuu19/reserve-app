@@ -8,7 +8,10 @@
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
+	import {
+		getRoutePathFromUrlPath,
+		readWindowScopedRouteContext
+	} from '$lib/features/scoped-routing';
 	import {
 		actParticipantInvitation,
 		createParticipantInvitation
@@ -23,7 +26,9 @@
 	} from '$lib/features/tickets.svelte';
 	import {
 		getCurrentPathWithSearch,
+		loadPortalAccess,
 		loadSession,
+		resolvePortalHomePath,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
 	import type {
@@ -40,7 +45,8 @@
 	let loading = $state(true);
 	let busy = $state(false);
 	let activeOrganizationId = $state<string | null>(null);
-	let canManage = $state(false);
+	let canManageParticipants = $state(false);
+	let canManageClassroom = $state(false);
 	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 	const participantsPageMode = $derived.by(() => {
 		if (routeMode) {
@@ -188,7 +194,8 @@
 	};
 	const resetParticipantViewState = () => {
 		activeOrganizationId = null;
-		canManage = false;
+		canManageParticipants = false;
+		canManageClassroom = false;
 		participants = [];
 		sentInvitations = [];
 		receivedInvitations = [];
@@ -204,7 +211,14 @@
 			return;
 		}
 		if (pathname === '/participants') {
-			await goto(resolve('/admin/participants'));
+			const portalAccess = await loadPortalAccess();
+			const nextPath =
+				portalAccess.hasOrganizationAdminAccess || portalAccess.canManageParticipants
+					? '/admin/participants'
+					: portalAccess.hasParticipantAccess || portalAccess.canUseParticipantBooking
+						? '/participant/invitations'
+						: (resolvePortalHomePath(portalAccess) ?? '/participant/home');
+			await goto(resolve(nextPath));
 			return;
 		}
 		try {
@@ -213,8 +227,10 @@
 				resetParticipantViewState();
 				return;
 			}
-			activeOrganizationId = data.activeContext.orgSlug;
-			canManage = data.canManage;
+			const scopedContext = readWindowScopedRouteContext();
+			activeOrganizationId = data.activeContext.orgSlug ?? scopedContext?.orgSlug ?? null;
+			canManageParticipants = data.canManageParticipants;
+			canManageClassroom = data.canManageClassroom;
 			participants = data.participants;
 			sentInvitations = data.sentInvitations;
 			receivedInvitations = data.receivedInvitations;
@@ -229,7 +245,7 @@
 
 	const submitCreateParticipantInvitation = async (event: SubmitEvent) => {
 		event.preventDefault();
-		if (!activeOrganizationId || !canManage) return;
+		if (!activeOrganizationId || !canManageParticipants) return;
 		busy = true;
 		try {
 			const result = await createParticipantInvitation({
@@ -250,12 +266,12 @@
 	};
 
 	const submitResendParticipantInvitation = async (invitation: ParticipantInvitationPayload) => {
-		if (!canManage) return;
+		if (!canManageParticipants) return;
 		busy = true;
 		try {
 			const result = await createParticipantInvitation({
 				email: invitation.email,
-				participantName: invitation.participantName,
+				participantName: invitation.participantName ?? '',
 				organizationId: invitation.organizationId,
 				resend: true
 			});
@@ -290,7 +306,7 @@
 
 	const submitCreateTicketType = async (event: SubmitEvent) => {
 		event.preventDefault();
-		if (!activeOrganizationId || !canManage) return;
+		if (!activeOrganizationId || !canManageClassroom) return;
 
 		const totalCount = parsePositiveInteger(ticketTypeForm.totalCount);
 		if (!totalCount) {
@@ -341,7 +357,7 @@
 
 	const submitGrantTicketPack = async (event: SubmitEvent) => {
 		event.preventDefault();
-		if (!activeOrganizationId || !canManage) return;
+		if (!activeOrganizationId || !canManageParticipants) return;
 
 		if (!ticketGrantForm.participantId) {
 			toast.error('付与対象の参加者を選択してください。');
@@ -391,7 +407,7 @@
 	};
 
 	const submitApproveTicketPurchase = async (purchaseId: string) => {
-		if (!canManage || ticketPurchaseAction) {
+		if (!canManageParticipants || ticketPurchaseAction) {
 			return;
 		}
 		if (!confirm('この回数券購入申請を承認しますか？')) {
@@ -412,7 +428,7 @@
 	};
 
 	const submitRejectTicketPurchase = async (purchaseId: string) => {
-		if (!canManage || ticketPurchaseAction) {
+		if (!canManageParticipants || ticketPurchaseAction) {
 			return;
 		}
 		if (!confirm('この回数券購入申請を却下しますか？')) {
@@ -530,7 +546,11 @@
 				<Card class="surface-panel border-slate-200/80 shadow-lg">
 					<CardHeader><h2 class="text-xl font-semibold">参加者一覧</h2></CardHeader>
 					<CardContent>
-						{#if loading}
+						{#if !canManageParticipants}
+							<p class="text-sm text-muted-foreground">
+								参加者一覧の確認には参加者管理権限が必要です。
+							</p>
+						{:else if loading}
 							<p class="text-sm text-muted-foreground">参加者を読み込み中…</p>
 						{:else if participants.length === 0}
 							<p class="text-sm text-muted-foreground">参加者はまだ登録されていません。</p>
@@ -560,9 +580,9 @@
 					></CardHeader
 				>
 				<CardContent class="space-y-4">
-					{#if participantsPageMode !== 'participant' && !canManage}
+					{#if participantsPageMode !== 'participant' && !canManageParticipants}
 						<p class="text-sm text-muted-foreground">
-							参加者招待の管理には admin または owner 権限が必要です。
+							参加者招待の管理には参加者管理権限が必要です。
 						</p>
 					{:else if participantsPageMode !== 'participant'}
 						<form
@@ -616,14 +636,22 @@
 													type="button"
 													variant="outline"
 													onclick={() => submitResendParticipantInvitation(invitation)}
-													disabled={busy || invitation.status !== 'pending' || !canManage}
+													disabled={
+														busy ||
+														invitation.status !== 'pending' ||
+														!canManageParticipants
+													}
 													>再送</Button
 												>
 												<Button
 													type="button"
 													variant="destructive"
 													onclick={() => submitAction('cancel', invitation.id)}
-													disabled={busy || invitation.status !== 'pending' || !canManage}
+													disabled={
+														busy ||
+														invitation.status !== 'pending' ||
+														!canManageParticipants
+													}
 													>取り消し</Button
 												>
 											</div>
@@ -679,165 +707,189 @@
 			<Card class="surface-panel border-slate-200/80 shadow-lg">
 				<CardHeader>
 					<h2 class="text-xl font-semibold">回数券管理</h2>
-					<CardDescription>回数券種別の作成と参加者への付与を行います。</CardDescription>
+					<CardDescription>
+						回数券種別の作成、参加者への付与、購入申請の承認を行います。
+					</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
-					{#if !canManage}
+					{#if !canManageParticipants && !canManageClassroom}
 						<p class="text-sm text-muted-foreground">
-							回数券管理には admin または owner 権限が必要です。
+							回数券管理には教室管理権限または参加者管理権限が必要です。
 						</p>
 					{:else}
 						<section class="grid gap-4 xl:grid-cols-[1fr_1fr]">
-							<form
-								class="space-y-3 rounded-lg border border-slate-200/80 bg-white/80 p-4"
-								onsubmit={submitCreateTicketType}
-							>
-								<h3 class="text-sm font-semibold">回数券種別作成</h3>
-								<div class="space-y-2">
-									<Label for="ticket-type-name">券種名</Label>
-									<Input
-										id="ticket-type-name"
-										name="ticket_type_name"
-										type="text"
-										bind:value={ticketTypeForm.name}
-										required
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label for="ticket-type-total-count">回数</Label>
-									<Input
-										id="ticket-type-total-count"
-										name="ticket_type_total_count"
-										type="number"
-										min="1"
-										bind:value={ticketTypeForm.totalCount}
-										required
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label for="ticket-type-expires-in-days">有効日数（任意）</Label>
-									<Input
-										id="ticket-type-expires-in-days"
-										name="ticket_type_expires_in_days"
-										type="number"
-										min="1"
-										bind:value={ticketTypeForm.expiresInDays}
-									/>
-								</div>
-								<div
-									class="flex items-center gap-2 rounded-md border border-slate-200/80 bg-slate-50/60 px-3 py-2"
+							{#if canManageClassroom}
+								<form
+									class="space-y-3 rounded-lg border border-slate-200/80 bg-white/80 p-4"
+									onsubmit={submitCreateTicketType}
 								>
-									<input
-										id="ticket-type-is-for-sale"
-										name="ticket_type_is_for_sale"
-										type="checkbox"
-										bind:checked={ticketTypeForm.isForSale}
-									/>
-									<Label for="ticket-type-is-for-sale">参加者が購入できるようにする</Label>
-								</div>
-								<div class="space-y-2">
-									<Label for="ticket-type-stripe-price-id">Stripe 価格ID（販売時必須）</Label>
-									<Input
-										id="ticket-type-stripe-price-id"
-										name="ticket_type_stripe_price_id"
-										type="text"
-										bind:value={ticketTypeForm.stripePriceId}
-										placeholder="price_xxx"
-									/>
-								</div>
-								<div class="space-y-2">
-									<p class="text-sm font-medium">対象サービス（任意）</p>
-									{#if services.length === 0}
-										<p class="text-sm text-muted-foreground">選択可能なサービスがありません。</p>
-									{:else}
-										<div
-											class="max-h-40 space-y-2 overflow-y-auto rounded-md border border-slate-200/80 bg-slate-50/60 p-2"
+									<h3 class="text-sm font-semibold">回数券種別作成</h3>
+									<div class="space-y-2">
+										<Label for="ticket-type-name">券種名</Label>
+										<Input
+											id="ticket-type-name"
+											name="ticket_type_name"
+											type="text"
+											bind:value={ticketTypeForm.name}
+											required
+										/>
+									</div>
+									<div class="space-y-2">
+										<Label for="ticket-type-total-count">回数</Label>
+										<Input
+											id="ticket-type-total-count"
+											name="ticket_type_total_count"
+											type="number"
+											min="1"
+											bind:value={ticketTypeForm.totalCount}
+											required
+										/>
+									</div>
+									<div class="space-y-2">
+										<Label for="ticket-type-expires-in-days">有効日数（任意）</Label>
+										<Input
+											id="ticket-type-expires-in-days"
+											name="ticket_type_expires_in_days"
+											type="number"
+											min="1"
+											bind:value={ticketTypeForm.expiresInDays}
+										/>
+									</div>
+									<div
+										class="flex items-center gap-2 rounded-md border border-slate-200/80 bg-slate-50/60 px-3 py-2"
+									>
+										<input
+											id="ticket-type-is-for-sale"
+											name="ticket_type_is_for_sale"
+											type="checkbox"
+											bind:checked={ticketTypeForm.isForSale}
+										/>
+										<Label for="ticket-type-is-for-sale"
+											>参加者が購入できるようにする</Label
 										>
-											{#each services as service (service.id)}
-												<label
-													class="flex items-center gap-2 text-sm text-slate-700"
-													for={`ticket-service-${service.id}`}
-												>
-													<input
-														id={`ticket-service-${service.id}`}
-														name={`ticket_service_${service.id}`}
-														type="checkbox"
-														checked={ticketTypeForm.serviceIds.includes(service.id)}
-														onchange={(event) =>
-															toggleTicketTypeService(
-																service.id,
-																(event.currentTarget as HTMLInputElement).checked
-															)}
-													/>
-													<span>{service.name}</span>
-												</label>
-											{/each}
-										</div>
-									{/if}
+									</div>
+									<div class="space-y-2">
+										<Label for="ticket-type-stripe-price-id">Stripe 価格ID（販売時必須）</Label>
+										<Input
+											id="ticket-type-stripe-price-id"
+											name="ticket_type_stripe_price_id"
+											type="text"
+											bind:value={ticketTypeForm.stripePriceId}
+											placeholder="price_xxx"
+										/>
+									</div>
+									<div class="space-y-2">
+										<p class="text-sm font-medium">対象サービス（任意）</p>
+										{#if services.length === 0}
+											<p class="text-sm text-muted-foreground">
+												選択可能なサービスがありません。
+											</p>
+										{:else}
+											<div
+												class="max-h-40 space-y-2 overflow-y-auto rounded-md border border-slate-200/80 bg-slate-50/60 p-2"
+											>
+												{#each services as service (service.id)}
+													<label
+														class="flex items-center gap-2 text-sm text-slate-700"
+														for={`ticket-service-${service.id}`}
+													>
+														<input
+															id={`ticket-service-${service.id}`}
+															name={`ticket_service_${service.id}`}
+															type="checkbox"
+															checked={ticketTypeForm.serviceIds.includes(service.id)}
+															onchange={(event) =>
+																toggleTicketTypeService(
+																	service.id,
+																	(event.currentTarget as HTMLInputElement).checked
+																)}
+														/>
+														<span>{service.name}</span>
+													</label>
+												{/each}
+											</div>
+										{/if}
+									</div>
+									<Button type="submit" disabled={busy}>作成</Button>
+								</form>
+							{:else}
+								<div class="space-y-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/70 p-4">
+									<h3 class="text-sm font-semibold">回数券種別作成</h3>
+									<p class="text-sm text-muted-foreground">
+										回数券種別の作成には教室管理権限が必要です。
+									</p>
 								</div>
-								<Button type="submit" disabled={busy}>作成</Button>
-							</form>
+							{/if}
 
-							<form
-								class="space-y-3 rounded-lg border border-slate-200/80 bg-white/80 p-4"
-								onsubmit={submitGrantTicketPack}
-							>
-								<h3 class="text-sm font-semibold">回数券付与</h3>
-								<div class="space-y-2">
-									<Label for="ticket-grant-participant">付与先参加者</Label>
-									<select
-										id="ticket-grant-participant"
-										name="ticket_grant_participant"
-										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={ticketGrantForm.participantId}
-										required
-									>
-										<option value="" disabled>参加者を選択</option>
-										{#each participants as participant (participant.id)}
-											<option value={participant.id}
-												>{participant.name} / {participant.email}</option
-											>
-										{/each}
-									</select>
+							{#if canManageParticipants}
+								<form
+									class="space-y-3 rounded-lg border border-slate-200/80 bg-white/80 p-4"
+									onsubmit={submitGrantTicketPack}
+								>
+									<h3 class="text-sm font-semibold">回数券付与</h3>
+									<div class="space-y-2">
+										<Label for="ticket-grant-participant">付与先参加者</Label>
+										<select
+											id="ticket-grant-participant"
+											name="ticket_grant_participant"
+											class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											bind:value={ticketGrantForm.participantId}
+											required
+										>
+											<option value="" disabled>参加者を選択</option>
+											{#each participants as participant (participant.id)}
+												<option value={participant.id}
+													>{participant.name} / {participant.email}</option
+												>
+											{/each}
+										</select>
+									</div>
+									<div class="space-y-2">
+										<Label for="ticket-grant-type">回数券種別</Label>
+										<select
+											id="ticket-grant-type"
+											name="ticket_grant_type"
+											class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											bind:value={ticketGrantForm.ticketTypeId}
+											required
+										>
+											<option value="" disabled>回数券種別を選択</option>
+											{#each ticketTypes as ticketType (ticketType.id)}
+												<option value={ticketType.id}
+													>{ticketType.name} / {ticketType.totalCount}回</option
+												>
+											{/each}
+										</select>
+									</div>
+									<div class="space-y-2">
+										<Label for="ticket-grant-count">付与回数（任意）</Label>
+										<Input
+											id="ticket-grant-count"
+											name="ticket_grant_count"
+											type="number"
+											min="1"
+											bind:value={ticketGrantForm.count}
+										/>
+									</div>
+									<div class="space-y-2">
+										<Label for="ticket-grant-expires-at">有効期限（任意）</Label>
+										<Input
+											id="ticket-grant-expires-at"
+											name="ticket_grant_expires_at"
+											type="datetime-local"
+											bind:value={ticketGrantForm.expiresAt}
+										/>
+									</div>
+									<Button type="submit" disabled={busy}>付与</Button>
+								</form>
+							{:else}
+								<div class="space-y-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/70 p-4">
+									<h3 class="text-sm font-semibold">回数券付与</h3>
+									<p class="text-sm text-muted-foreground">
+										回数券付与には参加者管理権限が必要です。
+									</p>
 								</div>
-								<div class="space-y-2">
-									<Label for="ticket-grant-type">回数券種別</Label>
-									<select
-										id="ticket-grant-type"
-										name="ticket_grant_type"
-										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={ticketGrantForm.ticketTypeId}
-										required
-									>
-										<option value="" disabled>回数券種別を選択</option>
-										{#each ticketTypes as ticketType (ticketType.id)}
-											<option value={ticketType.id}
-												>{ticketType.name} / {ticketType.totalCount}回</option
-											>
-										{/each}
-									</select>
-								</div>
-								<div class="space-y-2">
-									<Label for="ticket-grant-count">付与回数（任意）</Label>
-									<Input
-										id="ticket-grant-count"
-										name="ticket_grant_count"
-										type="number"
-										min="1"
-										bind:value={ticketGrantForm.count}
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label for="ticket-grant-expires-at">有効期限（任意）</Label>
-									<Input
-										id="ticket-grant-expires-at"
-										name="ticket_grant_expires_at"
-										type="datetime-local"
-										bind:value={ticketGrantForm.expiresAt}
-									/>
-								</div>
-								<Button type="submit" disabled={busy}>付与</Button>
-							</form>
+							{/if}
 						</section>
 
 						<section class="space-y-2">
@@ -875,136 +927,142 @@
 
 						<section class="space-y-3">
 							<h3 class="text-sm font-semibold">回数券購入管理</h3>
-							<div class="grid gap-3 md:grid-cols-3">
-								<div class="space-y-2">
-									<Label for="purchase-filter-status">ステータス</Label>
-									<select
-										id="purchase-filter-status"
-										name="purchase_filter_status"
-										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={ticketPurchaseFilter.status}
-									>
-										<option value="all">all</option>
-										<option value="pending_payment">pending_payment</option>
-										<option value="pending_approval">pending_approval</option>
-										<option value="approved">approved</option>
-										<option value="rejected">rejected</option>
-										<option value="cancelled_by_participant">cancelled_by_participant</option>
-									</select>
-								</div>
-								<div class="space-y-2">
-									<Label for="purchase-filter-method">支払方法</Label>
-									<select
-										id="purchase-filter-method"
-										name="purchase_filter_method"
-										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={ticketPurchaseFilter.paymentMethod}
-									>
-										<option value="all">all</option>
-										<option value="stripe">stripe</option>
-										<option value="cash_on_site">cash_on_site</option>
-										<option value="bank_transfer">bank_transfer</option>
-									</select>
-								</div>
-								<div class="space-y-2">
-									<Label for="purchase-filter-participant">参加者</Label>
-									<select
-										id="purchase-filter-participant"
-										name="purchase_filter_participant"
-										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={ticketPurchaseFilter.participantId}
-									>
-										<option value="">すべて</option>
-										{#each participants as participant (participant.id)}
-											<option value={participant.id}
-												>{participant.name} / {participant.email}</option
-											>
-										{/each}
-									</select>
-								</div>
-							</div>
-
-							{#if filteredTicketPurchases.length === 0}
-								<p class="text-sm text-muted-foreground">該当する購入申請はありません。</p>
+							{#if !canManageParticipants}
+								<p class="text-sm text-muted-foreground">
+									回数券購入申請の承認には参加者管理権限が必要です。
+								</p>
 							{:else}
-								<div class="overflow-x-auto rounded-lg border border-slate-200/80 bg-white/80">
-									<table class="w-full min-w-[980px] text-sm">
-										<thead class="bg-slate-50 text-slate-600">
-											<tr>
-												<th class="px-3 py-2 text-left font-medium">申請ID</th>
-												<th class="px-3 py-2 text-left font-medium">参加者</th>
-												<th class="px-3 py-2 text-left font-medium">券種ID</th>
-												<th class="px-3 py-2 text-left font-medium">支払方法</th>
-												<th class="px-3 py-2 text-left font-medium">ステータス</th>
-												<th class="px-3 py-2 text-left font-medium">申請日時</th>
-												<th class="px-3 py-2 text-left font-medium">操作</th>
-											</tr>
-										</thead>
-										<tbody>
-											{#each filteredTicketPurchases as purchase (purchase.id)}
-												{@const isPendingApproval = purchase.status === 'pending_approval'}
-												<tr class="border-t border-slate-200/70 align-top">
-													<td class="px-3 py-3 font-mono text-xs">
-														{formatTicketPurchaseIdShort(purchase.id)}
-													</td>
-													<td class="px-3 py-3">{getParticipantLabel(purchase.participantId)}</td>
-													<td class="px-3 py-3 font-mono text-xs">
-														{formatTicketTypeIdShort(purchase.ticketTypeId)}
-													</td>
-													<td class="px-3 py-3">
-														{ticketPurchaseMethodLabelMap[purchase.paymentMethod]}
-													</td>
-													<td class="px-3 py-3">
-														<Badge
-															variant={purchase.status === 'approved'
-																? 'outline'
-																: purchase.status === 'rejected'
-																	? 'destructive'
-																	: 'secondary'}
-														>
-															{ticketPurchaseStatusLabelMap[purchase.status]}
-														</Badge>
-														{#if purchase.rejectReason}
-															<p class="mt-1 text-xs text-rose-600">
-																理由: {purchase.rejectReason}
-															</p>
-														{/if}
-													</td>
-													<td class="px-3 py-3">{formatDateTime(purchase.createdAt)}</td>
-													<td class="px-3 py-3">
-														{#if isPendingApproval}
-															<div class="flex flex-wrap gap-2">
-																<Button
-																	type="button"
-																	size="sm"
-																	onclick={() => submitApproveTicketPurchase(purchase.id)}
-																	disabled={busy || !!ticketPurchaseAction}
-																>
-																	{isTicketPurchaseActionInProgress('approve', purchase.id)
-																		? '処理中…'
-																		: '承認'}
-																</Button>
-																<Button
-																	type="button"
-																	size="sm"
-																	variant="outline"
-																	onclick={() => submitRejectTicketPurchase(purchase.id)}
-																	disabled={busy || !!ticketPurchaseAction}
-																>
-																	{isTicketPurchaseActionInProgress('reject', purchase.id)
-																		? '処理中…'
-																		: '却下'}
-																</Button>
-															</div>
-														{:else}
-															<span class="text-xs text-slate-500">操作不可</span>
-														{/if}
-													</td>
-												</tr>
+								<div class="grid gap-3 md:grid-cols-3">
+									<div class="space-y-2">
+										<Label for="purchase-filter-status">ステータス</Label>
+										<select
+											id="purchase-filter-status"
+											name="purchase_filter_status"
+											class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											bind:value={ticketPurchaseFilter.status}
+										>
+											<option value="all">all</option>
+											<option value="pending_payment">pending_payment</option>
+											<option value="pending_approval">pending_approval</option>
+											<option value="approved">approved</option>
+											<option value="rejected">rejected</option>
+											<option value="cancelled_by_participant">cancelled_by_participant</option>
+										</select>
+									</div>
+									<div class="space-y-2">
+										<Label for="purchase-filter-method">支払方法</Label>
+										<select
+											id="purchase-filter-method"
+											name="purchase_filter_method"
+											class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											bind:value={ticketPurchaseFilter.paymentMethod}
+										>
+											<option value="all">all</option>
+											<option value="stripe">stripe</option>
+											<option value="cash_on_site">cash_on_site</option>
+											<option value="bank_transfer">bank_transfer</option>
+										</select>
+									</div>
+									<div class="space-y-2">
+										<Label for="purchase-filter-participant">参加者</Label>
+										<select
+											id="purchase-filter-participant"
+											name="purchase_filter_participant"
+											class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											bind:value={ticketPurchaseFilter.participantId}
+										>
+											<option value="">すべて</option>
+											{#each participants as participant (participant.id)}
+												<option value={participant.id}
+													>{participant.name} / {participant.email}</option
+												>
 											{/each}
-										</tbody>
-									</table>
+										</select>
+									</div>
 								</div>
+
+								{#if filteredTicketPurchases.length === 0}
+									<p class="text-sm text-muted-foreground">該当する購入申請はありません。</p>
+								{:else}
+									<div class="overflow-x-auto rounded-lg border border-slate-200/80 bg-white/80">
+										<table class="w-full min-w-[980px] text-sm">
+											<thead class="bg-slate-50 text-slate-600">
+												<tr>
+													<th class="px-3 py-2 text-left font-medium">申請ID</th>
+													<th class="px-3 py-2 text-left font-medium">参加者</th>
+													<th class="px-3 py-2 text-left font-medium">券種ID</th>
+													<th class="px-3 py-2 text-left font-medium">支払方法</th>
+													<th class="px-3 py-2 text-left font-medium">ステータス</th>
+													<th class="px-3 py-2 text-left font-medium">申請日時</th>
+													<th class="px-3 py-2 text-left font-medium">操作</th>
+												</tr>
+											</thead>
+											<tbody>
+												{#each filteredTicketPurchases as purchase (purchase.id)}
+													{@const isPendingApproval = purchase.status === 'pending_approval'}
+													<tr class="border-t border-slate-200/70 align-top">
+														<td class="px-3 py-3 font-mono text-xs">
+															{formatTicketPurchaseIdShort(purchase.id)}
+														</td>
+														<td class="px-3 py-3">{getParticipantLabel(purchase.participantId)}</td>
+														<td class="px-3 py-3 font-mono text-xs">
+															{formatTicketTypeIdShort(purchase.ticketTypeId)}
+														</td>
+														<td class="px-3 py-3">
+															{ticketPurchaseMethodLabelMap[purchase.paymentMethod]}
+														</td>
+														<td class="px-3 py-3">
+															<Badge
+																variant={purchase.status === 'approved'
+																	? 'outline'
+																	: purchase.status === 'rejected'
+																		? 'destructive'
+																		: 'secondary'}
+															>
+																{ticketPurchaseStatusLabelMap[purchase.status]}
+															</Badge>
+															{#if purchase.rejectReason}
+																<p class="mt-1 text-xs text-rose-600">
+																	理由: {purchase.rejectReason}
+																</p>
+															{/if}
+														</td>
+														<td class="px-3 py-3">{formatDateTime(purchase.createdAt)}</td>
+														<td class="px-3 py-3">
+															{#if isPendingApproval}
+																<div class="flex flex-wrap gap-2">
+																	<Button
+																		type="button"
+																		size="sm"
+																		onclick={() => submitApproveTicketPurchase(purchase.id)}
+																		disabled={busy || !!ticketPurchaseAction}
+																	>
+																		{isTicketPurchaseActionInProgress('approve', purchase.id)
+																			? '処理中…'
+																			: '承認'}
+																	</Button>
+																	<Button
+																		type="button"
+																		size="sm"
+																		variant="outline"
+																		onclick={() => submitRejectTicketPurchase(purchase.id)}
+																		disabled={busy || !!ticketPurchaseAction}
+																	>
+																		{isTicketPurchaseActionInProgress('reject', purchase.id)
+																			? '処理中…'
+																			: '却下'}
+																	</Button>
+																</div>
+															{:else}
+																<span class="text-xs text-slate-500">操作不可</span>
+															{/if}
+														</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+								{/if}
 							{/if}
 						</section>
 					{/if}

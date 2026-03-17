@@ -1,0 +1,57 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e32]:
+    - complementary [ref=e33]:
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - generic [ref=e37]:
+              - paragraph [ref=e38]: Reserve App
+              - paragraph: RA
+              - generic [ref=e40]: 確認中…
+            - button "サイドメニューを折りたたむ" [ref=e41]:
+              - generic [ref=e42]:
+                - img
+          - paragraph [ref=e43]: Onboarding Verify 20260314110834
+        - navigation "機能メニュー" [ref=e44]
+      - button "ログアウト" [ref=e46]:
+        - img
+        - generic [ref=e47]: ログアウト
+    - generic [ref=e48]:
+      - banner [ref=e49]:
+        - generic [ref=e50]:
+          - button "利用中の組織を切り替え" [disabled]:
+            - generic:
+              - generic:
+                - img
+              - generic: 組織を読み込み中…
+            - img
+      - main [ref=e51]:
+        - generic [ref=e52]:
+          - heading "設定" [level=1] [ref=e53]
+          - paragraph [ref=e54]: 組織設定と利用中組織の切り替えを行います。
+        - generic [ref=e56]:
+          - generic [ref=e57]:
+            - heading "組織設定" [level=2] [ref=e58]
+            - paragraph [ref=e59]: 組織の新規作成、利用中組織の切り替え、教室管理への移動を行います。
+          - generic [ref=e60]:
+            - button "教室管理へ移動" [ref=e62]
+            - generic [ref=e63]:
+              - heading "組織を作成" [level=3] [ref=e64]
+              - generic [ref=e65]:
+                - generic [ref=e66]: 組織名
+                - textbox "組織名" [ref=e67]
+              - generic [ref=e68]:
+                - generic [ref=e69]: 識別子 (slug)
+                - textbox "識別子 (slug)" [ref=e70]
+              - generic [ref=e71]:
+                - generic [ref=e72]: ロゴ画像 (任意)
+                - button "ロゴ画像 (任意)" [ref=e73]
+              - button "組織を作成" [ref=e74]
+            - generic [ref=e75]:
+              - generic [ref=e76]:
+                - heading "所属組織" [level=2] [ref=e77]
+                - button "最新化" [disabled]
+              - paragraph [ref=e78]: 組織を取得しています…
+            - button "利用中の組織を解除" [disabled]
+  - generic [ref=e31]: untitled page

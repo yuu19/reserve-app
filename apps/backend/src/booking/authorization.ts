@@ -428,6 +428,14 @@ export const hasAdminOrOwnerAccess = async ({
   return access.effective.canManageOrganization;
 };
 
+export type ParticipantAccessRecord = {
+  id: string;
+  organizationId: string;
+  classroomId: string;
+  userId: string;
+  email: string;
+};
+
 export const findParticipantByUserAndOrganization = async ({
   database,
   organizationId,
@@ -438,8 +446,28 @@ export const findParticipantByUserAndOrganization = async ({
   organizationId: string;
   classroomId?: string | null;
   userId: string;
-}) => {
-  const rows = await database
+}): Promise<ParticipantAccessRecord | null> => {
+  const rows = await findParticipantsByUserAndOrganization({
+    database,
+    organizationId,
+    classroomId,
+    userId,
+  });
+  return rows[0] ?? null;
+};
+
+export const findParticipantsByUserAndOrganization = async ({
+  database,
+  organizationId,
+  classroomId,
+  userId,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  classroomId?: string | null;
+  userId: string;
+}): Promise<ParticipantAccessRecord[]> => {
+  return database
     .select({
       id: dbSchema.participant.id,
       organizationId: dbSchema.participant.organizationId,
@@ -455,7 +483,5 @@ export const findParticipantByUserAndOrganization = async ({
         eq(dbSchema.participant.userId, userId),
       ),
     )
-    .limit(1);
-
-  return rows[0] ?? null;
+    .orderBy(asc(dbSchema.participant.createdAt), asc(dbSchema.participant.id));
 };

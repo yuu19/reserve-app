@@ -48,8 +48,12 @@ describe('/bookings/+page.svelte', () => {
 		});
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: true,
+			hasAdminPortalAccess: true,
 			hasParticipantAccess: true,
 			canManage: true,
+			canManageClassroom: true,
+			canManageBookings: true,
+			canManageParticipants: true,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: 'admin',
 			activeFacts: {
@@ -103,12 +107,55 @@ describe('/bookings/+page.svelte', () => {
 		});
 	});
 
+	it('redirects staff users to admin bookings when admin portal access exists', async () => {
+		mocks.readLastAuthPortal.mockReturnValue('admin');
+		mocks.loadPortalAccess.mockResolvedValue({
+			hasOrganizationAdminAccess: false,
+			hasAdminPortalAccess: true,
+			hasParticipantAccess: false,
+			canManage: false,
+			canManageClassroom: false,
+			canManageBookings: true,
+			canManageParticipants: true,
+			canUseParticipantBooking: false,
+			activeOrganizationRole: null,
+			activeFacts: {
+				orgRole: null,
+				classroomStaffRole: 'staff',
+				hasParticipantRecord: false
+			},
+			activeSources: {
+				canManageOrganization: null,
+				canManageClassroom: null,
+				canManageBookings: 'classroom_member',
+				canManageParticipants: 'classroom_member',
+				canUseParticipantBooking: null
+			},
+			activeDisplay: {
+				primaryRole: 'staff',
+				badges: ['staff']
+			},
+			activeDisplayRole: 'staff',
+			hasActiveOrganization: true
+		});
+		mocks.resolvePortalHomePath.mockReturnValue('/admin/bookings');
+		render(BookingsPage);
+
+		await vi.waitFor(() => {
+			expect(mocks.goto).toHaveBeenCalledWith('/admin/bookings');
+		});
+	});
+
 	it('falls back to participant bookings when stored admin portal is no longer allowed', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false,
+			hasAdminPortalAccess: false,
 			hasParticipantAccess: true,
 			canManage: false,
+			canManageClassroom: false,
+			canManageBookings: false,
+			canManageParticipants: false,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: null,
 			activeFacts: {

@@ -12,7 +12,7 @@ describe('scoped-routing', () => {
 			'/admin/schedules/slots'
 		);
 		expect(getRoutePathFromUrlPath('/org-a/room-b/events/slot-1')).toBe('/events/slot-1');
-		expect(getRoutePathFromUrlPath('/login/admin')).toBe('/login/admin');
+		expect(getRoutePathFromUrlPath('/admin/login')).toBe('/admin/login');
 	});
 
 	it('replaces legacy portal path with scoped context', () => {

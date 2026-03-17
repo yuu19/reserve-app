@@ -4,6 +4,7 @@ import { render } from 'vitest-browser-svelte';
 import DashboardPage from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
+	goto: vi.fn(),
 	loadSession: vi.fn(),
 	loadPortalAccess: vi.fn(),
 	resolvePortalHomePath: vi.fn(),
@@ -12,9 +13,12 @@ const mocks = vi.hoisted(() => ({
 	loadOrganizations: vi.fn(),
 	loadParticipantFeatureData: vi.fn()
 }));
+const pageState = vi.hoisted(() => ({
+	url: new URL('https://example.com/admin/dashboard')
+}));
 
 vi.mock('$app/navigation', () => ({
-	goto: vi.fn()
+	goto: mocks.goto
 }));
 
 vi.mock('$app/paths', () => ({
@@ -22,9 +26,7 @@ vi.mock('$app/paths', () => ({
 }));
 
 vi.mock('$app/state', () => ({
-	page: {
-		url: new URL('https://example.com/admin/dashboard')
-	}
+	page: pageState
 }));
 
 vi.mock('$env/dynamic/public', () => ({
@@ -51,6 +53,8 @@ vi.mock('$lib/features/invitations-participant.svelte', () => ({
 
 describe('/dashboard/+page.svelte', () => {
 	beforeEach(() => {
+		pageState.url = new URL('https://example.com/admin/dashboard');
+		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
 		mocks.loadPortalAccess.mockReset();
 		mocks.resolvePortalHomePath.mockReset();
@@ -65,8 +69,12 @@ describe('/dashboard/+page.svelte', () => {
 		});
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: true,
+			hasAdminPortalAccess: true,
 			hasParticipantAccess: true,
 			canManage: true,
+			canManageClassroom: true,
+			canManageBookings: true,
+			canManageParticipants: true,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: 'admin',
 			activeFacts: {
@@ -135,5 +143,31 @@ describe('/dashboard/+page.svelte', () => {
 		render(DashboardPage);
 
 		await expect.element(page.getByText('選択されていません')).toBeInTheDocument();
+	});
+
+	it('preserves scoped admin context when navigating from scoped dashboard', async () => {
+		pageState.url = new URL('https://example.com/org-one/room-a/admin/dashboard');
+		mocks.loadOrganizations.mockResolvedValue({
+			organizations: [
+				{
+					id: 'org-1',
+					name: 'Org One',
+					slug: 'org-one',
+					logo: null
+				}
+			],
+			activeOrganization: {
+				id: 'org-1',
+				name: 'Org One',
+				slug: 'org-one',
+				logo: null
+			}
+		});
+
+		render(DashboardPage);
+
+		await page.getByRole('button', { name: '参加者へ移動' }).click();
+
+		expect(mocks.goto).toHaveBeenCalledWith('/org-one/room-a/admin/participants');
 	});
 });

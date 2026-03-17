@@ -26,7 +26,7 @@
 				}
 				const portalAccess = await loadPortalAccess();
 				const homePath = resolvePortalHomePath(portalAccess);
-				if (homePath === '/admin/dashboard') {
+				if (homePath?.startsWith('/admin')) {
 					await goto(resolve(homePath));
 					return;
 				}
@@ -77,7 +77,7 @@
 					variant="outline"
 					onclick={() => goto(resolve('/participant/admin-invitations'))}
 				>
-					管理者招待へ移動
+					運営招待へ移動
 				</Button>
 			</CardContent>
 		</Card>

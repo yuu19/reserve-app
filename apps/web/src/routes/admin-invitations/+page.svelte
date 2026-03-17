@@ -14,10 +14,15 @@
 		createAdminInvitation,
 		loadAdminInvitations
 	} from '$lib/features/invitations-admin.svelte';
-	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
+	import {
+		getRoutePathFromUrlPath,
+		readWindowScopedRouteContext
+	} from '$lib/features/scoped-routing';
 	import {
 		getCurrentPathWithSearch,
+		loadPortalAccess,
 		loadSession,
+		resolvePortalHomePath,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
 	import { loadOrganizations } from '$lib/features/organization-context.svelte';
@@ -60,11 +65,18 @@
 			return;
 		}
 		if (pathname === '/admin-invitations') {
-			await goto(resolve('/admin/invitations'));
+			const portalAccess = await loadPortalAccess();
+			const nextPath = portalAccess.hasOrganizationAdminAccess
+				? '/admin/invitations'
+				: portalAccess.hasParticipantAccess || portalAccess.canUseParticipantBooking
+					? '/participant/admin-invitations'
+					: (resolvePortalHomePath(portalAccess) ?? '/participant/home');
+			await goto(resolve(nextPath));
 			return;
 		}
-		const { activeOrganization } = await loadOrganizations();
-		activeOrganizationId = activeOrganization?.id ?? null;
+		const scopedContext = readWindowScopedRouteContext();
+		const { activeOrganization } = await loadOrganizations(scopedContext);
+		activeOrganizationId = activeOrganization?.id ?? scopedContext?.orgSlug ?? null;
 		const data = await loadAdminInvitations(activeOrganizationId ?? undefined);
 		sentInvitations = data.sent;
 		receivedInvitations = data.received;

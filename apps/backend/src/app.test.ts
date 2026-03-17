@@ -397,6 +397,43 @@ const createParticipantInvitation = async ({
   };
 };
 
+const createClassroomOperatorInvitation = async ({
+  agent,
+  email,
+  role,
+  organizationId,
+  resend,
+}: {
+  agent: ReturnType<typeof createAuthAgent>;
+  email: string;
+  role: 'manager' | 'staff';
+  organizationId: string;
+  resend?: boolean;
+}) => {
+  const organizationSlug = await selectOrganizationSlugById(organizationId);
+  expect(organizationSlug).toBeTruthy();
+
+  const response = await agent.request(
+    buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        role,
+        resend,
+      }),
+    },
+  );
+
+  return {
+    response,
+    payload: (await toJson(response)) as Record<string, unknown> | null,
+  };
+};
+
 beforeAll(async () => {
   mf = new Miniflare({
     modules: true,
@@ -571,6 +608,89 @@ describe('backend app', () => {
 
     const detailResponse = await app.request(buildInvitationDetailPath('dummy-id'));
     expect(detailResponse.status).toBe(401);
+  });
+
+  it('allows first registrants and owners to create organizations but blocks invited users', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Initial Owner',
+      email: 'initial-owner@example.com',
+    });
+
+    const firstOrganizationResponse = await owner.request('/api/v1/auth/organizations', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'First Org', slug: 'first-org' }),
+    });
+    expect(firstOrganizationResponse.status).toBe(200);
+
+    const secondOrganizationResponse = await owner.request('/api/v1/auth/organizations', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Second Org', slug: 'second-org' }),
+    });
+    expect(secondOrganizationResponse.status).toBe(200);
+
+    const inviter = createAuthAgent(app);
+    await signUpUser({
+      agent: inviter,
+      name: 'Inviter',
+      email: 'org-inviter@example.com',
+    });
+    const invitedOrganizationId = await createOrganization({
+      agent: inviter,
+      name: 'Invited Org',
+      slug: 'invited-org',
+    });
+
+    const invite = await createInvitation({
+      agent: inviter,
+      email: 'invited-user@example.com',
+      role: 'admin',
+      organizationId: invitedOrganizationId,
+    });
+    expect(invite.response.status).toBe(200);
+    const invitationId = String(invite.payload?.id ?? '');
+    expect(invitationId.length).toBeGreaterThan(0);
+
+    const invitedUser = createAuthAgent(app);
+    await signUpUser({
+      agent: invitedUser,
+      name: 'Invited User',
+      email: 'invited-user@example.com',
+    });
+
+    const pendingCreateResponse = await invitedUser.request('/api/v1/auth/organizations', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Blocked Org', slug: 'blocked-org-pending' }),
+    });
+    expect(pendingCreateResponse.status).toBe(403);
+
+    const acceptResponse = await invitedUser.request(buildInvitationActionPath(invitationId, 'accept'), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ invitationId }),
+    });
+    expect(acceptResponse.status).toBe(200);
+
+    const acceptedCreateResponse = await invitedUser.request('/api/v1/auth/organizations', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Blocked Org Again', slug: 'blocked-org-accepted' }),
+    });
+    expect(acceptedCreateResponse.status).toBe(403);
   });
 
   it('handles invitation policies and audit logs', async () => {
@@ -818,6 +938,279 @@ describe('backend app', () => {
     expect(participantOrgEntry?.classrooms?.[0]?.display?.primaryRole).toBe('participant');
     expect(participantOrgEntry?.classrooms?.[0]?.effective?.canManageClassroom).toBe(false);
     expect(participantOrgEntry?.classrooms?.[0]?.effective?.canUseParticipantBooking).toBe(true);
+  });
+
+  it('allows staff booking and participant operations while blocking classroom schedule management', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Staff Scope Owner',
+      email: 'staff-scope-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Staff Scope Org',
+      slug: 'staff-scope-org',
+    });
+
+    const staffInvite = await createClassroomOperatorInvitation({
+      agent: owner,
+      email: 'staff-scope-user@example.com',
+      role: 'staff',
+      organizationId,
+    });
+    expect(staffInvite.response.status).toBe(200);
+    const staffInvitationId = staffInvite.payload?.id as string;
+
+    const staffUser = createAuthAgent(app);
+    await signUpUser({
+      agent: staffUser,
+      name: 'Staff Scope User',
+      email: 'staff-scope-user@example.com',
+    });
+    const acceptStaffInviteResponse = await staffUser.request(
+      buildInvitationActionPath(staffInvitationId, 'accept'),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          invitationId: staffInvitationId,
+        }),
+      },
+    );
+    expect(acceptStaffInviteResponse.status).toBe(200);
+
+    const staffAccessTreeResponse = await staffUser.request('/api/v1/auth/orgs/access-tree');
+    expect(staffAccessTreeResponse.status).toBe(200);
+    const staffAccessTreePayload = (await toJson(staffAccessTreeResponse)) as {
+      orgs?: Array<{
+        org?: { id?: string };
+        classrooms?: Array<{
+          facts?: {
+            orgRole?: string | null;
+            classroomStaffRole?: string | null;
+          };
+          effective?: {
+            canManageClassroom?: boolean;
+            canManageBookings?: boolean;
+            canManageParticipants?: boolean;
+          };
+          display?: {
+            primaryRole?: string | null;
+          };
+        }>;
+      }>;
+    };
+    const staffOrgEntry = staffAccessTreePayload.orgs?.find((entry) => entry.org?.id === organizationId);
+    expect(staffOrgEntry?.classrooms?.[0]?.facts?.orgRole).toBe('member');
+    expect(staffOrgEntry?.classrooms?.[0]?.facts?.classroomStaffRole).toBe('staff');
+    expect(staffOrgEntry?.classrooms?.[0]?.effective?.canManageClassroom).toBe(false);
+    expect(staffOrgEntry?.classrooms?.[0]?.effective?.canManageBookings).toBe(true);
+    expect(staffOrgEntry?.classrooms?.[0]?.effective?.canManageParticipants).toBe(true);
+    expect(staffOrgEntry?.classrooms?.[0]?.display?.primaryRole).toBe('staff');
+
+    const serviceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Staff Restricted Service',
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 6,
+      }),
+    });
+    expect(serviceResponse.status).toBe(200);
+    const servicePayload = (await toJson(serviceResponse)) as Record<string, unknown>;
+    const serviceId = servicePayload.id as string;
+
+    const staffServicesResponse = await staffUser.request(
+      `/api/v1/auth/organizations/services?organizationId=${encodeURIComponent(
+        organizationId,
+      )}&classroomId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(staffServicesResponse.status).toBe(200);
+    const staffServicesPayload = (await toJson(staffServicesResponse)) as Array<Record<string, unknown>>;
+    expect(staffServicesPayload.some((service) => service.id === serviceId)).toBe(true);
+
+    const ticketTypeCreateResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Staff Visible Ticket Type',
+        totalCount: 5,
+        serviceIds: [serviceId],
+      }),
+    });
+    expect(ticketTypeCreateResponse.status).toBe(200);
+    const ticketTypePayload = (await toJson(ticketTypeCreateResponse)) as Record<string, unknown>;
+    const ticketTypeId = ticketTypePayload.id as string;
+
+    const staffTicketTypesResponse = await staffUser.request(
+      `/api/v1/auth/organizations/ticket-types?organizationId=${encodeURIComponent(
+        organizationId,
+      )}&classroomId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(staffTicketTypesResponse.status).toBe(200);
+    const staffTicketTypesPayload = (await toJson(staffTicketTypesResponse)) as Array<
+      Record<string, unknown>
+    >;
+    expect(staffTicketTypesPayload.some((ticketType) => ticketType.id === ticketTypeId)).toBe(true);
+
+    const rangeStart = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const rangeEnd = new Date(rangeStart.getTime() + 60 * 60 * 1000);
+
+    const staffCreateSlotResponse = await staffUser.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        serviceId,
+        startAt: rangeStart.toISOString(),
+        endAt: rangeEnd.toISOString(),
+      }),
+    });
+    expect(staffCreateSlotResponse.status).toBe(403);
+
+    const recurringCreateResponse = await staffUser.request(
+      '/api/v1/auth/organizations/recurring-schedules',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId,
+          serviceId,
+          timezone: 'Asia/Tokyo',
+          frequency: 'weekly',
+          interval: 1,
+          byWeekday: [1],
+          startDate: '2026-03-20',
+          startTimeLocal: '10:00',
+        }),
+      },
+    );
+    expect(recurringCreateResponse.status).toBe(403);
+
+    const ownerCreateSlotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        serviceId,
+        startAt: rangeStart.toISOString(),
+        endAt: rangeEnd.toISOString(),
+      }),
+    });
+    expect(ownerCreateSlotResponse.status).toBe(200);
+
+    const staffBookingsResponse = await staffUser.request(
+      `/api/v1/auth/organizations/bookings?organizationId=${encodeURIComponent(
+        organizationId,
+      )}&classroomId=${encodeURIComponent(organizationId)}&from=${encodeURIComponent(
+        rangeStart.toISOString(),
+      )}&to=${encodeURIComponent(new Date(rangeStart.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString())}`,
+    );
+    expect(staffBookingsResponse.status).toBe(200);
+
+    const staffParticipantsResponse = await staffUser.request(
+      `/api/v1/auth/organizations/participants?organizationId=${encodeURIComponent(
+        organizationId,
+      )}&classroomId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(staffParticipantsResponse.status).toBe(200);
+  });
+
+  it('does not fail ticket type listing when stored serviceIdsJson is malformed', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Malformed Ticket Owner',
+      email: 'malformed-ticket-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Malformed Ticket Org',
+      slug: 'malformed-ticket-org',
+    });
+    const organizationSlug = await selectOrganizationSlugById(organizationId);
+    expect(organizationSlug).toBe('malformed-ticket-org');
+
+    const staffInvite = await createClassroomOperatorInvitation({
+      agent: owner,
+      email: 'malformed-ticket-staff@example.com',
+      role: 'staff',
+      organizationId,
+    });
+    expect(staffInvite.response.status).toBe(200);
+
+    const staff = createAuthAgent(app);
+    await signUpUser({
+      agent: staff,
+      name: 'Malformed Ticket Staff',
+      email: 'malformed-ticket-staff@example.com',
+    });
+    const acceptResponse = await staff.request(
+      buildInvitationActionPath(staffInvite.payload?.id as string, 'accept'),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          invitationId: staffInvite.payload?.id,
+        }),
+      },
+    );
+    expect(acceptResponse.status).toBe(200);
+
+    const classroomRow = await d1
+      .prepare('SELECT id FROM classroom WHERE organization_id = ? AND slug = ? LIMIT 1')
+      .bind(organizationId, organizationSlug)
+      .first<{ id: string }>();
+    expect(classroomRow?.id).toBeTruthy();
+
+    await d1
+      .prepare(
+        'INSERT INTO ticket_type (id, organization_id, classroom_id, name, service_ids_json, total_count, expires_in_days, is_active, is_for_sale, stripe_price_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        crypto.randomUUID(),
+        organizationId,
+        classroomRow?.id as string,
+        'Broken Ticket Type',
+        '{"broken":',
+        5,
+        null,
+        1,
+        0,
+        null,
+      )
+      .run();
+
+    const ticketTypesResponse = await staff.request(
+      `/api/v1/auth/organizations/ticket-types?organizationId=${encodeURIComponent(
+        organizationId,
+      )}&classroomId=${encodeURIComponent(classroomRow?.id as string)}`,
+    );
+    expect(ticketTypesResponse.status).toBe(200);
+    const payload = (await toJson(ticketTypesResponse)) as Array<{ name?: unknown; serviceIds?: unknown }>;
+    const brokenTicketType = payload.find((entry) => entry.name === 'Broken Ticket Type');
+    expect(brokenTicketType?.serviceIds).toEqual([]);
   });
 
   it('supports multiple classrooms in access-tree and scoped service routes', async () => {

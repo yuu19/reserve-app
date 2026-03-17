@@ -1,0 +1,48 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e31]:
+    - complementary [ref=e32]:
+      - generic [ref=e33]:
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - generic [ref=e36]:
+              - paragraph [ref=e37]: Reserve App
+              - paragraph: RA
+              - generic [ref=e39]: ログイン中
+            - button "サイドメニューを折りたたむ" [ref=e40]:
+              - generic [ref=e41]:
+                - img
+          - paragraph [ref=e42]: Onboarding Verify 20260314110834
+        - navigation "機能メニュー" [ref=e43]
+      - button "ログアウト" [ref=e45]:
+        - img
+        - generic [ref=e46]: ログアウト
+    - generic [ref=e47]:
+      - banner [ref=e48]:
+        - button "利用中の組織を切り替え" [ref=e50]:
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - img
+            - generic [ref=e53]: 組織未選択
+          - img
+      - main [ref=e54]:
+        - generic [ref=e55]:
+          - heading "参加者ホーム" [level=1] [ref=e56]
+          - paragraph [ref=e57]: 参加者向けの導線をここから利用します。
+        - generic [ref=e58]:
+          - generic [ref=e59]:
+            - generic [ref=e60]:
+              - heading "イベント・予約" [level=2] [ref=e61]
+              - paragraph [ref=e62]: 公開イベントの確認と予約画面への移動。
+            - generic [ref=e63]:
+              - button "イベント一覧へ移動" [ref=e64]
+              - button "予約確認へ移動" [disabled]
+          - generic [ref=e65]:
+            - generic [ref=e66]:
+              - heading "招待対応" [level=2] [ref=e67]
+              - paragraph [ref=e68]: 受信した招待の承諾・辞退を行います。
+            - generic [ref=e69]:
+              - button "参加者招待へ移動" [ref=e70]
+              - button "運営招待へ移動" [ref=e71]
+        - paragraph [ref=e72]: 参加者権限を確認しています…
+  - generic [ref=e30]: untitled page

@@ -14,8 +14,12 @@ const renderLayout = () =>
 
 const buildPortalAccess = (overrides: Record<string, unknown> = {}) => ({
 	hasOrganizationAdminAccess: false,
+	hasAdminPortalAccess: false,
 	hasParticipantAccess: false,
 	canManage: false,
+	canManageClassroom: false,
+	canManageBookings: false,
+	canManageParticipants: false,
 	canUseParticipantBooking: false,
 	activeOrganizationRole: null,
 	activeFacts: null,
@@ -31,6 +35,9 @@ const buildClassroomEntry = (overrides: Record<string, unknown> = {}) => ({
 	name: 'Room A',
 	slug: 'room-a',
 	canManage: true,
+	canManageClassroom: true,
+	canManageBookings: true,
+	canManageParticipants: true,
 	canUseParticipantBooking: true,
 	display: {
 		primaryRole: 'manager',
@@ -198,8 +205,12 @@ describe('/+layout.svelte', () => {
 		mocks.loadPortalAccess.mockResolvedValue(
 			buildPortalAccess({
 				hasOrganizationAdminAccess: true,
+				hasAdminPortalAccess: true,
 				hasParticipantAccess: true,
 				canManage: true,
+				canManageClassroom: true,
+				canManageBookings: true,
+				canManageParticipants: true,
 				canUseParticipantBooking: true,
 				activeOrganizationRole: 'admin',
 				activeFacts: {
@@ -252,13 +263,112 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
+	it('shows booking and participant admin items for staff without org-admin items', async () => {
+		mocks.readLastAuthPortal.mockReturnValue('admin');
+		mocks.loadPortalAccess.mockResolvedValue(
+			buildPortalAccess({
+				hasOrganizationAdminAccess: false,
+				hasAdminPortalAccess: true,
+				hasParticipantAccess: false,
+				canManage: false,
+				canManageClassroom: false,
+				canManageBookings: true,
+				canManageParticipants: true,
+				canUseParticipantBooking: false,
+				activeFacts: {
+					orgRole: null,
+					classroomStaffRole: 'staff',
+					hasParticipantRecord: false
+				},
+				activeSources: {
+					canManageOrganization: null,
+					canManageClassroom: null,
+					canManageBookings: 'classroom_member',
+					canManageParticipants: 'classroom_member',
+					canUseParticipantBooking: null
+				},
+				activeDisplay: {
+					primaryRole: 'staff',
+					badges: ['staff']
+				},
+				activeDisplayRole: 'staff',
+				hasActiveOrganization: true
+			})
+		);
+		mocks.loadOrganizations.mockResolvedValue({
+			organizations: [{ id: 'org-1', name: 'Org One', slug: 'org-one' }],
+			activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
+			classrooms: [
+				buildClassroomEntry({
+					canManage: false,
+					canManageClassroom: false,
+					canManageBookings: true,
+					canManageParticipants: true,
+					canUseParticipantBooking: false,
+					display: {
+						primaryRole: 'staff',
+						badges: ['staff']
+					},
+					facts: {
+						orgRole: null,
+						classroomStaffRole: 'staff',
+						hasParticipantRecord: false
+					},
+					sources: {
+						canManageOrganization: null,
+						canManageClassroom: null,
+						canManageBookings: 'classroom_member',
+						canManageParticipants: 'classroom_member',
+						canUseParticipantBooking: null
+					}
+				})
+			],
+			activeClassroom: buildClassroomEntry({
+				canManage: false,
+				canManageClassroom: false,
+				canManageBookings: true,
+				canManageParticipants: true,
+				canUseParticipantBooking: false,
+				display: {
+					primaryRole: 'staff',
+					badges: ['staff']
+				},
+				facts: {
+					orgRole: null,
+					classroomStaffRole: 'staff',
+					hasParticipantRecord: false
+				},
+				sources: {
+					canManageOrganization: null,
+					canManageClassroom: null,
+					canManageBookings: 'classroom_member',
+					canManageParticipants: 'classroom_member',
+					canUseParticipantBooking: null
+				}
+			})
+		});
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(document.querySelector('a[href="/admin/bookings"]')).not.toBeNull();
+			expect(document.querySelector('a[href="/admin/participants"]')).not.toBeNull();
+			expect(document.querySelector('a[href="/admin/services"]')).toBeNull();
+			expect(document.querySelector('a[href="/admin/classrooms"]')).toBeNull();
+			expect(document.body.textContent).not.toContain('参加者へ切替');
+		});
+	});
+
 	it('falls back to participant portal when stored admin is no longer accessible', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 		mocks.loadPortalAccess.mockResolvedValue(
 			buildPortalAccess({
 				hasOrganizationAdminAccess: false,
+				hasAdminPortalAccess: false,
 				hasParticipantAccess: true,
 				canManage: false,
+				canManageClassroom: false,
+				canManageBookings: false,
+				canManageParticipants: false,
 				canUseParticipantBooking: true,
 				activeFacts: {
 					orgRole: null,
@@ -336,8 +446,12 @@ describe('/+layout.svelte', () => {
 			.mockResolvedValueOnce(
 				buildPortalAccess({
 					hasOrganizationAdminAccess: true,
+					hasAdminPortalAccess: true,
 					hasParticipantAccess: true,
 					canManage: true,
+					canManageClassroom: true,
+					canManageBookings: true,
+					canManageParticipants: true,
 					canUseParticipantBooking: true,
 					activeOrganizationRole: 'admin',
 					activeFacts: {
@@ -365,8 +479,12 @@ describe('/+layout.svelte', () => {
 			.mockResolvedValueOnce(
 				buildPortalAccess({
 					hasOrganizationAdminAccess: true,
+					hasAdminPortalAccess: true,
 					hasParticipantAccess: true,
 					canManage: true,
+					canManageClassroom: true,
+					canManageBookings: true,
+					canManageParticipants: true,
 					canUseParticipantBooking: true,
 					activeOrganizationRole: 'admin',
 					activeFacts: {

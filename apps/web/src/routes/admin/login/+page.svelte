@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -13,6 +14,7 @@
 	import { writeLastAuthPortal } from '$lib/features/auth-portal-preference';
 	import { isInviteAcceptancePath, resolveAuthPortalByPath } from '$lib/features/auth-portal';
 	import {
+		loadPendingInvitationHomePath,
 		loadPortalAccess,
 		loadSession,
 		parseResponseBody,
@@ -25,6 +27,7 @@
 
 	type Mode = 'sign-in' | 'sign-up';
 	type SubmittingAction = null | 'sign-in' | 'sign-up' | 'sign-in-google';
+	type ResolvablePath = Pathname;
 
 	let mode = $state<Mode>('sign-in');
 	let loadingSession = $state(true);
@@ -52,7 +55,7 @@
 	});
 
 	const isBusy = $derived(submittingAction !== null);
-	const adminOnboardingPath = resolve('/admin/settings');
+	const adminOnboardingPath = resolve('/admin/onboarding');
 
 	const completeSignIn = async () => {
 		const targetNextPath = nextPath;
@@ -65,28 +68,46 @@
 
 		const portalAccess = await loadPortalAccess();
 		const homePath = resolvePortalHomePath(portalAccess);
-		if (!homePath) {
+		if (portalAccess.hasAdminPortalAccess && homePath) {
+			const homePortal = homePath.startsWith('/admin') ? 'admin' : 'participant';
+			const nextPortal = targetNextPath ? resolveAuthPortalByPath(targetNextPath) : null;
+			const canUseNextPath =
+				!nextPortal ||
+				(nextPortal === 'admin'
+					? portalAccess.hasAdminPortalAccess
+					: portalAccess.hasParticipantAccess);
+
+			writeLastAuthPortal(canUseNextPath && nextPortal ? nextPortal : homePortal);
+			emitAuthSessionUpdated();
+			if (targetNextPath && canUseNextPath) {
+				window.location.assign(targetNextPath);
+				return;
+			}
+			await goto(resolve(homePath));
+			return;
+		}
+
+		if (portalAccess.hasParticipantAccess || portalAccess.canUseParticipantBooking) {
+			writeLastAuthPortal('participant');
+			emitAuthSessionUpdated();
+			await goto(resolve('/participant/home'));
+			return;
+		}
+
+		const invitationHomePath = await loadPendingInvitationHomePath();
+		if (invitationHomePath) {
+			writeLastAuthPortal('participant');
+			emitAuthSessionUpdated();
+			await goto(resolve(invitationHomePath as ResolvablePath));
+			return;
+		}
+
+		if (!portalAccess.hasAdminPortalAccess) {
 			writeLastAuthPortal('admin');
 			emitAuthSessionUpdated();
 			await goto(adminOnboardingPath);
 			return;
 		}
-
-		const homePortal = homePath === '/admin/dashboard' ? 'admin' : 'participant';
-		const nextPortal = targetNextPath ? resolveAuthPortalByPath(targetNextPath) : null;
-		const canUseNextPath =
-			!nextPortal ||
-			(nextPortal === 'admin'
-				? portalAccess.hasOrganizationAdminAccess
-				: portalAccess.hasParticipantAccess);
-
-		writeLastAuthPortal(canUseNextPath && nextPortal ? nextPortal : homePortal);
-		emitAuthSessionUpdated();
-		if (targetNextPath && canUseNextPath) {
-			window.location.assign(targetNextPath);
-			return;
-		}
-		await goto(resolve(homePath));
 	};
 
 	const refreshSession = async () => {

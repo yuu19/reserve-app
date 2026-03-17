@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import {
   findParticipantByUserAndOrganization,
+  findParticipantsByUserAndOrganization,
   getSessionIdentity,
   hasAdminOrOwnerAccess,
   resolveOrganizationId,
@@ -1406,6 +1407,85 @@ export const registerBookingRoutes = ({
     return scoped?.access.effective.canManageParticipants ?? false;
   };
 
+  const canReadServicesScope = async ({
+    organizationId,
+    classroomId,
+    userId,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+    userId: string;
+  }) => {
+    if (!classroomId) {
+      return hasAdminOrOwnerAccess({
+        database,
+        organizationId,
+        userId,
+      });
+    }
+
+    const scoped = await resolveRequestedClassroomAccess({
+      organizationId,
+      classroomId,
+      userId,
+    });
+    if (!scoped) {
+      return false;
+    }
+
+    return (
+      scoped.access.effective.canManageClassroom || scoped.access.effective.canManageBookings
+    );
+  };
+
+  const canReadTicketTypesScope = async ({
+    organizationId,
+    classroomId,
+    userId,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+    userId: string;
+  }) => {
+    if (!classroomId) {
+      return hasAdminOrOwnerAccess({
+        database,
+        organizationId,
+        userId,
+      });
+    }
+
+    const scoped = await resolveRequestedClassroomAccess({
+      organizationId,
+      classroomId,
+      userId,
+    });
+    if (!scoped) {
+      return false;
+    }
+
+    return (
+      scoped.access.effective.canManageClassroom || scoped.access.effective.canManageParticipants
+    );
+  };
+
+  const listParticipantRecordsForUser = async ({
+    organizationId,
+    classroomId,
+    userId,
+  }: {
+    organizationId: string;
+    classroomId?: string | null;
+    userId: string;
+  }) => {
+    return findParticipantsByUserAndOrganization({
+      database,
+      organizationId,
+      classroomId,
+      userId,
+    });
+  };
+
   const isRequestedClassroomMismatch = (
     requestedClassroomId: string | null | undefined,
     actualClassroomId: string,
@@ -1586,12 +1666,24 @@ export const registerBookingRoutes = ({
     };
   };
 
+  const parseTicketTypeServiceIds = (value: unknown): string[] => {
+    if (typeof value !== 'string' || value.length === 0) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed)
+        ? parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  };
+
   const serializeTicketType = (row: Record<string, unknown> | undefined) => ({
     ...row,
-    serviceIds:
-      typeof row?.serviceIdsJson === 'string' && row.serviceIdsJson.length > 0
-        ? JSON.parse(row.serviceIdsJson)
-        : [],
+    serviceIds: parseTicketTypeServiceIds(row?.serviceIdsJson),
     createdAt: toIsoDate(row?.createdAt),
     updatedAt: toIsoDate(row?.updatedAt),
   });
@@ -1983,7 +2075,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await canManageClassroomScope({
+    const hasAccess = await canReadServicesScope({
       organizationId,
       classroomId: query.classroomId,
       userId: identity.userId,
@@ -2180,7 +2272,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await canManageBookingsScope({
+    const hasAccess = await canManageClassroomScope({
       organizationId,
       classroomId: service.classroomId,
       userId: identity.userId,
@@ -2270,7 +2362,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await canManageBookingsScope({
+    const hasAccess = await canManageClassroomScope({
       organizationId: slot.organizationId,
       classroomId: slot.classroomId,
       userId: identity.userId,
@@ -2430,15 +2522,17 @@ export const registerBookingRoutes = ({
       }
     }
 
-    const participant = await findParticipantByUserAndOrganization({
-      database,
+    const participantRecords = await listParticipantRecordsForUser({
       organizationId,
       classroomId: query.classroomId,
       userId: identity.userId,
     });
-    if (!participant) {
+    if (participantRecords.length === 0) {
       return c.json({ message: 'Forbidden' }, 403);
     }
+    const accessibleClassroomIds = Array.from(
+      new Set(participantRecords.map((participant) => participant.classroomId)),
+    );
 
     const from = parseIsoDateOrNull(query.from);
     const to = parseIsoDateOrNull(query.to);
@@ -2456,9 +2550,11 @@ export const registerBookingRoutes = ({
       gte(dbSchema.slot.bookingCloseAt, now),
       sql`${dbSchema.slot.reservedCount} < ${dbSchema.slot.capacity}`,
     ];
-    if (query.classroomId) {
-      filters.push(eq(dbSchema.slot.classroomId, query.classroomId));
-    }
+    filters.push(
+      query.classroomId
+        ? eq(dbSchema.slot.classroomId, query.classroomId)
+        : inArray(dbSchema.slot.classroomId, accessibleClassroomIds),
+    );
     if (query.serviceId) {
       filters.push(eq(dbSchema.slot.serviceId, query.serviceId));
     }
@@ -2510,7 +2606,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await canManageBookingsScope({
+    const hasAccess = await canManageClassroomScope({
       organizationId: slot.organizationId,
       classroomId: slot.classroomId,
       userId: identity.userId,
@@ -2583,7 +2679,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await canManageBookingsScope({
+    const hasAccess = await canManageClassroomScope({
       organizationId,
       classroomId: service.classroomId,
       userId: identity.userId,
@@ -2733,7 +2829,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await canManageBookingsScope({
+    const hasAccess = await canManageClassroomScope({
       organizationId: schedule.organizationId,
       classroomId: schedule.classroomId,
       userId: identity.userId,
@@ -2832,7 +2928,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await canManageBookingsScope({
+    const hasAccess = await canManageClassroomScope({
       organizationId: schedule.organizationId,
       classroomId: schedule.classroomId,
       userId: identity.userId,
@@ -2934,7 +3030,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
-    const hasAccess = await canManageBookingsScope({
+    const hasAccess = await canManageClassroomScope({
       organizationId: schedule.organizationId,
       classroomId: schedule.classroomId,
       userId: identity.userId,
@@ -3280,19 +3376,19 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const participant = await findParticipantByUserAndOrganization({
-      database,
+    const participantRecords = await listParticipantRecordsForUser({
       organizationId,
       classroomId: query.classroomId,
       userId: identity.userId,
     });
-    if (!participant) {
+    if (participantRecords.length === 0) {
       return c.json({ message: 'Forbidden' }, 403);
     }
+    const participantIds = participantRecords.map((participant) => participant.id);
 
     const filters = [
       eq(dbSchema.booking.organizationId, organizationId),
-      eq(dbSchema.booking.participantId, participant.id),
+      inArray(dbSchema.booking.participantId, participantIds),
     ];
     if (query.classroomId) {
       filters.push(eq(dbSchema.booking.classroomId, query.classroomId));
@@ -4083,7 +4179,7 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const hasAccess = await canManageClassroomScope({
+    const hasAccess = await canReadTicketTypesScope({
       organizationId,
       classroomId: query.classroomId,
       userId: identity.userId,
@@ -4133,15 +4229,17 @@ export const registerBookingRoutes = ({
       }
     }
 
-    const participant = await findParticipantByUserAndOrganization({
-      database,
+    const participantRecords = await listParticipantRecordsForUser({
       organizationId,
       classroomId: query.classroomId,
       userId: identity.userId,
     });
-    if (!participant) {
+    if (participantRecords.length === 0) {
       return c.json({ message: 'Forbidden' }, 403);
     }
+    const accessibleClassroomIds = Array.from(
+      new Set(participantRecords.map((participant) => participant.classroomId)),
+    );
 
     const rows = await database
       .select()
@@ -4149,7 +4247,9 @@ export const registerBookingRoutes = ({
       .where(
         and(
           eq(dbSchema.ticketType.organizationId, organizationId),
-          ...(query.classroomId ? [eq(dbSchema.ticketType.classroomId, query.classroomId)] : []),
+          ...(query.classroomId
+            ? [eq(dbSchema.ticketType.classroomId, query.classroomId)]
+            : [inArray(dbSchema.ticketType.classroomId, accessibleClassroomIds)]),
           eq(dbSchema.ticketType.isActive, true),
           eq(dbSchema.ticketType.isForSale, true),
         ),
@@ -4183,16 +4283,6 @@ export const registerBookingRoutes = ({
       }
     }
 
-    const participant = await findParticipantByUserAndOrganization({
-      database,
-      organizationId,
-      classroomId: body.classroomId,
-      userId: identity.userId,
-    });
-    if (!participant) {
-      return c.json({ message: 'Forbidden' }, 403);
-    }
-
     const ticketTypeRows = await database
       .select({
         id: dbSchema.ticketType.id,
@@ -4215,6 +4305,15 @@ export const registerBookingRoutes = ({
     const ticketType = ticketTypeRows[0];
     if (!ticketType) {
       return c.json({ message: 'Ticket type not found.' }, 404);
+    }
+    const participant = await findParticipantByUserAndOrganization({
+      database,
+      organizationId,
+      classroomId: ticketType.classroomId,
+      userId: identity.userId,
+    });
+    if (!participant) {
+      return c.json({ message: 'Forbidden' }, 403);
     }
     if (ticketType.classroomId !== participant.classroomId) {
       return c.json({ message: 'Forbidden' }, 403);
@@ -4323,19 +4422,19 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const participant = await findParticipantByUserAndOrganization({
-      database,
+    const participantRecords = await listParticipantRecordsForUser({
       organizationId,
       classroomId: query.classroomId,
       userId: identity.userId,
     });
-    if (!participant) {
+    if (participantRecords.length === 0) {
       return c.json({ message: 'Forbidden' }, 403);
     }
+    const participantIds = participantRecords.map((participant) => participant.id);
 
     const filters = [
       eq(dbSchema.ticketPurchase.organizationId, organizationId),
-      eq(dbSchema.ticketPurchase.participantId, participant.id),
+      inArray(dbSchema.ticketPurchase.participantId, participantIds),
     ];
     if (query.classroomId) {
       filters.push(eq(dbSchema.ticketPurchase.classroomId, query.classroomId));
@@ -4682,15 +4781,15 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'organizationId is required.' }, 422);
     }
 
-    const participant = await findParticipantByUserAndOrganization({
-      database,
+    const participantRecords = await listParticipantRecordsForUser({
       organizationId,
       classroomId: query.classroomId,
       userId: identity.userId,
     });
-    if (!participant) {
+    if (participantRecords.length === 0) {
       return c.json({ message: 'Forbidden' }, 403);
     }
+    const participantIds = participantRecords.map((participant) => participant.id);
 
     const now = new Date();
     await database
@@ -4702,7 +4801,7 @@ export const registerBookingRoutes = ({
         and(
           eq(dbSchema.ticketPack.organizationId, organizationId),
           ...(query.classroomId ? [eq(dbSchema.ticketPack.classroomId, query.classroomId)] : []),
-          eq(dbSchema.ticketPack.participantId, participant.id),
+          inArray(dbSchema.ticketPack.participantId, participantIds),
           eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
           lte(dbSchema.ticketPack.expiresAt, now),
         ),
@@ -4715,7 +4814,7 @@ export const registerBookingRoutes = ({
         and(
           eq(dbSchema.ticketPack.organizationId, organizationId),
           ...(query.classroomId ? [eq(dbSchema.ticketPack.classroomId, query.classroomId)] : []),
-          eq(dbSchema.ticketPack.participantId, participant.id),
+          inArray(dbSchema.ticketPack.participantId, participantIds),
         ),
       )
       .orderBy(asc(dbSchema.ticketPack.createdAt));

@@ -1,0 +1,29 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - main [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: 管理画面
+        - heading "管理画面ログイン" [level=1] [ref=e9]
+        - paragraph [ref=e10]: 管理者向けの予約運用・サービス管理・招待管理にアクセスします。
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - paragraph [ref=e13]: 予約者向け入口を使う場合は下記リンクから移動してください。
+          - link "予約者ページログインへ" [ref=e14] [cursor=pointer]:
+            - /url: ../participant/login
+        - generic [ref=e15]:
+          - paragraph [ref=e16]: セッション情報を確認しています…
+          - generic [ref=e17]:
+            - tablist [ref=e18]:
+              - tab "サインイン" [selected] [ref=e19]
+              - tab "新規登録" [ref=e20]
+            - tabpanel [ref=e21]:
+              - button "Google で登録/ログインする" [ref=e22]
+              - generic [ref=e23]:
+                - generic [ref=e24]:
+                  - generic [ref=e25]: メールアドレス
+                  - textbox "メールアドレス" [ref=e26]
+                - generic [ref=e27]:
+                  - generic [ref=e28]: パスワード
+                  - textbox "パスワード" [ref=e29]
+                - button "サインイン" [ref=e30]

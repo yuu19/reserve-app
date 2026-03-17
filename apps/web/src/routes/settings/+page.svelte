@@ -16,12 +16,19 @@
 		setActiveOrganization,
 		uploadOrganizationLogo
 	} from '$lib/features/organization-context.svelte';
-	import { getCurrentPathWithSearch, loadSession, redirectToLoginWithNext } from '$lib/features/auth-session.svelte';
+	import {
+		getCurrentPathWithSearch,
+		loadPortalAccess,
+		loadSession,
+		redirectToLoginWithNext,
+		resolvePortalHomePath
+	} from '$lib/features/auth-session.svelte';
 	import { toast } from 'svelte-sonner';
 	import type { OrganizationPayload } from '$lib/rpc-client';
 
 	let loading = $state(true);
 	let busy = $state(false);
+	let canCreateOrganization = $state(false);
 	let organizations = $state<OrganizationPayload[]>([]);
 	let activeOrganization = $state<OrganizationPayload | null>(null);
 	let organizationForm = $state({ name: '', slug: '' });
@@ -37,6 +44,12 @@
 			redirectToLoginWithNext(getCurrentPathWithSearch());
 			return;
 		}
+		const portalAccess = await loadPortalAccess();
+		if (!portalAccess.hasOrganizationAdminAccess) {
+			await goto(resolve(resolvePortalHomePath(portalAccess) ?? '/participant/home'));
+			return;
+		}
+		canCreateOrganization = portalAccess.activeOrganizationRole === 'owner';
 		const { organizations: nextOrganizations, activeOrganization: nextActiveOrganization } =
 			await loadOrganizations();
 		organizations = nextOrganizations;
@@ -93,12 +106,16 @@
 
 	onMount(() => {
 		void (async () => {
-			if (pathname === '/settings') {
-				await goto(resolve('/admin/settings'));
-				return;
-			}
 			loading = true;
 			try {
+				const portalAccess = await loadPortalAccess();
+				if (pathname === '/settings') {
+					const nextPath = portalAccess.hasOrganizationAdminAccess
+						? '/admin/settings'
+						: (resolvePortalHomePath(portalAccess) ?? '/participant/home');
+					await goto(resolve(nextPath));
+					return;
+				}
 				await refreshSettings();
 			} finally {
 				loading = false;
@@ -126,25 +143,34 @@
 					>
 				</div>
 
-				<form class="space-y-4 rounded-lg border border-slate-200/80 bg-white/80 p-4" onsubmit={submitCreateOrganization}>
-					<h3 class="text-sm font-semibold text-slate-900">組織を作成</h3>
-					<div class="space-y-2">
-						<Label for="organization-name">組織名</Label>
-						<Input id="organization-name" name="organization_name" type="text" required bind:value={organizationForm.name} />
+				{#if canCreateOrganization}
+					<form class="space-y-4 rounded-lg border border-slate-200/80 bg-white/80 p-4" onsubmit={submitCreateOrganization}>
+						<h3 class="text-sm font-semibold text-slate-900">組織を作成</h3>
+						<div class="space-y-2">
+							<Label for="organization-name">組織名</Label>
+							<Input id="organization-name" name="organization_name" type="text" required bind:value={organizationForm.name} />
+						</div>
+						<div class="space-y-2">
+							<Label for="organization-slug">識別子 (slug)</Label>
+							<Input id="organization-slug" name="organization_slug" type="text" required bind:value={organizationForm.slug} />
+						</div>
+						<div class="space-y-2">
+							<Label for="organization-logo">ロゴ画像 (任意)</Label>
+							<Input id="organization-logo" name="organization_logo" type="file" bind:files={organizationLogoFiles} disabled={busy} />
+							{#if selectedOrganizationLogoFile}
+								<p class="text-xs text-slate-600">選択中: {selectedOrganizationLogoFile.name}</p>
+							{/if}
+						</div>
+						<Button type="submit" disabled={busy}>組織を作成</Button>
+					</form>
+				{:else}
+					<div class="rounded-lg border border-slate-200/80 bg-white/80 p-4">
+						<h3 class="text-sm font-semibold text-slate-900">組織作成</h3>
+						<p class="mt-2 text-sm text-slate-600">
+							招待参加ユーザーは新しい組織を作成できません。組織の追加が必要な場合は owner 権限の管理者に依頼してください。
+						</p>
 					</div>
-					<div class="space-y-2">
-						<Label for="organization-slug">識別子 (slug)</Label>
-						<Input id="organization-slug" name="organization_slug" type="text" required bind:value={organizationForm.slug} />
-					</div>
-					<div class="space-y-2">
-						<Label for="organization-logo">ロゴ画像 (任意)</Label>
-						<Input id="organization-logo" name="organization_logo" type="file" bind:files={organizationLogoFiles} disabled={busy} />
-						{#if selectedOrganizationLogoFile}
-							<p class="text-xs text-slate-600">選択中: {selectedOrganizationLogoFile.name}</p>
-						{/if}
-					</div>
-					<Button type="submit" disabled={busy}>組織を作成</Button>
-				</form>
+				{/if}
 
 				<div class="space-y-3">
 					<div class="flex items-center justify-between gap-3">

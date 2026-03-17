@@ -4,7 +4,10 @@ import { render } from 'vitest-browser-svelte';
 import SettingsPage from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
+	goto: vi.fn(),
 	loadSession: vi.fn(),
+	loadPortalAccess: vi.fn(),
+	resolvePortalHomePath: vi.fn(),
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/admin/settings'),
 	loadOrganizations: vi.fn(),
@@ -14,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$app/navigation', () => ({
-	goto: vi.fn()
+	goto: mocks.goto
 }));
 
 vi.mock('$app/paths', () => ({
@@ -35,6 +38,8 @@ vi.mock('$env/dynamic/public', () => ({
 
 vi.mock('$lib/features/auth-session.svelte', () => ({
 	loadSession: mocks.loadSession,
+	loadPortalAccess: mocks.loadPortalAccess,
+	resolvePortalHomePath: mocks.resolvePortalHomePath,
 	redirectToLoginWithNext: mocks.redirectToLoginWithNext,
 	getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
 }));
@@ -48,7 +53,10 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 
 describe('/settings/+page.svelte', () => {
 	beforeEach(() => {
+		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
+		mocks.loadPortalAccess.mockReset();
+		mocks.resolvePortalHomePath.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.loadOrganizations.mockReset();
@@ -60,6 +68,11 @@ describe('/settings/+page.svelte', () => {
 			session: { user: { id: 'user-1' }, session: { id: 'session-1' } },
 			status: 200
 		});
+		mocks.loadPortalAccess.mockResolvedValue({
+			hasOrganizationAdminAccess: true,
+			activeOrganizationRole: 'owner'
+		});
+		mocks.resolvePortalHomePath.mockReturnValue('/admin/dashboard');
 		mocks.getCurrentPathWithSearch.mockReturnValue('/admin/settings');
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [
@@ -99,5 +112,31 @@ describe('/settings/+page.svelte', () => {
 		) as HTMLImageElement | null;
 		expect(logoImage?.getAttribute('src')).toBe('https://cdn.example.com/yusuke.webp');
 		expect(document.querySelector('[data-slot="organization-logo-fallback"]')).toBeTruthy();
+	});
+
+	it('redirects non org-admin users away from settings', async () => {
+		mocks.loadPortalAccess.mockResolvedValue({
+			hasOrganizationAdminAccess: false,
+			activeOrganizationRole: null
+		});
+		mocks.resolvePortalHomePath.mockReturnValue('/participant/home');
+
+		render(SettingsPage);
+
+		await vi.waitFor(() => {
+			expect(mocks.goto).toHaveBeenCalledWith('/participant/home');
+		});
+	});
+
+	it('hides organization creation form for invited org admins', async () => {
+		mocks.loadPortalAccess.mockResolvedValue({
+			hasOrganizationAdminAccess: true,
+			activeOrganizationRole: 'admin'
+		});
+
+		render(SettingsPage);
+
+		await expect.element(page.getByText('招待参加ユーザーは新しい組織を作成できません。')).toBeInTheDocument();
+		expect(page.getByRole('button', { name: '組織を作成' }).query()).toBeNull();
 	});
 });

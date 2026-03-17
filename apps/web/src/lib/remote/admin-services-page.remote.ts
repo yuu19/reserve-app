@@ -1,5 +1,6 @@
-import { getBookingsPageData } from './bookings-page.remote';
 import { query } from '$app/server';
+import type { ScopedApiContext, ServicePayload } from '$lib/rpc-client';
+import { createApiGetter, resolveScopedAccessContext, type ApiResult } from '$lib/server/scoped-api';
 import { z } from 'zod';
 
 const adminServicesQuerySchema = z.object({
@@ -9,12 +10,88 @@ const adminServicesQuerySchema = z.object({
 	to: z.string().trim().min(1)
 });
 
-export const getAdminServicesPageData = query(adminServicesQuerySchema, async ({ orgSlug, classroomSlug, from, to }) => {
-	const data = await getBookingsPageData({ orgSlug, classroomSlug, from, to });
-	return {
-		activeContext: data.activeContext,
-		canManage: data.canManage,
-		staffServices: data.staffServices,
-		services: data.services
-	};
-});
+type JsonRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is JsonRecord =>
+	typeof value === 'object' && value !== null;
+
+const toErrorMessage = (payload: unknown, fallback: string): string => {
+	if (isRecord(payload) && typeof payload.message === 'string') {
+		return payload.message;
+	}
+	if (isRecord(payload) && typeof payload.error === 'string') {
+		return payload.error;
+	}
+	if (typeof payload === 'string' && payload.length > 0) {
+		return payload;
+	}
+	return fallback;
+};
+
+const isService = (value: unknown): value is ServicePayload =>
+	isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string';
+
+const asServices = (value: unknown): ServicePayload[] =>
+	Array.isArray(value) ? value.filter(isService) : [];
+
+const assertAllowedFailure = (
+	result: ApiResult,
+	fallback: string,
+	options: { allowForbidden?: boolean } = {}
+) => {
+	if (result.response.ok) {
+		return;
+	}
+	if (options.allowForbidden && result.response.status === 403) {
+		return;
+	}
+	throw new Error(toErrorMessage(result.payload, fallback));
+};
+
+export const getAdminServicesPageData = query(
+	adminServicesQuerySchema,
+	async ({ orgSlug, classroomSlug }) => {
+		const getApi = createApiGetter();
+		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+		const scopedAccess = await resolveScopedAccessContext(getApi, activeContext);
+		if (!scopedAccess) {
+			return {
+				activeContext: null,
+				canManage: false,
+				services: [] as ServicePayload[],
+				staffServices: [] as ServicePayload[]
+			};
+		}
+
+		if (!scopedAccess.effective.canManageClassroom) {
+			return {
+				activeContext,
+				canManage: false,
+				services: [] as ServicePayload[],
+				staffServices: [] as ServicePayload[]
+			};
+		}
+
+		const scopedQuery = {
+			organizationId: scopedAccess.organizationId,
+			classroomId: scopedAccess.classroomId
+		};
+		const [servicesResult, staffServicesResult] = await Promise.all([
+			getApi('/api/v1/auth/organizations/services', scopedQuery),
+			getApi('/api/v1/auth/organizations/services', {
+				...scopedQuery,
+				includeArchived: true
+			})
+		]);
+
+		assertAllowedFailure(servicesResult, 'サービス一覧の取得に失敗しました。');
+		assertAllowedFailure(staffServicesResult, '運営サービス一覧の取得に失敗しました。');
+
+		return {
+			activeContext,
+			canManage: true,
+			services: asServices(servicesResult.payload),
+			staffServices: asServices(staffServicesResult.payload)
+		};
+	}
+);
