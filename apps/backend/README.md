@@ -38,6 +38,9 @@ pnpm --filter @apps/backend run dev
 
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_BILLING_PRODUCT_NAME` (default: `WakureServe Premium`)
+- `STRIPE_BILLING_MONTHLY_LOOKUP_KEY` (default: `wakureserve_premium_monthly`)
+- `STRIPE_BILLING_YEARLY_LOOKUP_KEY` (default: `wakureserve_premium_yearly`)
 
 任意 (organization ロゴアップロード):
 
@@ -103,6 +106,25 @@ pnpm --filter @apps/backend run dev
   `checkout.session.completed` 到達で `approved` になり、回数券が即時利用可能になります。
 - `paymentMethod=cash_on_site|bank_transfer`: `pending_approval` で作成され、admin/owner の承認時に回数券が付与されます。
 - 重複 webhook は idempotent に処理され、二重付与を防止します。
+
+## Premium サブスクリプション用の Stripe カタログ作成
+
+`premium` 用の Stripe Product 1件と recurring Price 2件を作成または再利用できます。
+
+```bash
+STRIPE_SECRET_KEY=sk_test_xxx pnpm --filter @apps/backend run stripe:catalog:create
+```
+
+既定では次を作成します。
+
+- Product: `WakureServe Premium`
+- Monthly price: `¥1,500 / month`
+- Yearly price: `¥15,800 / year`
+
+出力された値を backend 環境変数に設定してください。
+
+- `STRIPE_PREMIUM_MONTHLY_PRICE_ID`
+- `STRIPE_PREMIUM_YEARLY_PRICE_ID`
 
 ## Cloudflare Workers deploy setup
 

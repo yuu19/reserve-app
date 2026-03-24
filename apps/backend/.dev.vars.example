@@ -13,6 +13,9 @@ WEB_BASE_URL=http://localhost:5173
 PUBLIC_EVENTS_ORGANIZATION_SLUG=public-events
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
+STRIPE_BILLING_PRODUCT_NAME=WakureServe Premium
+STRIPE_BILLING_MONTHLY_LOOKUP_KEY=wakureserve_premium_monthly
+STRIPE_BILLING_YEARLY_LOOKUP_KEY=wakureserve_premium_yearly
 ORG_LOGO_MAX_UPLOAD_BYTES=5242880
 # Optional: direct public base URL for logos (e.g. https://assets.wakureserve.com)
 # If empty, backend logo proxy URL is stored in organization.logo
