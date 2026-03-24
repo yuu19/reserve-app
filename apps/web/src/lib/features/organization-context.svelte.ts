@@ -4,6 +4,7 @@ import type {
 	AccessFactsPayload,
 	AccessSourcesPayload,
 	ClassroomPayload,
+	OrganizationBillingPayload,
 	OrganizationPayload,
 	ScopedApiContext
 } from '$lib/rpc-client';
@@ -25,6 +26,19 @@ const isOrganizationPayload = (value: unknown): value is OrganizationPayload =>
 	typeof value.id === 'string' &&
 	typeof value.name === 'string' &&
 	typeof value.slug === 'string';
+
+const isOrganizationBillingPayload = (value: unknown): value is OrganizationBillingPayload =>
+	isRecord(value) &&
+	(value.planCode === 'free' || value.planCode === 'premium') &&
+	(value.billingInterval === 'month' ||
+		value.billingInterval === 'year' ||
+		value.billingInterval === null ||
+		value.billingInterval === undefined) &&
+	typeof value.cancelAtPeriodEnd === 'boolean' &&
+	(typeof value.currentPeriodEnd === 'string' ||
+		value.currentPeriodEnd === null ||
+		value.currentPeriodEnd === undefined) &&
+	typeof value.canManageBilling === 'boolean';
 
 export type ClassroomContextPayload = {
 	id: string;
@@ -54,7 +68,11 @@ const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | nu
 	if (!isRecord(value)) {
 		return null;
 	}
-	if (typeof value.id !== 'string' || typeof value.slug !== 'string' || typeof value.name !== 'string') {
+	if (
+		typeof value.id !== 'string' ||
+		typeof value.slug !== 'string' ||
+		typeof value.name !== 'string'
+	) {
 		return null;
 	}
 	const effective = isRecord(value.effective) ? value.effective : null;
@@ -95,8 +113,9 @@ export const loadOrganizations = async (
 	const activeOrganization =
 		portalAccess.activeContext === null
 			? null
-			: organizations.find((organization) => organization.slug === portalAccess.activeContext?.orgSlug) ??
-				null;
+			: (organizations.find(
+					(organization) => organization.slug === portalAccess.activeContext?.orgSlug
+				) ?? null);
 	if (activeOrganization?.id) {
 		writeLastUsedOrganizationId(activeOrganization.id);
 	}
@@ -107,7 +126,9 @@ export const loadOrganizations = async (
 	const activeClassroom =
 		portalAccess.activeContext === null
 			? null
-			: classrooms.find((classroom) => classroom.slug === portalAccess.activeContext?.classroomSlug) ?? null;
+			: (classrooms.find(
+					(classroom) => classroom.slug === portalAccess.activeContext?.classroomSlug
+				) ?? null);
 
 	return {
 		organizations,
@@ -126,8 +147,49 @@ export const createOrganization = async (input: { name: string; slug: string; lo
 	return {
 		ok: response.ok,
 		status: response.status,
-		message: response.ok ? '組織を作成しました。' : toErrorMessage(payload, '組織作成に失敗しました。'),
+		message: response.ok
+			? '組織を作成しました。'
+			: toErrorMessage(payload, '組織作成に失敗しました。'),
 		organization
+	};
+};
+
+export const loadOrganizationBilling = async (organizationId?: string) => {
+	const response = await authRpc.getOrganizationBilling(organizationId);
+	const payload = await parseResponseBody(response);
+	const billing = response.ok && isOrganizationBillingPayload(payload) ? payload : null;
+	return {
+		ok: response.ok,
+		status: response.status,
+		message: response.ok ? '' : toErrorMessage(payload, '契約情報の取得に失敗しました。'),
+		billing
+	};
+};
+
+export const createOrganizationBillingCheckout = async (input: {
+	organizationId?: string;
+	billingInterval: 'month' | 'year';
+}) => {
+	const response = await authRpc.createOrganizationBillingCheckout(input);
+	const payload = await parseResponseBody(response);
+	const url = isRecord(payload) && typeof payload.url === 'string' ? payload.url : null;
+	return {
+		ok: response.ok && Boolean(url),
+		status: response.status,
+		message: response.ok ? '' : toErrorMessage(payload, 'Stripe Checkout の作成に失敗しました。'),
+		url
+	};
+};
+
+export const createOrganizationBillingPortal = async (input: { organizationId?: string }) => {
+	const response = await authRpc.createOrganizationBillingPortal(input);
+	const payload = await parseResponseBody(response);
+	const url = isRecord(payload) && typeof payload.url === 'string' ? payload.url : null;
+	return {
+		ok: response.ok && Boolean(url),
+		status: response.status,
+		message: response.ok ? '' : toErrorMessage(payload, '契約管理画面の作成に失敗しました。'),
+		url
 	};
 };
 
@@ -265,7 +327,9 @@ export const createClassroom = async (orgSlug: string, input: { name: string; sl
 	return {
 		ok: response.ok,
 		status: response.status,
-		message: response.ok ? '教室を作成しました。' : toErrorMessage(payload, '教室の作成に失敗しました。'),
+		message: response.ok
+			? '教室を作成しました。'
+			: toErrorMessage(payload, '教室の作成に失敗しました。'),
 		classroom
 	};
 };
@@ -281,7 +345,9 @@ export const updateClassroom = async (
 	return {
 		ok: response.ok,
 		status: response.status,
-		message: response.ok ? '教室を更新しました。' : toErrorMessage(payload, '教室の更新に失敗しました。'),
+		message: response.ok
+			? '教室を更新しました。'
+			: toErrorMessage(payload, '教室の更新に失敗しました。'),
 		classroom
 	};
 };

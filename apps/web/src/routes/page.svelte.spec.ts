@@ -29,8 +29,7 @@ describe('/+page.svelte', () => {
 		await expect.element(heading).toBeInTheDocument();
 		await expect.element(pricingHeading).toBeInTheDocument();
 		expect(document.body.textContent ?? '').toContain('Free');
-		expect(document.body.textContent ?? '').toContain('Standard');
-		expect(document.body.textContent ?? '').toContain('Business');
+		expect(document.body.textContent ?? '').toContain('Premium');
 
 		const adminLinks = Array.from(document.querySelectorAll('a')).filter(
 			(element) => element.textContent?.trim() === '管理者としてログイン'

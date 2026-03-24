@@ -36,6 +36,8 @@
     "INVITATION_ACCEPT_URL_BASE": "https://web.wakureserve.com/invitations/accept",
     "PARTICIPANT_INVITATION_ACCEPT_URL_BASE": "https://web.wakureserve.com/participants/invitations/accept",
     "WEB_BASE_URL": "https://web.wakureserve.com",
+    "STRIPE_PREMIUM_MONTHLY_PRICE_ID": "",
+    "STRIPE_PREMIUM_YEARLY_PRICE_ID": "",
     "PUBLIC_EVENTS_ORGANIZATION_SLUG": "public-events",
     "ORG_LOGO_MAX_UPLOAD_BYTES": "5242880",
     "ORG_LOGO_PUBLIC_BASE_URL": "",

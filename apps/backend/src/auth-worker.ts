@@ -64,6 +64,8 @@ export type BackendWorkerEnv = AuthRuntimeEnv & {
   PUBLIC_EVENTS_ORGANIZATION_SLUG?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PREMIUM_MONTHLY_PRICE_ID?: string;
+  STRIPE_PREMIUM_YEARLY_PRICE_ID?: string;
   ORG_LOGO_BUCKET?: R2BucketBinding;
   SERVICE_IMAGE_BUCKET?: R2BucketBinding;
   IMAGES?: ImagesBinding;

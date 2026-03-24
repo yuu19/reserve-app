@@ -99,6 +99,37 @@ export const organization = sqliteTable(
   (table) => [uniqueIndex('organization_slug_uidx').on(table.slug)],
 );
 
+export const organizationBilling = sqliteTable(
+  'organization_billing',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    planCode: text('plan_code').default('free').notNull(),
+    stripeCustomerId: text('stripe_customer_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    stripePriceId: text('stripe_price_id'),
+    billingInterval: text('billing_interval'),
+    subscriptionStatus: text('subscription_status').default('free').notNull(),
+    cancelAtPeriodEnd: integer('cancel_at_period_end', { mode: 'boolean' }).default(false).notNull(),
+    currentPeriodStart: integer('current_period_start', { mode: 'timestamp_ms' }),
+    currentPeriodEnd: integer('current_period_end', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('organization_billing_organization_uidx').on(table.organizationId),
+    uniqueIndex('organization_billing_stripe_customer_uidx').on(table.stripeCustomerId),
+    uniqueIndex('organization_billing_stripe_subscription_uidx').on(table.stripeSubscriptionId),
+  ],
+);
+
 export const classroom = sqliteTable(
   'classroom',
   {
@@ -691,6 +722,7 @@ export const accountRelations = relations(account, ({ one }) => ({
 
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
+  billingRecords: many(organizationBilling),
   classrooms: many(classroom),
   participants: many(participant),
   services: many(service),
@@ -705,6 +737,13 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   bookingAuditLogs: many(bookingAuditLog),
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
+}));
+
+export const organizationBillingRelations = relations(organizationBilling, ({ one }) => ({
+  organization: one(organization, {
+    fields: [organizationBilling.organizationId],
+    references: [organization.id],
+  }),
 }));
 
 export const classroomRelations = relations(classroom, ({ one, many }) => ({

@@ -14,6 +14,8 @@ export type AuthRuntimeEnv = {
   PUBLIC_EVENTS_CLASSROOM_SLUG?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PREMIUM_MONTHLY_PRICE_ID?: string;
+  STRIPE_PREMIUM_YEARLY_PRICE_ID?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
 } & ResendEnv;

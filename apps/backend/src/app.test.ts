@@ -225,6 +225,24 @@ const selectTicketPurchaseRow = async (purchaseId: string) => {
     }>();
 };
 
+const selectOrganizationBillingRow = async (organizationId: string) => {
+  return d1
+    .prepare(
+      'SELECT plan_code as planCode, stripe_customer_id as stripeCustomerId, stripe_subscription_id as stripeSubscriptionId, stripe_price_id as stripePriceId, billing_interval as billingInterval, subscription_status as subscriptionStatus, cancel_at_period_end as cancelAtPeriodEnd, current_period_end as currentPeriodEnd FROM organization_billing WHERE organization_id = ? LIMIT 1',
+    )
+    .bind(organizationId)
+    .first<{
+      planCode: string;
+      stripeCustomerId: string | null;
+      stripeSubscriptionId: string | null;
+      stripePriceId: string | null;
+      billingInterval: string | null;
+      subscriptionStatus: string;
+      cancelAtPeriodEnd: number | boolean;
+      currentPeriodEnd: number | null;
+    }>();
+};
+
 const countTicketPacksForParticipantAndType = async (participantId: string, ticketTypeId: string) => {
   const row = await d1
     .prepare(
@@ -691,6 +709,299 @@ describe('backend app', () => {
       body: JSON.stringify({ name: 'Blocked Org Again', slug: 'blocked-org-accepted' }),
     });
     expect(acceptedCreateResponse.status).toBe(403);
+  });
+
+  it('creates free billing rows and syncs premium subscription state via Stripe', async () => {
+    const stripeSecretKey = 'sk_test_billing';
+    const stripeWebhookSecret = 'whsec_test_billing';
+    const stripeMonthlyPriceId = 'price_premium_monthly';
+    const stripeYearlyPriceId = 'price_premium_yearly';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: stripeSecretKey,
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+        STRIPE_PREMIUM_YEARLY_PRICE_ID: stripeYearlyPriceId,
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url === 'https://api.stripe.com/v1/checkout/sessions') {
+        return new Response(
+          JSON.stringify({
+            id: 'cs_test_org_subscription',
+            url: 'https://checkout.stripe.com/c/pay/cs_test_org_subscription',
+            status: 'open',
+            payment_status: 'unpaid',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url === 'https://api.stripe.com/v1/billing_portal/sessions') {
+        return new Response(
+          JSON.stringify({
+            url: 'https://billing.stripe.com/p/session/test_portal',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Billing Owner',
+        email: 'billing-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Billing Org',
+        slug: 'billing-org',
+      });
+
+      const billingAfterCreate = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterCreate?.planCode).toBe('free');
+      expect(billingAfterCreate?.subscriptionStatus).toBe('free');
+
+      const invite = await createInvitation({
+        agent: owner,
+        email: 'billing-admin@example.com',
+        role: 'admin',
+        organizationId,
+      });
+      expect(invite.response.status).toBe(200);
+
+      const admin = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: admin,
+        name: 'Billing Admin',
+        email: 'billing-admin@example.com',
+      });
+      const acceptResponse = await admin.request(buildInvitationActionPath(String(invite.payload?.id), 'accept'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ invitationId: String(invite.payload?.id) }),
+      });
+      expect(acceptResponse.status).toBe(200);
+
+      const ownerBillingResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(ownerBillingResponse.status).toBe(200);
+      const ownerBillingPayload = (await toJson(ownerBillingResponse)) as Record<string, unknown>;
+      expect(ownerBillingPayload.planCode).toBe('free');
+      expect(ownerBillingPayload.canManageBilling).toBe(true);
+
+      const adminBillingResponse = await admin.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(adminBillingResponse.status).toBe(200);
+      const adminBillingPayload = (await toJson(adminBillingResponse)) as Record<string, unknown>;
+      expect(adminBillingPayload.canManageBilling).toBe(false);
+
+      const adminCheckoutResponse = await admin.request('/api/v1/auth/organizations/billing/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          billingInterval: 'month',
+        }),
+      });
+      expect(adminCheckoutResponse.status).toBe(403);
+
+      const ownerCheckoutResponse = await owner.request('/api/v1/auth/organizations/billing/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          billingInterval: 'month',
+        }),
+      });
+      expect(ownerCheckoutResponse.status).toBe(200);
+      const ownerCheckoutPayload = (await toJson(ownerCheckoutResponse)) as Record<string, unknown>;
+      expect(ownerCheckoutPayload.url).toBe('https://checkout.stripe.com/c/pay/cs_test_org_subscription');
+
+      const checkoutCompletedPayload = JSON.stringify({
+        id: 'evt_org_checkout_completed',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_test_org_subscription',
+            customer: 'cus_test_org',
+            subscription: 'sub_test_org',
+            metadata: {
+              billingPurpose: 'organization_plan',
+              organizationId,
+              planCode: 'premium',
+              billingInterval: 'month',
+            },
+          },
+        },
+      });
+      const checkoutCompletedSignature = await createStripeSignatureHeader(
+        checkoutCompletedPayload,
+        stripeWebhookSecret,
+      );
+      const checkoutCompletedResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': checkoutCompletedSignature,
+        },
+        body: checkoutCompletedPayload,
+      });
+      expect(checkoutCompletedResponse.status).toBe(200);
+
+      const billingAfterCheckout = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterCheckout?.planCode).toBe('premium');
+      expect(billingAfterCheckout?.stripeCustomerId).toBe('cus_test_org');
+      expect(billingAfterCheckout?.stripeSubscriptionId).toBe('sub_test_org');
+      expect(billingAfterCheckout?.billingInterval).toBe('month');
+      expect(billingAfterCheckout?.subscriptionStatus).toBe('incomplete');
+
+      const subscriptionActivePayload = JSON.stringify({
+        id: 'evt_org_subscription_active',
+        type: 'customer.subscription.created',
+        data: {
+          object: {
+            id: 'sub_test_org',
+            customer: 'cus_test_org',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_start: 1775000000,
+            current_period_end: 1777688400,
+            items: {
+              data: [
+                {
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const subscriptionActiveSignature = await createStripeSignatureHeader(
+        subscriptionActivePayload,
+        stripeWebhookSecret,
+      );
+      const subscriptionActiveResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': subscriptionActiveSignature,
+        },
+        body: subscriptionActivePayload,
+      });
+      expect(subscriptionActiveResponse.status).toBe(200);
+
+      const subscriptionActiveDuplicateResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': subscriptionActiveSignature,
+        },
+        body: subscriptionActivePayload,
+      });
+      expect(subscriptionActiveDuplicateResponse.status).toBe(200);
+
+      const billingAfterSubscription = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterSubscription?.planCode).toBe('premium');
+      expect(billingAfterSubscription?.subscriptionStatus).toBe('active');
+      expect(billingAfterSubscription?.billingInterval).toBe('month');
+      expect(billingAfterSubscription?.stripePriceId).toBe(stripeMonthlyPriceId);
+      expect(billingAfterSubscription?.currentPeriodEnd).toBe(1777688400000);
+
+      const ownerPortalResponse = await owner.request('/api/v1/auth/organizations/billing/portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+        }),
+      });
+      expect(ownerPortalResponse.status).toBe(200);
+      const ownerPortalPayload = (await toJson(ownerPortalResponse)) as Record<string, unknown>;
+      expect(ownerPortalPayload.url).toBe('https://billing.stripe.com/p/session/test_portal');
+
+      const subscriptionDeletedPayload = JSON.stringify({
+        id: 'evt_org_subscription_deleted',
+        type: 'customer.subscription.deleted',
+        data: {
+          object: {
+            id: 'sub_test_org',
+            customer: 'cus_test_org',
+            status: 'canceled',
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const subscriptionDeletedSignature = await createStripeSignatureHeader(
+        subscriptionDeletedPayload,
+        stripeWebhookSecret,
+      );
+      const subscriptionDeletedResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': subscriptionDeletedSignature,
+        },
+        body: subscriptionDeletedPayload,
+      });
+      expect(subscriptionDeletedResponse.status).toBe(200);
+
+      const billingAfterDelete = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterDelete?.planCode).toBe('free');
+      expect(billingAfterDelete?.subscriptionStatus).toBe('canceled');
+      expect(billingAfterDelete?.stripeSubscriptionId).toBeNull();
+      expect(billingAfterDelete?.billingInterval).toBeNull();
+
+      const freePortalResponse = await owner.request('/api/v1/auth/organizations/billing/portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+        }),
+      });
+      expect(freePortalResponse.status).toBe(409);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it('handles invitation policies and audit logs', async () => {

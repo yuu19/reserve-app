@@ -9,6 +9,22 @@ type StripeCheckoutSessionCreateInput = {
   metadata?: Record<string, string>;
 };
 
+type StripeSubscriptionCheckoutSessionCreateInput = {
+  env: AuthRuntimeEnv;
+  priceId: string;
+  successUrl: string;
+  cancelUrl: string;
+  customerId?: string | null;
+  clientReferenceId?: string;
+  metadata?: Record<string, string>;
+};
+
+type StripeBillingPortalSessionCreateInput = {
+  env: AuthRuntimeEnv;
+  customerId: string;
+  returnUrl: string;
+};
+
 export type StripeCheckoutSession = {
   id: string;
   url: string;
@@ -22,6 +38,23 @@ export type StripeWebhookEvent = {
   data?: {
     object?: Record<string, unknown>;
   };
+};
+
+export type StripeBillingCheckoutMetadata = {
+  billingPurpose: 'organization_plan';
+  organizationId: string;
+  planCode: 'premium';
+  billingInterval: 'month' | 'year';
+};
+
+export type StripeSubscriptionSummary = {
+  id: string;
+  customerId: string | null;
+  status: string | null;
+  cancelAtPeriodEnd: boolean;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  priceId: string | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -103,6 +136,40 @@ const toStripeErrorMessage = (payload: unknown): string => {
   return 'Stripe API request failed.';
 };
 
+const requireStripeSecretKey = (env: AuthRuntimeEnv): string => {
+  const secretKey = env.STRIPE_SECRET_KEY?.trim();
+  if (!secretKey) {
+    throw new Error('STRIPE_NOT_CONFIGURED');
+  }
+  return secretKey;
+};
+
+const postStripeForm = async ({
+  env,
+  path,
+  params,
+}: {
+  env: AuthRuntimeEnv;
+  path: string;
+  params: URLSearchParams;
+}) => {
+  const response = await fetch(`https://api.stripe.com/v1/${path.replace(/^\/+/, '')}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${requireStripeSecretKey(env)}`,
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(toStripeErrorMessage(payload));
+  }
+
+  return payload;
+};
+
 export const createCheckoutSession = async ({
   env,
   priceId,
@@ -111,11 +178,6 @@ export const createCheckoutSession = async ({
   clientReferenceId,
   metadata,
 }: StripeCheckoutSessionCreateInput): Promise<StripeCheckoutSession> => {
-  const secretKey = env.STRIPE_SECRET_KEY?.trim();
-  if (!secretKey) {
-    throw new Error('STRIPE_NOT_CONFIGURED');
-  }
-
   const params = new URLSearchParams();
   params.set('mode', 'payment');
   params.set('success_url', successUrl);
@@ -133,19 +195,11 @@ export const createCheckoutSession = async ({
     }
   }
 
-  const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${secretKey}`,
-      'content-type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
+  const payload = await postStripeForm({
+    env,
+    path: 'checkout/sessions',
+    params,
   });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(toStripeErrorMessage(payload));
-  }
 
   if (!isRecord(payload) || typeof payload.id !== 'string' || typeof payload.url !== 'string') {
     throw new Error('Invalid Stripe checkout session response.');
@@ -156,6 +210,78 @@ export const createCheckoutSession = async ({
     url: payload.url,
     paymentStatus: typeof payload.payment_status === 'string' ? payload.payment_status : undefined,
     status: typeof payload.status === 'string' ? payload.status : undefined,
+  };
+};
+
+export const createSubscriptionCheckoutSession = async ({
+  env,
+  priceId,
+  successUrl,
+  cancelUrl,
+  customerId,
+  clientReferenceId,
+  metadata,
+}: StripeSubscriptionCheckoutSessionCreateInput): Promise<StripeCheckoutSession> => {
+  const params = new URLSearchParams();
+  params.set('mode', 'subscription');
+  params.set('success_url', successUrl);
+  params.set('cancel_url', cancelUrl);
+  params.set('line_items[0][price]', priceId);
+  params.set('line_items[0][quantity]', '1');
+
+  if (customerId) {
+    params.set('customer', customerId);
+  }
+
+  if (clientReferenceId) {
+    params.set('client_reference_id', clientReferenceId);
+  }
+
+  if (metadata) {
+    for (const [key, value] of Object.entries(metadata)) {
+      params.set(`metadata[${key}]`, value);
+    }
+  }
+
+  const payload = await postStripeForm({
+    env,
+    path: 'checkout/sessions',
+    params,
+  });
+
+  if (!isRecord(payload) || typeof payload.id !== 'string' || typeof payload.url !== 'string') {
+    throw new Error('Invalid Stripe subscription checkout session response.');
+  }
+
+  return {
+    id: payload.id,
+    url: payload.url,
+    paymentStatus: typeof payload.payment_status === 'string' ? payload.payment_status : undefined,
+    status: typeof payload.status === 'string' ? payload.status : undefined,
+  };
+};
+
+export const createBillingPortalSession = async ({
+  env,
+  customerId,
+  returnUrl,
+}: StripeBillingPortalSessionCreateInput): Promise<{ url: string }> => {
+  const params = new URLSearchParams();
+  params.set('customer', customerId);
+  params.set('return_url', returnUrl);
+
+  const payload = await postStripeForm({
+    env,
+    path: 'billing_portal/sessions',
+    params,
+  });
+
+  if (!isRecord(payload) || typeof payload.url !== 'string') {
+    throw new Error('Invalid Stripe billing portal session response.');
+  }
+
+  return {
+    url: payload.url,
   };
 };
 
@@ -219,4 +345,95 @@ export const parseStripeWebhookEvent = (rawBody: string): StripeWebhookEvent | n
   } catch {
     return null;
   }
+};
+
+const readString = (value: unknown): string | null =>
+  typeof value === 'string' && value.length > 0 ? value : null;
+
+const readBoolean = (value: unknown): boolean => value === true;
+
+const readUnixSecondsDate = (value: unknown): Date | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return new Date(value * 1000);
+};
+
+export const readStripeBillingCheckoutMetadata = (
+  value: unknown,
+): StripeBillingCheckoutMetadata | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const billingPurpose = readString(value.billingPurpose);
+  const organizationId = readString(value.organizationId);
+  const planCode = readString(value.planCode);
+  const billingInterval = readString(value.billingInterval);
+  if (
+    billingPurpose !== 'organization_plan' ||
+    !organizationId ||
+    planCode !== 'premium' ||
+    (billingInterval !== 'month' && billingInterval !== 'year')
+  ) {
+    return null;
+  }
+
+  return {
+    billingPurpose,
+    organizationId,
+    planCode,
+    billingInterval,
+  };
+};
+
+export const readStripeCheckoutSessionSummary = (
+  value: unknown,
+): {
+  id: string;
+  customerId: string | null;
+  subscriptionId: string | null;
+  metadata: Record<string, unknown>;
+} | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = readString(value.id);
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    customerId: readString(value.customer),
+    subscriptionId: readString(value.subscription),
+    metadata: isRecord(value.metadata) ? value.metadata : {},
+  };
+};
+
+export const readStripeSubscriptionSummary = (value: unknown): StripeSubscriptionSummary | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = readString(value.id);
+  if (!id) {
+    return null;
+  }
+
+  const items = isRecord(value.items) && Array.isArray(value.items.data) ? value.items.data : [];
+  const firstItem = items[0];
+  const price =
+    isRecord(firstItem) && isRecord(firstItem.price) ? firstItem.price : isRecord(value.plan) ? value.plan : null;
+
+  return {
+    id,
+    customerId: readString(value.customer),
+    status: readString(value.status),
+    cancelAtPeriodEnd: readBoolean(value.cancel_at_period_end),
+    currentPeriodStart: readUnixSecondsDate(value.current_period_start),
+    currentPeriodEnd: readUnixSecondsDate(value.current_period_end),
+    priceId: price ? readString(price.id) : null,
+  };
 };

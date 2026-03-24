@@ -1,6 +1,7 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
 import {
+  canManageOrganizationByRole,
   canManageParticipantsByRole,
   listOrganizationClassroomContexts,
   resolveOrganizationClassroomAccess,
@@ -10,6 +11,10 @@ import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-
 import * as dbSchema from '../db/schema.js';
 import { sendOrganizationInvitationEmail, sendParticipantInvitationEmail } from '../email/resend.js';
 import type { OrganizationLogoService } from '../organization-logo-service.js';
+import {
+  createBillingPortalSession,
+  createSubscriptionCheckoutSession,
+} from '../payment/stripe.js';
 import type { ServiceImageUploadService } from '../service-image-upload-service.js';
 import { registerBookingRoutes } from './booking-routes.js';
 
@@ -308,6 +313,152 @@ const getFullOrganizationRoute = createRoute({
     },
     400: {
       description: 'Validation or auth error',
+    },
+  },
+});
+
+const organizationBillingQuerySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+});
+
+const organizationBillingCheckoutBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  billingInterval: z.enum(['month', 'year']),
+});
+
+const organizationBillingPortalBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+});
+
+const organizationBillingSummarySchema = z.object({
+  planCode: z.enum(['free', 'premium']),
+  billingInterval: z.enum(['month', 'year']).nullable(),
+  subscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
+    .nullable(),
+  cancelAtPeriodEnd: z.boolean(),
+  currentPeriodEnd: z.string().nullable(),
+  canManageBilling: z.boolean(),
+});
+
+const organizationBillingActionResponseSchema = z.object({
+  url: z.string().url(),
+});
+
+const getOrganizationBillingRoute = createRoute({
+  method: 'get',
+  path: '/organizations/billing',
+  tags: ['Organization Billing'],
+  summary: 'Get active organization billing summary',
+  request: {
+    query: organizationBillingQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Organization billing summary',
+      content: {
+        'application/json': {
+          schema: organizationBillingSummarySchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Forbidden',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    422: {
+      description: 'organizationId is required',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+  },
+});
+
+const createOrganizationBillingCheckoutRoute = createRoute({
+  method: 'post',
+  path: '/organizations/billing/checkout',
+  tags: ['Organization Billing'],
+  summary: 'Create Stripe Checkout URL for premium subscription',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: organizationBillingCheckoutBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Stripe Checkout URL',
+      content: {
+        'application/json': {
+          schema: organizationBillingActionResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Forbidden',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    409: {
+      description: 'Organization already has an active premium subscription',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    422: {
+      description: 'Stripe billing is not configured',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+  },
+});
+
+const createOrganizationBillingPortalRoute = createRoute({
+  method: 'post',
+  path: '/organizations/billing/portal',
+  tags: ['Organization Billing'],
+  summary: 'Create Stripe Customer Portal URL for current premium subscription',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: organizationBillingPortalBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Stripe Customer Portal URL',
+      content: {
+        'application/json': {
+          schema: organizationBillingActionResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Forbidden',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    409: {
+      description: 'Organization does not have a premium subscription',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    422: {
+      description: 'Stripe billing is not configured',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
     },
   },
 });
@@ -993,6 +1144,99 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return canManageParticipantsByRole(
       role === 'owner' || role === 'admin' || role === 'member' ? role : null,
     );
+  };
+
+  const isOrganizationMembershipRole = (value: string | null): 'owner' | 'admin' | 'member' | null => {
+    if (value === 'owner' || value === 'admin' || value === 'member') {
+      return value;
+    }
+    return null;
+  };
+
+  const isBillingInterval = (value: string | null): 'month' | 'year' | null => {
+    if (value === 'month' || value === 'year') {
+      return value;
+    }
+    return null;
+  };
+
+  const isBillingSubscriptionStatus = (
+    value: string | null,
+  ): 'free' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | 'incomplete' | null => {
+    if (
+      value === 'free'
+      || value === 'trialing'
+      || value === 'active'
+      || value === 'past_due'
+      || value === 'canceled'
+      || value === 'unpaid'
+      || value === 'incomplete'
+    ) {
+      return value;
+    }
+    return null;
+  };
+
+  const hasActivePremiumSubscription = (value: string | null): boolean => {
+    return (
+      value === 'trialing'
+      || value === 'active'
+      || value === 'past_due'
+      || value === 'unpaid'
+      || value === 'incomplete'
+    );
+  };
+
+  const ensureOrganizationBillingRow = async (organizationId: string) => {
+    await database
+      .insert(dbSchema.organizationBilling)
+      .values({
+        id: crypto.randomUUID(),
+        organizationId,
+        planCode: 'free',
+        subscriptionStatus: 'free',
+      })
+      .onConflictDoNothing();
+  };
+
+  const readOrganizationMembershipRole = async ({
+    organizationId,
+    userId,
+  }: {
+    organizationId: string;
+    userId: string;
+  }): Promise<'owner' | 'admin' | 'member' | null> => {
+    const rows = await database
+      .select({
+        role: dbSchema.member.role,
+      })
+      .from(dbSchema.member)
+      .where(
+        and(eq(dbSchema.member.organizationId, organizationId), eq(dbSchema.member.userId, userId)),
+      )
+      .limit(1);
+
+    return isOrganizationMembershipRole(rows[0]?.role ?? null);
+  };
+
+  const selectOrganizationBillingSummary = async (organizationId: string) => {
+    await ensureOrganizationBillingRow(organizationId);
+
+    const rows = await database
+      .select({
+        planCode: dbSchema.organizationBilling.planCode,
+        billingInterval: dbSchema.organizationBilling.billingInterval,
+        subscriptionStatus: dbSchema.organizationBilling.subscriptionStatus,
+        cancelAtPeriodEnd: dbSchema.organizationBilling.cancelAtPeriodEnd,
+        currentPeriodEnd: dbSchema.organizationBilling.currentPeriodEnd,
+        stripeCustomerId: dbSchema.organizationBilling.stripeCustomerId,
+        stripeSubscriptionId: dbSchema.organizationBilling.stripeSubscriptionId,
+      })
+      .from(dbSchema.organizationBilling)
+      .where(eq(dbSchema.organizationBilling.organizationId, organizationId))
+      .limit(1);
+
+    return rows[0] ?? null;
   };
 
   const canCreateOrganizationForIdentity = async ({
@@ -2235,6 +2479,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             name: organizationName,
           })
           .onConflictDoNothing();
+
+        await ensureOrganizationBillingRow(organizationId);
       }
 
       return response;
@@ -2246,6 +2492,146 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       headers: c.req.raw.headers,
       asResponse: true,
     });
+  });
+
+  authRoutes.openapi(getOrganizationBillingRoute, (c) => {
+    return (async () => {
+      const query = c.req.valid('query');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+      if (!organizationId) {
+        return c.json({ message: 'organizationId is required.' }, 422);
+      }
+
+      const role = await readOrganizationMembershipRole({
+        organizationId,
+        userId: identity.userId,
+      });
+      if (!canManageOrganizationByRole(role)) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const billing = await selectOrganizationBillingSummary(organizationId);
+      const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
+      const billingInterval = isBillingInterval(billing?.billingInterval ?? null);
+      const subscriptionStatus =
+        isBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
+      return c.json(
+        {
+          planCode,
+          billingInterval,
+          subscriptionStatus,
+          cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
+          currentPeriodEnd: toIsoDateString(billing?.currentPeriodEnd),
+          canManageBilling: role === 'owner',
+        },
+        200,
+      );
+    })();
+  });
+
+  authRoutes.openapi(createOrganizationBillingCheckoutRoute, (c) => {
+    return (async () => {
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      if (!organizationId) {
+        return c.json({ message: 'organizationId is required.' }, 422);
+      }
+
+      const role = await readOrganizationMembershipRole({
+        organizationId,
+        userId: identity.userId,
+      });
+      if (role !== 'owner') {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const priceId =
+        body.billingInterval === 'month'
+          ? env.STRIPE_PREMIUM_MONTHLY_PRICE_ID?.trim()
+          : env.STRIPE_PREMIUM_YEARLY_PRICE_ID?.trim();
+      if (!env.STRIPE_SECRET_KEY?.trim() || !priceId) {
+        return c.json({ message: 'Stripe billing is not configured.' }, 422);
+      }
+
+      const billing = await selectOrganizationBillingSummary(organizationId);
+      if (billing && hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))) {
+        return c.json({ message: 'Organization already has an active premium subscription.' }, 409);
+      }
+
+      const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+      const contractsUrl = `${webBaseUrl}/admin/contracts`;
+      const session = await createSubscriptionCheckoutSession({
+        env,
+        priceId,
+        successUrl: `${contractsUrl}?subscription=success`,
+        cancelUrl: `${contractsUrl}?subscription=cancel`,
+        customerId: billing?.stripeCustomerId ?? null,
+        clientReferenceId: organizationId,
+        metadata: {
+          billingPurpose: 'organization_plan',
+          organizationId,
+          planCode: 'premium',
+          billingInterval: body.billingInterval,
+        },
+      });
+
+      return c.json({ url: session.url }, 200);
+    })();
+  });
+
+  authRoutes.openapi(createOrganizationBillingPortalRoute, (c) => {
+    return (async () => {
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      if (!organizationId) {
+        return c.json({ message: 'organizationId is required.' }, 422);
+      }
+
+      const role = await readOrganizationMembershipRole({
+        organizationId,
+        userId: identity.userId,
+      });
+      if (role !== 'owner') {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      if (!env.STRIPE_SECRET_KEY?.trim()) {
+        return c.json({ message: 'Stripe billing is not configured.' }, 422);
+      }
+
+      const billing = await selectOrganizationBillingSummary(organizationId);
+      if (
+        !billing?.stripeCustomerId
+        || billing.planCode !== 'premium'
+        || !hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))
+      ) {
+        return c.json({ message: 'Organization does not have a premium subscription.' }, 409);
+      }
+
+      const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+      const portalSession = await createBillingPortalSession({
+        env,
+        customerId: billing.stripeCustomerId,
+        returnUrl: `${webBaseUrl}/admin/contracts`,
+      });
+
+      return c.json({ url: portalSession.url }, 200);
+    })();
   });
 
   authRoutes.openapi(listOrganizationClassroomsRoute, (c) => {

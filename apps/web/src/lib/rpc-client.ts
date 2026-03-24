@@ -19,6 +19,24 @@ export type OrganizationPayload = {
 	[key: string]: unknown;
 };
 
+export type OrganizationBillingPayload = {
+	planCode: 'free' | 'premium';
+	billingInterval: 'month' | 'year' | null;
+	subscriptionStatus:
+		| 'free'
+		| 'trialing'
+		| 'active'
+		| 'past_due'
+		| 'canceled'
+		| 'unpaid'
+		| 'incomplete'
+		| null;
+	cancelAtPeriodEnd: boolean;
+	currentPeriodEnd: string | null;
+	canManageBilling: boolean;
+	[key: string]: unknown;
+};
+
 export type ClassroomPayload = {
 	id: string;
 	slug: string;
@@ -337,6 +355,15 @@ type CreateOrganizationInput = {
 type SetActiveOrganizationInput = {
 	organizationId?: string | null;
 	organizationSlug?: string;
+};
+
+type CreateOrganizationBillingCheckoutInput = {
+	organizationId?: string;
+	billingInterval: 'month' | 'year';
+};
+
+type CreateOrganizationBillingPortalInput = {
+	organizationId?: string;
 };
 
 type CreateClassroomInput = {
@@ -921,10 +948,7 @@ const resolveScopedIdentifiers = async (
 			if (!isRecord(orgEntry) || !isRecord(orgEntry.org) || !Array.isArray(orgEntry.classrooms)) {
 				continue;
 			}
-			if (
-				orgEntry.org.slug !== context.orgSlug ||
-				typeof orgEntry.org.id !== 'string'
-			) {
+			if (orgEntry.org.slug !== context.orgSlug || typeof orgEntry.org.id !== 'string') {
 				continue;
 			}
 			organizationId = orgEntry.org.id;
@@ -1073,6 +1097,14 @@ export const authRpc = {
 		authFetch('/api/v1/auth/organizations', { json }),
 	setActiveOrganization: (json: SetActiveOrganizationInput) =>
 		rpcClient.api.v1.auth.organizations['set-active'].$post({ json }),
+	getOrganizationBilling: (organizationId?: string) =>
+		authFetch('/api/v1/auth/organizations/billing', {
+			query: organizationId ? { organizationId } : undefined
+		}),
+	createOrganizationBillingCheckout: (json: CreateOrganizationBillingCheckoutInput) =>
+		authFetch('/api/v1/auth/organizations/billing/checkout', { json }),
+	createOrganizationBillingPortal: (json: CreateOrganizationBillingPortalInput) =>
+		authFetch('/api/v1/auth/organizations/billing/portal', { json }),
 	getFullOrganization: (organizationId?: string) =>
 		rpcClient.api.v1.auth.organizations.full.$get(
 			organizationId ? { query: { organizationId } } : undefined
@@ -1107,7 +1139,8 @@ export const authRpc = {
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/cancel`, { json: {} }),
 	listServices: (query?: ListServicesQuery) =>
 		rpcClient.api.v1.auth.organizations.services.$get(query ? { query } : undefined),
-	createService: (json: CreateServiceInput) => rpcClient.api.v1.auth.organizations.services.$post({ json }),
+	createService: (json: CreateServiceInput) =>
+		rpcClient.api.v1.auth.organizations.services.$post({ json }),
 	updateService: (json: UpdateServiceInput) =>
 		rpcClient.api.v1.auth.organizations.services.update.$post({ json }),
 	archiveService: (json: ArchiveServiceInput) =>
@@ -1130,7 +1163,8 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations['recurring-schedules'].exceptions.$post({ json }),
 	generateRecurringSlots: (json: GenerateRecurringSlotsInput) =>
 		rpcClient.api.v1.auth.organizations['recurring-schedules'].generate.$post({ json }),
-	createBooking: (json: CreateBookingInput) => rpcClient.api.v1.auth.organizations.bookings.$post({ json }),
+	createBooking: (json: CreateBookingInput) =>
+		rpcClient.api.v1.auth.organizations.bookings.$post({ json }),
 	listMyBookings: (query?: ListBookingsQuery) =>
 		rpcClient.api.v1.auth.organizations.bookings.mine.$get(query ? { query } : undefined),
 	cancelBooking: (json: BookingActionInput) =>
@@ -1199,7 +1233,10 @@ export const authRpc = {
 				resend: json.resend
 			}
 		}),
-	listServicesScoped: (context: ScopedApiContext, query?: Omit<ListServicesQuery, 'organizationId'>) =>
+	listServicesScoped: (
+		context: ScopedApiContext,
+		query?: Omit<ListServicesQuery, 'organizationId'>
+	) =>
 		withScopedQuery(context, query, (resolvedQuery) =>
 			authFetch('/api/v1/auth/organizations/services', { query: resolvedQuery })
 		),
@@ -1215,7 +1252,10 @@ export const authRpc = {
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/services/archive', { json: resolvedJson })
 		),
-	createServiceImageUploadUrlScoped: (context: ScopedApiContext, json: CreateServiceImageUploadUrlInput) =>
+	createServiceImageUploadUrlScoped: (
+		context: ScopedApiContext,
+		json: CreateServiceImageUploadUrlInput
+	) =>
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/services/images/upload-url', { json: resolvedJson })
 		),
