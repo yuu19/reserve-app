@@ -9,8 +9,7 @@ type MockAccessTree = {
 	}>;
 } | null;
 
-const renderLayout = () =>
-	render(Layout, { children: (() => null) as unknown as never });
+const renderLayout = () => render(Layout, { children: (() => null) as unknown as never });
 
 const buildPortalAccess = (overrides: Record<string, unknown> = {}) => ({
 	hasOrganizationAdminAccess: false,
@@ -92,6 +91,11 @@ const pageState = vi.hoisted(() => ({
 	url: new URL('https://example.com/admin/dashboard')
 }));
 
+const navigationCallbacks = vi.hoisted(() => ({
+	before: new Set<(navigation: Record<string, unknown>) => void>(),
+	after: new Set<(navigation: Record<string, unknown>) => void>()
+}));
+
 const mocks = vi.hoisted(() => ({
 	loadSession: vi.fn(),
 	loadPortalAccess: vi.fn(),
@@ -102,11 +106,19 @@ const mocks = vi.hoisted(() => ({
 	writeLastAuthPortal: vi.fn(),
 	goto: vi.fn(),
 	onAuthSessionUpdated: vi.fn(() => () => {}),
-	signOut: vi.fn(async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }))
+	signOut: vi.fn(
+		async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+	)
 }));
 
 vi.mock('$app/navigation', () => ({
-	goto: mocks.goto
+	goto: mocks.goto,
+	beforeNavigate: (callback: (navigation: Record<string, unknown>) => void) => {
+		navigationCallbacks.before.add(callback);
+	},
+	afterNavigate: (callback: (navigation: Record<string, unknown>) => void) => {
+		navigationCallbacks.after.add(callback);
+	}
 }));
 
 vi.mock('$app/paths', () => ({
@@ -176,9 +188,52 @@ vi.mock('$env/dynamic/public', () => ({
 	env: {}
 }));
 
+const emitBeforeNavigate = (
+	overrides: Partial<{
+		from: { url: URL | null } | null;
+		to: { url: URL | null } | null;
+		type: string;
+		willUnload: boolean;
+	}>
+) => {
+	const navigation = {
+		from: { url: new URL('https://example.com/admin/dashboard') },
+		to: { url: new URL('https://example.com/admin/bookings') },
+		type: 'link',
+		willUnload: false,
+		...overrides
+	};
+
+	for (const callback of navigationCallbacks.before) {
+		callback(navigation);
+	}
+};
+
+const emitAfterNavigate = (
+	overrides: Partial<{
+		from: { url: URL | null } | null;
+		to: { url: URL | null } | null;
+		type: string;
+	}>
+) => {
+	const navigation = {
+		from: { url: new URL('https://example.com/admin/dashboard') },
+		to: { url: new URL('https://example.com/admin/bookings') },
+		type: 'link',
+		...overrides
+	};
+
+	for (const callback of navigationCallbacks.after) {
+		callback(navigation);
+	}
+};
+
 describe('/+layout.svelte', () => {
 	beforeEach(() => {
+		vi.useRealTimers();
 		pageState.url = new URL('https://example.com/admin/dashboard');
+		navigationCallbacks.before.clear();
+		navigationCallbacks.after.clear();
 		mocks.loadSession.mockReset();
 		mocks.loadPortalAccess.mockReset();
 		mocks.loadOrganizations.mockReset();
@@ -191,6 +246,7 @@ describe('/+layout.svelte', () => {
 		mocks.signOut.mockReset();
 
 		mocks.onAuthSessionUpdated.mockReturnValue(() => {});
+		mocks.goto.mockResolvedValue(undefined);
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { name: 'Layout User' }, session: {} },
 			status: 200
@@ -350,10 +406,10 @@ describe('/+layout.svelte', () => {
 		renderLayout();
 
 		await vi.waitFor(() => {
-			expect(document.querySelector('a[href="/admin/bookings"]')).not.toBeNull();
-			expect(document.querySelector('a[href="/admin/participants"]')).not.toBeNull();
-			expect(document.querySelector('a[href="/admin/services"]')).toBeNull();
-			expect(document.querySelector('a[href="/admin/classrooms"]')).toBeNull();
+			expect(document.querySelector('a[href="/org-one/room-a/admin/bookings"]')).not.toBeNull();
+			expect(document.querySelector('a[href="/org-one/room-a/admin/participants"]')).not.toBeNull();
+			expect(document.querySelector('a[href="/org-one/room-a/admin/services"]')).toBeNull();
+			expect(document.querySelector('a[href="/org-one/room-a/admin/classrooms"]')).toBeNull();
 			expect(document.body.textContent).not.toContain('参加者へ切替');
 		});
 	});
@@ -523,5 +579,70 @@ describe('/+layout.svelte', () => {
 			});
 			expect(document.body.textContent).toContain('Room B');
 		});
+	});
+
+	it('keeps the navigation progress bar hidden on initial render', async () => {
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(document.querySelector('[data-testid="navigation-progress"]')).toBeNull();
+		});
+	});
+
+	it('shows the navigation progress bar after the delay and hides it after completion', async () => {
+		vi.useFakeTimers();
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(document.querySelector('a[href="/admin/dashboard"]')).not.toBeNull();
+		});
+
+		emitBeforeNavigate({});
+		await vi.advanceTimersByTimeAsync(119);
+		expect(document.querySelector('[data-testid="navigation-progress"]')).toBeNull();
+
+		await vi.advanceTimersByTimeAsync(1);
+		await vi.waitFor(() => {
+			expect(document.querySelector('[data-testid="navigation-progress"]')).not.toBeNull();
+		});
+
+		emitAfterNavigate({});
+		await vi.advanceTimersByTimeAsync(180);
+		await vi.waitFor(() => {
+			expect(document.querySelector('[data-testid="navigation-progress"]')).toBeNull();
+		});
+	});
+
+	it('does not show the navigation progress bar for fast navigations', async () => {
+		vi.useFakeTimers();
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(document.querySelector('a[href="/admin/dashboard"]')).not.toBeNull();
+		});
+
+		emitBeforeNavigate({});
+		await vi.advanceTimersByTimeAsync(80);
+		emitAfterNavigate({});
+		await vi.advanceTimersByTimeAsync(80);
+
+		expect(document.querySelector('[data-testid="navigation-progress"]')).toBeNull();
+	});
+
+	it('ignores hash-only navigations for the progress bar', async () => {
+		vi.useFakeTimers();
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(document.querySelector('a[href="/admin/dashboard"]')).not.toBeNull();
+		});
+
+		emitBeforeNavigate({
+			from: { url: new URL('https://example.com/admin/dashboard#overview') },
+			to: { url: new URL('https://example.com/admin/dashboard#billing') }
+		});
+		await vi.advanceTimersByTimeAsync(200);
+
+		expect(document.querySelector('[data-testid="navigation-progress"]')).toBeNull();
 	});
 });

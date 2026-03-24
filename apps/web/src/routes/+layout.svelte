@@ -3,9 +3,9 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import type { Pathname } from '$app/types';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import ClassroomSwitcher from '$lib/components/classroom-switcher.svelte';
 	import OrganizationSwitcher from '$lib/components/organization-switcher.svelte';
 	import { Toaster, toast } from 'svelte-sonner';
@@ -13,7 +13,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { onAuthSessionUpdated } from '$lib/features/auth-lifecycle';
 	import { readLastAuthPortal, writeLastAuthPortal } from '$lib/features/auth-portal-preference';
-	import { isPublicAuthEntryPath, resolveAuthPortalByPath, type AuthPortal } from '$lib/features/auth-portal';
+	import {
+		isPublicAuthEntryPath,
+		resolveAuthPortalByPath,
+		type AuthPortal
+	} from '$lib/features/auth-portal';
 	import {
 		listClassroomsByOrgSlug,
 		loadOrganizations,
@@ -97,6 +101,12 @@
 		admin: true,
 		participant: true
 	});
+	let showNavigationProgress = $state(false);
+	let navigationProgressValue = $state(0);
+	let prefersReducedMotion = $state(false);
+	let progressDelayTimer: ReturnType<typeof setTimeout> | null = null;
+	let progressAdvanceTimer: ReturnType<typeof setInterval> | null = null;
+	let progressHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 	type NavItem = {
 		href:
@@ -169,7 +179,9 @@
 	const rawPathname = $derived(page.url.pathname);
 	const pathname = $derived(getRoutePathFromUrlPath(rawPathname));
 	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
-	const showSidebarLayout = $derived(!isPublicAuthRoute && pathname !== '/admin/onboarding' && isLoggedIn);
+	const showSidebarLayout = $derived(
+		!isPublicAuthRoute && pathname !== '/admin/onboarding' && isLoggedIn
+	);
 	const showAdminSectionTabs = $derived(
 		activePortal === 'admin' && portalAccess.hasOrganizationAdminAccess
 	);
@@ -208,9 +220,7 @@
 						? { ...item, label: '教室招待' }
 						: item
 				);
-			return adminItems.length > 0
-				? [{ ...navSectionsByPortal.admin, items: adminItems }]
-				: [];
+			return adminItems.length > 0 ? [{ ...navSectionsByPortal.admin, items: adminItems }] : [];
 		}
 		if (!portalAccess.hasParticipantAccess) {
 			return [];
@@ -219,16 +229,12 @@
 			{
 				...navSectionsByPortal.participant,
 				items: navSectionsByPortal.participant.items.map((item) =>
-					item.href === '/participant/admin-invitations'
-						? { ...item, label: '運営招待' }
-						: item
+					item.href === '/participant/admin-invitations' ? { ...item, label: '運営招待' } : item
 				)
 			}
 		];
 	});
-	const canSwitchToAdmin = $derived(
-		activePortal !== 'admin' && portalAccess.hasAdminPortalAccess
-	);
+	const canSwitchToAdmin = $derived(activePortal !== 'admin' && portalAccess.hasAdminPortalAccess);
 	const canSwitchToParticipant = $derived(
 		activePortal !== 'participant' && portalAccess.hasParticipantAccess
 	);
@@ -245,9 +251,17 @@
 	});
 	const activeOrganizationName = $derived(activeOrganization?.name ?? '組織未選択');
 	const activeClassroomName = $derived(activeClassroom?.name ?? '教室未選択');
+	const navigationProgressStyle = $derived(
+		`transform: scaleX(${navigationProgressValue}); opacity: ${
+			navigationProgressValue >= 1 ? 0.9 : 1
+		};`
+	);
 
 	const isActive = (href: string): boolean => pathname === href || pathname.startsWith(`${href}/`);
-	const resolveInitialActivePortal = (currentPath: string, nextPortalAccess: PortalAccess): AuthPortal => {
+	const resolveInitialActivePortal = (
+		currentPath: string,
+		nextPortalAccess: PortalAccess
+	): AuthPortal => {
 		const storedPortal = readLastAuthPortal();
 		if (storedPortal === 'admin' && nextPortalAccess.hasAdminPortalAccess) {
 			return storedPortal;
@@ -280,6 +294,108 @@
 			...sectionOpenState,
 			[sectionId]: !sectionOpenState[sectionId]
 		};
+	};
+	const clearProgressDelayTimer = () => {
+		if (!progressDelayTimer) {
+			return;
+		}
+		clearTimeout(progressDelayTimer);
+		progressDelayTimer = null;
+	};
+	const clearProgressAdvanceTimer = () => {
+		if (!progressAdvanceTimer) {
+			return;
+		}
+		clearInterval(progressAdvanceTimer);
+		progressAdvanceTimer = null;
+	};
+	const clearProgressHideTimer = () => {
+		if (!progressHideTimer) {
+			return;
+		}
+		clearTimeout(progressHideTimer);
+		progressHideTimer = null;
+	};
+	const resetNavigationProgress = () => {
+		clearProgressDelayTimer();
+		clearProgressAdvanceTimer();
+		clearProgressHideTimer();
+		showNavigationProgress = false;
+		navigationProgressValue = 0;
+	};
+	const beginProgressAdvance = () => {
+		if (prefersReducedMotion || progressAdvanceTimer) {
+			return;
+		}
+		progressAdvanceTimer = setInterval(() => {
+			navigationProgressValue = Math.min(
+				0.89,
+				navigationProgressValue + Math.max((0.89 - navigationProgressValue) * 0.26, 0.02)
+			);
+			if (navigationProgressValue >= 0.89) {
+				clearProgressAdvanceTimer();
+			}
+		}, 220);
+	};
+	const beginNavigationProgress = () => {
+		clearProgressHideTimer();
+		clearProgressDelayTimer();
+		progressDelayTimer = setTimeout(() => {
+			showNavigationProgress = true;
+			navigationProgressValue = prefersReducedMotion ? 0.82 : 0.14;
+			beginProgressAdvance();
+		}, 120);
+	};
+	const completeNavigationProgress = () => {
+		clearProgressDelayTimer();
+		if (!showNavigationProgress) {
+			navigationProgressValue = 0;
+			return;
+		}
+		clearProgressAdvanceTimer();
+		navigationProgressValue = 1;
+		clearProgressHideTimer();
+		progressHideTimer = setTimeout(
+			() => {
+				showNavigationProgress = false;
+				navigationProgressValue = 0;
+				progressHideTimer = null;
+			},
+			prefersReducedMotion ? 120 : 180
+		);
+	};
+	const isHashOnlyNavigation = (fromUrl: URL | null | undefined, toUrl: URL | null | undefined) => {
+		if (!fromUrl || !toUrl) {
+			return false;
+		}
+		return (
+			fromUrl.origin === toUrl.origin &&
+			fromUrl.pathname === toUrl.pathname &&
+			fromUrl.search === toUrl.search &&
+			fromUrl.hash !== toUrl.hash
+		);
+	};
+	const shouldTrackNavigation = (navigation: {
+		willUnload?: boolean;
+		from?: { url: URL | null } | null;
+		to?: { url: URL | null } | null;
+	}) => {
+		if (navigation.willUnload) {
+			return false;
+		}
+
+		const fromUrl = navigation.from?.url ?? null;
+		const toUrl = navigation.to?.url ?? null;
+		if (!toUrl) {
+			return false;
+		}
+		if (fromUrl?.href === toUrl.href) {
+			return false;
+		}
+		if (isHashOnlyNavigation(fromUrl, toUrl)) {
+			return false;
+		}
+		return true;
 	};
 
 	const activeSectionTab = $derived.by(() => {
@@ -420,13 +536,15 @@
 					orgSlug: activeOrganization.slug,
 					classroomSlug: activeClassroom.slug
 				}
-				: null;
+			: null;
 
 	const getCurrentScopedContext = (): ScopedApiContext | null =>
-		getScopedContextFromUrlPath(portalAccess.accessTree, rawPathname) ?? getActiveStateScopedContext();
+		getScopedContextFromUrlPath(portalAccess.accessTree, rawPathname) ??
+		getActiveStateScopedContext();
 
 	const resolveScopedNavigationTarget = (context: { orgSlug: string; classroomSlug: string }) => {
-		const portal = activePortal === 'admin' || activePortal === 'participant' ? activePortal : 'participant';
+		const portal =
+			activePortal === 'admin' || activePortal === 'participant' ? activePortal : 'participant';
 		if (typeof window === 'undefined') {
 			return buildScopedPortalPath(context, portal);
 		}
@@ -482,15 +600,15 @@
 				return;
 			}
 
-				await goto(
-					resolve(
-						resolveScopedNavigationTarget({
-							orgSlug: nextOrganization.slug,
-							classroomSlug: nextClassroom.slug
-						}) as ResolvablePath
-					),
-					{ invalidateAll: true }
-				);
+			await goto(
+				resolve(
+					resolveScopedNavigationTarget({
+						orgSlug: nextOrganization.slug,
+						classroomSlug: nextClassroom.slug
+					}) as ResolvablePath
+				),
+				{ invalidateAll: true }
+			);
 		} catch {
 			toast.error('組織の切り替えに失敗しました。');
 		} finally {
@@ -508,15 +626,15 @@
 
 		switchingClassroom = true;
 		try {
-				await goto(
-					resolve(
-						resolveScopedNavigationTarget({
-							orgSlug: activeOrganization.slug,
-							classroomSlug
-						}) as ResolvablePath
-					),
-					{ invalidateAll: true }
-				);
+			await goto(
+				resolve(
+					resolveScopedNavigationTarget({
+						orgSlug: activeOrganization.slug,
+						classroomSlug
+					}) as ResolvablePath
+				),
+				{ invalidateAll: true }
+			);
 		} catch {
 			toast.error('教室の切り替えに失敗しました。');
 		} finally {
@@ -531,11 +649,13 @@
 		writeLastAuthPortal(nextPortal);
 		activePortal = nextPortal;
 		mobileMenuOpen = false;
-			await goto(
-				resolve(
-					resolvePortalHref(nextPortal === 'admin' ? '/admin/dashboard' : '/participant/home') as ResolvablePath
-				)
-			);
+		await goto(
+			resolve(
+				resolvePortalHref(
+					nextPortal === 'admin' ? '/admin/dashboard' : '/participant/home'
+				) as ResolvablePath
+			)
+		);
 	};
 
 	const submitSignOut = async () => {
@@ -602,13 +722,39 @@
 		if (redirectToCanonicalWebDomain()) {
 			return;
 		}
+		const mediaQuery =
+			typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+				? window.matchMedia('(prefers-reduced-motion: reduce)')
+				: null;
+		const syncMotionPreference = () => {
+			prefersReducedMotion = mediaQuery?.matches ?? false;
+		};
+		syncMotionPreference();
+		mediaQuery?.addEventListener('change', syncMotionPreference);
 		const stopListeningAuthSession = onAuthSessionUpdated(() => {
 			void refreshSessionState();
 		});
 		void refreshSessionState();
 		return () => {
+			mediaQuery?.removeEventListener('change', syncMotionPreference);
+			resetNavigationProgress();
 			stopListeningAuthSession();
 		};
+	});
+
+	onDestroy(() => {
+		resetNavigationProgress();
+	});
+
+	beforeNavigate((navigation) => {
+		if (!shouldTrackNavigation(navigation)) {
+			return;
+		}
+		beginNavigationProgress();
+	});
+
+	afterNavigate(() => {
+		completeNavigationProgress();
 	});
 
 	$effect(() => {
@@ -659,7 +805,11 @@
 			return;
 		}
 		canonicalizingPath = currentPath;
-			void goto(resolve(nextPath as ResolvablePath), { replaceState: true, noScroll: true, keepFocus: true }).finally(() => {
+		void goto(resolve(nextPath as ResolvablePath), {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true
+		}).finally(() => {
 			if (canonicalizingPath === currentPath) {
 				canonicalizingPath = '';
 			}
@@ -691,6 +841,21 @@
 </svelte:head>
 
 <Toaster richColors position="top-right" />
+
+{#if showNavigationProgress}
+	<div
+		aria-hidden="true"
+		data-testid="navigation-progress"
+		class="pointer-events-none fixed inset-x-0 top-0 z-[60] h-0.5 overflow-hidden"
+	>
+		<div class="absolute inset-0 bg-white/25"></div>
+		<div
+			data-testid="navigation-progress-bar"
+			class="h-full origin-left bg-primary shadow-[0_0_14px_color-mix(in_oklch,var(--color-primary)_42%,transparent)] transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-opacity"
+			style={navigationProgressStyle}
+		></div>
+	</div>
+{/if}
 
 {#if showSidebarLayout}
 	<div class={`min-h-screen md:grid ${desktopSidebarGridClass}`}>
@@ -756,15 +921,15 @@
 				<div
 					class={`space-y-2 transition-[opacity,transform,max-height] duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${desktopSidebarCollapsed ? 'pointer-events-none -translate-x-1 overflow-hidden opacity-0 max-h-0' : 'translate-x-0 opacity-100 max-h-20'}`}
 				>
-						{#if showAdminSectionTabs}
-							<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
-								{#each sectionTabs as tab (tab.href)}
-									<a
-										href={resolve(resolvePortalHref(tab.href) as ResolvablePath)}
-										class={`rounded px-3 py-1.5 text-sm transition-colors ${
-											activeSectionTab === tab.href
-												? 'font-semibold text-teal-600'
-												: 'text-slate-700 hover:text-slate-900'
+					{#if showAdminSectionTabs}
+						<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
+							{#each sectionTabs as tab (tab.href)}
+								<a
+									href={resolve(resolvePortalHref(tab.href) as ResolvablePath)}
+									class={`rounded px-3 py-1.5 text-sm transition-colors ${
+										activeSectionTab === tab.href
+											? 'font-semibold text-teal-600'
+											: 'text-slate-700 hover:text-slate-900'
 									}`}
 								>
 									{tab.label}
@@ -800,14 +965,14 @@
 									<div
 										id={`sidebar-section-${section.id}`}
 										class="space-y-1 border-t border-slate-200/70 p-2"
-										>
-											{#each section.items as item (item.href)}
-												<a
-													href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
-													class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-														isActive(item.href)
-															? 'bg-sidebar-accent text-sidebar-accent-foreground'
-															: 'text-slate-700 hover:bg-slate-100'
+									>
+										{#each section.items as item (item.href)}
+											<a
+												href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
+												class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+													isActive(item.href)
+														? 'bg-sidebar-accent text-sidebar-accent-foreground'
+														: 'text-slate-700 hover:bg-slate-100'
 												}`}
 											>
 												<item.icon class="size-4" aria-hidden="true" />
@@ -823,15 +988,15 @@
 					<div
 						class={`space-y-1 rounded-lg border border-slate-200/80 bg-white/70 p-2 transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${navCollapsedClass}`}
 						aria-hidden={!desktopSidebarCollapsed}
-						>
-							{#each visibleNavSections as section (section.id)}
-								{#each section.items as item (item.href)}
-									<a
-										href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
-										class={`flex items-center justify-center rounded-lg px-3 py-2 transition-colors ${
-											isActive(item.href)
-												? 'bg-sidebar-accent text-sidebar-accent-foreground'
-												: 'text-slate-700 hover:bg-slate-100'
+					>
+						{#each visibleNavSections as section (section.id)}
+							{#each section.items as item (item.href)}
+								<a
+									href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
+									class={`flex items-center justify-center rounded-lg px-3 py-2 transition-colors ${
+										isActive(item.href)
+											? 'bg-sidebar-accent text-sidebar-accent-foreground'
+											: 'text-slate-700 hover:bg-slate-100'
 									}`}
 									aria-label={item.label}
 									title={item.label}
@@ -995,15 +1160,15 @@
 							</div>
 						{/if}
 
-							{#if showAdminSectionTabs}
-								<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
-									{#each sectionTabs as tab (tab.href)}
-										<a
-											href={resolve(resolvePortalHref(tab.href) as ResolvablePath)}
-											onclick={closeMobileMenu}
-											class={`rounded px-3 py-1.5 text-sm transition-colors ${
-												activeSectionTab === tab.href
-													? 'font-semibold text-teal-600'
+						{#if showAdminSectionTabs}
+							<div class="inline-flex rounded-md border border-slate-200 bg-white p-1">
+								{#each sectionTabs as tab (tab.href)}
+									<a
+										href={resolve(resolvePortalHref(tab.href) as ResolvablePath)}
+										onclick={closeMobileMenu}
+										class={`rounded px-3 py-1.5 text-sm transition-colors ${
+											activeSectionTab === tab.href
+												? 'font-semibold text-teal-600'
 												: 'text-slate-700 hover:text-slate-900'
 										}`}
 									>
@@ -1034,14 +1199,14 @@
 										<div
 											id={`mobile-sidebar-section-${section.id}`}
 											class="space-y-1 border-t border-slate-200/70 p-2"
-											>
-												{#each section.items as item (item.href)}
-													<a
-														href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
-														onclick={closeMobileMenu}
-														class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-															isActive(item.href)
-																? 'bg-sidebar-accent text-sidebar-accent-foreground'
+										>
+											{#each section.items as item (item.href)}
+												<a
+													href={resolve(resolvePortalHref(item.href) as ResolvablePath)}
+													onclick={closeMobileMenu}
+													class={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+														isActive(item.href)
+															? 'bg-sidebar-accent text-sidebar-accent-foreground'
 															: 'text-slate-700 hover:bg-slate-100'
 													}`}
 												>
