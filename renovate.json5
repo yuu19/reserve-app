@@ -1,0 +1,67 @@
+{
+  // Renovate 設定スキーマ
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  // 公式推奨の基本設定
+  extends: ["config:recommended"],
+
+  // タイムゾーン
+  timezone: "Asia/Tokyo",
+
+  // 個人開発なので時間制限は広めにする
+  // 毎日朝〜夜に更新 PR を作成
+  schedule: ["after 7am and before 11pm every day"],
+
+  // PR ラベル
+  labels: ["dependencies"],
+
+  // バージョン範囲を更新先に合わせる
+  rangeStrategy: "bump",
+
+  // OSV ベースの脆弱性対応を有効化
+  osvVulnerabilityAlerts: true,
+
+  // ダッシュボードを有効化
+  dependencyDashboard: true,
+
+  // CI が pending の間は PR を待つ
+  prCreation: "not-pending",
+
+  packageRules: [
+    {
+      // npm は公開直後の事故回避のため 1 日待つ
+      matchDatasources: ["npm"],
+      minimumReleaseAge: "1 day",
+    },
+    {
+      // Docker / GitHub Actions はサプライチェーン対策として慎重に扱う
+      // digest pin を有効化し、自動マージはしない
+      matchManagers: ["dockerfile", "docker-compose", "github-actions"],
+      pinDigests: true,
+      dependencyDashboardApproval: true,
+      automerge: false,
+    },
+    {
+      // major 更新は破壊的変更の可能性があるので手動承認
+      matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+      automerge: false,
+    },
+    {
+      // minor / patch は自動マージ
+      matchUpdateTypes: ["minor", "patch"],
+      automerge: true,
+    },
+  ],
+
+  lockFileMaintenance: {
+    // lockfile の定期更新を有効化
+    enabled: true,
+
+    // 既定に近い週1メンテ
+    schedule: ["before 4am on monday"],
+
+    // lockfile 更新は自動マージ
+    automerge: true,
+  },
+}
