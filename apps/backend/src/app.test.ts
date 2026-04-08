@@ -228,7 +228,7 @@ const selectTicketPurchaseRow = async (purchaseId: string) => {
 const selectOrganizationBillingRow = async (organizationId: string) => {
   return d1
     .prepare(
-      'SELECT plan_code as planCode, stripe_customer_id as stripeCustomerId, stripe_subscription_id as stripeSubscriptionId, stripe_price_id as stripePriceId, billing_interval as billingInterval, subscription_status as subscriptionStatus, cancel_at_period_end as cancelAtPeriodEnd, current_period_end as currentPeriodEnd FROM organization_billing WHERE organization_id = ? LIMIT 1',
+      'SELECT plan_code as planCode, stripe_customer_id as stripeCustomerId, stripe_subscription_id as stripeSubscriptionId, stripe_price_id as stripePriceId, billing_interval as billingInterval, subscription_status as subscriptionStatus, cancel_at_period_end as cancelAtPeriodEnd, current_period_start as currentPeriodStart, current_period_end as currentPeriodEnd FROM organization_billing WHERE organization_id = ? LIMIT 1',
     )
     .bind(organizationId)
     .first<{
@@ -239,6 +239,7 @@ const selectOrganizationBillingRow = async (organizationId: string) => {
       billingInterval: string | null;
       subscriptionStatus: string;
       cancelAtPeriodEnd: number | boolean;
+      currentPeriodStart: number | null;
       currentPeriodEnd: number | null;
     }>();
 };
@@ -810,20 +811,59 @@ describe('backend app', () => {
       });
       expect(acceptResponse.status).toBe(200);
 
+      const memberInvite = await createInvitation({
+        agent: owner,
+        email: 'billing-member@example.com',
+        role: 'member',
+        organizationId,
+      });
+      expect(memberInvite.response.status).toBe(200);
+
+      const member = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: member,
+        name: 'Billing Member',
+        email: 'billing-member@example.com',
+      });
+      const memberAcceptResponse = await member.request(
+        buildInvitationActionPath(String(memberInvite.payload?.id), 'accept'),
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ invitationId: String(memberInvite.payload?.id) }),
+        },
+      );
+      expect(memberAcceptResponse.status).toBe(200);
+
       const ownerBillingResponse = await owner.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
       );
       expect(ownerBillingResponse.status).toBe(200);
       const ownerBillingPayload = (await toJson(ownerBillingResponse)) as Record<string, unknown>;
       expect(ownerBillingPayload.planCode).toBe('free');
+      expect(ownerBillingPayload.planState).toBe('free');
+      expect(ownerBillingPayload.canViewBilling).toBe(true);
       expect(ownerBillingPayload.canManageBilling).toBe(true);
+      expect(ownerBillingPayload.trialEndsAt).toBeNull();
 
       const adminBillingResponse = await admin.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
       );
       expect(adminBillingResponse.status).toBe(200);
       const adminBillingPayload = (await toJson(adminBillingResponse)) as Record<string, unknown>;
+      expect(adminBillingPayload.planState).toBe('free');
+      expect(adminBillingPayload.canViewBilling).toBe(true);
       expect(adminBillingPayload.canManageBilling).toBe(false);
+
+      const memberBillingResponse = await member.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(memberBillingResponse.status).toBe(200);
+      const memberBillingPayload = (await toJson(memberBillingResponse)) as Record<string, unknown>;
+      expect(memberBillingPayload.planCode).toBe('free');
+      expect(memberBillingPayload.planState).toBe('free');
+      expect(memberBillingPayload.canViewBilling).toBe(true);
+      expect(memberBillingPayload.canManageBilling).toBe(false);
 
       const adminCheckoutResponse = await admin.request('/api/v1/auth/organizations/billing/checkout', {
         method: 'POST',
@@ -834,6 +874,16 @@ describe('backend app', () => {
         }),
       });
       expect(adminCheckoutResponse.status).toBe(403);
+
+      const memberCheckoutResponse = await member.request('/api/v1/auth/organizations/billing/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          billingInterval: 'month',
+        }),
+      });
+      expect(memberCheckoutResponse.status).toBe(403);
 
       const ownerCheckoutResponse = await owner.request('/api/v1/auth/organizations/billing/checkout', {
         method: 'POST',
@@ -894,11 +944,11 @@ describe('backend app', () => {
             customer: 'cus_test_org',
             status: 'active',
             cancel_at_period_end: false,
-            current_period_start: 1775000000,
-            current_period_end: 1777688400,
             items: {
               data: [
                 {
+                  current_period_start: 1775000000,
+                  current_period_end: 1777688400,
                   price: {
                     id: stripeMonthlyPriceId,
                   },
@@ -938,6 +988,15 @@ describe('backend app', () => {
       expect(billingAfterSubscription?.billingInterval).toBe('month');
       expect(billingAfterSubscription?.stripePriceId).toBe(stripeMonthlyPriceId);
       expect(billingAfterSubscription?.currentPeriodEnd).toBe(1777688400000);
+
+      const activeBillingResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(activeBillingResponse.status).toBe(200);
+      const activeBillingPayload = (await toJson(activeBillingResponse)) as Record<string, unknown>;
+      expect(activeBillingPayload.planCode).toBe('premium');
+      expect(activeBillingPayload.planState).toBe('premium_paid');
+      expect(activeBillingPayload.trialEndsAt).toBeNull();
 
       const ownerPortalResponse = await owner.request('/api/v1/auth/organizations/billing/portal', {
         method: 'POST',
@@ -999,9 +1058,165 @@ describe('backend app', () => {
         }),
       });
       expect(freePortalResponse.status).toBe(409);
+
+      const trialPeriodEnd = 1778800000000;
+      await d1
+        .prepare(
+          'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, current_period_end = ? WHERE organization_id = ?',
+        )
+        .bind('premium', 'trialing', trialPeriodEnd, organizationId)
+        .run();
+
+      const trialBillingResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(trialBillingResponse.status).toBe(200);
+      const trialBillingPayload = (await toJson(trialBillingResponse)) as Record<string, unknown>;
+      expect(trialBillingPayload.planCode).toBe('premium');
+      expect(trialBillingPayload.subscriptionStatus).toBe('trialing');
+      expect(trialBillingPayload.planState).toBe('premium_trial');
+      expect(trialBillingPayload.trialEndsAt).toBe(new Date(trialPeriodEnd).toISOString());
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+
+  it('starts owner-only premium trials and rejects duplicate active lifecycle states', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Trial Owner',
+      email: 'trial-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Trial Org',
+      slug: 'trial-org',
+    });
+
+    const adminInvite = await createInvitation({
+      agent: owner,
+      email: 'trial-admin@example.com',
+      role: 'admin',
+      organizationId,
+    });
+    expect(adminInvite.response.status).toBe(200);
+
+    const admin = createAuthAgent(app);
+    await signUpUser({
+      agent: admin,
+      name: 'Trial Admin',
+      email: 'trial-admin@example.com',
+    });
+    const adminAcceptResponse = await admin.request(
+      buildInvitationActionPath(String(adminInvite.payload?.id), 'accept'),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ invitationId: String(adminInvite.payload?.id) }),
+      },
+    );
+    expect(adminAcceptResponse.status).toBe(200);
+
+    const memberInvite = await createInvitation({
+      agent: owner,
+      email: 'trial-member@example.com',
+      role: 'member',
+      organizationId,
+    });
+    expect(memberInvite.response.status).toBe(200);
+
+    const member = createAuthAgent(app);
+    await signUpUser({
+      agent: member,
+      name: 'Trial Member',
+      email: 'trial-member@example.com',
+    });
+    const memberAcceptResponse = await member.request(
+      buildInvitationActionPath(String(memberInvite.payload?.id), 'accept'),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ invitationId: String(memberInvite.payload?.id) }),
+      },
+    );
+    expect(memberAcceptResponse.status).toBe(200);
+
+    const adminTrialResponse = await admin.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    expect(adminTrialResponse.status).toBe(403);
+
+    const memberTrialResponse = await member.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    expect(memberTrialResponse.status).toBe(403);
+
+    const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    expect(ownerTrialResponse.status).toBe(200);
+    const ownerTrialPayload = (await toJson(ownerTrialResponse)) as Record<string, unknown>;
+    expect(ownerTrialPayload.message).toBe('Started a 7-day premium trial.');
+
+    const billingAfterTrial = await selectOrganizationBillingRow(organizationId);
+    expect(billingAfterTrial?.planCode).toBe('premium');
+    expect(billingAfterTrial?.subscriptionStatus).toBe('trialing');
+    expect(billingAfterTrial?.billingInterval).toBeNull();
+    expect(Boolean(billingAfterTrial?.cancelAtPeriodEnd)).toBe(false);
+    expect(billingAfterTrial?.currentPeriodStart).not.toBeNull();
+    expect(billingAfterTrial?.currentPeriodEnd).not.toBeNull();
+    expect(
+      Number(billingAfterTrial?.currentPeriodEnd ?? 0) - Number(billingAfterTrial?.currentPeriodStart ?? 0),
+    ).toBe(7 * 24 * 60 * 60 * 1000);
+
+    const trialBillingResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(trialBillingResponse.status).toBe(200);
+    const trialBillingPayload = (await toJson(trialBillingResponse)) as Record<string, unknown>;
+    expect(trialBillingPayload.planCode).toBe('premium');
+    expect(trialBillingPayload.subscriptionStatus).toBe('trialing');
+    expect(trialBillingPayload.planState).toBe('premium_trial');
+    expect(trialBillingPayload.trialEndsAt).toBe(
+      new Date(Number(billingAfterTrial?.currentPeriodEnd)).toISOString(),
+    );
+
+    const duplicateTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    expect(duplicateTrialResponse.status).toBe(409);
+    const duplicateTrialPayload = (await toJson(duplicateTrialResponse)) as Record<string, unknown>;
+    expect(duplicateTrialPayload.message).toBe(
+      'Organization already has an active premium trial or paid subscription.',
+    );
+
+    await d1
+      .prepare(
+        'UPDATE organization_billing SET subscription_status = ?, billing_interval = ?, current_period_end = ? WHERE organization_id = ?',
+      )
+      .bind('active', 'month', 1779000000000, organizationId)
+      .run();
+
+    const activeConflictResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    expect(activeConflictResponse.status).toBe(409);
+    const activeConflictPayload = (await toJson(activeConflictResponse)) as Record<string, unknown>;
+    expect(activeConflictPayload.message).toBe(
+      'Organization already has an active premium trial or paid subscription.',
+    );
   });
 
   it('handles invitation policies and audit logs', async () => {

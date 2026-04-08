@@ -1,7 +1,7 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
 import {
-  canManageOrganizationByRole,
+  canViewOrganizationBillingByRole,
   canManageParticipantsByRole,
   listOrganizationClassroomContexts,
   resolveOrganizationClassroomAccess,
@@ -330,20 +330,35 @@ const organizationBillingPortalBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+const organizationBillingTrialBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+});
+
 const organizationBillingSummarySchema = z.object({
   planCode: z.enum(['free', 'premium']),
+  planState: z.enum(['free', 'premium_trial', 'premium_paid']),
   billingInterval: z.enum(['month', 'year']).nullable(),
   subscriptionStatus: z
     .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
     .nullable(),
   cancelAtPeriodEnd: z.boolean(),
   currentPeriodEnd: z.string().nullable(),
+  trialEndsAt: z.string().nullable(),
+  canViewBilling: z.boolean(),
   canManageBilling: z.boolean(),
 });
 
 const organizationBillingActionResponseSchema = z.object({
   url: z.string().url(),
 });
+
+const organizationBillingTrialResponseSchema = z.object({
+  message: z.string().min(1),
+});
+
+const ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS = 7;
+const ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE =
+  'Organization already has an active premium trial or paid subscription.';
 
 const getOrganizationBillingRoute = createRoute({
   method: 'get',
@@ -458,6 +473,49 @@ const createOrganizationBillingPortalRoute = createRoute({
     },
     422: {
       description: 'Stripe billing is not configured',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+  },
+});
+
+const createOrganizationBillingTrialRoute = createRoute({
+  method: 'post',
+  path: '/organizations/billing/trial',
+  tags: ['Organization Billing'],
+  summary: 'Start a 7-day premium trial for the active organization',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: organizationBillingTrialBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Premium trial started',
+      content: {
+        'application/json': {
+          schema: organizationBillingTrialResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Forbidden',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    409: {
+      description: 'Organization already has an active premium lifecycle',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    422: {
+      description: 'organizationId is required',
       content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
     },
   },
@@ -1199,6 +1257,40 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       .onConflictDoNothing();
   };
 
+  const startOrganizationPremiumTrial = async ({
+    organizationId,
+    now = new Date(),
+  }: {
+    organizationId: string;
+    now?: Date;
+  }) => {
+    await ensureOrganizationBillingRow(organizationId);
+
+    const trialStartedAt = now;
+    const trialEndsAt = new Date(
+      trialStartedAt.getTime() + ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    await database
+      .update(dbSchema.organizationBilling)
+      .set({
+        planCode: 'premium',
+        billingInterval: null,
+        subscriptionStatus: 'trialing',
+        cancelAtPeriodEnd: false,
+        currentPeriodStart: trialStartedAt,
+        currentPeriodEnd: trialEndsAt,
+        stripeSubscriptionId: null,
+        stripePriceId: null,
+      })
+      .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
+
+    return {
+      trialStartedAt,
+      trialEndsAt,
+    };
+  };
+
   const readOrganizationMembershipRole = async ({
     organizationId,
     userId,
@@ -1308,6 +1400,30 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     }
 
     return null;
+  };
+
+  const resolveOrganizationBillingPlanState = ({
+    planCode,
+    subscriptionStatus,
+  }: {
+    planCode: 'free' | 'premium';
+    subscriptionStatus: 'free' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | 'incomplete';
+  }): 'free' | 'premium_trial' | 'premium_paid' => {
+    if (planCode !== 'premium') {
+      return 'free';
+    }
+
+    return subscriptionStatus === 'trialing' ? 'premium_trial' : 'premium_paid';
+  };
+
+  const resolveOrganizationBillingTrialEndsAt = ({
+    planState,
+    currentPeriodEnd,
+  }: {
+    planState: 'free' | 'premium_trial' | 'premium_paid';
+    currentPeriodEnd: string | null;
+  }): string | null => {
+    return planState === 'premium_trial' ? currentPeriodEnd : null;
   };
 
   const toTimestamp = (value: unknown): number | null => {
@@ -2511,7 +2627,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         organizationId,
         userId: identity.userId,
       });
-      if (!canManageOrganizationByRole(role)) {
+      if (!canViewOrganizationBillingByRole(role)) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
@@ -2520,13 +2636,24 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       const billingInterval = isBillingInterval(billing?.billingInterval ?? null);
       const subscriptionStatus =
         isBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
+      const currentPeriodEnd = toIsoDateString(billing?.currentPeriodEnd);
+      const planState = resolveOrganizationBillingPlanState({
+        planCode,
+        subscriptionStatus,
+      });
       return c.json(
         {
           planCode,
+          planState,
           billingInterval,
           subscriptionStatus,
           cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
-          currentPeriodEnd: toIsoDateString(billing?.currentPeriodEnd),
+          currentPeriodEnd,
+          trialEndsAt: resolveOrganizationBillingTrialEndsAt({
+            planState,
+            currentPeriodEnd,
+          }),
+          canViewBilling: true,
           canManageBilling: role === 'owner',
         },
         200,
@@ -2586,6 +2713,43 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       });
 
       return c.json({ url: session.url }, 200);
+    })();
+  });
+
+  authRoutes.openapi(createOrganizationBillingTrialRoute, (c) => {
+    return (async () => {
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      if (!organizationId) {
+        return c.json({ message: 'organizationId is required.' }, 422);
+      }
+
+      const role = await readOrganizationMembershipRole({
+        organizationId,
+        userId: identity.userId,
+      });
+      if (role !== 'owner') {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const billing = await selectOrganizationBillingSummary(organizationId);
+      if (billing && hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))) {
+        return c.json({ message: ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE }, 409);
+      }
+
+      await startOrganizationPremiumTrial({ organizationId });
+
+      return c.json(
+        {
+          message: `Started a ${ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS}-day premium trial.`,
+        },
+        200,
+      );
     })();
   });
 

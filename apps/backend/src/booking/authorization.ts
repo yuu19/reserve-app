@@ -113,6 +113,10 @@ export const canManageOrganizationByRole = (role: OrganizationRole): boolean => 
   return role === 'owner' || role === 'admin';
 };
 
+export const canViewOrganizationBillingByRole = (role: OrganizationRole): boolean => {
+  return role === 'owner' || role === 'admin' || role === 'member';
+};
+
 export const canManageClassroomByRole = (role: OrganizationRole): boolean => {
   return role === 'owner' || role === 'admin';
 };

@@ -359,6 +359,28 @@ const readUnixSecondsDate = (value: unknown): Date | null => {
   return new Date(value * 1000);
 };
 
+const resolveSubscriptionPeriodBounds = (
+  items: unknown[],
+): {
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+} => {
+  const starts = items
+    .map((item) => (isRecord(item) ? readUnixSecondsDate(item.current_period_start) : null))
+    .filter((value): value is Date => value instanceof Date);
+  const ends = items
+    .map((item) => (isRecord(item) ? readUnixSecondsDate(item.current_period_end) : null))
+    .filter((value): value is Date => value instanceof Date);
+
+  return {
+    // Match Stripe's former subscription-level semantics for mixed intervals.
+    currentPeriodStart:
+      starts.length > 0 ? new Date(Math.max(...starts.map((value) => value.getTime()))) : null,
+    currentPeriodEnd:
+      ends.length > 0 ? new Date(Math.min(...ends.map((value) => value.getTime()))) : null,
+  };
+};
+
 export const readStripeBillingCheckoutMetadata = (
   value: unknown,
 ): StripeBillingCheckoutMetadata | null => {
@@ -426,14 +448,15 @@ export const readStripeSubscriptionSummary = (value: unknown): StripeSubscriptio
   const firstItem = items[0];
   const price =
     isRecord(firstItem) && isRecord(firstItem.price) ? firstItem.price : isRecord(value.plan) ? value.plan : null;
+  const itemPeriodBounds = resolveSubscriptionPeriodBounds(items);
 
   return {
     id,
     customerId: readString(value.customer),
     status: readString(value.status),
     cancelAtPeriodEnd: readBoolean(value.cancel_at_period_end),
-    currentPeriodStart: readUnixSecondsDate(value.current_period_start),
-    currentPeriodEnd: readUnixSecondsDate(value.current_period_end),
+    currentPeriodStart: readUnixSecondsDate(value.current_period_start) ?? itemPeriodBounds.currentPeriodStart,
+    currentPeriodEnd: readUnixSecondsDate(value.current_period_end) ?? itemPeriodBounds.currentPeriodEnd,
     priceId: price ? readString(price.id) : null,
   };
 };
