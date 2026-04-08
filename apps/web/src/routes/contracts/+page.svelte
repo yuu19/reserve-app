@@ -8,6 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import {
+		createOrganizationBillingPaymentMethod,
 		createOrganizationBillingTrial,
 		createOrganizationBillingPortal,
 		loadOrganizationBilling,
@@ -82,6 +83,26 @@
 	);
 	const trialEndsAtLabel = $derived(formatJaDate(billing?.trialEndsAt));
 	const currentPeriodEndLabel = $derived(formatJaDate(billing?.currentPeriodEnd));
+	const paymentMethodStatusLabel = $derived.by(() => {
+		switch (billing?.paymentMethodStatus) {
+			case 'registered':
+				return '登録済み';
+			case 'pending':
+				return '登録手続き中';
+			default:
+				return '未登録';
+		}
+	});
+	const paymentMethodStatusDescription = $derived.by(() => {
+		switch (billing?.paymentMethodStatus) {
+			case 'registered':
+				return '支払い方法の登録を確認しました。トライアル終了後の継続準備が完了しています。';
+			case 'pending':
+				return 'Stripe 側の更新を確認中です。反映まで数秒かかる場合があります。';
+			default:
+				return 'トライアル期間中に支払い方法を登録すると、継続判断をスムーズに進められます。';
+		}
+	});
 	const subscriptionStatusLabel = $derived.by(() => {
 		switch (billing?.subscriptionStatus) {
 			case 'trialing':
@@ -109,6 +130,11 @@
 		if (billing?.planState === 'free') {
 			return 'organization owner はこの billing workspace から 7日間のPremiumトライアルを開始し、反映後の契約状態をここで確認できます。';
 		}
+		if (billing?.planState === 'premium_trial') {
+			return billing.paymentMethodStatus === 'registered'
+				? 'organization owner はトライアル継続準備が完了していることをこの画面で確認できます。必要なら状態を見直し、他ロールは閲覧のみ行えます。'
+				: 'organization owner はこの billing workspace から支払い方法登録へ進み、トライアル終了前の継続準備を進められます。';
+		}
 		return 'organization owner は現在の契約状態を確認し、必要に応じて Stripe Customer Portal で管理できます。';
 	});
 	const ownerAuthorityNote =
@@ -122,7 +148,7 @@
 
 		switch (billing.planState) {
 			case 'premium_trial':
-				return `現在はPremiumトライアル中です。終了予定日は ${trialEndsAtLabel} で、同じ組織で新しいトライアルを重ねて開始することはできません。`;
+				return `現在はPremiumトライアル中です。終了予定日は ${trialEndsAtLabel} で、同じ組織で新しいトライアルを重ねて開始することはできません。支払い方法の登録状況は ${paymentMethodStatusLabel} です。`;
 			case 'premium_paid':
 				return '現在はPremiumプラン利用中です。契約状態の確認と契約管理はできますが、契約変更と支払い設定は organization owner のみが実行できます。';
 			default:
@@ -130,6 +156,24 @@
 		}
 	});
 	const routeStatusNotice = $derived.by(() => {
+		const paymentMethodResult = page.url.searchParams.get('paymentMethod');
+		if (paymentMethodResult === 'success') {
+			return billing?.paymentMethodStatus === 'registered'
+				? {
+						tone: 'success' as const,
+						message: '支払い方法の登録を確認しました。トライアル終了後の継続準備が完了しています。'
+					}
+				: {
+						tone: 'info' as const,
+						message: '支払い方法の更新状況を確認しています。反映まで数秒かかる場合があります。'
+					};
+		}
+		if (paymentMethodResult === 'cancel') {
+			return {
+				tone: 'info' as const,
+				message: '支払い方法の登録をキャンセルしました。必要になったら再度お試しください。'
+			};
+		}
 		const subscriptionResult = page.url.searchParams.get('subscription');
 		if (subscriptionResult === 'success') {
 			return {
@@ -238,6 +282,31 @@
 		}
 	};
 
+	const startPaymentMethodRegistration = async () => {
+		if (!activeOrganization?.id) {
+			return;
+		}
+
+		busy = true;
+		localStatusNotice = {
+			tone: 'info',
+			message: '支払い方法登録画面へ移動しています。'
+		};
+		try {
+			const result = await createOrganizationBillingPaymentMethod({
+				organizationId: activeOrganization.id
+			});
+			if (!result.ok || !result.url) {
+				localStatusNotice = { tone: 'error', message: result.message };
+				toast.error(result.message);
+				return;
+			}
+			window.location.href = result.url;
+		} finally {
+			busy = false;
+		}
+	};
+
 	const redirectToBillingPortal = async () => {
 		if (!activeOrganization?.id) {
 			return;
@@ -268,6 +337,13 @@
 				}
 				if (subscriptionResult === 'cancel') {
 					toast.message('Premium の申込をキャンセルしました。');
+				}
+				const paymentMethodResult = page.url.searchParams.get('paymentMethod');
+				if (paymentMethodResult === 'success') {
+					toast.message('支払い方法の更新状況を確認しています。');
+				}
+				if (paymentMethodResult === 'cancel') {
+					toast.message('支払い方法の登録をキャンセルしました。');
 				}
 			} finally {
 				loading = false;
@@ -332,6 +408,8 @@
 					<p class="text-sm text-slate-700">{currentPlanDescription}</p>
 					{#if billing?.planState === 'premium_trial'}
 						<p class="text-sm text-slate-700">トライアル終了日: {trialEndsAtLabel}</p>
+						<p class="text-sm text-slate-700">支払い方法の登録状況: {paymentMethodStatusLabel}</p>
+						<p class="text-sm text-slate-600">{paymentMethodStatusDescription}</p>
 					{/if}
 					<p class="text-sm text-slate-700">請求周期: {billingIntervalLabel}</p>
 					<p class="text-sm text-slate-700">次回更新日: {currentPeriodEndLabel}</p>
@@ -357,9 +435,20 @@
 				{:else if !billing}
 					<p class="text-sm text-muted-foreground">契約情報を取得できませんでした。</p>
 				{:else if !showOwnerActions}
-					<p class="text-sm text-slate-600">
-						{readOnlyAuthorityNote}
-					</p>
+					<div class="space-y-3">
+						{#if billing.planState === 'premium_trial'}
+							<div class="rounded-lg border border-slate-200/80 bg-slate-50/80 p-3">
+								<p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+									支払い方法の登録状況
+								</p>
+								<p class="text-sm font-medium text-slate-900">{paymentMethodStatusLabel}</p>
+								<p class="text-sm text-slate-600">{paymentMethodStatusDescription}</p>
+							</div>
+						{/if}
+						<p class="text-sm text-slate-600">
+							{readOnlyAuthorityNote}
+						</p>
+					</div>
 				{:else if billing.planState === 'free'}
 					<div class="space-y-3">
 						<p class="text-sm text-slate-600">
@@ -384,7 +473,25 @@
 						<p class="text-sm text-slate-600">
 							現在はPremiumトライアル中です。終了日まで Premium 機能を確認でき、新しいトライアルを重ねて開始することはできません。
 						</p>
+						<div class="rounded-lg border border-slate-200/80 bg-slate-50/80 p-3">
+							<p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+								支払い方法の登録状況
+							</p>
+							<p class="text-sm font-medium text-slate-900">{paymentMethodStatusLabel}</p>
+							<p class="text-sm text-slate-600">{paymentMethodStatusDescription}</p>
+						</div>
 						<p class="text-sm text-slate-600">{ownerAuthorityNote}</p>
+						{#if billing.paymentMethodStatus !== 'registered'}
+							<div class="flex flex-col gap-3 sm:flex-row">
+								<Button
+									type="button"
+									disabled={busy}
+									onclick={startPaymentMethodRegistration}
+								>
+									支払い方法を登録
+								</Button>
+							</div>
+						{/if}
 					</div>
 				{:else}
 					<div class="space-y-3">

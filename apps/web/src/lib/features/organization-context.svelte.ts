@@ -44,6 +44,9 @@ const isOrganizationBillingPayload = (value: unknown): value is OrganizationBill
 	(typeof value.trialEndsAt === 'string' ||
 		value.trialEndsAt === null ||
 		value.trialEndsAt === undefined) &&
+	(value.paymentMethodStatus === 'not_started' ||
+		value.paymentMethodStatus === 'pending' ||
+		value.paymentMethodStatus === 'registered') &&
 	typeof value.canViewBilling === 'boolean' &&
 	typeof value.canManageBilling === 'boolean';
 
@@ -211,6 +214,22 @@ export const createOrganizationBillingTrial = async (input: { organizationId?: s
 			: response.status === 409
 				? 'すでに有効なPremiumトライアルまたは有料契約があるため、新しいトライアルは開始できません。'
 				: toErrorMessage(payload, '7日間のPremiumトライアルを開始できませんでした。')
+	};
+};
+
+export const createOrganizationBillingPaymentMethod = async (input: { organizationId?: string }) => {
+	const response = await authRpc.createOrganizationBillingPaymentMethod(input);
+	const payload = await parseResponseBody(response);
+	const url = isRecord(payload) && typeof payload.url === 'string' ? payload.url : null;
+	return {
+		ok: response.ok && Boolean(url),
+		status: response.status,
+		message: response.ok
+			? ''
+			: response.status === 409
+				? '支払い方法の登録は Premiumトライアル中の owner のみが開始できます。'
+				: toErrorMessage(payload, '支払い方法登録画面の作成に失敗しました。'),
+		url
 	};
 };
 

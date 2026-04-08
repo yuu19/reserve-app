@@ -23,6 +23,7 @@ export type OrganizationBillingPayload = {
 	planCode: 'free' | 'premium';
 	planState: 'free' | 'premium_trial' | 'premium_paid';
 	billingInterval: 'month' | 'year' | null;
+	paymentMethodStatus: 'not_started' | 'pending' | 'registered';
 	subscriptionStatus:
 		| 'free'
 		| 'trialing'
@@ -1114,6 +1115,8 @@ export const authRpc = {
 		authFetch('/api/v1/auth/organizations/billing/portal', { json }),
 	createOrganizationBillingTrial: (json: CreateOrganizationBillingTrialInput) =>
 		authFetch('/api/v1/auth/organizations/billing/trial', { json }),
+	createOrganizationBillingPaymentMethod: (json: CreateOrganizationBillingPortalInput) =>
+		authFetch('/api/v1/auth/organizations/billing/payment-method', { json }),
 	getFullOrganization: (organizationId?: string) =>
 		rpcClient.api.v1.auth.organizations.full.$get(
 			organizationId ? { query: { organizationId } } : undefined

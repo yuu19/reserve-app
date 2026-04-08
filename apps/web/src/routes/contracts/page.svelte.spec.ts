@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 	loadOrganizations: vi.fn(),
 	loadOrganizationBilling: vi.fn(),
 	createOrganizationBillingTrial: vi.fn(),
+	createOrganizationBillingPaymentMethod: vi.fn(),
 	createOrganizationBillingCheckout: vi.fn(),
 	createOrganizationBillingPortal: vi.fn()
 }));
@@ -44,6 +45,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 	loadOrganizations: mocks.loadOrganizations,
 	loadOrganizationBilling: mocks.loadOrganizationBilling,
 	createOrganizationBillingTrial: mocks.createOrganizationBillingTrial,
+	createOrganizationBillingPaymentMethod: mocks.createOrganizationBillingPaymentMethod,
 	createOrganizationBillingCheckout: mocks.createOrganizationBillingCheckout,
 	createOrganizationBillingPortal: mocks.createOrganizationBillingPortal
 }));
@@ -60,6 +62,7 @@ describe('/contracts/+page.svelte', () => {
 		mocks.loadOrganizations.mockReset();
 		mocks.loadOrganizationBilling.mockReset();
 		mocks.createOrganizationBillingTrial.mockReset();
+		mocks.createOrganizationBillingPaymentMethod.mockReset();
 		mocks.createOrganizationBillingCheckout.mockReset();
 		mocks.createOrganizationBillingPortal.mockReset();
 
@@ -97,6 +100,12 @@ describe('/contracts/+page.svelte', () => {
 			ok: true,
 			status: 200,
 			message: '7日間のPremiumトライアルを開始しました。'
+		});
+		mocks.createOrganizationBillingPaymentMethod.mockResolvedValue({
+			ok: true,
+			status: 200,
+			url: 'https://checkout.stripe.com/c/pay/cs_test_payment_method_setup',
+			message: ''
 		});
 	});
 

@@ -19,6 +19,15 @@ type StripeSubscriptionCheckoutSessionCreateInput = {
   metadata?: Record<string, string>;
 };
 
+type StripeSetupCheckoutSessionCreateInput = {
+  env: AuthRuntimeEnv;
+  successUrl: string;
+  cancelUrl: string;
+  customerId: string;
+  clientReferenceId?: string;
+  metadata?: Record<string, string>;
+};
+
 type StripeBillingPortalSessionCreateInput = {
   env: AuthRuntimeEnv;
   customerId: string;
@@ -38,6 +47,11 @@ export type StripeWebhookEvent = {
   data?: {
     object?: Record<string, unknown>;
   };
+};
+
+export type StripeCustomerSummary = {
+  id: string;
+  defaultPaymentMethodId: string | null;
 };
 
 export type StripeBillingCheckoutMetadata = {
@@ -170,6 +184,72 @@ const postStripeForm = async ({
   return payload;
 };
 
+const getStripeJson = async ({
+  env,
+  path,
+  query,
+}: {
+  env: AuthRuntimeEnv;
+  path: string;
+  query?: URLSearchParams;
+}) => {
+  const normalizedPath = path.replace(/^\/+/, '');
+  const url = new URL(`https://api.stripe.com/v1/${normalizedPath}`);
+  if (query) {
+    url.search = query.toString();
+  }
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${requireStripeSecretKey(env)}`,
+    },
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(toStripeErrorMessage(payload));
+  }
+
+  return payload;
+};
+
+export const createCustomer = async ({
+  env,
+  name,
+  metadata,
+}: {
+  env: AuthRuntimeEnv;
+  name?: string;
+  metadata?: Record<string, string>;
+}): Promise<{ id: string }> => {
+  const params = new URLSearchParams();
+
+  if (name) {
+    params.set('name', name);
+  }
+
+  if (metadata) {
+    for (const [key, value] of Object.entries(metadata)) {
+      params.set(`metadata[${key}]`, value);
+    }
+  }
+
+  const payload = await postStripeForm({
+    env,
+    path: 'customers',
+    params,
+  });
+
+  if (!isRecord(payload) || typeof payload.id !== 'string') {
+    throw new Error('Invalid Stripe customer response.');
+  }
+
+  return {
+    id: payload.id,
+  };
+};
+
 export const createCheckoutSession = async ({
   env,
   priceId,
@@ -261,6 +341,48 @@ export const createSubscriptionCheckoutSession = async ({
   };
 };
 
+export const createSetupCheckoutSession = async ({
+  env,
+  successUrl,
+  cancelUrl,
+  customerId,
+  clientReferenceId,
+  metadata,
+}: StripeSetupCheckoutSessionCreateInput): Promise<StripeCheckoutSession> => {
+  const params = new URLSearchParams();
+  params.set('mode', 'setup');
+  params.set('success_url', successUrl);
+  params.set('cancel_url', cancelUrl);
+  params.set('customer', customerId);
+
+  if (clientReferenceId) {
+    params.set('client_reference_id', clientReferenceId);
+  }
+
+  if (metadata) {
+    for (const [key, value] of Object.entries(metadata)) {
+      params.set(`metadata[${key}]`, value);
+    }
+  }
+
+  const payload = await postStripeForm({
+    env,
+    path: 'checkout/sessions',
+    params,
+  });
+
+  if (!isRecord(payload) || typeof payload.id !== 'string' || typeof payload.url !== 'string') {
+    throw new Error('Invalid Stripe setup checkout session response.');
+  }
+
+  return {
+    id: payload.id,
+    url: payload.url,
+    paymentStatus: typeof payload.payment_status === 'string' ? payload.payment_status : undefined,
+    status: typeof payload.status === 'string' ? payload.status : undefined,
+  };
+};
+
 export const createBillingPortalSession = async ({
   env,
   customerId,
@@ -282,6 +404,41 @@ export const createBillingPortalSession = async ({
 
   return {
     url: payload.url,
+  };
+};
+
+export const readStripeCustomerSummary = async ({
+  env,
+  customerId,
+}: {
+  env: AuthRuntimeEnv;
+  customerId: string;
+}): Promise<StripeCustomerSummary> => {
+  const query = new URLSearchParams();
+  query.append('expand[]', 'invoice_settings.default_payment_method');
+
+  const payload = await getStripeJson({
+    env,
+    path: `customers/${encodeURIComponent(customerId)}`,
+    query,
+  });
+
+  if (!isRecord(payload) || typeof payload.id !== 'string') {
+    throw new Error('Invalid Stripe customer response.');
+  }
+
+  const invoiceSettings = isRecord(payload.invoice_settings) ? payload.invoice_settings : null;
+  const defaultPaymentMethod = invoiceSettings?.default_payment_method;
+  const defaultPaymentMethodId =
+    typeof defaultPaymentMethod === 'string'
+      ? defaultPaymentMethod
+      : isRecord(defaultPaymentMethod) && typeof defaultPaymentMethod.id === 'string'
+        ? defaultPaymentMethod.id
+        : null;
+
+  return {
+    id: payload.id,
+    defaultPaymentMethodId,
   };
 };
 

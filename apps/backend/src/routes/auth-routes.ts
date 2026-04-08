@@ -13,6 +13,9 @@ import { sendOrganizationInvitationEmail, sendParticipantInvitationEmail } from 
 import type { OrganizationLogoService } from '../organization-logo-service.js';
 import {
   createBillingPortalSession,
+  createCustomer,
+  createSetupCheckoutSession,
+  readStripeCustomerSummary,
   createSubscriptionCheckoutSession,
 } from '../payment/stripe.js';
 import type { ServiceImageUploadService } from '../service-image-upload-service.js';
@@ -334,6 +337,10 @@ const organizationBillingTrialBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+const organizationBillingPaymentMethodBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+});
+
 const organizationBillingSummarySchema = z.object({
   planCode: z.enum(['free', 'premium']),
   planState: z.enum(['free', 'premium_trial', 'premium_paid']),
@@ -344,6 +351,7 @@ const organizationBillingSummarySchema = z.object({
   cancelAtPeriodEnd: z.boolean(),
   currentPeriodEnd: z.string().nullable(),
   trialEndsAt: z.string().nullable(),
+  paymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
   canViewBilling: z.boolean(),
   canManageBilling: z.boolean(),
 });
@@ -516,6 +524,49 @@ const createOrganizationBillingTrialRoute = createRoute({
     },
     422: {
       description: 'organizationId is required',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+  },
+});
+
+const createOrganizationBillingPaymentMethodRoute = createRoute({
+  method: 'post',
+  path: '/organizations/billing/payment-method',
+  tags: ['Organization Billing'],
+  summary: 'Create Stripe setup handoff URL for organization payment method registration',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: organizationBillingPaymentMethodBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Stripe setup checkout URL',
+      content: {
+        'application/json': {
+          schema: organizationBillingActionResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Forbidden',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    409: {
+      description: 'Organization does not have an active premium trial',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    422: {
+      description: 'Stripe billing is not configured',
       content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
     },
   },
@@ -1291,6 +1342,23 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     };
   };
 
+  const updateOrganizationBillingStripeCustomerId = async ({
+    organizationId,
+    stripeCustomerId,
+  }: {
+    organizationId: string;
+    stripeCustomerId: string;
+  }) => {
+    await ensureOrganizationBillingRow(organizationId);
+
+    await database
+      .update(dbSchema.organizationBilling)
+      .set({
+        stripeCustomerId,
+      })
+      .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
+  };
+
   const readOrganizationMembershipRole = async ({
     organizationId,
     userId,
@@ -1424,6 +1492,36 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     currentPeriodEnd: string | null;
   }): string | null => {
     return planState === 'premium_trial' ? currentPeriodEnd : null;
+  };
+
+  const resolveOrganizationBillingPaymentMethodStatus = async ({
+    planCode,
+    stripeCustomerId,
+  }: {
+    planCode: 'free' | 'premium';
+    stripeCustomerId: string | null;
+  }): Promise<'not_started' | 'pending' | 'registered'> => {
+    if (planCode !== 'premium') {
+      return 'not_started';
+    }
+
+    if (!stripeCustomerId) {
+      return 'not_started';
+    }
+
+    if (!env.STRIPE_SECRET_KEY?.trim()) {
+      return 'pending';
+    }
+
+    try {
+      const customer = await readStripeCustomerSummary({
+        env,
+        customerId: stripeCustomerId,
+      });
+      return customer.defaultPaymentMethodId ? 'registered' : 'pending';
+    } catch {
+      return 'pending';
+    }
   };
 
   const toTimestamp = (value: unknown): number | null => {
@@ -2641,6 +2739,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         planCode,
         subscriptionStatus,
       });
+      const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+        planCode,
+        stripeCustomerId: billing?.stripeCustomerId ?? null,
+      });
       return c.json(
         {
           planCode,
@@ -2653,6 +2755,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             planState,
             currentPeriodEnd,
           }),
+          paymentMethodStatus,
           canViewBilling: true,
           canManageBilling: role === 'owner',
         },
@@ -2750,6 +2853,70 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         },
         200,
       );
+    })();
+  });
+
+  authRoutes.openapi(createOrganizationBillingPaymentMethodRoute, (c) => {
+    return (async () => {
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      if (!organizationId) {
+        return c.json({ message: 'organizationId is required.' }, 422);
+      }
+
+      const role = await readOrganizationMembershipRole({
+        organizationId,
+        userId: identity.userId,
+      });
+      if (role !== 'owner') {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      if (!env.STRIPE_SECRET_KEY?.trim()) {
+        return c.json({ message: 'Stripe billing is not configured.' }, 422);
+      }
+
+      const billing = await selectOrganizationBillingSummary(organizationId);
+      if (billing?.planCode !== 'premium' || billing.subscriptionStatus !== 'trialing') {
+        return c.json({ message: 'Organization does not have an active premium trial.' }, 409);
+      }
+
+      let customerId = billing.stripeCustomerId;
+      if (!customerId) {
+        const customer = await createCustomer({
+          env,
+          metadata: {
+            billingPurpose: 'organization_payment_method',
+            organizationId,
+          },
+        });
+        customerId = customer.id;
+        await updateOrganizationBillingStripeCustomerId({
+          organizationId,
+          stripeCustomerId: customerId,
+        });
+      }
+
+      const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+      const contractsUrl = `${webBaseUrl}/admin/contracts`;
+      const session = await createSetupCheckoutSession({
+        env,
+        customerId,
+        successUrl: `${contractsUrl}?paymentMethod=success`,
+        cancelUrl: `${contractsUrl}?paymentMethod=cancel`,
+        clientReferenceId: organizationId,
+        metadata: {
+          billingPurpose: 'organization_payment_method',
+          organizationId,
+        },
+      });
+
+      return c.json({ url: session.url }, 200);
     })();
   });
 
