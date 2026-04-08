@@ -30,6 +30,9 @@ const isOrganizationPayload = (value: unknown): value is OrganizationPayload =>
 const isOrganizationBillingPayload = (value: unknown): value is OrganizationBillingPayload =>
 	isRecord(value) &&
 	(value.planCode === 'free' || value.planCode === 'premium') &&
+	(value.planState === 'free' ||
+		value.planState === 'premium_trial' ||
+		value.planState === 'premium_paid') &&
 	(value.billingInterval === 'month' ||
 		value.billingInterval === 'year' ||
 		value.billingInterval === null ||
@@ -38,6 +41,10 @@ const isOrganizationBillingPayload = (value: unknown): value is OrganizationBill
 	(typeof value.currentPeriodEnd === 'string' ||
 		value.currentPeriodEnd === null ||
 		value.currentPeriodEnd === undefined) &&
+	(typeof value.trialEndsAt === 'string' ||
+		value.trialEndsAt === null ||
+		value.trialEndsAt === undefined) &&
+	typeof value.canViewBilling === 'boolean' &&
 	typeof value.canManageBilling === 'boolean';
 
 export type ClassroomContextPayload = {
@@ -190,6 +197,20 @@ export const createOrganizationBillingPortal = async (input: { organizationId?: 
 		status: response.status,
 		message: response.ok ? '' : toErrorMessage(payload, '契約管理画面の作成に失敗しました。'),
 		url
+	};
+};
+
+export const createOrganizationBillingTrial = async (input: { organizationId?: string }) => {
+	const response = await authRpc.createOrganizationBillingTrial(input);
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		status: response.status,
+		message: response.ok
+			? '7日間のPremiumトライアルを開始しました。'
+			: response.status === 409
+				? 'すでに有効なPremiumトライアルまたは有料契約があるため、新しいトライアルは開始できません。'
+				: toErrorMessage(payload, '7日間のPremiumトライアルを開始できませんでした。')
 	};
 };
 

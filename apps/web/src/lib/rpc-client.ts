@@ -21,6 +21,7 @@ export type OrganizationPayload = {
 
 export type OrganizationBillingPayload = {
 	planCode: 'free' | 'premium';
+	planState: 'free' | 'premium_trial' | 'premium_paid';
 	billingInterval: 'month' | 'year' | null;
 	subscriptionStatus:
 		| 'free'
@@ -33,6 +34,8 @@ export type OrganizationBillingPayload = {
 		| null;
 	cancelAtPeriodEnd: boolean;
 	currentPeriodEnd: string | null;
+	trialEndsAt: string | null;
+	canViewBilling: boolean;
 	canManageBilling: boolean;
 	[key: string]: unknown;
 };
@@ -363,6 +366,10 @@ type CreateOrganizationBillingCheckoutInput = {
 };
 
 type CreateOrganizationBillingPortalInput = {
+	organizationId?: string;
+};
+
+type CreateOrganizationBillingTrialInput = {
 	organizationId?: string;
 };
 
@@ -1105,6 +1112,8 @@ export const authRpc = {
 		authFetch('/api/v1/auth/organizations/billing/checkout', { json }),
 	createOrganizationBillingPortal: (json: CreateOrganizationBillingPortalInput) =>
 		authFetch('/api/v1/auth/organizations/billing/portal', { json }),
+	createOrganizationBillingTrial: (json: CreateOrganizationBillingTrialInput) =>
+		authFetch('/api/v1/auth/organizations/billing/trial', { json }),
 	getFullOrganization: (organizationId?: string) =>
 		rpcClient.api.v1.auth.organizations.full.$get(
 			organizationId ? { query: { organizationId } } : undefined

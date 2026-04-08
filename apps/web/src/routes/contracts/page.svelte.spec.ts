@@ -5,6 +5,9 @@ import ContractsPage from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(),
+	pageState: {
+		url: new URL('https://example.com/admin/contracts')
+	},
 	loadSession: vi.fn(),
 	loadPortalAccess: vi.fn(),
 	resolvePortalHomePath: vi.fn(),
@@ -12,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 	getCurrentPathWithSearch: vi.fn(() => '/admin/contracts'),
 	loadOrganizations: vi.fn(),
 	loadOrganizationBilling: vi.fn(),
+	createOrganizationBillingTrial: vi.fn(),
 	createOrganizationBillingCheckout: vi.fn(),
 	createOrganizationBillingPortal: vi.fn()
 }));
@@ -25,9 +29,7 @@ vi.mock('$app/paths', () => ({
 }));
 
 vi.mock('$app/state', () => ({
-	page: {
-		url: new URL('https://example.com/admin/contracts')
-	}
+	page: mocks.pageState
 }));
 
 vi.mock('$lib/features/auth-session.svelte', () => ({
@@ -41,6 +43,7 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 vi.mock('$lib/features/organization-context.svelte', () => ({
 	loadOrganizations: mocks.loadOrganizations,
 	loadOrganizationBilling: mocks.loadOrganizationBilling,
+	createOrganizationBillingTrial: mocks.createOrganizationBillingTrial,
 	createOrganizationBillingCheckout: mocks.createOrganizationBillingCheckout,
 	createOrganizationBillingPortal: mocks.createOrganizationBillingPortal
 }));
@@ -48,6 +51,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 describe('/contracts/+page.svelte', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
+		mocks.pageState.url = new URL('https://example.com/admin/contracts');
 		mocks.loadSession.mockReset();
 		mocks.loadPortalAccess.mockReset();
 		mocks.resolvePortalHomePath.mockReset();
@@ -55,6 +59,7 @@ describe('/contracts/+page.svelte', () => {
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.loadOrganizations.mockReset();
 		mocks.loadOrganizationBilling.mockReset();
+		mocks.createOrganizationBillingTrial.mockReset();
 		mocks.createOrganizationBillingCheckout.mockReset();
 		mocks.createOrganizationBillingPortal.mockReset();
 
@@ -78,23 +83,44 @@ describe('/contracts/+page.svelte', () => {
 			ok: true,
 			billing: {
 				planCode: 'free',
+				planState: 'free',
 				billingInterval: null,
 				subscriptionStatus: 'free',
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: null,
+				trialEndsAt: null,
+				canViewBilling: true,
 				canManageBilling: true
 			}
 		});
+		mocks.createOrganizationBillingTrial.mockResolvedValue({
+			ok: true,
+			status: 200,
+			message: '7日間のPremiumトライアルを開始しました。'
+		});
 	});
 
-	it('should render contracts heading and free plan actions', async () => {
+	it('should render free plan summary and premium comparison for owners', async () => {
 		render(ContractsPage);
 		await expect.element(page.getByRole('heading', { level: 1, name: '契約' })).toBeInTheDocument();
 		await expect
 			.element(page.getByRole('heading', { level: 2, name: '現在プラン' }))
 			.toBeInTheDocument();
+		await expect.element(page.getByText(/^無料プラン$/)).toBeInTheDocument();
+		await expect.element(page.getByText('無料で使える機能')).toBeInTheDocument();
+		await expect.element(page.getByText('Premiumで使える機能')).toBeInTheDocument();
 		await expect
-			.element(page.getByRole('button', { name: 'Premium 月額へアップグレード' }))
+			.element(
+				page.getByText(
+					'7日間のPremiumトライアルでは、複数教室管理、スタッフ権限、定期スケジュールなどのPremium機能をまとめて確認できます。'
+				)
+			)
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('この操作ではまだ支払い方法は登録されません。継続設定は次のステップで案内されます。'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }))
 			.toBeInTheDocument();
 	});
 
@@ -116,10 +142,13 @@ describe('/contracts/+page.svelte', () => {
 			ok: true,
 			billing: {
 				planCode: 'premium',
+				planState: 'premium_paid',
 				billingInterval: 'month',
 				subscriptionStatus: 'active',
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: '2026-04-01T00:00:00.000Z',
+				trialEndsAt: null,
+				canViewBilling: true,
 				canManageBilling: true
 			}
 		});
@@ -127,5 +156,157 @@ describe('/contracts/+page.svelte', () => {
 		render(ContractsPage);
 
 		await expect.element(page.getByRole('button', { name: '契約を管理' })).toBeInTheDocument();
+	});
+
+	it('should render trial end guidance for premium trial state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'premium',
+				planState: 'premium_trial',
+				billingInterval: 'month',
+				subscriptionStatus: 'trialing',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: '2026-04-11T00:00:00.000Z',
+				trialEndsAt: '2026-04-11T00:00:00.000Z',
+				canViewBilling: true,
+				canManageBilling: true
+			}
+		});
+
+		render(ContractsPage);
+
+		await expect.element(page.getByText('プレミアムトライアル')).toBeInTheDocument();
+		await expect.element(page.getByText(/トライアル終了日/)).toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'現在はPremiumトライアル中です。終了日まで Premium 機能を確認でき、新しいトライアルを重ねて開始することはできません。'
+				)
+			)
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('starts a premium trial for free-plan owners and refreshes the summary', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValueOnce({
+			ok: true,
+			billing: {
+				planCode: 'free',
+				planState: 'free',
+				billingInterval: null,
+				subscriptionStatus: 'free',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: null,
+				trialEndsAt: null,
+				canViewBilling: true,
+				canManageBilling: true
+			}
+		});
+		mocks.loadOrganizationBilling.mockResolvedValueOnce({
+			ok: true,
+			billing: {
+				planCode: 'premium',
+				planState: 'premium_trial',
+				billingInterval: null,
+				subscriptionStatus: 'trialing',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: '2026-04-15T00:00:00.000Z',
+				trialEndsAt: '2026-04-15T00:00:00.000Z',
+				canViewBilling: true,
+				canManageBilling: true
+			}
+		});
+
+		render(ContractsPage);
+
+		await page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }).click();
+
+		await vi.waitFor(() => {
+			expect(mocks.createOrganizationBillingTrial).toHaveBeenCalledWith({
+				organizationId: 'org-1'
+			});
+		});
+		await expect
+			.element(page.getByText(/7日間のPremiumトライアルを開始しました。終了日は/))
+			.toBeInTheDocument();
+		await expect.element(page.getByText('プレミアムトライアル')).toBeInTheDocument();
+	});
+
+	it('should hide owner-only billing controls for read-only admins', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'free',
+				planState: 'free',
+				billingInterval: null,
+				subscriptionStatus: 'free',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: null,
+				trialEndsAt: null,
+				canViewBilling: true,
+				canManageBilling: false
+			}
+		});
+
+		render(ContractsPage);
+
+		await expect
+			.element(
+				page.getByText(
+					'あなたの role では契約状態の閲覧のみ可能です。教室や参加者の運用権限があっても、billing authority は付与されません。'
+				)
+			)
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('should explain paid lifecycle without showing duplicate trial entry', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'premium',
+				planState: 'premium_paid',
+				billingInterval: 'month',
+				subscriptionStatus: 'active',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: '2026-05-01T00:00:00.000Z',
+				trialEndsAt: null,
+				canViewBilling: true,
+				canManageBilling: true
+			}
+		});
+
+		render(ContractsPage);
+
+		await expect
+			.element(
+				page.getByText(
+					'現在はPremiumプラン利用中です。重複した trial action は不要で、必要な契約変更は契約管理から進めます。'
+				)
+			)
+			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '契約を管理' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('should show text-based loading and intermediate status messaging', async () => {
+		mocks.pageState.url = new URL('https://example.com/admin/contracts?subscription=success');
+		mocks.loadOrganizations.mockImplementation(
+			() => new Promise(() => undefined) as ReturnType<typeof mocks.loadOrganizations>
+		);
+
+		render(ContractsPage);
+
+		await expect.element(page.getByText('契約情報を確認しています…')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('Premium の申込処理を開始しました。反映まで数秒かかる場合があります。'))
+			.toBeInTheDocument();
 	});
 });
