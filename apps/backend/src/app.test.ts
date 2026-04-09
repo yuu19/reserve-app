@@ -244,6 +244,81 @@ const selectOrganizationBillingRow = async (organizationId: string) => {
     }>();
 };
 
+const selectStripeWebhookEventRow = async (eventId: string) => {
+  return d1
+    .prepare(
+      'SELECT id, event_type as eventType, scope, processing_status as processingStatus, organization_id as organizationId, stripe_customer_id as stripeCustomerId, stripe_subscription_id as stripeSubscriptionId, failure_reason as failureReason FROM stripe_webhook_event WHERE id = ? LIMIT 1',
+    )
+    .bind(eventId)
+    .first<{
+      id: string;
+      eventType: string;
+      scope: string;
+      processingStatus: string;
+      organizationId: string | null;
+      stripeCustomerId: string | null;
+      stripeSubscriptionId: string | null;
+      failureReason: string | null;
+    }>();
+};
+
+const countStripeWebhookEventRows = async (eventId: string) => {
+  const row = await d1
+    .prepare('SELECT COUNT(*) as count FROM stripe_webhook_event WHERE id = ?')
+    .bind(eventId)
+    .first<{ count: number | string }>();
+
+  return Number(row?.count ?? 0);
+};
+
+const selectStripeWebhookFailureRows = async (eventId: string | null = null) => {
+  const statement = eventId
+    ? d1.prepare(
+        'SELECT event_id as eventId, event_type as eventType, failure_stage as failureStage, failure_reason as failureReason, organization_id as organizationId FROM stripe_webhook_failure WHERE event_id = ? ORDER BY created_at ASC',
+      ).bind(eventId)
+    : d1.prepare(
+        'SELECT event_id as eventId, event_type as eventType, failure_stage as failureStage, failure_reason as failureReason, organization_id as organizationId FROM stripe_webhook_failure ORDER BY created_at ASC',
+      );
+
+  const result = await statement.all<{
+    eventId: string | null;
+    eventType: string | null;
+    failureStage: string;
+    failureReason: string;
+    organizationId: string | null;
+  }>();
+
+  return result.results;
+};
+
+const selectOrganizationOperationalRowCounts = async (organizationId: string) => {
+  const [classroomRow, serviceRow, participantRow, bookingRow] = await Promise.all([
+    d1
+      .prepare('SELECT COUNT(*) as count FROM classroom WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>(),
+    d1
+      .prepare('SELECT COUNT(*) as count FROM service WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>(),
+    d1
+      .prepare('SELECT COUNT(*) as count FROM participant WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>(),
+    d1
+      .prepare('SELECT COUNT(*) as count FROM booking WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>(),
+  ]);
+
+  return {
+    classroomCount: Number(classroomRow?.count ?? 0),
+    serviceCount: Number(serviceRow?.count ?? 0),
+    participantCount: Number(participantRow?.count ?? 0),
+    bookingCount: Number(bookingRow?.count ?? 0),
+  };
+};
+
 const countTicketPacksForParticipantAndType = async (participantId: string, ticketTypeId: string) => {
   const row = await d1
     .prepare(
@@ -735,6 +810,23 @@ describe('backend app', () => {
     const appWithStripe = createApp(authRuntimeWithStripe);
 
     const originalFetch = globalThis.fetch;
+    let latestOrganizationSubscriptionPayload: Record<string, unknown> = {
+      id: 'sub_test_org',
+      customer: 'cus_test_org',
+      status: 'active',
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            current_period_start: 1775000000,
+            current_period_end: 1777688400,
+            price: {
+              id: stripeMonthlyPriceId,
+            },
+          },
+        ],
+      },
+    };
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url =
         typeof input === 'string'
@@ -768,6 +860,13 @@ describe('backend app', () => {
             headers: { 'content-type': 'application/json' },
           },
         );
+      }
+
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_test_org')) {
+        return new Response(JSON.stringify(latestOrganizationSubscriptionPayload), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
       }
 
       return originalFetch(input, init);
@@ -988,6 +1087,10 @@ describe('backend app', () => {
       expect(billingAfterSubscription?.billingInterval).toBe('month');
       expect(billingAfterSubscription?.stripePriceId).toBe(stripeMonthlyPriceId);
       expect(billingAfterSubscription?.currentPeriodEnd).toBe(1777688400000);
+      expect(await countStripeWebhookEventRows('evt_org_subscription_active')).toBe(1);
+      expect((await selectStripeWebhookEventRow('evt_org_subscription_active'))?.processingStatus).toBe(
+        'processed',
+      );
 
       const activeBillingResponse = await owner.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -1008,6 +1111,22 @@ describe('backend app', () => {
       expect(ownerPortalResponse.status).toBe(200);
       const ownerPortalPayload = (await toJson(ownerPortalResponse)) as Record<string, unknown>;
       expect(ownerPortalPayload.url).toBe('https://billing.stripe.com/p/session/test_portal');
+
+      latestOrganizationSubscriptionPayload = {
+        id: 'sub_test_org',
+        customer: 'cus_test_org',
+        status: 'canceled',
+        cancel_at_period_end: false,
+        items: {
+          data: [
+            {
+              price: {
+                id: stripeMonthlyPriceId,
+              },
+            },
+          ],
+        },
+      };
 
       const subscriptionDeletedPayload = JSON.stringify({
         id: 'evt_org_subscription_deleted',
@@ -1049,6 +1168,9 @@ describe('backend app', () => {
       expect(billingAfterDelete?.subscriptionStatus).toBe('canceled');
       expect(billingAfterDelete?.stripeSubscriptionId).toBeNull();
       expect(billingAfterDelete?.billingInterval).toBeNull();
+      expect((await selectStripeWebhookEventRow('evt_org_subscription_deleted'))?.processingStatus).toBe(
+        'processed',
+      );
 
       const freePortalResponse = await owner.request('/api/v1/auth/organizations/billing/portal', {
         method: 'POST',
@@ -1079,6 +1201,630 @@ describe('backend app', () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+
+  it('records Stripe webhook signature and payload failures for billing webhooks', async () => {
+    const stripeWebhookSecret = 'whsec_test_failure_records';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_failure_records',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+    const failureCountBefore = (await selectStripeWebhookFailureRows()).length;
+
+    const invalidSignatureResponse = await appWithStripe.request('/api/webhooks/stripe', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': 't=1,v1=invalid',
+      },
+      body: JSON.stringify({
+        id: 'evt_invalid_signature_record',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_invalid_signature' } },
+      }),
+    });
+    expect(invalidSignatureResponse.status).toBe(400);
+
+    const invalidPayloadBody = 'not-json';
+    const invalidPayloadSignature = await createStripeSignatureHeader(
+      invalidPayloadBody,
+      stripeWebhookSecret,
+    );
+    const invalidPayloadResponse = await appWithStripe.request('/api/webhooks/stripe', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': invalidPayloadSignature,
+      },
+      body: invalidPayloadBody,
+    });
+    expect(invalidPayloadResponse.status).toBe(400);
+
+    const newFailures = (await selectStripeWebhookFailureRows()).slice(failureCountBefore);
+    expect(newFailures).toHaveLength(2);
+    expect(newFailures[0]).toMatchObject({
+      eventId: null,
+      failureStage: 'signature_verification',
+      failureReason: 'invalid_signature',
+    });
+    expect(newFailures[1]).toMatchObject({
+      eventId: null,
+      failureStage: 'payload_parse',
+      failureReason: 'invalid_payload',
+    });
+  });
+
+  it('retries unmatched billing subscription webhooks until organization linkage is ready', async () => {
+    const stripeWebhookSecret = 'whsec_test_unmatched_billing';
+    const stripeMonthlyPriceId = 'price_unmatched_monthly';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_unmatched_billing',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_unmatched')) {
+        return new Response(
+          JSON.stringify({
+            id: 'sub_unmatched',
+            customer: 'cus_unmatched',
+            status: 'active',
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  current_period_start: 1775000000,
+                  current_period_end: 1777688400,
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Unmatched Webhook Owner',
+        email: 'unmatched-webhook-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Unmatched Webhook Org',
+        slug: 'unmatched-webhook-org',
+      });
+
+      const subscriptionPayload = JSON.stringify({
+        id: 'evt_unmatched_subscription',
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_unmatched',
+            customer: 'cus_unmatched',
+            status: 'active',
+          },
+        },
+      });
+      const subscriptionSignature = await createStripeSignatureHeader(
+        subscriptionPayload,
+        stripeWebhookSecret,
+      );
+      const firstResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': subscriptionSignature,
+        },
+        body: subscriptionPayload,
+      });
+      expect(firstResponse.status).toBe(500);
+
+      expect(await selectStripeWebhookEventRow('evt_unmatched_subscription')).toMatchObject({
+        id: 'evt_unmatched_subscription',
+        processingStatus: 'failed',
+        failureReason: 'organization_billing_not_found',
+      });
+      expect(await selectStripeWebhookFailureRows('evt_unmatched_subscription')).toEqual([
+        expect.objectContaining({
+          eventId: 'evt_unmatched_subscription',
+          eventType: 'customer.subscription.updated',
+          failureStage: 'organization_linkage',
+          failureReason: 'organization_billing_not_found',
+        }),
+      ]);
+
+      const checkoutPayload = JSON.stringify({
+        id: 'evt_unmatched_checkout',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_unmatched',
+            customer: 'cus_unmatched',
+            subscription: 'sub_unmatched',
+            metadata: {
+              billingPurpose: 'organization_plan',
+              organizationId,
+              planCode: 'premium',
+              billingInterval: 'month',
+            },
+          },
+        },
+      });
+      const checkoutSignature = await createStripeSignatureHeader(checkoutPayload, stripeWebhookSecret);
+      const checkoutResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': checkoutSignature,
+        },
+        body: checkoutPayload,
+      });
+      expect(checkoutResponse.status).toBe(200);
+
+      const retryResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': subscriptionSignature,
+        },
+        body: subscriptionPayload,
+      });
+      expect(retryResponse.status).toBe(200);
+
+      const billingAfterRetry = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterRetry?.planCode).toBe('premium');
+      expect(billingAfterRetry?.subscriptionStatus).toBe('active');
+      expect(billingAfterRetry?.stripeCustomerId).toBe('cus_unmatched');
+      expect(billingAfterRetry?.stripeSubscriptionId).toBe('sub_unmatched');
+      expect(await selectStripeWebhookEventRow('evt_unmatched_subscription')).toMatchObject({
+        id: 'evt_unmatched_subscription',
+        processingStatus: 'processed',
+        organizationId,
+        failureReason: null,
+      });
+      expect(await selectStripeWebhookFailureRows('evt_unmatched_subscription')).toEqual([
+        expect.objectContaining({
+          eventId: 'evt_unmatched_subscription',
+          eventType: 'customer.subscription.updated',
+          failureStage: 'organization_linkage',
+          failureReason: 'organization_billing_not_found',
+        }),
+      ]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('reconciles stale subscription events using the latest Stripe subscription state', async () => {
+    const stripeWebhookSecret = 'whsec_test_out_of_order';
+    const stripeMonthlyPriceId = 'price_out_of_order_monthly';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: 'sk_test_out_of_order',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    const originalFetch = globalThis.fetch;
+    const latestSubscriptionPayload: Record<string, unknown> = {
+      id: 'sub_out_of_order',
+      customer: 'cus_out_of_order',
+      status: 'canceled',
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            price: {
+              id: stripeMonthlyPriceId,
+            },
+          },
+        ],
+      },
+    };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_out_of_order')) {
+        return new Response(JSON.stringify(latestSubscriptionPayload), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Webhook Owner',
+        email: 'webhook-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Webhook Reconcile Org',
+        slug: 'webhook-reconcile-org',
+      });
+
+      const checkoutPayload = JSON.stringify({
+        id: 'evt_out_of_order_checkout',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_out_of_order',
+            customer: 'cus_out_of_order',
+            subscription: 'sub_out_of_order',
+            metadata: {
+              billingPurpose: 'organization_plan',
+              organizationId,
+              planCode: 'premium',
+              billingInterval: 'month',
+            },
+          },
+        },
+      });
+      const checkoutSignature = await createStripeSignatureHeader(checkoutPayload, stripeWebhookSecret);
+      const checkoutResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': checkoutSignature,
+        },
+        body: checkoutPayload,
+      });
+      expect(checkoutResponse.status).toBe(200);
+
+      const staleActivePayload = JSON.stringify({
+        id: 'evt_out_of_order_subscription',
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_out_of_order',
+            customer: 'cus_out_of_order',
+            status: 'active',
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  current_period_start: 1775000000,
+                  current_period_end: 1777688400,
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const staleActiveSignature = await createStripeSignatureHeader(
+        staleActivePayload,
+        stripeWebhookSecret,
+      );
+      const staleActiveResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': staleActiveSignature,
+        },
+        body: staleActivePayload,
+      });
+      expect(staleActiveResponse.status).toBe(200);
+
+      const billingAfterReconcile = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterReconcile?.planCode).toBe('free');
+      expect(billingAfterReconcile?.subscriptionStatus).toBe('canceled');
+      expect(billingAfterReconcile?.stripeSubscriptionId).toBeNull();
+      expect(await selectStripeWebhookEventRow('evt_out_of_order_subscription')).toMatchObject({
+        id: 'evt_out_of_order_subscription',
+        processingStatus: 'processed',
+        organizationId,
+      });
+      expect(await selectStripeWebhookFailureRows('evt_out_of_order_subscription')).toEqual([]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('keeps expired trial subscription webhooks retryable when trial completion is still pending', async () => {
+    const stripeWebhookSecret = 'whsec_test_trial_webhook_pending';
+    const stripeMonthlyPriceId = 'price_trial_webhook_pending_monthly';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: 'sk_test_trial_webhook_pending',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_trial_webhook_pending')) {
+        return new Response(
+          JSON.stringify({
+            id: 'sub_trial_webhook_pending',
+            customer: 'cus_trial_webhook_pending',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  current_period_start: Math.floor((Date.now() - 86_400_000) / 1000),
+                  current_period_end: Math.floor((Date.now() - 60_000) / 1000),
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url.startsWith('https://api.stripe.com/v1/customers/cus_trial_webhook_pending')) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: 'Stripe customer state is temporarily unavailable.',
+            },
+          }),
+          {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Trial Webhook Pending Owner',
+        email: 'trial-webhook-pending-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Trial Webhook Pending Org',
+        slug: 'trial-webhook-pending-org',
+      });
+
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+
+      await d1
+        .prepare(
+          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
+        )
+        .bind(
+          'cus_trial_webhook_pending',
+          'sub_trial_webhook_pending',
+          stripeMonthlyPriceId,
+          Date.now() - 60_000,
+          organizationId,
+        )
+        .run();
+
+      const webhookPayload = JSON.stringify({
+        id: 'evt_trial_webhook_pending',
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_trial_webhook_pending',
+            customer: 'cus_trial_webhook_pending',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  current_period_start: Math.floor((Date.now() - 86_400_000) / 1000),
+                  current_period_end: Math.floor((Date.now() - 60_000) / 1000),
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const signature = await createStripeSignatureHeader(webhookPayload, stripeWebhookSecret);
+      const response = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': signature,
+        },
+        body: webhookPayload,
+      });
+      expect(response.status).toBe(500);
+      expect((await toJson(response)) as Record<string, unknown>).toMatchObject({
+        message:
+          'Payment method status is still syncing with Stripe. Retry after billing synchronization completes.',
+      });
+
+      const billingAfterAttempt = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterAttempt?.planCode).toBe('premium');
+      expect(billingAfterAttempt?.subscriptionStatus).toBe('trialing');
+      expect(await selectStripeWebhookEventRow('evt_trial_webhook_pending')).toMatchObject({
+        id: 'evt_trial_webhook_pending',
+        processingStatus: 'failed',
+        organizationId,
+        failureReason: 'trial_completion_pending',
+      });
+      expect(await selectStripeWebhookFailureRows('evt_trial_webhook_pending')).toEqual([
+        expect.objectContaining({
+          eventId: 'evt_trial_webhook_pending',
+          eventType: 'customer.subscription.updated',
+          failureStage: 'provider_reconciliation',
+          failureReason: 'trial_completion_pending',
+          organizationId,
+        }),
+      ]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('marks claimed webhook events as failed when unexpected processing errors occur', async () => {
+    const stripeWebhookSecret = 'whsec_test_unexpected_processing';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_unexpected_processing',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    const firstOwner = createAuthAgent(appWithStripe);
+    await signUpUser({
+      agent: firstOwner,
+      name: 'Unexpected Processing Owner One',
+      email: 'unexpected-processing-owner-one@example.com',
+    });
+    const existingOrganizationId = await createOrganization({
+      agent: firstOwner,
+      name: 'Unexpected Processing Existing Org',
+      slug: 'unexpected-processing-existing-org',
+    });
+
+    const secondOwner = createAuthAgent(appWithStripe);
+    await signUpUser({
+      agent: secondOwner,
+      name: 'Unexpected Processing Owner Two',
+      email: 'unexpected-processing-owner-two@example.com',
+    });
+    const targetOrganizationId = await createOrganization({
+      agent: secondOwner,
+      name: 'Unexpected Processing Target Org',
+      slug: 'unexpected-processing-target-org',
+    });
+
+    await d1
+      .prepare('UPDATE organization_billing SET stripe_customer_id = ? WHERE organization_id = ?')
+      .bind('cus_unexpected_processing', existingOrganizationId)
+      .run();
+
+    const webhookPayload = JSON.stringify({
+      id: 'evt_unexpected_processing',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_unexpected_processing',
+          customer: 'cus_unexpected_processing',
+          subscription: 'sub_unexpected_processing',
+          metadata: {
+            billingPurpose: 'organization_plan',
+            organizationId: targetOrganizationId,
+            planCode: 'premium',
+            billingInterval: 'month',
+          },
+        },
+      },
+    });
+    const signature = await createStripeSignatureHeader(webhookPayload, stripeWebhookSecret);
+    const response = await appWithStripe.request('/api/webhooks/stripe', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': signature,
+      },
+      body: webhookPayload,
+    });
+    expect(response.status).toBe(500);
+
+    expect(await selectStripeWebhookEventRow('evt_unexpected_processing')).toMatchObject({
+      id: 'evt_unexpected_processing',
+      processingStatus: 'failed',
+      failureReason: 'unexpected_processing_error',
+      stripeCustomerId: 'cus_unexpected_processing',
+      stripeSubscriptionId: 'sub_unexpected_processing',
+    });
+    expect(await selectStripeWebhookFailureRows('evt_unexpected_processing')).toEqual([
+      expect.objectContaining({
+        eventId: 'evt_unexpected_processing',
+        eventType: 'checkout.session.completed',
+        failureStage: 'event_processing',
+        failureReason: 'unexpected_processing_error',
+        organizationId: null,
+      }),
+    ]);
   });
 
   it('starts owner-only premium trials and rejects duplicate active lifecycle states', async () => {
@@ -1217,6 +1963,629 @@ describe('backend app', () => {
     expect(activeConflictPayload.message).toBe(
       'Organization already has an active premium trial or paid subscription.',
     );
+  });
+
+  it('creates an owner-only payment method registration handoff and reflects setup status in billing summary', async () => {
+    const stripeSecretKey = 'sk_test_dummy';
+    const stripeWebhookSecret = 'whsec_test_dummy';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: stripeSecretKey,
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    let createdCustomerCalls = 0;
+    let createdSetupSessionCalls = 0;
+    let lastSetupSessionBody = '';
+    let defaultPaymentMethodId: string | null = null;
+
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url === 'https://api.stripe.com/v1/customers') {
+        createdCustomerCalls += 1;
+        return new Response(
+          JSON.stringify({
+            id: 'cus_test_payment_method',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url === 'https://api.stripe.com/v1/checkout/sessions') {
+        createdSetupSessionCalls += 1;
+        lastSetupSessionBody = typeof init?.body === 'string' ? init.body : '';
+        return new Response(
+          JSON.stringify({
+            id: 'cs_test_payment_method_setup',
+            url: 'https://checkout.stripe.com/c/pay/cs_test_payment_method_setup',
+            status: 'open',
+            payment_status: 'no_payment_required',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url.startsWith('https://api.stripe.com/v1/customers/cus_test_payment_method')) {
+        return new Response(
+          JSON.stringify({
+            id: 'cus_test_payment_method',
+            invoice_settings: {
+              default_payment_method: defaultPaymentMethodId
+                ? { id: defaultPaymentMethodId }
+                : null,
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Setup Owner',
+        email: 'setup-owner@example.com',
+      });
+
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Setup Org',
+        slug: 'setup-org',
+      });
+
+      const adminInvite = await createInvitation({
+        agent: owner,
+        email: 'setup-admin@example.com',
+        role: 'admin',
+        organizationId,
+      });
+      expect(adminInvite.response.status).toBe(200);
+
+      const admin = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: admin,
+        name: 'Setup Admin',
+        email: 'setup-admin@example.com',
+      });
+      const adminAcceptResponse = await admin.request(
+        buildInvitationActionPath(String(adminInvite.payload?.id), 'accept'),
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ invitationId: String(adminInvite.payload?.id) }),
+        },
+      );
+      expect(adminAcceptResponse.status).toBe(200);
+
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+
+      const initialSummaryResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(initialSummaryResponse.status).toBe(200);
+      const initialSummaryPayload = (await toJson(initialSummaryResponse)) as Record<string, unknown>;
+      expect(initialSummaryPayload.planState).toBe('premium_trial');
+      expect(initialSummaryPayload.paymentMethodStatus).toBe('not_started');
+
+      const adminHandoffResponse = await admin.request(
+        '/api/v1/auth/organizations/billing/payment-method',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ organizationId }),
+        },
+      );
+      expect(adminHandoffResponse.status).toBe(403);
+      expect(createdCustomerCalls).toBe(0);
+      expect(createdSetupSessionCalls).toBe(0);
+
+      const ownerHandoffResponse = await owner.request(
+        '/api/v1/auth/organizations/billing/payment-method',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ organizationId }),
+        },
+      );
+      expect(ownerHandoffResponse.status).toBe(200);
+      const ownerHandoffPayload = (await toJson(ownerHandoffResponse)) as Record<string, unknown>;
+      expect(ownerHandoffPayload.url).toBe(
+        'https://checkout.stripe.com/c/pay/cs_test_payment_method_setup',
+      );
+      expect(createdCustomerCalls).toBe(1);
+      expect(createdSetupSessionCalls).toBe(1);
+      expect(lastSetupSessionBody).toContain('mode=setup');
+      expect(lastSetupSessionBody).toContain('customer=cus_test_payment_method');
+
+      const billingAfterHandoff = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterHandoff?.stripeCustomerId).toBe('cus_test_payment_method');
+      expect(billingAfterHandoff?.planCode).toBe('premium');
+      expect(billingAfterHandoff?.subscriptionStatus).toBe('trialing');
+
+      const pendingSummaryResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(pendingSummaryResponse.status).toBe(200);
+      const pendingSummaryPayload = (await toJson(pendingSummaryResponse)) as Record<string, unknown>;
+      expect(pendingSummaryPayload.paymentMethodStatus).toBe('pending');
+
+      defaultPaymentMethodId = 'pm_test_card';
+
+      const completedSummaryResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(completedSummaryResponse.status).toBe(200);
+      const completedSummaryPayload = (await toJson(completedSummaryResponse)) as Record<
+        string,
+        unknown
+      >;
+      expect(completedSummaryPayload.paymentMethodStatus).toBe('registered');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('converts an ended premium trial to premium paid and preserves operational data', async () => {
+    const stripeSecretKey = 'sk_test_dummy';
+    const stripeWebhookSecret = 'whsec_test_dummy';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: stripeSecretKey,
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/customers/cus_trial_completion_paid')) {
+        return new Response(
+          JSON.stringify({
+            id: 'cus_trial_completion_paid',
+            invoice_settings: {
+              default_payment_method: {
+                id: 'pm_trial_completion_paid',
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Trial Completion Owner',
+        email: 'trial-completion-owner@example.com',
+      });
+
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Trial Completion Org',
+        slug: 'trial-completion-org',
+      });
+
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+
+      const billingBeforeCompletion = await selectOrganizationBillingRow(organizationId);
+      expect(billingBeforeCompletion?.subscriptionStatus).toBe('trialing');
+
+      await d1
+        .prepare('UPDATE organization_billing SET stripe_customer_id = ?, current_period_end = ? WHERE organization_id = ?')
+        .bind('cus_trial_completion_paid', Date.now() - 60_000, organizationId)
+        .run();
+
+      const ownerUserRow = await d1
+        .prepare('SELECT id FROM user WHERE email = ? LIMIT 1')
+        .bind('trial-completion-owner@example.com')
+        .first<{ id: string }>();
+      expect(ownerUserRow?.id).toBeTruthy();
+
+      const classroomId = crypto.randomUUID();
+      const serviceId = crypto.randomUUID();
+      const participantId = crypto.randomUUID();
+      const slotId = crypto.randomUUID();
+      const bookingId = crypto.randomUUID();
+      const now = Date.now();
+
+      await d1
+        .prepare('INSERT INTO classroom (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
+        .bind(classroomId, organizationId, 'trial-completion-room', 'Trial Completion Room')
+        .run();
+      await d1
+        .prepare(
+          'INSERT INTO service (id, organization_id, classroom_id, name, description, kind, duration_minutes, capacity, booking_policy, requires_ticket, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .bind(
+          serviceId,
+          organizationId,
+          classroomId,
+          'Premium Yoga',
+          'Trial lifecycle data preservation service',
+          'event',
+          60,
+          8,
+          'instant',
+          0,
+          1,
+        )
+        .run();
+      await d1
+        .prepare(
+          'INSERT INTO participant (id, organization_id, classroom_id, user_id, email, name) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .bind(
+          participantId,
+          organizationId,
+          classroomId,
+          ownerUserRow?.id as string,
+          'trial-completion-owner@example.com',
+          'Trial Completion Owner',
+        )
+        .run();
+      await d1
+        .prepare(
+          'INSERT INTO slot (id, organization_id, classroom_id, service_id, start_at, end_at, capacity, reserved_count, status, booking_open_at, booking_close_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .bind(
+          slotId,
+          organizationId,
+          classroomId,
+          serviceId,
+          now + 3_600_000,
+          now + 7_200_000,
+          8,
+          1,
+          'open',
+          now - 3_600_000,
+          now + 1_800_000,
+        )
+        .run();
+      await d1
+        .prepare(
+          'INSERT INTO booking (id, organization_id, classroom_id, slot_id, service_id, participant_id, participants_count, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .bind(bookingId, organizationId, classroomId, slotId, serviceId, participantId, 1, 'confirmed')
+        .run();
+
+      const countsBeforeCompletion = await selectOrganizationOperationalRowCounts(organizationId);
+      expect(countsBeforeCompletion).toEqual({
+        classroomCount: 2,
+        serviceCount: 1,
+        participantCount: 1,
+        bookingCount: 1,
+      });
+
+      const completionResponse = await owner.request(
+        '/api/v1/auth/organizations/billing/trial/complete',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ organizationId }),
+        },
+      );
+      expect(completionResponse.status).toBe(200);
+      const completionPayload = (await toJson(completionResponse)) as Record<string, unknown>;
+      expect(completionPayload.message).toBe('Organization premium trial converted to premium paid.');
+
+      const billingAfterCompletion = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterCompletion?.planCode).toBe('premium');
+      expect(billingAfterCompletion?.subscriptionStatus).toBe('active');
+      expect(billingAfterCompletion?.currentPeriodStart).not.toBeNull();
+      expect(billingAfterCompletion?.currentPeriodEnd).toBeNull();
+      expect(billingAfterCompletion?.stripeCustomerId).toBe('cus_trial_completion_paid');
+
+      const summaryResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(summaryResponse.status).toBe(200);
+      const summaryPayload = (await toJson(summaryResponse)) as Record<string, unknown>;
+      expect(summaryPayload.planState).toBe('premium_paid');
+      expect(summaryPayload.subscriptionStatus).toBe('active');
+      expect(summaryPayload.trialEndsAt).toBeNull();
+      expect(summaryPayload.paymentMethodStatus).toBe('registered');
+
+      const countsAfterCompletion = await selectOrganizationOperationalRowCounts(organizationId);
+      expect(countsAfterCompletion).toEqual(countsBeforeCompletion);
+
+      const duplicateCompletionResponse = await owner.request(
+        '/api/v1/auth/organizations/billing/trial/complete',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ organizationId }),
+        },
+      );
+      expect(duplicateCompletionResponse.status).toBe(409);
+      const duplicateCompletionPayload = (await toJson(duplicateCompletionResponse)) as Record<
+        string,
+        unknown
+      >;
+      expect(duplicateCompletionPayload.message).toBe('Organization does not have an active premium trial.');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('returns an ended premium trial to free when billing conditions are not met', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Trial Fallback Owner',
+      email: 'trial-fallback-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Trial Fallback Org',
+      slug: 'trial-fallback-org',
+    });
+
+    const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    expect(ownerTrialResponse.status).toBe(200);
+
+    await d1
+      .prepare('UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?')
+      .bind(Date.now() - 60_000, organizationId)
+      .run();
+
+    const completionResponse = await owner.request(
+      '/api/v1/auth/organizations/billing/trial/complete',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      },
+    );
+    expect(completionResponse.status).toBe(200);
+    const completionPayload = (await toJson(completionResponse)) as Record<string, unknown>;
+    expect(completionPayload.message).toBe(
+      'Organization premium trial ended and returned to free because billing requirements were not met.',
+    );
+
+    const billingAfterCompletion = await selectOrganizationBillingRow(organizationId);
+    expect(billingAfterCompletion?.planCode).toBe('free');
+    expect(billingAfterCompletion?.billingInterval).toBeNull();
+    expect(billingAfterCompletion?.subscriptionStatus).toBe('free');
+    expect(Boolean(billingAfterCompletion?.cancelAtPeriodEnd)).toBe(false);
+    expect(billingAfterCompletion?.currentPeriodStart).toBeNull();
+    expect(billingAfterCompletion?.currentPeriodEnd).toBeNull();
+
+    const summaryResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(summaryResponse.status).toBe(200);
+    const summaryPayload = (await toJson(summaryResponse)) as Record<string, unknown>;
+    expect(summaryPayload.planState).toBe('free');
+    expect(summaryPayload.subscriptionStatus).toBe('free');
+    expect(summaryPayload.trialEndsAt).toBeNull();
+    expect(summaryPayload.paymentMethodStatus).toBe('not_started');
+  });
+
+  it('rejects invalid trial completion requests and keeps the existing billing state unchanged', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Trial Conflict Owner',
+      email: 'trial-conflict-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Trial Conflict Org',
+      slug: 'trial-conflict-org',
+    });
+
+    const freeCompletionResponse = await owner.request(
+      '/api/v1/auth/organizations/billing/trial/complete',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      },
+    );
+    expect(freeCompletionResponse.status).toBe(409);
+    const freeCompletionPayload = (await toJson(freeCompletionResponse)) as Record<string, unknown>;
+    expect(freeCompletionPayload.message).toBe('Organization does not have an active premium trial.');
+
+    const initialBilling = await selectOrganizationBillingRow(organizationId);
+    expect(initialBilling?.planCode).toBe('free');
+    expect(initialBilling?.subscriptionStatus).toBe('free');
+
+    const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    expect(ownerTrialResponse.status).toBe(200);
+
+    const trialBillingBeforeCompletion = await selectOrganizationBillingRow(organizationId);
+    expect(trialBillingBeforeCompletion?.subscriptionStatus).toBe('trialing');
+
+    const prematureCompletionResponse = await owner.request(
+      '/api/v1/auth/organizations/billing/trial/complete',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      },
+    );
+    expect(prematureCompletionResponse.status).toBe(409);
+    const prematureCompletionPayload = (await toJson(prematureCompletionResponse)) as Record<
+      string,
+      unknown
+    >;
+    expect(prematureCompletionPayload.message).toBe(
+      'Organization premium trial has not reached its completion time yet.',
+    );
+
+    const trialBillingAfterConflict = await selectOrganizationBillingRow(organizationId);
+    expect(trialBillingAfterConflict?.planCode).toBe('premium');
+    expect(trialBillingAfterConflict?.subscriptionStatus).toBe('trialing');
+    expect(trialBillingAfterConflict?.currentPeriodEnd).toBe(trialBillingBeforeCompletion?.currentPeriodEnd);
+  });
+
+  it('keeps the trial unchanged when payment method reflection cannot be confirmed yet', async () => {
+    const stripeSecretKey = 'sk_test_dummy';
+    const stripeWebhookSecret = 'whsec_test_dummy';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: stripeSecretKey,
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/customers/cus_trial_completion_pending')) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: 'Stripe customer state is temporarily unavailable.',
+            },
+          }),
+          {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Trial Pending Owner',
+        email: 'trial-pending-owner@example.com',
+      });
+
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Trial Pending Org',
+        slug: 'trial-pending-org',
+      });
+
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+
+      await d1
+        .prepare('UPDATE organization_billing SET stripe_customer_id = ?, current_period_end = ? WHERE organization_id = ?')
+        .bind('cus_trial_completion_pending', Date.now() - 60_000, organizationId)
+        .run();
+
+      const completionResponse = await owner.request(
+        '/api/v1/auth/organizations/billing/trial/complete',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ organizationId }),
+        },
+      );
+      expect(completionResponse.status).toBe(503);
+      const completionPayload = (await toJson(completionResponse)) as Record<string, unknown>;
+      expect(completionPayload.message).toBe(
+        'Payment method status is still syncing with Stripe. Retry after billing synchronization completes.',
+      );
+
+      const billingAfterAttempt = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterAttempt?.planCode).toBe('premium');
+      expect(billingAfterAttempt?.subscriptionStatus).toBe('trialing');
+
+      const summaryResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(summaryResponse.status).toBe(200);
+      const summaryPayload = (await toJson(summaryResponse)) as Record<string, unknown>;
+      expect(summaryPayload.planState).toBe('premium_trial');
+      expect(summaryPayload.paymentMethodStatus).toBe('pending');
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it('handles invitation policies and audit logs', async () => {

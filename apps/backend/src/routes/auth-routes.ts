@@ -8,6 +8,21 @@ import {
   resolveOrganizationClassroomContext,
 } from '../booking/authorization.js';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
+import {
+  applyOrganizationPremiumTrialCompletion,
+  ensureOrganizationBillingRow,
+  hasActivePremiumSubscription,
+  isBillingInterval,
+  isBillingSubscriptionStatus,
+  ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
+  ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
+  resolveOrganizationBillingPaymentMethodStatus,
+  resolveOrganizationBillingPlanState,
+  resolveOrganizationBillingTrialEndsAt,
+  selectOrganizationBillingSummary,
+  startOrganizationPremiumTrial,
+  updateOrganizationBillingStripeCustomerId,
+} from '../billing/organization-billing.js';
 import * as dbSchema from '../db/schema.js';
 import { sendOrganizationInvitationEmail, sendParticipantInvitationEmail } from '../email/resend.js';
 import type { OrganizationLogoService } from '../organization-logo-service.js';
@@ -15,7 +30,6 @@ import {
   createBillingPortalSession,
   createCustomer,
   createSetupCheckoutSession,
-  readStripeCustomerSummary,
   createSubscriptionCheckoutSession,
 } from '../payment/stripe.js';
 import type { ServiceImageUploadService } from '../service-image-upload-service.js';
@@ -341,6 +355,10 @@ const organizationBillingPaymentMethodBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+const organizationBillingTrialCompletionBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+});
+
 const organizationBillingSummarySchema = z.object({
   planCode: z.enum(['free', 'premium']),
   planState: z.enum(['free', 'premium_trial', 'premium_paid']),
@@ -363,10 +381,6 @@ const organizationBillingActionResponseSchema = z.object({
 const organizationBillingTrialResponseSchema = z.object({
   message: z.string().min(1),
 });
-
-const ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS = 7;
-const ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE =
-  'Organization already has an active premium trial or paid subscription.';
 
 const getOrganizationBillingRoute = createRoute({
   method: 'get',
@@ -567,6 +581,53 @@ const createOrganizationBillingPaymentMethodRoute = createRoute({
     },
     422: {
       description: 'Stripe billing is not configured',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+  },
+});
+
+const createOrganizationBillingTrialCompletionRoute = createRoute({
+  method: 'post',
+  path: '/organizations/billing/trial/complete',
+  tags: ['Organization Billing'],
+  summary: 'Evaluate and apply premium trial completion lifecycle rules',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: organizationBillingTrialCompletionBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Trial lifecycle transition applied',
+      content: {
+        'application/json': {
+          schema: organizationBillingTrialResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Forbidden',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    409: {
+      description: 'Organization does not have a completeable premium trial',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    422: {
+      description: 'Stripe billing is not configured',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    503: {
+      description: 'Stripe payment method reflection is still syncing',
       content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
     },
   },
@@ -1262,103 +1323,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return null;
   };
 
-  const isBillingInterval = (value: string | null): 'month' | 'year' | null => {
-    if (value === 'month' || value === 'year') {
-      return value;
-    }
-    return null;
-  };
-
-  const isBillingSubscriptionStatus = (
-    value: string | null,
-  ): 'free' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | 'incomplete' | null => {
-    if (
-      value === 'free'
-      || value === 'trialing'
-      || value === 'active'
-      || value === 'past_due'
-      || value === 'canceled'
-      || value === 'unpaid'
-      || value === 'incomplete'
-    ) {
-      return value;
-    }
-    return null;
-  };
-
-  const hasActivePremiumSubscription = (value: string | null): boolean => {
-    return (
-      value === 'trialing'
-      || value === 'active'
-      || value === 'past_due'
-      || value === 'unpaid'
-      || value === 'incomplete'
-    );
-  };
-
-  const ensureOrganizationBillingRow = async (organizationId: string) => {
-    await database
-      .insert(dbSchema.organizationBilling)
-      .values({
-        id: crypto.randomUUID(),
-        organizationId,
-        planCode: 'free',
-        subscriptionStatus: 'free',
-      })
-      .onConflictDoNothing();
-  };
-
-  const startOrganizationPremiumTrial = async ({
-    organizationId,
-    now = new Date(),
-  }: {
-    organizationId: string;
-    now?: Date;
-  }) => {
-    await ensureOrganizationBillingRow(organizationId);
-
-    const trialStartedAt = now;
-    const trialEndsAt = new Date(
-      trialStartedAt.getTime() + ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
-    );
-
-    await database
-      .update(dbSchema.organizationBilling)
-      .set({
-        planCode: 'premium',
-        billingInterval: null,
-        subscriptionStatus: 'trialing',
-        cancelAtPeriodEnd: false,
-        currentPeriodStart: trialStartedAt,
-        currentPeriodEnd: trialEndsAt,
-        stripeSubscriptionId: null,
-        stripePriceId: null,
-      })
-      .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
-
-    return {
-      trialStartedAt,
-      trialEndsAt,
-    };
-  };
-
-  const updateOrganizationBillingStripeCustomerId = async ({
-    organizationId,
-    stripeCustomerId,
-  }: {
-    organizationId: string;
-    stripeCustomerId: string;
-  }) => {
-    await ensureOrganizationBillingRow(organizationId);
-
-    await database
-      .update(dbSchema.organizationBilling)
-      .set({
-        stripeCustomerId,
-      })
-      .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
-  };
-
   const readOrganizationMembershipRole = async ({
     organizationId,
     userId,
@@ -1377,26 +1341,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       .limit(1);
 
     return isOrganizationMembershipRole(rows[0]?.role ?? null);
-  };
-
-  const selectOrganizationBillingSummary = async (organizationId: string) => {
-    await ensureOrganizationBillingRow(organizationId);
-
-    const rows = await database
-      .select({
-        planCode: dbSchema.organizationBilling.planCode,
-        billingInterval: dbSchema.organizationBilling.billingInterval,
-        subscriptionStatus: dbSchema.organizationBilling.subscriptionStatus,
-        cancelAtPeriodEnd: dbSchema.organizationBilling.cancelAtPeriodEnd,
-        currentPeriodEnd: dbSchema.organizationBilling.currentPeriodEnd,
-        stripeCustomerId: dbSchema.organizationBilling.stripeCustomerId,
-        stripeSubscriptionId: dbSchema.organizationBilling.stripeSubscriptionId,
-      })
-      .from(dbSchema.organizationBilling)
-      .where(eq(dbSchema.organizationBilling.organizationId, organizationId))
-      .limit(1);
-
-    return rows[0] ?? null;
   };
 
   const canCreateOrganizationForIdentity = async ({
@@ -1470,59 +1414,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return null;
   };
 
-  const resolveOrganizationBillingPlanState = ({
-    planCode,
-    subscriptionStatus,
-  }: {
-    planCode: 'free' | 'premium';
-    subscriptionStatus: 'free' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | 'incomplete';
-  }): 'free' | 'premium_trial' | 'premium_paid' => {
-    if (planCode !== 'premium') {
-      return 'free';
-    }
-
-    return subscriptionStatus === 'trialing' ? 'premium_trial' : 'premium_paid';
-  };
-
-  const resolveOrganizationBillingTrialEndsAt = ({
-    planState,
-    currentPeriodEnd,
-  }: {
-    planState: 'free' | 'premium_trial' | 'premium_paid';
-    currentPeriodEnd: string | null;
-  }): string | null => {
-    return planState === 'premium_trial' ? currentPeriodEnd : null;
-  };
-
-  const resolveOrganizationBillingPaymentMethodStatus = async ({
-    planCode,
-    stripeCustomerId,
-  }: {
-    planCode: 'free' | 'premium';
-    stripeCustomerId: string | null;
-  }): Promise<'not_started' | 'pending' | 'registered'> => {
-    if (planCode !== 'premium') {
-      return 'not_started';
-    }
-
-    if (!stripeCustomerId) {
-      return 'not_started';
-    }
-
-    if (!env.STRIPE_SECRET_KEY?.trim()) {
-      return 'pending';
-    }
-
-    try {
-      const customer = await readStripeCustomerSummary({
-        env,
-        customerId: stripeCustomerId,
-      });
-      return customer.defaultPaymentMethodId ? 'registered' : 'pending';
-    } catch {
-      return 'pending';
-    }
-  };
 
   const toTimestamp = (value: unknown): number | null => {
     if (value instanceof Date) {
@@ -2694,7 +2585,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           })
           .onConflictDoNothing();
 
-        await ensureOrganizationBillingRow(organizationId);
+        await ensureOrganizationBillingRow(database, organizationId);
       }
 
       return response;
@@ -2729,7 +2620,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const billing = await selectOrganizationBillingSummary(organizationId);
+      const billing = await selectOrganizationBillingSummary(database, organizationId);
       const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
       const billingInterval = isBillingInterval(billing?.billingInterval ?? null);
       const subscriptionStatus =
@@ -2740,6 +2631,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         subscriptionStatus,
       });
       const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+        env,
         planCode,
         stripeCustomerId: billing?.stripeCustomerId ?? null,
       });
@@ -2793,7 +2685,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Stripe billing is not configured.' }, 422);
       }
 
-      const billing = await selectOrganizationBillingSummary(organizationId);
+      const billing = await selectOrganizationBillingSummary(database, organizationId);
       if (billing && hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))) {
         return c.json({ message: 'Organization already has an active premium subscription.' }, 409);
       }
@@ -2840,12 +2732,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const billing = await selectOrganizationBillingSummary(organizationId);
+      const billing = await selectOrganizationBillingSummary(database, organizationId);
       if (billing && hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))) {
         return c.json({ message: ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE }, 409);
       }
 
-      await startOrganizationPremiumTrial({ organizationId });
+      await startOrganizationPremiumTrial({ database, organizationId });
 
       return c.json(
         {
@@ -2881,7 +2773,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Stripe billing is not configured.' }, 422);
       }
 
-      const billing = await selectOrganizationBillingSummary(organizationId);
+      const billing = await selectOrganizationBillingSummary(database, organizationId);
       if (billing?.planCode !== 'premium' || billing.subscriptionStatus !== 'trialing') {
         return c.json({ message: 'Organization does not have an active premium trial.' }, 409);
       }
@@ -2897,6 +2789,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         });
         customerId = customer.id;
         await updateOrganizationBillingStripeCustomerId({
+          database,
           organizationId,
           stripeCustomerId: customerId,
         });
@@ -2917,6 +2810,40 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       });
 
       return c.json({ url: session.url }, 200);
+    })();
+  });
+
+  authRoutes.openapi(createOrganizationBillingTrialCompletionRoute, (c) => {
+    return (async () => {
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      if (!organizationId) {
+        return c.json({ message: 'organizationId is required.' }, 422);
+      }
+
+      const role = await readOrganizationMembershipRole({
+        organizationId,
+        userId: identity.userId,
+      });
+      if (role !== 'owner') {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const completion = await applyOrganizationPremiumTrialCompletion({
+        database,
+        env,
+        organizationId,
+      });
+      if (!completion.ok) {
+        return c.json({ message: completion.message }, completion.status);
+      }
+
+      return c.json({ message: completion.message }, 200);
     })();
   });
 
@@ -2945,7 +2872,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Stripe billing is not configured.' }, 422);
       }
 
-      const billing = await selectOrganizationBillingSummary(organizationId);
+      const billing = await selectOrganizationBillingSummary(database, organizationId);
       if (
         !billing?.stripeCustomerId
         || billing.planCode !== 'premium'

@@ -442,6 +442,29 @@ export const readStripeCustomerSummary = async ({
   };
 };
 
+export const readStripeSubscriptionSummaryById = async ({
+  env,
+  subscriptionId,
+}: {
+  env: AuthRuntimeEnv;
+  subscriptionId: string;
+}): Promise<StripeSubscriptionSummary> => {
+  const query = new URLSearchParams();
+  query.append('expand[]', 'items.data.price');
+
+  const payload = await getStripeJson({
+    env,
+    path: `subscriptions/${encodeURIComponent(subscriptionId)}`,
+    query,
+  });
+  const summary = readStripeSubscriptionSummary(payload);
+  if (!summary) {
+    throw new Error('Invalid Stripe subscription response.');
+  }
+
+  return summary;
+};
+
 export const verifyStripeWebhookSignature = async ({
   rawBody,
   signatureHeader,

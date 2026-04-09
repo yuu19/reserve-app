@@ -92,6 +92,7 @@ describe('/contracts/+page.svelte', () => {
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: null,
 				trialEndsAt: null,
+				paymentMethodStatus: 'not_started',
 				canViewBilling: true,
 				canManageBilling: true
 			}
@@ -157,6 +158,7 @@ describe('/contracts/+page.svelte', () => {
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: '2026-04-01T00:00:00.000Z',
 				trialEndsAt: null,
+				paymentMethodStatus: 'registered',
 				canViewBilling: true,
 				canManageBilling: true
 			}
@@ -178,6 +180,7 @@ describe('/contracts/+page.svelte', () => {
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: '2026-04-11T00:00:00.000Z',
 				trialEndsAt: '2026-04-11T00:00:00.000Z',
+				paymentMethodStatus: 'not_started',
 				canViewBilling: true,
 				canManageBilling: true
 			}
@@ -194,6 +197,9 @@ describe('/contracts/+page.svelte', () => {
 				)
 			)
 			.toBeInTheDocument();
+		await expect.element(page.getByText(/^支払い方法の登録状況$/)).toBeInTheDocument();
+		await expect.element(page.getByText(/^未登録$/)).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '支払い方法を登録' })).toBeInTheDocument();
 		await expect
 			.element(page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }))
 			.not.toBeInTheDocument();
@@ -210,6 +216,7 @@ describe('/contracts/+page.svelte', () => {
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: null,
 				trialEndsAt: null,
+				paymentMethodStatus: 'not_started',
 				canViewBilling: true,
 				canManageBilling: true
 			}
@@ -224,6 +231,7 @@ describe('/contracts/+page.svelte', () => {
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: '2026-04-15T00:00:00.000Z',
 				trialEndsAt: '2026-04-15T00:00:00.000Z',
+				paymentMethodStatus: 'not_started',
 				canViewBilling: true,
 				canManageBilling: true
 			}
@@ -255,6 +263,7 @@ describe('/contracts/+page.svelte', () => {
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: null,
 				trialEndsAt: null,
+				paymentMethodStatus: 'not_started',
 				canViewBilling: true,
 				canManageBilling: false
 			}
@@ -285,6 +294,7 @@ describe('/contracts/+page.svelte', () => {
 				cancelAtPeriodEnd: false,
 				currentPeriodEnd: '2026-05-01T00:00:00.000Z',
 				trialEndsAt: null,
+				paymentMethodStatus: 'registered',
 				canViewBilling: true,
 				canManageBilling: true
 			}
@@ -317,5 +327,85 @@ describe('/contracts/+page.svelte', () => {
 		await expect
 			.element(page.getByText('Premium の申込処理を開始しました。反映まで数秒かかる場合があります。'))
 			.toBeInTheDocument();
+	});
+
+	it('should keep payment method return messaging intermediate until billing summary confirms registration', async () => {
+		mocks.pageState.url = new URL('https://example.com/admin/contracts?paymentMethod=success');
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'premium',
+				planState: 'premium_trial',
+				billingInterval: null,
+				subscriptionStatus: 'trialing',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: '2026-04-15T00:00:00.000Z',
+				trialEndsAt: '2026-04-15T00:00:00.000Z',
+				paymentMethodStatus: 'pending',
+				canViewBilling: true,
+				canManageBilling: true
+			}
+		});
+
+		render(ContractsPage);
+
+		await expect
+			.element(
+				page.getByText('支払い方法の更新状況を確認しています。反映まで数秒かかる場合があります。')
+			)
+			.toBeInTheDocument();
+		await expect.element(page.getByText(/^登録手続き中$/)).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '支払い方法を登録' })).toBeInTheDocument();
+	});
+
+	it('should show registered payment method status without owner action once confirmed', async () => {
+		mocks.pageState.url = new URL('https://example.com/admin/contracts?paymentMethod=success');
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'premium',
+				planState: 'premium_trial',
+				billingInterval: null,
+				subscriptionStatus: 'trialing',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: '2026-04-15T00:00:00.000Z',
+				trialEndsAt: '2026-04-15T00:00:00.000Z',
+				paymentMethodStatus: 'registered',
+				canViewBilling: true,
+				canManageBilling: true
+			}
+		});
+
+		render(ContractsPage);
+
+		await expect
+			.element(page.getByRole('status'))
+			.toBeInTheDocument();
+		await expect.element(page.getByText(/^登録済み$/)).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '支払い方法を登録' })).not.toBeInTheDocument();
+	});
+
+	it('should show payment method status to read-only admins without exposing owner action', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'premium',
+				planState: 'premium_trial',
+				billingInterval: null,
+				subscriptionStatus: 'trialing',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: '2026-04-15T00:00:00.000Z',
+				trialEndsAt: '2026-04-15T00:00:00.000Z',
+				paymentMethodStatus: 'pending',
+				canViewBilling: true,
+				canManageBilling: false
+			}
+		});
+
+		render(ContractsPage);
+
+		await expect.element(page.getByText(/^支払い方法の登録状況$/)).toBeInTheDocument();
+		await expect.element(page.getByText(/^登録手続き中$/)).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '支払い方法を登録' })).not.toBeInTheDocument();
 	});
 });
