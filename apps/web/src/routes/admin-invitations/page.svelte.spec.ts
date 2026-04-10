@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/admin/invitations'),
 	loadOrganizations: vi.fn(),
+	loadOrganizationBilling: vi.fn(),
 	loadAdminInvitations: vi.fn()
 }));
 
@@ -41,7 +42,8 @@ vi.mock('$lib/features/auth-session.svelte', async () => {
 });
 
 vi.mock('$lib/features/organization-context.svelte', () => ({
-	loadOrganizations: mocks.loadOrganizations
+	loadOrganizations: mocks.loadOrganizations,
+	loadOrganizationBilling: mocks.loadOrganizationBilling
 }));
 
 vi.mock('$lib/features/invitations-admin.svelte', async () => {
@@ -61,6 +63,7 @@ describe('/admin-invitations/+page.svelte', () => {
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.loadOrganizations.mockReset();
+		mocks.loadOrganizationBilling.mockReset();
 		mocks.loadAdminInvitations.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
@@ -75,7 +78,8 @@ describe('/admin-invitations/+page.svelte', () => {
 		mocks.loadAdminInvitations.mockResolvedValue({
 			sent: [],
 			received: [],
-			canManage: true
+			canManage: true,
+			premiumRestriction: null
 		});
 	});
 
@@ -103,7 +107,8 @@ describe('/admin-invitations/+page.svelte', () => {
 		mocks.loadAdminInvitations.mockResolvedValue({
 			sent: [],
 			received: [],
-			canManage: false
+			canManage: false,
+			premiumRestriction: null
 		});
 
 		render(AdminInvitationsPage);
@@ -111,5 +116,49 @@ describe('/admin-invitations/+page.svelte', () => {
 		await expect
 			.element(page.getByText('利用中の組織を `/admin/dashboard` で選択してください。'))
 			.toBeInTheDocument();
+	});
+
+	it('shows read-only premium restriction guidance without owner billing action for non-owners', async () => {
+		mocks.loadAdminInvitations.mockResolvedValue({
+			sent: [],
+			received: [],
+			canManage: true,
+			premiumRestriction: {
+				message: 'Organization premium plan is required for this feature.',
+				code: 'organization_premium_required',
+				source: 'application_billing_state',
+				reason: 'organization_plan_is_free',
+				entitlementState: 'free_only',
+				planState: 'free',
+				trialEndsAt: null
+			}
+		});
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'free',
+				planState: 'free',
+				billingInterval: null,
+				paymentMethodStatus: 'not_started',
+				subscriptionStatus: 'free',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: null,
+				trialEndsAt: null,
+				canViewBilling: true,
+				canManageBilling: false
+			}
+		});
+
+		render(AdminInvitationsPage);
+
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '管理者招待には Premiumプランが必要です' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText(/契約変更と支払い設定は organization owner のみです/))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '契約画面を開く' }))
+			.not.toBeInTheDocument();
 	});
 });

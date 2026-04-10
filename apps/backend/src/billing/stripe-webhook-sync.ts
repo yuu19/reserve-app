@@ -9,6 +9,14 @@ import {
   type OrganizationBillingSubscriptionStatus,
 } from './organization-billing.js';
 import {
+  appendOrganizationBillingAuditEvent,
+  appendOrganizationBillingSignal,
+  appendResolvedBillingSignalIfNeeded,
+  evaluateReconciliationMismatchReason,
+  readOrganizationBillingObservationSnapshot,
+} from './organization-billing-observability.js';
+import { sendOrganizationTrialWillEndReminder } from './organization-billing-notifications.js';
+import {
   readStripeBillingCheckoutMetadata,
   readStripeCheckoutSessionSummary,
   readStripeSubscriptionSummary,
@@ -37,6 +45,9 @@ type StripeWebhookFailureReason =
   | 'latest_subscription_lookup_failed'
   | 'trial_completion_pending'
   | 'trial_completion_not_ready'
+  | 'trial_reminder_owner_not_found'
+  | 'trial_reminder_config_missing'
+  | 'trial_reminder_delivery_failed'
   | 'unexpected_processing_error';
 
 type NormalizedStripeOrganizationBillingWebhookEvent =
@@ -52,6 +63,14 @@ type NormalizedStripeOrganizationBillingWebhookEvent =
     }
   | {
       kind: 'subscription_lifecycle';
+      eventId: string;
+      eventType: string;
+      stripeCustomerId: string | null;
+      stripeSubscriptionId: string;
+      subscription: StripeSubscriptionSummary;
+    }
+  | {
+      kind: 'trial_will_end';
       eventId: string;
       eventType: string;
       stripeCustomerId: string | null;
@@ -340,6 +359,7 @@ const normalizeStripeOrganizationBillingWebhookEvent = ({
     event.type === 'customer.subscription.created'
     || event.type === 'customer.subscription.updated'
     || event.type === 'customer.subscription.deleted'
+    || event.type === 'customer.subscription.trial_will_end'
   ) {
     const subscription = readStripeSubscriptionSummary(event.data?.object ?? null);
     if (!subscription) {
@@ -352,14 +372,23 @@ const normalizeStripeOrganizationBillingWebhookEvent = ({
       };
     }
 
-    return {
-      kind: 'subscription_lifecycle',
-      eventId: event.id,
-      eventType: event.type,
-      stripeCustomerId: subscription.customerId,
-      stripeSubscriptionId: subscription.id,
-      subscription,
-    };
+    return event.type === 'customer.subscription.trial_will_end'
+      ? {
+          kind: 'trial_will_end',
+          eventId: event.id,
+          eventType: event.type,
+          stripeCustomerId: subscription.customerId,
+          stripeSubscriptionId: subscription.id,
+          subscription,
+        }
+      : {
+          kind: 'subscription_lifecycle',
+          eventId: event.id,
+          eventType: event.type,
+          stripeCustomerId: subscription.customerId,
+          stripeSubscriptionId: subscription.id,
+          subscription,
+        };
   }
 
   return { kind: 'not_billing' };
@@ -436,6 +465,11 @@ export const handleStripeOrganizationBillingWebhook = async ({
 
   try {
     if (normalized.kind === 'checkout_completed') {
+      const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId: normalized.organizationId,
+      });
       await upsertOrganizationBillingByOrganizationId({
         database,
         organizationId: normalized.organizationId,
@@ -448,6 +482,20 @@ export const handleStripeOrganizationBillingWebhook = async ({
         cancelAtPeriodEnd: false,
         currentPeriodStart: null,
         currentPeriodEnd: null,
+      });
+      const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId: normalized.organizationId,
+      });
+      await appendOrganizationBillingAuditEvent({
+        database,
+        organizationId: normalized.organizationId,
+        sourceKind: 'webhook_checkout_completed',
+        previousSnapshot: previousBillingSnapshot,
+        nextSnapshot: nextBillingSnapshot,
+        stripeEventId: normalized.eventId,
+        sourceContext: 'checkout_session_completed',
       });
       await markStripeWebhookEventProcessed({
         database,
@@ -484,6 +532,23 @@ export const handleStripeOrganizationBillingWebhook = async ({
       fallback: normalized.subscription,
     });
     if (!latestSubscription) {
+      const currentBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId: matchedBilling.organizationId,
+      });
+      await appendOrganizationBillingSignal({
+        database,
+        organizationId: matchedBilling.organizationId,
+        signalKind: 'reconciliation',
+        signalStatus: 'unavailable',
+        sourceKind: 'webhook_subscription_lifecycle',
+        reason: 'latest_subscription_lookup_failed',
+        appSnapshot: currentBillingSnapshot,
+        stripeEventId: normalized.eventId,
+        stripeCustomerId: normalized.stripeCustomerId,
+        stripeSubscriptionId: normalized.stripeSubscriptionId,
+      });
       return failStripeWebhookEvent({
         database,
         eventId: normalized.eventId,
@@ -512,6 +577,31 @@ export const handleStripeOrganizationBillingWebhook = async ({
       });
     }
 
+    const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      database,
+      env,
+      organizationId: matchedBilling.organizationId,
+    });
+    const preSyncReconciliationCheck = evaluateReconciliationMismatchReason({
+      appSnapshot: previousBillingSnapshot,
+      providerSubscription: latestSubscription,
+    });
+    if (preSyncReconciliationCheck.reason) {
+      await appendOrganizationBillingSignal({
+        database,
+        organizationId: matchedBilling.organizationId,
+        signalKind: 'reconciliation',
+        signalStatus: 'mismatch',
+        sourceKind: 'webhook_subscription_lifecycle',
+        reason: preSyncReconciliationCheck.reason,
+        appSnapshot: previousBillingSnapshot,
+        stripeEventId: normalized.eventId,
+        stripeCustomerId: latestSubscription.customerId,
+        stripeSubscriptionId: latestSubscription.id,
+        providerPlanState: preSyncReconciliationCheck.providerPlanState,
+        providerSubscriptionStatus: latestSubscription.status,
+      });
+    }
     const isCanceled = subscriptionStatus === 'canceled';
     await upsertOrganizationBillingByOrganizationId({
       database,
@@ -528,6 +618,84 @@ export const handleStripeOrganizationBillingWebhook = async ({
       currentPeriodStart: isCanceled ? null : latestSubscription.currentPeriodStart,
       currentPeriodEnd: isCanceled ? null : latestSubscription.currentPeriodEnd,
     });
+    const syncedBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      database,
+      env,
+      organizationId: matchedBilling.organizationId,
+    });
+    await appendOrganizationBillingAuditEvent({
+      database,
+      organizationId: matchedBilling.organizationId,
+      sourceKind: 'webhook_subscription_lifecycle',
+      previousSnapshot: previousBillingSnapshot,
+      nextSnapshot: syncedBillingSnapshot,
+      stripeEventId: normalized.eventId,
+      sourceContext: normalized.eventType,
+    });
+
+    const reconciliationCheck = evaluateReconciliationMismatchReason({
+      appSnapshot: syncedBillingSnapshot,
+      providerSubscription: latestSubscription,
+    });
+    if (reconciliationCheck.reason) {
+      await appendOrganizationBillingSignal({
+        database,
+        organizationId: matchedBilling.organizationId,
+        signalKind: 'reconciliation',
+        signalStatus: 'mismatch',
+        sourceKind: 'webhook_subscription_lifecycle',
+        reason: reconciliationCheck.reason,
+        appSnapshot: syncedBillingSnapshot,
+        stripeEventId: normalized.eventId,
+        stripeCustomerId: latestSubscription.customerId,
+        stripeSubscriptionId: latestSubscription.id,
+        providerPlanState: reconciliationCheck.providerPlanState,
+        providerSubscriptionStatus: latestSubscription.status,
+      });
+    } else {
+      await appendResolvedBillingSignalIfNeeded({
+        database,
+        organizationId: matchedBilling.organizationId,
+        signalKind: 'reconciliation',
+        sourceKind: 'webhook_subscription_lifecycle',
+        reason: 'provider_and_app_state_aligned',
+        appSnapshot: syncedBillingSnapshot,
+        stripeEventId: normalized.eventId,
+        stripeCustomerId: latestSubscription.customerId,
+        stripeSubscriptionId: latestSubscription.id,
+        providerPlanState: reconciliationCheck.providerPlanState,
+        providerSubscriptionStatus: latestSubscription.status,
+      });
+    }
+
+    if (normalized.kind === 'trial_will_end') {
+      const reminder = await sendOrganizationTrialWillEndReminder({
+        database,
+        env,
+        organizationId: matchedBilling.organizationId,
+        stripeEventId: normalized.eventId,
+        stripeCustomerId: latestSubscription.customerId,
+        stripeSubscriptionId: latestSubscription.id,
+      });
+      if (!reminder.ok) {
+        return failStripeWebhookEvent({
+          database,
+          eventId: normalized.eventId,
+          eventType: normalized.eventType,
+          failureStage: 'event_processing',
+          failureReason: reminder.retryable
+            ? 'trial_reminder_delivery_failed'
+            : reminder.failureReason === 'owner_not_found'
+              ? 'trial_reminder_owner_not_found'
+              : 'trial_reminder_config_missing',
+          organizationId: matchedBilling.organizationId,
+          stripeCustomerId: latestSubscription.customerId,
+          stripeSubscriptionId: latestSubscription.id,
+          retryable: reminder.retryable,
+          message: reminder.message,
+        });
+      }
+    }
 
     if (
       subscriptionStatus === 'trialing'
@@ -540,6 +708,28 @@ export const handleStripeOrganizationBillingWebhook = async ({
         organizationId: matchedBilling.organizationId,
       });
       if (!completion.ok) {
+        const currentBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+          database,
+          env,
+          organizationId: matchedBilling.organizationId,
+        });
+        await appendOrganizationBillingSignal({
+          database,
+          organizationId: matchedBilling.organizationId,
+          signalKind: 'reconciliation',
+          signalStatus: completion.status === 503 ? 'pending' : 'unavailable',
+          sourceKind: 'webhook_trial_completion',
+          reason:
+            completion.status === 503
+              ? 'trial_completion_pending'
+              : 'trial_completion_not_ready_or_unavailable',
+          appSnapshot: currentBillingSnapshot,
+          stripeEventId: normalized.eventId,
+          stripeCustomerId: latestSubscription.customerId,
+          stripeSubscriptionId: latestSubscription.id,
+          providerPlanState: reconciliationCheck.providerPlanState,
+          providerSubscriptionStatus: latestSubscription.status,
+        });
         return failStripeWebhookEvent({
           database,
           eventId: normalized.eventId,
@@ -552,6 +742,56 @@ export const handleStripeOrganizationBillingWebhook = async ({
           stripeSubscriptionId: latestSubscription.id,
           retryable: true,
           message: completion.message,
+        });
+      }
+
+      const completedBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId: matchedBilling.organizationId,
+      });
+      await appendOrganizationBillingAuditEvent({
+        database,
+        organizationId: matchedBilling.organizationId,
+        sourceKind: 'webhook_trial_completion',
+        previousSnapshot: syncedBillingSnapshot,
+        nextSnapshot: completedBillingSnapshot,
+        stripeEventId: normalized.eventId,
+        sourceContext: completion.message,
+      });
+
+      const postCompletionReconciliationCheck = evaluateReconciliationMismatchReason({
+        appSnapshot: completedBillingSnapshot,
+        providerSubscription: latestSubscription,
+      });
+      if (postCompletionReconciliationCheck.reason) {
+        await appendOrganizationBillingSignal({
+          database,
+          organizationId: matchedBilling.organizationId,
+          signalKind: 'reconciliation',
+          signalStatus: 'pending',
+          sourceKind: 'webhook_trial_completion',
+          reason: `provider_state_pending_after_trial_completion:${postCompletionReconciliationCheck.reason}`,
+          appSnapshot: completedBillingSnapshot,
+          stripeEventId: normalized.eventId,
+          stripeCustomerId: latestSubscription.customerId,
+          stripeSubscriptionId: latestSubscription.id,
+          providerPlanState: postCompletionReconciliationCheck.providerPlanState,
+          providerSubscriptionStatus: latestSubscription.status,
+        });
+      } else {
+        await appendResolvedBillingSignalIfNeeded({
+          database,
+          organizationId: matchedBilling.organizationId,
+          signalKind: 'reconciliation',
+          sourceKind: 'webhook_trial_completion',
+          reason: 'trial_completion_reconciled',
+          appSnapshot: completedBillingSnapshot,
+          stripeEventId: normalized.eventId,
+          stripeCustomerId: latestSubscription.customerId,
+          stripeSubscriptionId: latestSubscription.id,
+          providerPlanState: postCompletionReconciliationCheck.providerPlanState,
+          providerSubscriptionStatus: latestSubscription.status,
         });
       }
     }

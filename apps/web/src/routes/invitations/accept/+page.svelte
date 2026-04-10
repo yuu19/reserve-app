@@ -3,7 +3,13 @@
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardFooter,
+		CardHeader
+	} from '$lib/components/ui/card';
 	import { formatJaDateTime } from '$lib/date/format';
 	import { loadSession, redirectToLoginWithNext } from '$lib/features/auth-session.svelte';
 	import { authRpc } from '$lib/rpc-client';
@@ -247,10 +253,10 @@
 
 <main id="main-content" class="min-h-screen">
 	<div class="mx-auto flex min-h-screen w-full max-w-3xl items-center px-4 py-8 md:px-6">
-		<Card class="surface-panel w-full border-slate-200/80 shadow-lg">
+		<Card class="surface-panel w-full border-border/80 shadow-lg">
 			<CardHeader class="space-y-3">
 				<Badge variant="outline">管理者招待</Badge>
-				<h1 class="text-2xl font-semibold text-slate-900 md:text-3xl">招待内容の確認</h1>
+				<h1 class="text-2xl font-semibold text-foreground md:text-3xl">招待内容の確認</h1>
 				<CardDescription>
 					内容を確認し、承諾または辞退を選択してください。未ログイン時はサインイン後にこの画面へ戻ります。
 				</CardDescription>
@@ -260,15 +266,23 @@
 				{#if loading}
 					<p class="text-sm text-muted-foreground" aria-live="polite">招待情報を読み込み中…</p>
 				{:else if invitation}
-					<div class="space-y-2 rounded-lg border border-slate-200/80 bg-white/80 p-4">
+					<div class="space-y-2 rounded-lg border border-border/80 bg-card/80 p-4">
 						<div class="flex items-center justify-between gap-2">
-							<h2 class="text-sm font-semibold text-slate-900">{getOrganizationName(invitation)}</h2>
+							<h2 class="text-sm font-semibold text-foreground">
+								{getOrganizationName(invitation)}
+							</h2>
 							<Badge variant={isPending ? 'outline' : 'secondary'}>{invitationStatus ?? '-'}</Badge>
 						</div>
-						<p class="text-xs text-muted-foreground">role: {typeof invitation.role === 'string' ? invitation.role : '-'}</p>
-						<p class="text-xs text-muted-foreground">期限: {formatTimestamp(invitation.expiresAt)}</p>
+						<p class="text-xs text-muted-foreground">
+							role: {typeof invitation.role === 'string' ? invitation.role : '-'}
+						</p>
+						<p class="text-xs text-muted-foreground">
+							期限: {formatTimestamp(invitation.expiresAt)}
+						</p>
 						{#if !isPending}
-							<p class="text-xs text-muted-foreground">この招待はすでに処理済みのため、操作できません。</p>
+							<p class="text-xs text-muted-foreground">
+								この招待はすでに処理済みのため、操作できません。
+							</p>
 						{/if}
 					</div>
 				{:else}
@@ -282,7 +296,9 @@
 					<p
 						role="status"
 						aria-live="polite"
-						class={actionResult.tone === 'success' ? 'text-sm text-emerald-700' : 'text-sm text-destructive'}
+						class={actionResult.tone === 'success'
+							? 'text-sm text-success'
+							: 'text-sm text-destructive'}
 					>
 						{actionResult.text}
 					</p>
@@ -290,7 +306,8 @@
 			</CardContent>
 
 			<CardFooter class="flex flex-wrap items-center justify-end gap-2">
-				<Button href={resolve('/')} variant="outline" disabled={isBusy}>ダッシュボードへ戻る</Button>
+				<Button href={resolve('/')} variant="outline" disabled={isBusy}>ダッシュボードへ戻る</Button
+				>
 
 				<Button
 					type="button"

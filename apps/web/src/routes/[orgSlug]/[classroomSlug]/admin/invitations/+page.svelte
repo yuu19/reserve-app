@@ -3,6 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
+	import PremiumRestrictionNotice from '$lib/components/premium-restriction-notice.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
@@ -16,9 +17,13 @@
 		loadSession,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
-	import { loadOrganizations } from '$lib/features/organization-context.svelte';
+	import {
+		loadOrganizationBilling,
+		loadOrganizations
+	} from '$lib/features/organization-context.svelte';
 	import { readWindowScopedRouteContext } from '$lib/features/scoped-routing';
-	import type { InvitationPayload } from '$lib/rpc-client';
+	import type { InvitationPayload, OrganizationBillingPayload } from '$lib/rpc-client';
+	import type { OrganizationPremiumRestrictionPayload } from '$lib/features/premium-restrictions';
 	import { toast } from 'svelte-sonner';
 
 	const invitationStatusLabel = (status: InvitationPayload['status']) =>
@@ -35,10 +40,13 @@
 
 	let loading = $state(true);
 	let busy = $state(false);
+	let activeOrganizationId = $state<string | null>(null);
 	let organizationName = $state<string | null>(null);
 	let classroomName = $state<string | null>(null);
 	let canManageClassroom = $state(false);
 	let canManageParticipants = $state(false);
+	let billing = $state<OrganizationBillingPayload | null>(null);
+	let premiumRestriction = $state<OrganizationPremiumRestrictionPayload | null>(null);
 	let operatorInvitations = $state<InvitationPayload[]>([]);
 	let participantInvitations = $state<InvitationPayload[]>([]);
 	let operatorInvitationForm = $state({
@@ -65,10 +73,13 @@
 
 		const context = readWindowScopedRouteContext();
 		if (!context) {
+			activeOrganizationId = null;
 			organizationName = null;
 			classroomName = null;
 			canManageClassroom = false;
 			canManageParticipants = false;
+			billing = null;
+			premiumRestriction = null;
 			operatorInvitations = [];
 			participantInvitations = [];
 			return;
@@ -78,8 +89,16 @@
 			loadOrganizations(context),
 			loadClassroomInvitations()
 		]);
+		activeOrganizationId = activeOrganization?.id ?? null;
 		organizationName = activeOrganization?.name ?? context.orgSlug;
 		classroomName = activeClassroom?.name ?? context.classroomSlug;
+		premiumRestriction = invitationData.premiumRestriction ?? null;
+		if (invitationData.premiumRestriction && invitationData.organizationId) {
+			const billingResult = await loadOrganizationBilling(invitationData.organizationId);
+			billing = billingResult.ok ? billingResult.billing : null;
+		} else {
+			billing = null;
+		}
 		canManageClassroom = invitationData.canManageClassroom;
 		canManageParticipants = invitationData.canManageParticipants;
 		operatorInvitations = invitationData.operatorInvitations;
@@ -96,6 +115,11 @@
 				role: operatorInvitationForm.role
 			});
 			if (!result.ok) {
+				if (result.premiumRestriction && activeOrganizationId) {
+					premiumRestriction = result.premiumRestriction;
+					const billingResult = await loadOrganizationBilling(activeOrganizationId);
+					billing = billingResult.ok ? billingResult.billing : null;
+				}
 				toast.error(result.message);
 				return;
 			}
@@ -119,6 +143,11 @@
 				participantName: participantInvitationForm.participantName
 			});
 			if (!result.ok) {
+				if (result.premiumRestriction && activeOrganizationId) {
+					premiumRestriction = result.premiumRestriction;
+					const billingResult = await loadOrganizationBilling(activeOrganizationId);
+					billing = billingResult.ok ? billingResult.billing : null;
+				}
 				toast.error(result.message);
 				return;
 			}
@@ -133,7 +162,10 @@
 
 	const submitResend = async (invitation: InvitationPayload) => {
 		const requiresParticipantAccess = invitation.subjectKind === 'participant';
-		if ((requiresParticipantAccess && !canManageParticipants) || (!requiresParticipantAccess && !canManageClassroom)) {
+		if (
+			(requiresParticipantAccess && !canManageParticipants) ||
+			(!requiresParticipantAccess && !canManageClassroom)
+		) {
 			return;
 		}
 		busy = true;
@@ -145,6 +177,11 @@
 				resend: true
 			});
 			if (!result.ok) {
+				if (result.premiumRestriction && activeOrganizationId) {
+					premiumRestriction = result.premiumRestriction;
+					const billingResult = await loadOrganizationBilling(activeOrganizationId);
+					billing = billingResult.ok ? billingResult.billing : null;
+				}
 				toast.error(result.message);
 				return;
 			}
@@ -163,6 +200,11 @@
 		try {
 			const result = await actOperatorInvitation(type, invitationId);
 			if (!result.ok) {
+				if (result.premiumRestriction && activeOrganizationId) {
+					premiumRestriction = result.premiumRestriction;
+					const billingResult = await loadOrganizationBilling(activeOrganizationId);
+					billing = billingResult.ok ? billingResult.billing : null;
+				}
 				toast.error(result.message);
 				return;
 			}
@@ -187,56 +229,64 @@
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-slate-900">教室招待</h1>
-		<p class="text-sm text-slate-600">
+		<h1 class="text-3xl font-semibold text-foreground">教室招待</h1>
+		<p class="text-sm text-muted-foreground">
 			{organizationName ?? '組織'} / {classroomName ?? '教室'} に対する運営招待と参加者招待を管理します。
 		</p>
 	</header>
 
+	{#if premiumRestriction}
+		<PremiumRestrictionNotice
+			featureLabel="教室招待と参加者招待管理"
+			restriction={premiumRestriction}
+			{billing}
+		/>
+	{/if}
+
 	<section class="grid gap-4 lg:grid-cols-2">
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-lg font-semibold text-slate-900">教室運営招待</h2>
+				<h2 class="text-lg font-semibold text-foreground">教室運営招待</h2>
 				<CardDescription>manager / staff の招待送信、再送、取消を行います。</CardDescription>
 			</CardHeader>
-			<CardContent class="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-				<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
-					<p class="text-xs text-slate-500">送信済み招待</p>
-					<p class="text-base font-semibold text-slate-900">{operatorInvitations.length}</p>
+			<CardContent class="grid gap-2 text-sm text-secondary-foreground sm:grid-cols-2">
+				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+					<p class="text-xs text-muted-foreground">送信済み招待</p>
+					<p class="text-base font-semibold text-foreground">{operatorInvitations.length}</p>
 				</div>
-				<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
-					<p class="text-xs text-slate-500">送信中招待</p>
-					<p class="text-base font-semibold text-slate-900">{pendingOperatorCount}</p>
+				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+					<p class="text-xs text-muted-foreground">送信中招待</p>
+					<p class="text-base font-semibold text-foreground">{pendingOperatorCount}</p>
 				</div>
 			</CardContent>
 		</Card>
 
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-lg font-semibold text-slate-900">参加者招待</h2>
+				<h2 class="text-lg font-semibold text-foreground">参加者招待</h2>
 				<CardDescription>participant 招待の送信、再送、取消を行います。</CardDescription>
 			</CardHeader>
-			<CardContent class="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-				<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
-					<p class="text-xs text-slate-500">送信済み招待</p>
-					<p class="text-base font-semibold text-slate-900">{participantInvitations.length}</p>
+			<CardContent class="grid gap-2 text-sm text-secondary-foreground sm:grid-cols-2">
+				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+					<p class="text-xs text-muted-foreground">送信済み招待</p>
+					<p class="text-base font-semibold text-foreground">{participantInvitations.length}</p>
 				</div>
-				<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
-					<p class="text-xs text-slate-500">送信中招待</p>
-					<p class="text-base font-semibold text-slate-900">{pendingParticipantCount}</p>
+				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+					<p class="text-xs text-muted-foreground">送信中招待</p>
+					<p class="text-base font-semibold text-foreground">{pendingParticipantCount}</p>
 				</div>
 			</CardContent>
 		</Card>
 	</section>
 
 	{#if loading}
-		<Card class="surface-panel border-slate-200/80 shadow-lg">
+		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardContent class="py-6">
 				<p class="text-sm text-muted-foreground">招待データを読み込み中…</p>
 			</CardContent>
 		</Card>
 	{:else if !classroomName}
-		<Card class="surface-panel border-slate-200/80 shadow-lg">
+		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardContent class="py-6">
 				<p class="text-sm text-muted-foreground">
 					教室コンテキストを識別できませんでした。教室管理画面から開き直してください。
@@ -245,7 +295,7 @@
 		</Card>
 	{:else}
 		<section class="grid gap-6 xl:grid-cols-[1fr_1fr]">
-			<Card class="surface-panel border-slate-200/80 shadow-lg">
+			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader>
 					<h2 class="text-xl font-semibold">送信済み教室運営招待</h2>
 					<CardDescription>manager / staff の付与先をここで管理します。</CardDescription>
@@ -257,7 +307,7 @@
 						</p>
 					{:else}
 						<form
-							class="space-y-3 rounded-lg border border-slate-200/80 bg-white/80 p-4"
+							class="space-y-3 rounded-lg border border-border/80 bg-card/80 p-4"
 							onsubmit={submitOperatorInvitation}
 						>
 							<h3 class="text-sm font-semibold">教室運営招待を送信</h3>
@@ -293,10 +343,14 @@
 					{:else}
 						<div class="space-y-2">
 							{#each operatorInvitations as invitation (invitation.id)}
-								<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3">
+								<div
+									class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-card/80 p-3"
+								>
 									<div class="space-y-1">
 										<p class="text-sm font-semibold">{invitation.email}</p>
-										<p class="text-xs text-muted-foreground">role: {operatorRoleLabel(invitation.role)}</p>
+										<p class="text-xs text-muted-foreground">
+											role: {operatorRoleLabel(invitation.role)}
+										</p>
 									</div>
 									<div class="flex items-center gap-2">
 										<Badge variant={invitation.status === 'pending' ? 'outline' : 'secondary'}>
@@ -326,7 +380,7 @@
 				</CardContent>
 			</Card>
 
-			<Card class="surface-panel border-slate-200/80 shadow-lg">
+			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader>
 					<h2 class="text-xl font-semibold">送信済み参加者招待</h2>
 					<CardDescription>participant 招待では参加者名も記録します。</CardDescription>
@@ -338,7 +392,7 @@
 						</p>
 					{:else}
 						<form
-							class="space-y-3 rounded-lg border border-slate-200/80 bg-white/80 p-4"
+							class="space-y-3 rounded-lg border border-border/80 bg-card/80 p-4"
 							onsubmit={submitParticipantInvitation}
 						>
 							<h3 class="text-sm font-semibold">参加者招待を送信</h3>
@@ -372,7 +426,9 @@
 					{:else}
 						<div class="space-y-2">
 							{#each participantInvitations as invitation (invitation.id)}
-								<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3">
+								<div
+									class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-card/80 p-3"
+								>
 									<div class="space-y-1">
 										<p class="text-sm font-semibold">{invitation.participantName}</p>
 										<p class="text-xs text-muted-foreground">{invitation.email}</p>

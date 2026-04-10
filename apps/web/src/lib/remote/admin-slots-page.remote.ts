@@ -1,5 +1,6 @@
 import { query } from '$app/server';
 import type { ScopedApiContext, ServicePayload, SlotPayload } from '$lib/rpc-client';
+import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import { createApiGetter, resolveScopedAccessContext, type ApiResult } from '$lib/server/scoped-api';
 import { z } from 'zod';
 
@@ -56,7 +57,9 @@ export const getAdminSlotsPageData = query(
 		if (!scopedAccess) {
 			return {
 				activeContext: null,
+				organizationId: null as string | null,
 				canManage: false,
+				premiumRestriction: null,
 				services: [] as ServicePayload[],
 				slots: [] as SlotPayload[]
 			};
@@ -65,7 +68,9 @@ export const getAdminSlotsPageData = query(
 		if (!scopedAccess.effective.canManageClassroom) {
 			return {
 				activeContext,
+				organizationId: scopedAccess.organizationId,
 				canManage: false,
+				premiumRestriction: null,
 				services: [] as ServicePayload[],
 				slots: [] as SlotPayload[]
 			};
@@ -85,12 +90,28 @@ export const getAdminSlotsPageData = query(
 			})
 		]);
 
+		const premiumRestriction =
+			readOrganizationPremiumRestriction(servicesResult.payload) ??
+			readOrganizationPremiumRestriction(slotsResult.payload);
+		if (premiumRestriction) {
+			return {
+				activeContext,
+				organizationId: scopedAccess.organizationId,
+				canManage: true,
+				premiumRestriction,
+				services: [] as ServicePayload[],
+				slots: [] as SlotPayload[]
+			};
+		}
+
 		assertAllowedFailure(servicesResult, 'サービス一覧の取得に失敗しました。');
 		assertAllowedFailure(slotsResult, '枠一覧の取得に失敗しました。');
 
 		return {
 			activeContext,
+			organizationId: scopedAccess.organizationId,
 			canManage: true,
+			premiumRestriction: null,
 			services: asServices(servicesResult.payload),
 			slots: asSlots(slotsResult.payload)
 		};

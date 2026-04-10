@@ -8,6 +8,7 @@ import {
 	parseResponseBody,
 	toErrorMessage
 } from './auth-session.svelte';
+import { readOrganizationPremiumRestriction } from './premium-restrictions';
 import { readWindowScopedRouteContext } from './scoped-routing';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -34,21 +35,25 @@ export const loadClassroomInvitations = async () => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
 		return {
+			organizationId: null as string | null,
 			operatorInvitations: [] as InvitationPayload[],
 			participantInvitations: [] as InvitationPayload[],
 			canManageClassroom: false,
-			canManageParticipants: false
+			canManageParticipants: false,
+			premiumRestriction: null
 		};
 	}
 
-	const [{ activeClassroom }, invitationResponse] = await Promise.all([
+	const [{ activeOrganization, activeClassroom }, invitationResponse] = await Promise.all([
 		loadOrganizations(context),
 		authRpc.listInvitationsScoped(context)
 	]);
 	const invitationPayload = await parseResponseBody(invitationResponse);
+	const premiumRestriction = readOrganizationPremiumRestriction(invitationPayload);
 	const visibleInvitations = invitationResponse.ok ? asInvitations(invitationPayload) : [];
 
 	return {
+		organizationId: activeOrganization?.id ?? null,
 		operatorInvitations: visibleInvitations.filter(
 			(invitation) => invitation.subjectKind === 'classroom_operator'
 		),
@@ -56,7 +61,8 @@ export const loadClassroomInvitations = async () => {
 			(invitation) => invitation.subjectKind === 'participant'
 		),
 		canManageClassroom: activeClassroom?.canManageClassroom ?? false,
-		canManageParticipants: activeClassroom?.canManageParticipants ?? false
+		canManageParticipants: activeClassroom?.canManageParticipants ?? false,
+		premiumRestriction
 	};
 };
 
@@ -102,15 +108,19 @@ export const createClassroomInvitation = async (input: {
 	});
 	const payload = await parseResponseBody(response);
 	const invitationLabel = input.role === 'participant' ? '参加者招待' : '教室運営招待';
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? input.resend
 				? `${invitationLabel}を再送しました。`
 				: `${invitationLabel}を送信しました。`
-			: toErrorMessage(payload, `${invitationLabel}の作成に失敗しました。`)
+			: premiumRestriction
+				? 'この機能は組織のPremiumプランで利用できます。'
+				: toErrorMessage(payload, `${invitationLabel}の作成に失敗しました。`)
 	};
 };
 
@@ -125,6 +135,7 @@ export const actOperatorInvitation = async (
 				? await authRpc.rejectInvitation({ invitationId })
 				: await authRpc.cancelInvitation({ invitationId });
 	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	const messageByType = {
 		accept: '運営招待を承諾しました。',
 		reject: '運営招待を辞退しました。',
@@ -134,6 +145,11 @@ export const actOperatorInvitation = async (
 	return {
 		ok: response.ok,
 		status: response.status,
-		message: response.ok ? messageByType[type] : toErrorMessage(payload, '招待の操作に失敗しました。')
+		premiumRestriction,
+		message: response.ok
+			? messageByType[type]
+			: premiumRestriction
+				? 'この機能は組織のPremiumプランで利用できます。'
+				: toErrorMessage(payload, '招待の操作に失敗しました。')
 	};
 };

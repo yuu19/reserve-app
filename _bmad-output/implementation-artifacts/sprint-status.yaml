@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-08T02:25:48+09:00
-last_updated: 2026-04-09T02:53:00+09:00
+last_updated: 2026-04-10T16:09:18+09:00
 project: reserve-app
 project_key: NOKEY
 tracking_system: file-system
@@ -52,17 +52,17 @@ development_status:
   2-1-payment-method-registration-handoff-and-billing-status-reflection: review
   2-2-trial-lifecycle-transition-policy: review
   2-3-stripe-webhook-normalization-and-idempotent-billing-synchronization: review
-  2-4-trial-reminder-email-and-notification-history: backlog
-  2-5-billing-audit-trail-and-state-reconciliation-signals: backlog
+  2-4-trial-reminder-email-and-notification-history: review
+  2-5-billing-audit-trail-and-state-reconciliation-signals: review
   epic-2-retrospective: optional
-  epic-3: backlog
-  3-1-organization-scoped-premium-entitlement-policy: backlog
-  3-2-premium-feature-enforcement-in-backend-operational-flows: backlog
-  3-3-premium-gating-ux-on-restricted-features: backlog
-  3-4-premium-capability-coverage-across-core-feature-areas: backlog
+  epic-3: in-progress
+  3-1-organization-scoped-premium-entitlement-policy: review
+  3-2-premium-feature-enforcement-in-backend-operational-flows: review
+  3-3-premium-gating-ux-on-restricted-features: review
+  3-4-premium-capability-coverage-across-core-feature-areas: review
   epic-3-retrospective: optional
-  epic-4: backlog
-  4-1-internal-billing-inspection-view: backlog
+  epic-4: in-progress
+  4-1-internal-billing-inspection-view: ready-for-dev
   4-2-reminder-delivery-and-notification-audit-inspection: backlog
   4-3-stripe-and-application-billing-mismatch-diagnosis: backlog
   4-4-billing-investigation-timeline-for-support-triage: backlog

@@ -34,9 +34,12 @@
 	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 	const resolveDashboardTarget = (targetPath: string): string => {
 		const scopedContext = extractScopedRouteContext(page.url.pathname);
-		return scopedContext ? replacePortalPathWithScopedContext(targetPath, scopedContext) : targetPath;
+		return scopedContext
+			? replacePortalPathWithScopedContext(targetPath, scopedContext)
+			: targetPath;
 	};
-	const toResolvablePath = (targetPath: string): Pathname => resolveDashboardTarget(targetPath) as Pathname;
+	const toResolvablePath = (targetPath: string): Pathname =>
+		resolveDashboardTarget(targetPath) as Pathname;
 
 	const refreshDashboard = async () => {
 		const { session } = await loadSession();
@@ -48,7 +51,7 @@
 		activeOrganization = nextActiveOrganization;
 
 		if (nextActiveOrganization?.id) {
-			const participantData = await loadParticipantFeatureData(nextActiveOrganization.id);
+			const participantData = await loadParticipantFeatureData();
 			participantCount = participantData.participants.length;
 			pendingParticipantInviteCount = participantData.sent.filter(
 				(inv) => inv.status === 'pending'
@@ -91,43 +94,54 @@
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-slate-900">ダッシュボード</h1>
-		<p class="text-sm text-slate-600">
+		<h1 class="text-3xl font-semibold text-foreground">ダッシュボード</h1>
+		<p class="text-sm text-muted-foreground">
 			運用状況のサマリーを確認し、管理者向け・参加者向けの画面へ移動できます。
 		</p>
 	</header>
 
 	<section class="grid gap-4 md:grid-cols-3">
-		<Card class="surface-panel border-slate-200/80 shadow-md">
-			<CardHeader><h2 class="text-sm font-semibold text-slate-700">現在の利用中組織</h2></CardHeader
+		<Card class="surface-panel border-border/80 shadow-md">
+			<CardHeader
+				><h2 class="text-sm font-semibold text-secondary-foreground">
+					現在の利用中組織
+				</h2></CardHeader
 			>
 			<CardContent>
 				{#if loading}
 					<p class="text-sm text-muted-foreground">確認中…</p>
 				{:else if activeOrganization}
 					<div class="flex min-w-0 items-center gap-3">
-						<OrganizationLogo name={activeOrganization.name} logo={activeOrganization.logo} size="lg" />
-						<p class="truncate text-lg font-semibold text-slate-900">{activeOrganization.name}</p>
+						<OrganizationLogo
+							name={activeOrganization.name}
+							logo={activeOrganization.logo}
+							size="lg"
+						/>
+						<p class="truncate text-lg font-semibold text-foreground">{activeOrganization.name}</p>
 					</div>
 				{:else}
-					<p class="text-lg font-semibold text-slate-900">{activeOrganizationLabel}</p>
+					<p class="text-lg font-semibold text-foreground">{activeOrganizationLabel}</p>
 				{/if}
 			</CardContent>
 		</Card>
-		<Card class="surface-panel border-slate-200/80 shadow-md">
-			<CardHeader><h2 class="text-sm font-semibold text-slate-700">参加者数</h2></CardHeader>
+		<Card class="surface-panel border-border/80 shadow-md">
+			<CardHeader
+				><h2 class="text-sm font-semibold text-secondary-foreground">参加者数</h2></CardHeader
+			>
 			<CardContent
-				><p class="metric-value text-3xl font-semibold text-slate-900">
+				><p class="metric-value text-3xl font-semibold text-foreground">
 					{participantCount}
 				</p></CardContent
 			>
 		</Card>
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader
-				><h2 class="text-sm font-semibold text-slate-700">保留中の参加者招待</h2></CardHeader
+				><h2 class="text-sm font-semibold text-secondary-foreground">
+					保留中の参加者招待
+				</h2></CardHeader
 			>
 			<CardContent
-				><p class="metric-value text-3xl font-semibold text-slate-900">
+				><p class="metric-value text-3xl font-semibold text-foreground">
 					{pendingParticipantInviteCount}
 				</p></CardContent
 			>
@@ -135,10 +149,10 @@
 	</section>
 
 	<section class="grid gap-4 lg:grid-cols-2">
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-xl font-semibold text-slate-900">管理者向け</h2>
-				<p class="text-sm text-slate-600">
+				<h2 class="text-xl font-semibold text-foreground">管理者向け</h2>
+				<p class="text-sm text-muted-foreground">
 					組織運用・予約管理・招待管理など、管理権限が必要な操作をまとめています。
 				</p>
 			</CardHeader>
@@ -193,10 +207,10 @@
 			</CardContent>
 		</Card>
 
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-xl font-semibold text-slate-900">参加者向け</h2>
-				<p class="text-sm text-slate-600">
+				<h2 class="text-xl font-semibold text-foreground">参加者向け</h2>
+				<p class="text-sm text-muted-foreground">
 					公開イベントの確認や予約申込みなど、参加者導線に必要な画面へ移動できます。
 				</p>
 			</CardHeader>
@@ -205,8 +219,7 @@
 					<Button
 						type="button"
 						variant="outline"
-						onclick={() => goto(resolve(toResolvablePath('/events')))}
-						>イベント一覧へ移動</Button
+						onclick={() => goto(resolve(toResolvablePath('/events')))}>イベント一覧へ移動</Button
 					>
 					<Button
 						type="button"

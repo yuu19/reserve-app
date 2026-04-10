@@ -102,7 +102,7 @@
 							class={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
 								classroom.id === activeClassroomId
 									? 'border-primary/40 bg-primary/5'
-									: 'border-slate-200/80 bg-white hover:bg-slate-50'
+									: 'border-border/80 bg-card hover:bg-secondary'
 							}`}
 							onclick={() => void selectClassroom(classroom.slug)}
 							disabled={busy}
@@ -110,7 +110,7 @@
 						>
 							<div class="flex items-center justify-between gap-2">
 								<div class="min-w-0">
-									<p class="truncate text-sm font-medium text-slate-900">{classroom.name}</p>
+									<p class="truncate text-sm font-medium text-foreground">{classroom.name}</p>
 									<p class="truncate text-xs text-muted-foreground">slug: {classroom.slug}</p>
 								</div>
 								{#if classroom.id === activeClassroomId}

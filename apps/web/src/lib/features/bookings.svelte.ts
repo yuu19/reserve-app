@@ -12,6 +12,7 @@ import { getParticipantBookingsPageData } from '$lib/remote/participant-bookings
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import { readOrganizationPremiumRestriction } from './premium-restrictions';
 import { readWindowScopedRouteContext } from './scoped-routing';
 
 dayjs.extend(utc);
@@ -63,10 +64,14 @@ const isServiceImageUploadUrlPayload = (value: unknown): value is ServiceImageUp
 
 export const toReservationErrorMessage = (status: number, payload: unknown, fallback: string) => {
 	const message = extractMessage(payload);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	if (status === 401) {
 		return 'セッションの有効期限が切れました。再ログインしてください。';
 	}
 	if (status === 403) {
+		if (premiumRestriction) {
+			return 'この機能は組織のPremiumプランで利用できます。';
+		}
 		return 'この操作には参加者所属または管理権限が必要です。';
 	}
 	if (status === 404) {

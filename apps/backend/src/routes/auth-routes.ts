@@ -4,6 +4,7 @@ import {
   canViewOrganizationBillingByRole,
   canManageParticipantsByRole,
   listOrganizationClassroomContexts,
+  readOrganizationPremiumFeatureGate,
   resolveOrganizationClassroomAccess,
   resolveOrganizationClassroomContext,
 } from '../booking/authorization.js';
@@ -17,12 +18,17 @@ import {
   ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
   ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
   resolveOrganizationBillingPaymentMethodStatus,
-  resolveOrganizationBillingPlanState,
-  resolveOrganizationBillingTrialEndsAt,
   selectOrganizationBillingSummary,
   startOrganizationPremiumTrial,
   updateOrganizationBillingStripeCustomerId,
 } from '../billing/organization-billing.js';
+import { resolveOrganizationPremiumEntitlementPolicy } from '../billing/organization-billing-policy.js';
+import {
+  appendOrganizationBillingAuditEvent,
+  appendOrganizationBillingSignal,
+  appendResolvedBillingSignalIfNeeded,
+  readOrganizationBillingObservationSnapshot,
+} from '../billing/organization-billing-observability.js';
 import * as dbSchema from '../db/schema.js';
 import { sendOrganizationInvitationEmail, sendParticipantInvitationEmail } from '../email/resend.js';
 import type { OrganizationLogoService } from '../organization-logo-service.js';
@@ -2626,27 +2632,26 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       const subscriptionStatus =
         isBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
       const currentPeriodEnd = toIsoDateString(billing?.currentPeriodEnd);
-      const planState = resolveOrganizationBillingPlanState({
-        planCode,
-        subscriptionStatus,
-      });
       const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
         env,
         planCode,
         stripeCustomerId: billing?.stripeCustomerId ?? null,
       });
+      const entitlementPolicy = resolveOrganizationPremiumEntitlementPolicy({
+        planCode,
+        subscriptionStatus,
+        paymentMethodStatus,
+        currentPeriodEnd,
+      });
       return c.json(
         {
           planCode,
-          planState,
+          planState: entitlementPolicy.planState,
           billingInterval,
           subscriptionStatus,
           cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
           currentPeriodEnd,
-          trialEndsAt: resolveOrganizationBillingTrialEndsAt({
-            planState,
-            currentPeriodEnd,
-          }),
+          trialEndsAt: entitlementPolicy.trialEndsAt,
           paymentMethodStatus,
           canViewBilling: true,
           canManageBilling: role === 'owner',
@@ -2737,7 +2742,25 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE }, 409);
       }
 
+      const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId,
+      });
       await startOrganizationPremiumTrial({ database, organizationId });
+      const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId,
+      });
+      await appendOrganizationBillingAuditEvent({
+        database,
+        organizationId,
+        sourceKind: 'trial_start',
+        previousSnapshot: previousBillingSnapshot,
+        nextSnapshot: nextBillingSnapshot,
+        sourceContext: 'owner_started_premium_trial',
+      });
 
       return c.json(
         {
@@ -2780,6 +2803,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
       let customerId = billing.stripeCustomerId;
       if (!customerId) {
+        const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+          database,
+          env,
+          organizationId,
+        });
         const customer = await createCustomer({
           env,
           metadata: {
@@ -2792,6 +2820,19 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           database,
           organizationId,
           stripeCustomerId: customerId,
+        });
+        const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+          database,
+          env,
+          organizationId,
+        });
+        await appendOrganizationBillingAuditEvent({
+          database,
+          organizationId,
+          sourceKind: 'payment_method_customer_linked',
+          previousSnapshot: previousBillingSnapshot,
+          nextSnapshot: nextBillingSnapshot,
+          sourceContext: 'stripe_customer_created_for_payment_method_registration',
         });
       }
 
@@ -2834,14 +2875,58 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
+      const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId,
+      });
       const completion = await applyOrganizationPremiumTrialCompletion({
         database,
         env,
         organizationId,
       });
       if (!completion.ok) {
+        const currentBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+          database,
+          env,
+          organizationId,
+        });
+        await appendOrganizationBillingSignal({
+          database,
+          organizationId,
+          signalKind: 'reconciliation',
+          signalStatus: completion.status === 503 ? 'pending' : 'unavailable',
+          sourceKind: 'trial_completion',
+          reason:
+            completion.status === 503
+              ? 'trial_completion_pending'
+              : 'trial_completion_not_ready_or_unavailable',
+          appSnapshot: currentBillingSnapshot,
+        });
         return c.json({ message: completion.message }, completion.status);
       }
+
+      const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId,
+      });
+      await appendOrganizationBillingAuditEvent({
+        database,
+        organizationId,
+        sourceKind: 'trial_completion',
+        previousSnapshot: previousBillingSnapshot,
+        nextSnapshot: nextBillingSnapshot,
+        sourceContext: completion.message,
+      });
+      await appendResolvedBillingSignalIfNeeded({
+        database,
+        organizationId,
+        signalKind: 'reconciliation',
+        sourceKind: 'trial_completion',
+        reason: 'trial_completion_applied',
+        appSnapshot: nextBillingSnapshot,
+      });
 
       return c.json({ message: completion.message }, 200);
     })();
@@ -2941,6 +3026,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       });
       if (!access.effective.canManageOrganization) {
         return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const premiumGate = await readOrganizationPremiumFeatureGate({
+        database,
+        env,
+        organizationId: organization.id,
+      });
+      if (!premiumGate.allowed) {
+        return c.json(premiumGate.body, premiumGate.status);
       }
 
       const slug = body.slug.trim();
@@ -3310,6 +3404,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
+      const premiumGate = await readOrganizationPremiumFeatureGate({
+        database,
+        env,
+        organizationId: organization.id,
+      });
+      if (!premiumGate.allowed) {
+        return c.json(premiumGate.body, premiumGate.status);
+      }
+
       const normalizedEmail = normalizeEmail(body.email);
       const pendingInvitation = await markInvitationExpiredIfNeeded(
         await findPendingInvitationForResend({
@@ -3416,6 +3519,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
+      const premiumGate = await readOrganizationPremiumFeatureGate({
+        database,
+        env,
+        organizationId: organization.id,
+      });
+      if (!premiumGate.allowed) {
+        return c.json(premiumGate.body, premiumGate.status);
+      }
+
       const invitations = await listSerializedInvitations(
         and(
           eq(dbSchema.invitation.organizationId, organization.id),
@@ -3460,6 +3572,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         }
       } else if (!access.effective.canManageClassroom) {
         return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const premiumGate = await readOrganizationPremiumFeatureGate({
+        database,
+        env,
+        organizationId: classroomContext.organizationId,
+      });
+      if (!premiumGate.allowed) {
+        return c.json(premiumGate.body, premiumGate.status);
       }
 
       const pendingInvitation = await markInvitationExpiredIfNeeded(
@@ -3576,6 +3697,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
+      const premiumGate = await readOrganizationPremiumFeatureGate({
+        database,
+        env,
+        organizationId: classroomContext.organizationId,
+      });
+      if (!premiumGate.allowed) {
+        return c.json(premiumGate.body, premiumGate.status);
+      }
+
       const invitations = await listSerializedInvitations(
         and(
           eq(dbSchema.invitation.organizationId, classroomContext.organizationId),
@@ -3657,6 +3787,20 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
       if (!isInvitationRecipient({ invitation, email: identity.email })) {
         return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      if (
+        invitation.subjectKind === 'org_operator'
+        || invitation.subjectKind === 'classroom_operator'
+      ) {
+        const premiumGate = await readOrganizationPremiumFeatureGate({
+          database,
+          env,
+          organizationId: invitation.organizationId,
+        });
+        if (!premiumGate.allowed) {
+          return c.json(premiumGate.body, premiumGate.status);
+        }
       }
 
       const serializedBeforeAccept = serializeInvitation(invitation);
@@ -3848,6 +3992,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         if (!hasAccess) {
           return c.json({ message: 'Forbidden' }, 403);
         }
+      }
+
+      const premiumGate = await readOrganizationPremiumFeatureGate({
+        database,
+        env,
+        organizationId,
+      });
+      if (!premiumGate.allowed) {
+        return c.json(premiumGate.body, premiumGate.status);
       }
 
       const filters = [eq(dbSchema.participant.organizationId, organizationId)];

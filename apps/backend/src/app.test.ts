@@ -291,6 +291,87 @@ const selectStripeWebhookFailureRows = async (eventId: string | null = null) => 
   return result.results;
 };
 
+const selectOrganizationBillingNotificationRows = async (organizationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT notification_kind as notificationKind, channel, sequence_number as sequenceNumber, delivery_state as deliveryState, attempt_number as attemptNumber, stripe_event_id as stripeEventId, recipient_email as recipientEmail, plan_state as planState, subscription_status as subscriptionStatus, payment_method_status as paymentMethodStatus, failure_reason as failureReason FROM organization_billing_notification WHERE organization_id = ? ORDER BY sequence_number ASC',
+    )
+    .bind(organizationId)
+    .all<{
+      notificationKind: string;
+      channel: string;
+      sequenceNumber: number | string;
+      deliveryState: string;
+      attemptNumber: number | string;
+      stripeEventId: string | null;
+      recipientEmail: string | null;
+      planState: string;
+      subscriptionStatus: string;
+      paymentMethodStatus: string;
+      failureReason: string | null;
+    }>();
+
+  return result.results.map((row) => ({
+    ...row,
+    sequenceNumber: Number(row.sequenceNumber),
+    attemptNumber: Number(row.attemptNumber),
+  }));
+};
+
+const selectOrganizationBillingAuditEventRows = async (organizationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT sequence_number as sequenceNumber, source_kind as sourceKind, stripe_event_id as stripeEventId, source_context as sourceContext, previous_plan_state as previousPlanState, next_plan_state as nextPlanState, previous_subscription_status as previousSubscriptionStatus, next_subscription_status as nextSubscriptionStatus, previous_payment_method_status as previousPaymentMethodStatus, next_payment_method_status as nextPaymentMethodStatus, previous_entitlement_state as previousEntitlementState, next_entitlement_state as nextEntitlementState FROM organization_billing_audit_event WHERE organization_id = ? ORDER BY sequence_number ASC',
+    )
+    .bind(organizationId)
+    .all<{
+      sequenceNumber: number | string;
+      sourceKind: string;
+      stripeEventId: string | null;
+      sourceContext: string | null;
+      previousPlanState: string;
+      nextPlanState: string;
+      previousSubscriptionStatus: string;
+      nextSubscriptionStatus: string;
+      previousPaymentMethodStatus: string;
+      nextPaymentMethodStatus: string;
+      previousEntitlementState: string;
+      nextEntitlementState: string;
+    }>();
+
+  return result.results.map((row) => ({
+    ...row,
+    sequenceNumber: Number(row.sequenceNumber),
+  }));
+};
+
+const selectOrganizationBillingSignalRows = async (organizationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT sequence_number as sequenceNumber, signal_kind as signalKind, signal_status as signalStatus, source_kind as sourceKind, reason, stripe_event_id as stripeEventId, provider_plan_state as providerPlanState, provider_subscription_status as providerSubscriptionStatus, app_plan_state as appPlanState, app_subscription_status as appSubscriptionStatus, app_payment_method_status as appPaymentMethodStatus, app_entitlement_state as appEntitlementState FROM organization_billing_signal WHERE organization_id = ? ORDER BY sequence_number ASC',
+    )
+    .bind(organizationId)
+    .all<{
+      sequenceNumber: number | string;
+      signalKind: string;
+      signalStatus: string;
+      sourceKind: string;
+      reason: string;
+      stripeEventId: string | null;
+      providerPlanState: string | null;
+      providerSubscriptionStatus: string | null;
+      appPlanState: string;
+      appSubscriptionStatus: string;
+      appPaymentMethodStatus: string;
+      appEntitlementState: string;
+    }>();
+
+  return result.results.map((row) => ({
+    ...row,
+    sequenceNumber: Number(row.sequenceNumber),
+  }));
+};
+
 const selectOrganizationOperationalRowCounts = async (organizationId: string) => {
   const [classroomRow, serviceRow, participantRow, bookingRow] = await Promise.all([
     d1
@@ -405,6 +486,74 @@ const selectOrganizationSlugById = async (organizationId: string) => {
   return row?.slug ?? null;
 };
 
+const selectClassroomIdBySlug = async (organizationId: string, slug: string) => {
+  const row = await d1
+    .prepare('SELECT id FROM classroom WHERE organization_id = ? AND slug = ? LIMIT 1')
+    .bind(organizationId, slug)
+    .first<{ id: string }>();
+  return row?.id ?? null;
+};
+
+const selectUserIdByEmail = async (email: string) => {
+  const row = await d1
+    .prepare('SELECT id FROM user WHERE email = ? LIMIT 1')
+    .bind(email)
+    .first<{ id: string }>();
+  return row?.id ?? null;
+};
+
+const setOrganizationBillingState = async ({
+  organizationId,
+  planCode,
+  subscriptionStatus,
+  billingInterval,
+  currentPeriodEnd,
+}: {
+  organizationId: string;
+  planCode: 'free' | 'premium';
+  subscriptionStatus: 'free' | 'trialing' | 'active' | 'past_due' | 'unpaid' | 'incomplete' | 'canceled';
+  billingInterval?: 'monthly' | 'yearly' | null;
+  currentPeriodEnd?: Date | null;
+}) => {
+  await d1
+    .prepare(
+      'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, billing_interval = ?, current_period_end = ? WHERE organization_id = ?',
+    )
+    .bind(
+      planCode,
+      subscriptionStatus,
+      billingInterval ?? null,
+      currentPeriodEnd ? currentPeriodEnd.getTime() : null,
+      organizationId,
+    )
+    .run();
+};
+
+const enablePremiumForOrganization = async (organizationId: string) => {
+  await setOrganizationBillingState({
+    organizationId,
+    planCode: 'premium',
+    subscriptionStatus: 'active',
+    billingInterval: 'monthly',
+    currentPeriodEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
+};
+
+const insertOrganizationMember = async ({
+  organizationId,
+  userId,
+  role,
+}: {
+  organizationId: string;
+  userId: string;
+  role: 'owner' | 'admin' | 'member';
+}) => {
+  await d1
+    .prepare('INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(crypto.randomUUID(), organizationId, userId, role, Date.now())
+    .run();
+};
+
 const buildOrgInvitationPath = (organizationSlug: string) =>
   `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug)}/invitations`;
 
@@ -418,6 +567,24 @@ const buildInvitationActionPath = (
   invitationId: string,
   action: 'accept' | 'reject' | 'cancel',
 ) => `/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/${action}`;
+
+const acceptInvitation = async ({
+  agent,
+  invitationId,
+}: {
+  agent: ReturnType<typeof createAuthAgent>;
+  invitationId: string;
+}) => {
+  return agent.request(buildInvitationActionPath(invitationId, 'accept'), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      invitationId,
+    }),
+  });
+};
 
 const createInvitation = async ({
   agent,
@@ -741,6 +908,7 @@ describe('backend app', () => {
       name: 'Invited Org',
       slug: 'invited-org',
     });
+    await enablePremiumForOrganization(invitedOrganizationId);
 
     const invite = await createInvitation({
       agent: inviter,
@@ -889,50 +1057,29 @@ describe('backend app', () => {
       expect(billingAfterCreate?.planCode).toBe('free');
       expect(billingAfterCreate?.subscriptionStatus).toBe('free');
 
-      const invite = await createInvitation({
-        agent: owner,
-        email: 'billing-admin@example.com',
-        role: 'admin',
-        organizationId,
-      });
-      expect(invite.response.status).toBe(200);
-
       const admin = createAuthAgent(appWithStripe);
       await signUpUser({
         agent: admin,
         name: 'Billing Admin',
         email: 'billing-admin@example.com',
       });
-      const acceptResponse = await admin.request(buildInvitationActionPath(String(invite.payload?.id), 'accept'), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ invitationId: String(invite.payload?.id) }),
-      });
-      expect(acceptResponse.status).toBe(200);
-
-      const memberInvite = await createInvitation({
-        agent: owner,
-        email: 'billing-member@example.com',
-        role: 'member',
-        organizationId,
-      });
-      expect(memberInvite.response.status).toBe(200);
-
       const member = createAuthAgent(appWithStripe);
       await signUpUser({
         agent: member,
         name: 'Billing Member',
         email: 'billing-member@example.com',
       });
-      const memberAcceptResponse = await member.request(
-        buildInvitationActionPath(String(memberInvite.payload?.id), 'accept'),
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ invitationId: String(memberInvite.payload?.id) }),
-        },
-      );
-      expect(memberAcceptResponse.status).toBe(200);
+
+      await insertOrganizationMember({
+        organizationId,
+        userId: (await selectUserIdByEmail('billing-admin@example.com')) as string,
+        role: 'admin',
+      });
+      await insertOrganizationMember({
+        organizationId,
+        userId: (await selectUserIdByEmail('billing-member@example.com')) as string,
+        role: 'member',
+      });
 
       const ownerBillingResponse = await owner.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -1563,6 +1710,42 @@ describe('backend app', () => {
       expect(billingAfterReconcile?.planCode).toBe('free');
       expect(billingAfterReconcile?.subscriptionStatus).toBe('canceled');
       expect(billingAfterReconcile?.stripeSubscriptionId).toBeNull();
+      expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          sourceKind: 'webhook_checkout_completed',
+          stripeEventId: 'evt_out_of_order_checkout',
+          previousPlanState: 'free',
+          nextPlanState: 'premium_paid',
+        }),
+        expect.objectContaining({
+          sequenceNumber: 2,
+          sourceKind: 'webhook_subscription_lifecycle',
+          stripeEventId: 'evt_out_of_order_subscription',
+          previousPlanState: 'premium_paid',
+          nextPlanState: 'free',
+        }),
+      ]);
+      expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          signalKind: 'reconciliation',
+          signalStatus: 'mismatch',
+          sourceKind: 'webhook_subscription_lifecycle',
+          reason: 'plan_state_mismatch',
+          providerPlanState: 'free',
+          appPlanState: 'premium_paid',
+        }),
+        expect.objectContaining({
+          sequenceNumber: 2,
+          signalKind: 'reconciliation',
+          signalStatus: 'resolved',
+          sourceKind: 'webhook_subscription_lifecycle',
+          reason: 'provider_and_app_state_aligned',
+          providerPlanState: 'free',
+          appPlanState: 'free',
+        }),
+      ]);
       expect(await selectStripeWebhookEventRow('evt_out_of_order_subscription')).toMatchObject({
         id: 'evt_out_of_order_subscription',
         processingStatus: 'processed',
@@ -1733,6 +1916,17 @@ describe('backend app', () => {
           organizationId,
         }),
       ]);
+      expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          signalKind: 'reconciliation',
+          signalStatus: 'pending',
+          sourceKind: 'webhook_trial_completion',
+          reason: 'trial_completion_pending',
+          appPlanState: 'premium_trial',
+          appEntitlementState: 'free_only',
+        }),
+      ]);
     } finally {
       fetchSpy.mockRestore();
     }
@@ -1827,6 +2021,807 @@ describe('backend app', () => {
     ]);
   });
 
+  it('sends owner-only trial reminder emails and records billing notification history', async () => {
+    const stripeWebhookSecret = 'whsec_test_trial_reminder_success';
+    const stripeMonthlyPriceId = 'price_trial_reminder_monthly';
+    const authRuntimeWithReminder = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: 'sk_test_trial_reminder_success',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithReminder = createApp(authRuntimeWithReminder);
+
+    const resendRequests: Array<{ to: string[]; subject: string; text: string }> = [];
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_trial_reminder')) {
+        return new Response(
+          JSON.stringify({
+            id: 'sub_trial_reminder',
+            customer: 'cus_trial_reminder',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_start: Math.floor((Date.now() - 4 * 24 * 60 * 60 * 1000) / 1000),
+            current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+            items: {
+              data: [
+                {
+                  current_period_start: Math.floor((Date.now() - 4 * 24 * 60 * 60 * 1000) / 1000),
+                  current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url.startsWith('https://api.stripe.com/v1/customers/cus_trial_reminder')) {
+        return new Response(
+          JSON.stringify({
+            id: 'cus_trial_reminder',
+            invoice_settings: {
+              default_payment_method: null,
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url === 'https://api.resend.com/emails') {
+        const payloadText =
+          typeof init?.body === 'string'
+            ? init.body
+            : init?.body
+              ? String(init.body)
+              : '{}';
+        const payload = JSON.parse(payloadText) as { to?: unknown; subject?: unknown; text?: unknown };
+        resendRequests.push({
+          to: Array.isArray(payload.to)
+            ? payload.to.filter((value): value is string => typeof value === 'string')
+            : [],
+          subject: typeof payload.subject === 'string' ? payload.subject : '',
+          text: typeof payload.text === 'string' ? payload.text : '',
+        });
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithReminder);
+      await signUpUser({
+        agent: owner,
+        name: 'Trial Reminder Owner',
+        email: 'trial-reminder-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Trial Reminder Org',
+        slug: 'trial-reminder-org',
+      });
+
+      const admin = createAuthAgent(appWithReminder);
+      await signUpUser({
+        agent: admin,
+        name: 'Trial Reminder Admin',
+        email: 'trial-reminder-admin@example.com',
+      });
+      await insertOrganizationMember({
+        organizationId,
+        userId: (await selectUserIdByEmail('trial-reminder-admin@example.com')) as string,
+        role: 'admin',
+      });
+
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+
+      await d1
+        .prepare(
+          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
+        )
+        .bind(
+          'cus_trial_reminder',
+          'sub_trial_reminder',
+          stripeMonthlyPriceId,
+          Date.now() + 3 * 24 * 60 * 60 * 1000,
+          organizationId,
+        )
+        .run();
+
+      const webhookPayload = JSON.stringify({
+        id: 'evt_trial_reminder_success',
+        type: 'customer.subscription.trial_will_end',
+        data: {
+          object: {
+            id: 'sub_trial_reminder',
+            customer: 'cus_trial_reminder',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+            items: {
+              data: [
+                {
+                  current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const signature = await createStripeSignatureHeader(webhookPayload, stripeWebhookSecret);
+      const response = await appWithReminder.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': signature,
+        },
+        body: webhookPayload,
+      });
+      expect(response.status).toBe(200);
+
+      const trialReminderRequests = resendRequests.filter(
+        (request) => request.subject === '【契約通知】プレミアムトライアルの終了が近づいています',
+      );
+
+      expect(trialReminderRequests).toEqual([
+        expect.objectContaining({
+          to: ['trial-reminder-owner@example.com'],
+          subject: '【契約通知】プレミアムトライアルの終了が近づいています',
+        }),
+      ]);
+      expect(trialReminderRequests[0]?.text).toContain(
+        '契約ページで登録状況を確認し、未完了であれば支払い方法の登録を完了してください',
+      );
+      expect(trialReminderRequests[0]?.text).toContain(
+        '支払い方法の登録状況の反映が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
+      );
+      const notificationRows = await selectOrganizationBillingNotificationRows(organizationId);
+      expect(notificationRows).toEqual([
+        expect.objectContaining({
+          notificationKind: 'trial_will_end_email',
+          sequenceNumber: 1,
+          deliveryState: 'requested',
+          attemptNumber: 1,
+          stripeEventId: 'evt_trial_reminder_success',
+          recipientEmail: 'trial-reminder-owner@example.com',
+          planState: 'premium_trial',
+          subscriptionStatus: 'trialing',
+          paymentMethodStatus: 'pending',
+          failureReason: null,
+        }),
+        expect.objectContaining({
+          notificationKind: 'trial_will_end_email',
+          sequenceNumber: 2,
+          deliveryState: 'sent',
+          attemptNumber: 1,
+          stripeEventId: 'evt_trial_reminder_success',
+          recipientEmail: 'trial-reminder-owner@example.com',
+          planState: 'premium_trial',
+          subscriptionStatus: 'trialing',
+          paymentMethodStatus: 'pending',
+          failureReason: null,
+        }),
+      ]);
+      expect(await selectStripeWebhookEventRow('evt_trial_reminder_success')).toMatchObject({
+        id: 'evt_trial_reminder_success',
+        processingStatus: 'processed',
+        organizationId,
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('adjusts trial reminder email messaging when the payment method is already registered', async () => {
+    const stripeWebhookSecret = 'whsec_test_trial_reminder_registered';
+    const stripeMonthlyPriceId = 'price_trial_reminder_registered_monthly';
+    const authRuntimeWithReminder = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: 'sk_test_trial_reminder_registered',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithReminder = createApp(authRuntimeWithReminder);
+
+    const resendRequests: Array<{ to: string[]; subject: string; text: string }> = [];
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_trial_reminder_registered')) {
+        return new Response(
+          JSON.stringify({
+            id: 'sub_trial_reminder_registered',
+            customer: 'cus_trial_reminder_registered',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+            items: {
+              data: [
+                {
+                  current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url.startsWith('https://api.stripe.com/v1/customers/cus_trial_reminder_registered')) {
+        return new Response(
+          JSON.stringify({
+            id: 'cus_trial_reminder_registered',
+            invoice_settings: {
+              default_payment_method: 'pm_registered',
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url === 'https://api.resend.com/emails') {
+        const payloadText =
+          typeof init?.body === 'string'
+            ? init.body
+            : init?.body
+              ? String(init.body)
+              : '{}';
+        const payload = JSON.parse(payloadText) as { to?: unknown; subject?: unknown; text?: unknown };
+        resendRequests.push({
+          to: Array.isArray(payload.to)
+            ? payload.to.filter((value): value is string => typeof value === 'string')
+            : [],
+          subject: typeof payload.subject === 'string' ? payload.subject : '',
+          text: typeof payload.text === 'string' ? payload.text : '',
+        });
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithReminder);
+      await signUpUser({
+        agent: owner,
+        name: 'Trial Reminder Registered Owner',
+        email: 'trial-reminder-registered-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Trial Reminder Registered Org',
+        slug: 'trial-reminder-registered-org',
+      });
+
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+
+      await d1
+        .prepare(
+          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
+        )
+        .bind(
+          'cus_trial_reminder_registered',
+          'sub_trial_reminder_registered',
+          stripeMonthlyPriceId,
+          Date.now() + 3 * 24 * 60 * 60 * 1000,
+          organizationId,
+        )
+        .run();
+
+      const webhookPayload = JSON.stringify({
+        id: 'evt_trial_reminder_registered',
+        type: 'customer.subscription.trial_will_end',
+        data: {
+          object: {
+            id: 'sub_trial_reminder_registered',
+            customer: 'cus_trial_reminder_registered',
+            status: 'trialing',
+          },
+        },
+      });
+      const signature = await createStripeSignatureHeader(webhookPayload, stripeWebhookSecret);
+      const response = await appWithReminder.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': signature,
+        },
+        body: webhookPayload,
+      });
+      expect(response.status).toBe(200);
+
+      expect(resendRequests).toEqual([
+        expect.objectContaining({
+          to: ['trial-reminder-registered-owner@example.com'],
+          subject: '【契約通知】プレミアムトライアルの終了が近づいています',
+        }),
+      ]);
+      expect(resendRequests[0]?.text).toContain(
+        '追加の登録は不要です。契約ページで継続予定と登録済みの支払い方法をご確認ください',
+      );
+      expect(resendRequests[0]?.text).toContain(
+        '現在の支払い方法は登録済みです。トライアル終了前に契約内容をご確認ください。',
+      );
+      expect(resendRequests[0]?.text).not.toContain('支払い方法の登録を完了してください');
+      expect(resendRequests[0]?.text).not.toContain('無料プランへ戻ることがあります。');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('suppresses duplicate trial reminder webhook deliveries after a successful send', async () => {
+    const stripeWebhookSecret = 'whsec_test_trial_reminder_duplicate';
+    const stripeMonthlyPriceId = 'price_trial_reminder_duplicate_monthly';
+    const authRuntimeWithReminder = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: 'sk_test_trial_reminder_duplicate',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithReminder = createApp(authRuntimeWithReminder);
+
+    const resendRequests: Array<{ to: string[]; subject: string }> = [];
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_trial_reminder_duplicate')) {
+        return new Response(
+          JSON.stringify({
+            id: 'sub_trial_reminder_duplicate',
+            customer: 'cus_trial_reminder_duplicate',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+            items: {
+              data: [
+                {
+                  current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url.startsWith('https://api.stripe.com/v1/customers/cus_trial_reminder_duplicate')) {
+        return new Response(
+          JSON.stringify({
+            id: 'cus_trial_reminder_duplicate',
+            invoice_settings: {
+              default_payment_method: null,
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url === 'https://api.resend.com/emails') {
+        const payloadText = typeof init?.body === 'string' ? init.body : '{}';
+        const payload = JSON.parse(payloadText) as { to?: unknown; subject?: unknown };
+        resendRequests.push({
+          to: Array.isArray(payload.to)
+            ? payload.to.filter((value): value is string => typeof value === 'string')
+            : [],
+          subject: typeof payload.subject === 'string' ? payload.subject : '',
+        });
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithReminder);
+      await signUpUser({
+        agent: owner,
+        name: 'Trial Reminder Duplicate Owner',
+        email: 'trial-reminder-duplicate-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Trial Reminder Duplicate Org',
+        slug: 'trial-reminder-duplicate-org',
+      });
+
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+
+      await d1
+        .prepare(
+          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
+        )
+        .bind(
+          'cus_trial_reminder_duplicate',
+          'sub_trial_reminder_duplicate',
+          stripeMonthlyPriceId,
+          Date.now() + 3 * 24 * 60 * 60 * 1000,
+          organizationId,
+        )
+        .run();
+
+      const webhookPayload = JSON.stringify({
+        id: 'evt_trial_reminder_duplicate',
+        type: 'customer.subscription.trial_will_end',
+        data: {
+          object: {
+            id: 'sub_trial_reminder_duplicate',
+            customer: 'cus_trial_reminder_duplicate',
+            status: 'trialing',
+          },
+        },
+      });
+      const signature = await createStripeSignatureHeader(webhookPayload, stripeWebhookSecret);
+      const firstResponse = await appWithReminder.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': signature,
+        },
+        body: webhookPayload,
+      });
+      expect(firstResponse.status).toBe(200);
+
+      const secondResponse = await appWithReminder.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': signature,
+        },
+        body: webhookPayload,
+      });
+      expect(secondResponse.status).toBe(200);
+
+      expect(resendRequests).toHaveLength(1);
+      expect(await countStripeWebhookEventRows('evt_trial_reminder_duplicate')).toBe(1);
+      expect(await selectOrganizationBillingNotificationRows(organizationId)).toHaveLength(2);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('records retryable trial reminder delivery failures and succeeds on Stripe redelivery', async () => {
+    const stripeWebhookSecret = 'whsec_test_trial_reminder_retry';
+    const stripeMonthlyPriceId = 'price_trial_reminder_retry_monthly';
+    const authRuntimeWithReminder = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        STRIPE_SECRET_KEY: 'sk_test_trial_reminder_retry',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithReminder = createApp(authRuntimeWithReminder);
+
+    let shouldFailResend = true;
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_trial_reminder_retry')) {
+        return new Response(
+          JSON.stringify({
+            id: 'sub_trial_reminder_retry',
+            customer: 'cus_trial_reminder_retry',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+            items: {
+              data: [
+                {
+                  current_period_end: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000),
+                  price: {
+                    id: stripeMonthlyPriceId,
+                  },
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url.startsWith('https://api.stripe.com/v1/customers/cus_trial_reminder_retry')) {
+        return new Response(
+          JSON.stringify({
+            id: 'cus_trial_reminder_retry',
+            invoice_settings: {
+              default_payment_method: null,
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url === 'https://api.resend.com/emails') {
+        if (shouldFailResend) {
+          throw new TypeError('fetch failed');
+        }
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithReminder);
+      await signUpUser({
+        agent: owner,
+        name: 'Trial Reminder Retry Owner',
+        email: 'trial-reminder-retry-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Trial Reminder Retry Org',
+        slug: 'trial-reminder-retry-org',
+      });
+
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+
+      await d1
+        .prepare(
+          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
+        )
+        .bind(
+          'cus_trial_reminder_retry',
+          'sub_trial_reminder_retry',
+          stripeMonthlyPriceId,
+          Date.now() + 3 * 24 * 60 * 60 * 1000,
+          organizationId,
+        )
+        .run();
+
+      const webhookPayload = JSON.stringify({
+        id: 'evt_trial_reminder_retry',
+        type: 'customer.subscription.trial_will_end',
+        data: {
+          object: {
+            id: 'sub_trial_reminder_retry',
+            customer: 'cus_trial_reminder_retry',
+            status: 'trialing',
+          },
+        },
+      });
+      const signature = await createStripeSignatureHeader(webhookPayload, stripeWebhookSecret);
+
+      const firstResponse = await appWithReminder.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': signature,
+        },
+        body: webhookPayload,
+      });
+      expect(firstResponse.status).toBe(500);
+      expect(await selectStripeWebhookEventRow('evt_trial_reminder_retry')).toMatchObject({
+        id: 'evt_trial_reminder_retry',
+        processingStatus: 'failed',
+        organizationId,
+        failureReason: 'trial_reminder_delivery_failed',
+      });
+      expect(await selectOrganizationBillingNotificationRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          deliveryState: 'requested',
+          attemptNumber: 1,
+          stripeEventId: 'evt_trial_reminder_retry',
+          recipientEmail: 'trial-reminder-retry-owner@example.com',
+          failureReason: null,
+        }),
+        expect.objectContaining({
+          sequenceNumber: 2,
+          deliveryState: 'failed',
+          attemptNumber: 1,
+          stripeEventId: 'evt_trial_reminder_retry',
+          recipientEmail: 'trial-reminder-retry-owner@example.com',
+          failureReason: 'resend_delivery_failed',
+        }),
+      ]);
+      expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          signalKind: 'notification_delivery',
+          signalStatus: 'pending',
+          sourceKind: 'trial_will_end_email',
+          reason: 'resend_delivery_failed',
+        }),
+      ]);
+
+      shouldFailResend = false;
+      const retryResponse = await appWithReminder.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': signature,
+        },
+        body: webhookPayload,
+      });
+      expect(retryResponse.status).toBe(200);
+      expect(await selectStripeWebhookEventRow('evt_trial_reminder_retry')).toMatchObject({
+        id: 'evt_trial_reminder_retry',
+        processingStatus: 'processed',
+        organizationId,
+        failureReason: null,
+      });
+      expect(await selectOrganizationBillingNotificationRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          deliveryState: 'requested',
+          attemptNumber: 1,
+          stripeEventId: 'evt_trial_reminder_retry',
+        }),
+        expect.objectContaining({
+          sequenceNumber: 2,
+          deliveryState: 'failed',
+          attemptNumber: 1,
+          stripeEventId: 'evt_trial_reminder_retry',
+          failureReason: 'resend_delivery_failed',
+        }),
+        expect.objectContaining({
+          sequenceNumber: 3,
+          deliveryState: 'retried',
+          attemptNumber: 2,
+          stripeEventId: 'evt_trial_reminder_retry',
+        }),
+        expect.objectContaining({
+          sequenceNumber: 4,
+          deliveryState: 'sent',
+          attemptNumber: 2,
+          stripeEventId: 'evt_trial_reminder_retry',
+        }),
+      ]);
+      expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          signalKind: 'notification_delivery',
+          signalStatus: 'pending',
+          sourceKind: 'trial_will_end_email',
+          reason: 'resend_delivery_failed',
+        }),
+        expect.objectContaining({
+          sequenceNumber: 2,
+          signalKind: 'notification_delivery',
+          signalStatus: 'resolved',
+          sourceKind: 'trial_will_end_email',
+          reason: 'trial_reminder_delivery_succeeded',
+        }),
+      ]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('starts owner-only premium trials and rejects duplicate active lifecycle states', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
@@ -1841,37 +2836,12 @@ describe('backend app', () => {
       slug: 'trial-org',
     });
 
-    const adminInvite = await createInvitation({
-      agent: owner,
-      email: 'trial-admin@example.com',
-      role: 'admin',
-      organizationId,
-    });
-    expect(adminInvite.response.status).toBe(200);
-
     const admin = createAuthAgent(app);
     await signUpUser({
       agent: admin,
       name: 'Trial Admin',
       email: 'trial-admin@example.com',
     });
-    const adminAcceptResponse = await admin.request(
-      buildInvitationActionPath(String(adminInvite.payload?.id), 'accept'),
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ invitationId: String(adminInvite.payload?.id) }),
-      },
-    );
-    expect(adminAcceptResponse.status).toBe(200);
-
-    const memberInvite = await createInvitation({
-      agent: owner,
-      email: 'trial-member@example.com',
-      role: 'member',
-      organizationId,
-    });
-    expect(memberInvite.response.status).toBe(200);
 
     const member = createAuthAgent(app);
     await signUpUser({
@@ -1879,15 +2849,16 @@ describe('backend app', () => {
       name: 'Trial Member',
       email: 'trial-member@example.com',
     });
-    const memberAcceptResponse = await member.request(
-      buildInvitationActionPath(String(memberInvite.payload?.id), 'accept'),
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ invitationId: String(memberInvite.payload?.id) }),
-      },
-    );
-    expect(memberAcceptResponse.status).toBe(200);
+    await insertOrganizationMember({
+      organizationId,
+      userId: (await selectUserIdByEmail('trial-admin@example.com')) as string,
+      role: 'admin',
+    });
+    await insertOrganizationMember({
+      organizationId,
+      userId: (await selectUserIdByEmail('trial-member@example.com')) as string,
+      role: 'member',
+    });
 
     const adminTrialResponse = await admin.request('/api/v1/auth/organizations/billing/trial', {
       method: 'POST',
@@ -1934,6 +2905,19 @@ describe('backend app', () => {
     expect(trialBillingPayload.trialEndsAt).toBe(
       new Date(Number(billingAfterTrial?.currentPeriodEnd)).toISOString(),
     );
+    expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([
+      expect.objectContaining({
+        sequenceNumber: 1,
+        sourceKind: 'trial_start',
+        previousPlanState: 'free',
+        nextPlanState: 'premium_trial',
+        previousSubscriptionStatus: 'free',
+        nextSubscriptionStatus: 'trialing',
+        previousEntitlementState: 'free_only',
+        nextEntitlementState: 'premium_enabled',
+      }),
+    ]);
+    expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([]);
 
     const duplicateTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
       method: 'POST',
@@ -2061,29 +3045,17 @@ describe('backend app', () => {
         slug: 'setup-org',
       });
 
-      const adminInvite = await createInvitation({
-        agent: owner,
-        email: 'setup-admin@example.com',
-        role: 'admin',
-        organizationId,
-      });
-      expect(adminInvite.response.status).toBe(200);
-
       const admin = createAuthAgent(appWithStripe);
       await signUpUser({
         agent: admin,
         name: 'Setup Admin',
         email: 'setup-admin@example.com',
       });
-      const adminAcceptResponse = await admin.request(
-        buildInvitationActionPath(String(adminInvite.payload?.id), 'accept'),
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ invitationId: String(adminInvite.payload?.id) }),
-        },
-      );
-      expect(adminAcceptResponse.status).toBe(200);
+      await insertOrganizationMember({
+        organizationId,
+        userId: (await selectUserIdByEmail('setup-admin@example.com')) as string,
+        role: 'admin',
+      });
 
       const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
         method: 'POST',
@@ -2134,6 +3106,20 @@ describe('backend app', () => {
       expect(billingAfterHandoff?.stripeCustomerId).toBe('cus_test_payment_method');
       expect(billingAfterHandoff?.planCode).toBe('premium');
       expect(billingAfterHandoff?.subscriptionStatus).toBe('trialing');
+      expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          sourceKind: 'trial_start',
+          nextPlanState: 'premium_trial',
+        }),
+        expect.objectContaining({
+          sequenceNumber: 2,
+          sourceKind: 'payment_method_customer_linked',
+          previousPaymentMethodStatus: 'not_started',
+          nextPaymentMethodStatus: 'pending',
+          nextEntitlementState: 'premium_enabled',
+        }),
+      ]);
 
       const pendingSummaryResponse = await owner.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -2344,6 +3330,33 @@ describe('backend app', () => {
       expect(summaryPayload.trialEndsAt).toBeNull();
       expect(summaryPayload.paymentMethodStatus).toBe('registered');
 
+      const auditRows = await selectOrganizationBillingAuditEventRows(organizationId);
+      expect(auditRows).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          sourceKind: 'trial_start',
+          previousPlanState: 'free',
+          nextPlanState: 'premium_trial',
+          previousSubscriptionStatus: 'free',
+          nextSubscriptionStatus: 'trialing',
+          previousEntitlementState: 'free_only',
+          nextEntitlementState: 'premium_enabled',
+        }),
+        expect.objectContaining({
+          sequenceNumber: 2,
+          sourceKind: 'trial_completion',
+          sourceContext: 'Organization premium trial converted to premium paid.',
+          previousPlanState: 'premium_trial',
+          nextPlanState: 'premium_paid',
+          previousSubscriptionStatus: 'trialing',
+          nextSubscriptionStatus: 'active',
+          previousPaymentMethodStatus: 'registered',
+          nextPaymentMethodStatus: 'registered',
+          previousEntitlementState: 'free_only',
+          nextEntitlementState: 'premium_enabled',
+        }),
+      ]);
+
       const countsAfterCompletion = await selectOrganizationOperationalRowCounts(organizationId);
       expect(countsAfterCompletion).toEqual(countsBeforeCompletion);
 
@@ -2423,6 +3436,32 @@ describe('backend app', () => {
     expect(summaryPayload.subscriptionStatus).toBe('free');
     expect(summaryPayload.trialEndsAt).toBeNull();
     expect(summaryPayload.paymentMethodStatus).toBe('not_started');
+
+    const auditRows = await selectOrganizationBillingAuditEventRows(organizationId);
+    expect(auditRows).toEqual([
+      expect.objectContaining({
+        sequenceNumber: 1,
+        sourceKind: 'trial_start',
+        previousPlanState: 'free',
+        nextPlanState: 'premium_trial',
+        previousSubscriptionStatus: 'free',
+        nextSubscriptionStatus: 'trialing',
+      }),
+      expect.objectContaining({
+        sequenceNumber: 2,
+        sourceKind: 'trial_completion',
+        sourceContext:
+          'Organization premium trial ended and returned to free because billing requirements were not met.',
+        previousPlanState: 'premium_trial',
+        nextPlanState: 'free',
+        previousSubscriptionStatus: 'trialing',
+        nextSubscriptionStatus: 'free',
+        previousPaymentMethodStatus: 'not_started',
+        nextPaymentMethodStatus: 'not_started',
+        previousEntitlementState: 'free_only',
+        nextEntitlementState: 'free_only',
+      }),
+    ]);
   });
 
   it('rejects invalid trial completion requests and keeps the existing billing state unchanged', async () => {
@@ -2601,6 +3640,7 @@ describe('backend app', () => {
       name: 'Invite Org',
       slug: 'invite-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const ownerInvite = await createInvitation({
       agent: inviter,
@@ -2738,6 +3778,7 @@ describe('backend app', () => {
       name: 'Access Org',
       slug: 'access-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const participantInvite = await createParticipantInvitation({
       agent: owner,
@@ -2848,6 +3889,7 @@ describe('backend app', () => {
       name: 'Staff Scope Org',
       slug: 'staff-scope-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const staffInvite = await createClassroomOperatorInvitation({
       agent: owner,
@@ -3042,6 +4084,7 @@ describe('backend app', () => {
       name: 'Malformed Ticket Org',
       slug: 'malformed-ticket-org',
     });
+    await enablePremiumForOrganization(organizationId);
     const organizationSlug = await selectOrganizationSlugById(organizationId);
     expect(organizationSlug).toBe('malformed-ticket-org');
 
@@ -3121,6 +4164,7 @@ describe('backend app', () => {
       name: 'Multi Classroom Org',
       slug: 'multi-classroom-org',
     });
+    await enablePremiumForOrganization(organizationId);
     const organizationSlug = await selectOrganizationSlugById(organizationId);
     expect(organizationSlug).toBe('multi-classroom-org');
 
@@ -3241,6 +4285,7 @@ describe('backend app', () => {
       name: 'Classroom Admin Org',
       slug: 'classroom-admin-org',
     });
+    await enablePremiumForOrganization(organizationId);
     const organizationSlug = await selectOrganizationSlugById(organizationId);
     expect(organizationSlug).toBe('classroom-admin-org');
 
@@ -3346,6 +4391,646 @@ describe('backend app', () => {
     );
     expect(memberCreateResponse.status).toBe(403);
   });
+  it('denies premium-only backend operations for free organizations with a shared entitlement payload', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Premium Gate Free Owner',
+      email: 'premium-gate-free-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Premium Gate Free Org',
+      slug: 'premium-gate-free-org',
+    });
+    const organizationSlug = await selectOrganizationSlugById(organizationId);
+    expect(organizationSlug).toBe('premium-gate-free-org');
+
+    const expectPremiumDenied = async (response: Response) => {
+      const payload = (await toJson(response)) as Record<string, unknown>;
+      expect(response.status).toBe(403);
+      expect(payload).toMatchObject({
+        message: 'Organization premium plan is required for this feature.',
+        code: 'organization_premium_required',
+        source: 'application_billing_state',
+        reason: 'organization_plan_is_free',
+        entitlementState: 'free_only',
+        planState: 'free',
+        trialEndsAt: null,
+      });
+    };
+
+    const baseServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Free Instant Service',
+        kind: 'single',
+        durationMinutes: 45,
+        capacity: 4,
+        bookingPolicy: 'instant',
+      }),
+    });
+    expect(baseServiceResponse.status).toBe(200);
+    const baseServicePayload = (await toJson(baseServiceResponse)) as Record<string, unknown>;
+    const baseServiceId = baseServicePayload.id as string;
+
+    const classroomCreateResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Premium Room',
+          slug: 'premium-room',
+        }),
+      },
+    );
+    await expectPremiumDenied(classroomCreateResponse);
+
+    const orgInvitationResponse = await owner.request(
+      buildOrgInvitationPath(organizationSlug as string),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: 'free-org-admin@example.com',
+          role: 'admin',
+        }),
+      },
+    );
+    await expectPremiumDenied(orgInvitationResponse);
+
+    const classroomInvitationResponse = await owner.request(
+      buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: 'free-classroom-manager@example.com',
+          role: 'manager',
+        }),
+      },
+    );
+    await expectPremiumDenied(classroomInvitationResponse);
+
+    const approvalServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Premium Approval Service',
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 4,
+        bookingPolicy: 'approval',
+      }),
+    });
+    await expectPremiumDenied(approvalServiceResponse);
+
+    const now = new Date();
+    const weekday = ((now.getUTCDay() + 6) % 7) + 1;
+    const startDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const startDateStr = `${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(
+      2,
+      '0',
+    )}-${String(startDate.getUTCDate()).padStart(2, '0')}`;
+
+    const recurringCreateResponse = await owner.request('/api/v1/auth/organizations/recurring-schedules', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        serviceId: baseServiceId,
+        timezone: 'Asia/Tokyo',
+        frequency: 'weekly',
+        interval: 1,
+        byWeekday: [weekday],
+        startDate: startDateStr,
+        startTimeLocal: '10:00',
+      }),
+    });
+    await expectPremiumDenied(recurringCreateResponse);
+
+    const ticketTypeCreateResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Premium Ticket Pack',
+        totalCount: 3,
+        serviceIds: [baseServiceId],
+      }),
+    });
+    await expectPremiumDenied(ticketTypeCreateResponse);
+  });
+
+  it('allows premium operations for non-owner operational roles while preserving role-based denial', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Premium Roles Owner',
+      email: 'premium-roles-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Premium Roles Org',
+      slug: 'premium-roles-org',
+    });
+    await enablePremiumForOrganization(organizationId);
+
+    const adminInvite = await createInvitation({
+      agent: owner,
+      email: 'premium-roles-admin@example.com',
+      role: 'admin',
+      organizationId,
+    });
+    expect(adminInvite.response.status).toBe(200);
+
+    const memberInvite = await createInvitation({
+      agent: owner,
+      email: 'premium-roles-member@example.com',
+      role: 'member',
+      organizationId,
+    });
+    expect(memberInvite.response.status).toBe(200);
+
+    const managerInvite = await createClassroomOperatorInvitation({
+      agent: owner,
+      email: 'premium-roles-manager@example.com',
+      role: 'manager',
+      organizationId,
+    });
+    expect(managerInvite.response.status).toBe(200);
+
+    const admin = createAuthAgent(app);
+    await signUpUser({
+      agent: admin,
+      name: 'Premium Roles Admin',
+      email: 'premium-roles-admin@example.com',
+    });
+    expect(await acceptInvitation({ agent: admin, invitationId: adminInvite.payload?.id as string })).toHaveProperty(
+      'status',
+      200,
+    );
+
+    const member = createAuthAgent(app);
+    await signUpUser({
+      agent: member,
+      name: 'Premium Roles Member',
+      email: 'premium-roles-member@example.com',
+    });
+    expect(
+      await acceptInvitation({ agent: member, invitationId: memberInvite.payload?.id as string }),
+    ).toHaveProperty('status', 200);
+
+    const manager = createAuthAgent(app);
+    await signUpUser({
+      agent: manager,
+      name: 'Premium Roles Manager',
+      email: 'premium-roles-manager@example.com',
+    });
+    expect(
+      await acceptInvitation({ agent: manager, invitationId: managerInvite.payload?.id as string }),
+    ).toHaveProperty('status', 200);
+
+    const organizationSlug = await selectOrganizationSlugById(organizationId);
+    const defaultClassroomId = await selectClassroomIdBySlug(
+      organizationId,
+      organizationSlug as string,
+    );
+    expect(defaultClassroomId).toBeTruthy();
+
+    const adminCreateClassroomResponse = await admin.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Admin Managed Room',
+          slug: 'admin-managed-room',
+        }),
+      },
+    );
+    expect(adminCreateClassroomResponse.status).toBe(200);
+
+    const serviceCreateResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        classroomId: defaultClassroomId,
+        name: 'Manager Recurring Service',
+        kind: 'recurring',
+        durationMinutes: 60,
+        capacity: 8,
+      }),
+    });
+    expect(serviceCreateResponse.status).toBe(200);
+    const servicePayload = (await toJson(serviceCreateResponse)) as Record<string, unknown>;
+    const serviceId = servicePayload.id as string;
+
+    const now = new Date();
+    const weekday = ((now.getUTCDay() + 6) % 7) + 1;
+    const startDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const startDateStr = `${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(
+      2,
+      '0',
+    )}-${String(startDate.getUTCDate()).padStart(2, '0')}`;
+
+    const managerRecurringResponse = await manager.request(
+      '/api/v1/auth/organizations/recurring-schedules',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId,
+          classroomId: defaultClassroomId,
+          serviceId,
+          timezone: 'Asia/Tokyo',
+          frequency: 'weekly',
+          interval: 1,
+          byWeekday: [weekday],
+          startDate: startDateStr,
+          startTimeLocal: '11:00',
+        }),
+      },
+    );
+    expect(managerRecurringResponse.status).toBe(200);
+
+    const memberCreateClassroomResponse = await member.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Forbidden Premium Room',
+          slug: 'forbidden-premium-room',
+        }),
+      },
+    );
+    expect(memberCreateClassroomResponse.status).toBe(403);
+    expect(await toJson(memberCreateClassroomResponse)).toEqual({ message: 'Forbidden' });
+  });
+
+  it('extends premium gating coverage to remaining invitation and participant management surfaces', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Premium Coverage Owner',
+      email: 'premium-coverage-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Premium Coverage Org',
+      slug: 'premium-coverage-org',
+    });
+    await enablePremiumForOrganization(organizationId);
+
+    const organizationSlug = await selectOrganizationSlugById(organizationId);
+    expect(organizationSlug).toBe('premium-coverage-org');
+
+    const managerInvite = await createClassroomOperatorInvitation({
+      agent: owner,
+      email: 'premium-coverage-manager@example.com',
+      role: 'manager',
+      organizationId,
+    });
+    expect(managerInvite.response.status).toBe(200);
+
+    const participantInvite = await createParticipantInvitation({
+      agent: owner,
+      email: 'premium-coverage-participant@example.com',
+      participantName: 'Premium Coverage Participant',
+      organizationId,
+    });
+    expect(participantInvite.response.status).toBe(200);
+
+    const participantUser = createAuthAgent(app);
+    await signUpUser({
+      agent: participantUser,
+      name: 'Premium Coverage Participant',
+      email: 'premium-coverage-participant@example.com',
+    });
+    expect(
+      await acceptInvitation({
+        agent: participantUser,
+        invitationId: participantInvite.payload?.id as string,
+      }),
+    ).toHaveProperty('status', 200);
+
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'free',
+      subscriptionStatus: 'free',
+      billingInterval: null,
+      currentPeriodEnd: null,
+    });
+
+    const expectPremiumDenied = async (response: Response) => {
+      const payload = (await toJson(response)) as Record<string, unknown>;
+      expect(response.status).toBe(403);
+      expect(payload).toMatchObject({
+        message: 'Organization premium plan is required for this feature.',
+        code: 'organization_premium_required',
+        source: 'application_billing_state',
+        reason: 'organization_plan_is_free',
+        entitlementState: 'free_only',
+        planState: 'free',
+        trialEndsAt: null,
+      });
+    };
+
+    const orgInvitationListResponse = await owner.request(
+      buildOrgInvitationPath(organizationSlug as string),
+    );
+    await expectPremiumDenied(orgInvitationListResponse);
+
+    const classroomInvitationListResponse = await owner.request(
+      buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
+    );
+    await expectPremiumDenied(classroomInvitationListResponse);
+
+    const participantInvitationResponse = await createParticipantInvitation({
+      agent: owner,
+      email: 'premium-coverage-participant-2@example.com',
+      participantName: 'Premium Coverage Participant 2',
+      organizationId,
+    });
+    expect(participantInvitationResponse.response.status).toBe(403);
+    expect(participantInvitationResponse.payload).toMatchObject({
+      message: 'Organization premium plan is required for this feature.',
+      code: 'organization_premium_required',
+      source: 'application_billing_state',
+      reason: 'organization_plan_is_free',
+      entitlementState: 'free_only',
+      planState: 'free',
+      trialEndsAt: null,
+    });
+
+    const participantListResponse = await owner.request(
+      `/api/v1/auth/organizations/participants?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    await expectPremiumDenied(participantListResponse);
+
+    const managerUser = createAuthAgent(app);
+    await signUpUser({
+      agent: managerUser,
+      name: 'Premium Coverage Manager',
+      email: 'premium-coverage-manager@example.com',
+    });
+    const acceptManagerInviteResponse = await acceptInvitation({
+      agent: managerUser,
+      invitationId: managerInvite.payload?.id as string,
+    });
+    await expectPremiumDenied(acceptManagerInviteResponse);
+  });
+
+  it('preserves premium operational data across entitlement loss and recovery', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Premium Recovery Owner',
+      email: 'premium-recovery-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Premium Recovery Org',
+      slug: 'premium-recovery-org',
+    });
+    await enablePremiumForOrganization(organizationId);
+
+    const organizationSlug = await selectOrganizationSlugById(organizationId);
+    const defaultClassroomId = await selectClassroomIdBySlug(
+      organizationId,
+      organizationSlug as string,
+    );
+    expect(defaultClassroomId).toBeTruthy();
+
+    const secondClassroomResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Premium Recovery Room',
+          slug: 'premium-recovery-room',
+        }),
+      },
+    );
+    expect(secondClassroomResponse.status).toBe(200);
+
+    const approvalServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        classroomId: defaultClassroomId,
+        name: 'Recovery Approval Service',
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 4,
+        bookingPolicy: 'approval',
+        requiresTicket: true,
+      }),
+    });
+    expect(approvalServiceResponse.status).toBe(200);
+    const approvalServicePayload = (await toJson(approvalServiceResponse)) as Record<string, unknown>;
+    const approvalServiceId = approvalServicePayload.id as string;
+
+    const recurringServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        classroomId: defaultClassroomId,
+        name: 'Recovery Recurring Service',
+        kind: 'recurring',
+        durationMinutes: 45,
+        capacity: 6,
+      }),
+    });
+    expect(recurringServiceResponse.status).toBe(200);
+    const recurringServicePayload = (await toJson(recurringServiceResponse)) as Record<string, unknown>;
+    const recurringServiceId = recurringServicePayload.id as string;
+
+    const ticketTypeCreateResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        classroomId: defaultClassroomId,
+        name: 'Recovery Tickets',
+        totalCount: 5,
+        serviceIds: [approvalServiceId],
+      }),
+    });
+    expect(ticketTypeCreateResponse.status).toBe(200);
+    const ticketTypePayload = (await toJson(ticketTypeCreateResponse)) as Record<string, unknown>;
+    const ticketTypeId = ticketTypePayload.id as string;
+
+    const now = new Date();
+    const weekday = ((now.getUTCDay() + 6) % 7) + 1;
+    const startDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const startDateStr = `${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(
+      2,
+      '0',
+    )}-${String(startDate.getUTCDate()).padStart(2, '0')}`;
+
+    const recurringCreateResponse = await owner.request('/api/v1/auth/organizations/recurring-schedules', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        classroomId: defaultClassroomId,
+        serviceId: recurringServiceId,
+        timezone: 'Asia/Tokyo',
+        frequency: 'weekly',
+        interval: 1,
+        byWeekday: [weekday],
+        startDate: startDateStr,
+        startTimeLocal: '09:00',
+      }),
+    });
+    expect(recurringCreateResponse.status).toBe(200);
+    const recurringPayload = (await toJson(recurringCreateResponse)) as Record<string, unknown>;
+    const recurringScheduleId = recurringPayload.id as string;
+
+    const countsBeforeDowngrade = await selectOrganizationOperationalRowCounts(organizationId);
+    const recurringCountBeforeDowngrade = await d1
+      .prepare('SELECT COUNT(*) as count FROM recurring_schedule WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>();
+    const ticketTypeCountBeforeDowngrade = await d1
+      .prepare('SELECT COUNT(*) as count FROM ticket_type WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>();
+
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'free',
+      subscriptionStatus: 'free',
+      billingInterval: null,
+      currentPeriodEnd: null,
+    });
+
+    const deniedClassroomResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Denied Recovery Room',
+          slug: 'denied-recovery-room',
+        }),
+      },
+    );
+    expect(deniedClassroomResponse.status).toBe(403);
+    expect(await toJson(deniedClassroomResponse)).toMatchObject({
+      code: 'organization_premium_required',
+      reason: 'organization_plan_is_free',
+    });
+
+    const countsAfterDowngrade = await selectOrganizationOperationalRowCounts(organizationId);
+    const recurringCountAfterDowngrade = await d1
+      .prepare('SELECT COUNT(*) as count FROM recurring_schedule WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>();
+    const ticketTypeCountAfterDowngrade = await d1
+      .prepare('SELECT COUNT(*) as count FROM ticket_type WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>();
+    const approvalServiceRow = await d1
+      .prepare(
+        'SELECT booking_policy as bookingPolicy, requires_ticket as requiresTicket FROM service WHERE id = ? LIMIT 1',
+      )
+      .bind(approvalServiceId)
+      .first<{ bookingPolicy: string; requiresTicket: number | boolean }>();
+
+    expect(countsAfterDowngrade).toEqual(countsBeforeDowngrade);
+    expect(Number(recurringCountAfterDowngrade?.count ?? 0)).toBe(
+      Number(recurringCountBeforeDowngrade?.count ?? 0),
+    );
+    expect(Number(ticketTypeCountAfterDowngrade?.count ?? 0)).toBe(
+      Number(ticketTypeCountBeforeDowngrade?.count ?? 0),
+    );
+    expect(approvalServiceRow).toEqual({
+      bookingPolicy: 'approval',
+      requiresTicket: 1,
+    });
+    expect(ticketTypeId).toBeTruthy();
+    expect(recurringScheduleId).toBeTruthy();
+
+    await enablePremiumForOrganization(organizationId);
+
+    const generateRecurringResponse = await owner.request(
+      '/api/v1/auth/organizations/recurring-schedules/generate',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          recurringScheduleId,
+        }),
+      },
+    );
+    expect(generateRecurringResponse.status).toBe(200);
+
+    const restoredClassroomResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Restored Recovery Room',
+          slug: 'restored-recovery-room',
+        }),
+      },
+    );
+    expect(restoredClassroomResponse.status).toBe(200);
+  });
 
   it('handles participant invitation flows and permissions', async () => {
     const owner = createAuthAgent(app);
@@ -3360,6 +5045,7 @@ describe('backend app', () => {
       name: 'Participant Org',
       slug: 'participant-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const adminInvite = await createInvitation({
       agent: owner,
@@ -3995,6 +5681,7 @@ describe('backend app', () => {
       name: 'Slot Update Org',
       slug: 'slot-update-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const participantInvite = await createParticipantInvitation({
       agent: owner,
@@ -4210,6 +5897,7 @@ describe('backend app', () => {
       name: 'Booking Org',
       slug: 'booking-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const adminInvite = await createInvitation({
       agent: owner,
@@ -4520,6 +6208,7 @@ describe('backend app', () => {
       name: 'Ticket Purchase Org',
       slug: 'ticket-purchase-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const participantInvite = await createParticipantInvitation({
       agent: owner,
@@ -4738,6 +6427,7 @@ describe('backend app', () => {
         name: 'Stripe Purchase Org',
         slug: 'stripe-purchase-org',
       });
+      await enablePremiumForOrganization(organizationId);
 
       const participantInvite = await createParticipantInvitation({
         agent: owner,
@@ -4873,6 +6563,7 @@ describe('backend app', () => {
       name: 'Approval Org',
       slug: 'approval-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const participantInvite1 = await createParticipantInvitation({
       agent: owner,
@@ -5233,6 +6924,7 @@ describe('backend app', () => {
         name: 'Booking Email Org',
         slug: 'booking-email-org',
       });
+      await enablePremiumForOrganization(organizationId);
 
       const participantInvite = await createParticipantInvitation({
         agent: owner,
@@ -5457,6 +7149,7 @@ describe('backend app', () => {
         name: 'Booking Approval Email Org',
         slug: 'booking-approval-email-org',
       });
+      await enablePremiumForOrganization(organizationId);
 
       const participantInvite = await createParticipantInvitation({
         agent: owner,
@@ -5602,6 +7295,7 @@ describe('backend app', () => {
       name: 'Recurring Org',
       slug: 'recurring-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const serviceResponse = await owner.request('/api/v1/auth/organizations/services', {
       method: 'POST',

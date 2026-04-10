@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@font-face {
+  font-family: AdjustedYuGothic;
+  font-weight: 400;
+  src: local('Yu Gothic Medium');
+}
+
+@font-face {
+  font-family: AdjustedYuGothic;
+  font-weight: 700;
+  src: local('Yu Gothic Bold');
+}
+
+body {
+  background: #f8f7f6;
+  color: #23221e;
+  font-family: AdjustedYuGothic, 'Yu Gothic', YuGothic, 'Hiragino Sans', sans-serif;
+}

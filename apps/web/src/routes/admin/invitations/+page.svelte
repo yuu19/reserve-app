@@ -2,4 +2,4 @@
 	import AdminInvitationsPage from '../../admin-invitations/+page.svelte';
 </script>
 
-<AdminInvitationsPage routeMode="admin" />
+<AdminInvitationsPage />

@@ -193,11 +193,11 @@
 	const statusNoticeClassName = $derived.by(() => {
 		switch (currentStatusNotice?.tone) {
 			case 'success':
-				return 'border-emerald-200 bg-emerald-50/80 text-emerald-900';
+				return 'border-success/30 bg-success/10 text-foreground';
 			case 'error':
-				return 'border-rose-200 bg-rose-50/80 text-rose-900';
+				return 'border-destructive/30 bg-destructive/10 text-foreground';
 			default:
-				return 'border-amber-200 bg-amber-50/80 text-amber-900';
+				return 'border-warning/45 bg-warning/15 text-warning-foreground';
 		}
 	});
 
@@ -354,8 +354,8 @@
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-slate-900">契約</h1>
-		<p class="text-sm text-slate-600">
+		<h1 class="text-3xl font-semibold text-foreground">契約</h1>
+		<p class="text-sm text-muted-foreground">
 			組織の現在プラン、Premiumの価値、継続判断に必要な状態を確認できます。
 		</p>
 	</header>
@@ -373,22 +373,22 @@
 	{/if}
 
 	<section class="grid gap-4 md:grid-cols-2">
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader>
-				<h2 class="text-sm font-semibold text-slate-700">利用中の組織</h2>
+				<h2 class="text-sm font-semibold text-secondary-foreground">利用中の組織</h2>
 			</CardHeader>
 			<CardContent>
 				{#if loading}
 					<p class="text-sm text-muted-foreground" aria-live="polite">契約情報を確認しています…</p>
 				{:else}
-					<p class="text-lg font-semibold text-slate-900">{activeOrganizationLabel}</p>
+					<p class="text-lg font-semibold text-foreground">{activeOrganizationLabel}</p>
 				{/if}
 			</CardContent>
 		</Card>
 
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader>
-				<h2 class="text-sm font-semibold text-slate-700">現在プラン</h2>
+				<h2 class="text-sm font-semibold text-secondary-foreground">現在プラン</h2>
 			</CardHeader>
 			<CardContent class="space-y-3">
 				{#if loading}
@@ -405,15 +405,17 @@
 						</Badge>
 						<Badge variant="secondary">{subscriptionStatusLabel}</Badge>
 					</div>
-					<p class="text-sm text-slate-700">{currentPlanDescription}</p>
+					<p class="text-sm text-secondary-foreground">{currentPlanDescription}</p>
 					{#if billing?.planState === 'premium_trial'}
-						<p class="text-sm text-slate-700">トライアル終了日: {trialEndsAtLabel}</p>
-						<p class="text-sm text-slate-700">支払い方法の登録状況: {paymentMethodStatusLabel}</p>
-						<p class="text-sm text-slate-600">{paymentMethodStatusDescription}</p>
+						<p class="text-sm text-secondary-foreground">トライアル終了日: {trialEndsAtLabel}</p>
+						<p class="text-sm text-secondary-foreground">
+							支払い方法の登録状況: {paymentMethodStatusLabel}
+						</p>
+						<p class="text-sm text-muted-foreground">{paymentMethodStatusDescription}</p>
 					{/if}
-					<p class="text-sm text-slate-700">請求周期: {billingIntervalLabel}</p>
-					<p class="text-sm text-slate-700">次回更新日: {currentPeriodEndLabel}</p>
-					<p class="text-sm text-slate-700">
+					<p class="text-sm text-secondary-foreground">請求周期: {billingIntervalLabel}</p>
+					<p class="text-sm text-secondary-foreground">次回更新日: {currentPeriodEndLabel}</p>
+					<p class="text-sm text-secondary-foreground">
 						解約予定: {billing?.cancelAtPeriodEnd ? '期間終了時に解約' : 'なし'}
 					</p>
 				{/if}
@@ -422,9 +424,9 @@
 	</section>
 
 	<section>
-		<Card class="surface-panel border-slate-200/80 shadow-lg">
+		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardHeader>
-				<h2 class="text-xl font-semibold text-slate-900">{actionHeading}</h2>
+				<h2 class="text-xl font-semibold text-foreground">{actionHeading}</h2>
 				<CardDescription>{actionDescription}</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-4">
@@ -437,25 +439,27 @@
 				{:else if !showOwnerActions}
 					<div class="space-y-3">
 						{#if billing.planState === 'premium_trial'}
-							<div class="rounded-lg border border-slate-200/80 bg-slate-50/80 p-3">
-								<p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+							<div class="rounded-lg border border-border/80 bg-secondary/80 p-3">
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 									支払い方法の登録状況
 								</p>
-								<p class="text-sm font-medium text-slate-900">{paymentMethodStatusLabel}</p>
-								<p class="text-sm text-slate-600">{paymentMethodStatusDescription}</p>
+								<p class="text-sm font-medium text-foreground">{paymentMethodStatusLabel}</p>
+								<p class="text-sm text-muted-foreground">{paymentMethodStatusDescription}</p>
 							</div>
 						{/if}
-						<p class="text-sm text-slate-600">
+						<p class="text-sm text-muted-foreground">
 							{readOnlyAuthorityNote}
 						</p>
 					</div>
 				{:else if billing.planState === 'free'}
 					<div class="space-y-3">
-						<p class="text-sm text-slate-600">
+						<p class="text-sm text-muted-foreground">
 							7日間のPremiumトライアルでは、複数教室管理、スタッフ権限、定期スケジュールなどのPremium機能をまとめて確認できます。
 						</p>
-						<ul id="trial-entry-description" class="space-y-2 text-sm text-slate-600">
-							<li>この操作ではまだ支払い方法は登録されません。継続設定は次のステップで案内されます。</li>
+						<ul id="trial-entry-description" class="space-y-2 text-sm text-muted-foreground">
+							<li>
+								この操作ではまだ支払い方法は登録されません。継続設定は次のステップで案内されます。
+							</li>
 							<li>{ownerAuthorityNote}</li>
 							<li>トライアル開始後は、この画面で終了日と現在の契約状態を確認できます。</li>
 						</ul>
@@ -470,24 +474,21 @@
 					</div>
 				{:else if billing.planState === 'premium_trial'}
 					<div class="space-y-3">
-						<p class="text-sm text-slate-600">
-							現在はPremiumトライアル中です。終了日まで Premium 機能を確認でき、新しいトライアルを重ねて開始することはできません。
+						<p class="text-sm text-muted-foreground">
+							現在はPremiumトライアル中です。終了日まで Premium
+							機能を確認でき、新しいトライアルを重ねて開始することはできません。
 						</p>
-						<div class="rounded-lg border border-slate-200/80 bg-slate-50/80 p-3">
-							<p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+						<div class="rounded-lg border border-border/80 bg-secondary/80 p-3">
+							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 								支払い方法の登録状況
 							</p>
-							<p class="text-sm font-medium text-slate-900">{paymentMethodStatusLabel}</p>
-							<p class="text-sm text-slate-600">{paymentMethodStatusDescription}</p>
+							<p class="text-sm font-medium text-foreground">{paymentMethodStatusLabel}</p>
+							<p class="text-sm text-muted-foreground">{paymentMethodStatusDescription}</p>
 						</div>
-						<p class="text-sm text-slate-600">{ownerAuthorityNote}</p>
+						<p class="text-sm text-muted-foreground">{ownerAuthorityNote}</p>
 						{#if billing.paymentMethodStatus !== 'registered'}
 							<div class="flex flex-col gap-3 sm:flex-row">
-								<Button
-									type="button"
-									disabled={busy}
-									onclick={startPaymentMethodRegistration}
-								>
+								<Button type="button" disabled={busy} onclick={startPaymentMethodRegistration}>
 									支払い方法を登録
 								</Button>
 							</div>
@@ -495,16 +496,13 @@
 					</div>
 				{:else}
 					<div class="space-y-3">
-						<p class="text-sm text-slate-600">
-							現在はPremiumプラン利用中です。重複した trial action は不要で、必要な契約変更は契約管理から進めます。
+						<p class="text-sm text-muted-foreground">
+							現在はPremiumプラン利用中です。重複した trial action
+							は不要で、必要な契約変更は契約管理から進めます。
 						</p>
-						<p class="text-sm text-slate-600">{ownerAuthorityNote}</p>
+						<p class="text-sm text-muted-foreground">{ownerAuthorityNote}</p>
 						<div class="flex flex-col gap-3 sm:flex-row">
-							<Button
-								type="button"
-								disabled={busy}
-								onclick={redirectToBillingPortal}
-							>
+							<Button type="button" disabled={busy} onclick={redirectToBillingPortal}>
 								契約を管理
 							</Button>
 						</div>
@@ -515,13 +513,13 @@
 	</section>
 
 	<section class="grid gap-4 lg:grid-cols-2">
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader>
-				<h2 class="text-xl font-semibold text-slate-900">無料で使える機能</h2>
+				<h2 class="text-xl font-semibold text-foreground">無料で使える機能</h2>
 				<CardDescription>小規模運用を始めるための基本機能です。</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<ul class="space-y-2 text-sm text-slate-700">
+				<ul class="space-y-2 text-sm text-secondary-foreground">
 					{#each freePlanFeatures as feature (feature)}
 						<li>{feature}</li>
 					{/each}
@@ -529,13 +527,13 @@
 			</CardContent>
 		</Card>
 
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader>
-				<h2 class="text-xl font-semibold text-slate-900">Premiumで使える機能</h2>
+				<h2 class="text-xl font-semibold text-foreground">Premiumで使える機能</h2>
 				<CardDescription>運営の拡張に合わせて解放される管理機能です。</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<ul class="space-y-2 text-sm text-slate-700">
+				<ul class="space-y-2 text-sm text-secondary-foreground">
 					{#each premiumPlanFeatures as feature (feature)}
 						<li>{feature}</li>
 					{/each}

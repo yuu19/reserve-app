@@ -184,6 +184,111 @@ export const stripeWebhookFailure = sqliteTable(
   ],
 );
 
+export const organizationBillingNotification = sqliteTable(
+  'organization_billing_notification',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    recipientUserId: text('recipient_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    notificationKind: text('notification_kind').notNull(),
+    channel: text('channel').notNull(),
+    sequenceNumber: integer('sequence_number').notNull(),
+    deliveryState: text('delivery_state').notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    stripeEventId: text('stripe_event_id'),
+    stripeCustomerId: text('stripe_customer_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    recipientEmail: text('recipient_email'),
+    planState: text('plan_state').notNull(),
+    subscriptionStatus: text('subscription_status').notNull(),
+    paymentMethodStatus: text('payment_method_status').notNull(),
+    trialEndsAt: integer('trial_ends_at', { mode: 'timestamp_ms' }),
+    failureReason: text('failure_reason'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index('organization_billing_notification_org_idx').on(
+      table.organizationId,
+      table.sequenceNumber,
+    ),
+    index('organization_billing_notification_event_idx').on(table.stripeEventId),
+    index('organization_billing_notification_recipient_idx').on(table.recipientUserId),
+  ],
+);
+
+export const organizationBillingAuditEvent = sqliteTable(
+  'organization_billing_audit_event',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    sequenceNumber: integer('sequence_number').notNull(),
+    sourceKind: text('source_kind').notNull(),
+    stripeEventId: text('stripe_event_id'),
+    stripeCustomerId: text('stripe_customer_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    sourceContext: text('source_context'),
+    previousPlanCode: text('previous_plan_code').notNull(),
+    nextPlanCode: text('next_plan_code').notNull(),
+    previousPlanState: text('previous_plan_state').notNull(),
+    nextPlanState: text('next_plan_state').notNull(),
+    previousSubscriptionStatus: text('previous_subscription_status').notNull(),
+    nextSubscriptionStatus: text('next_subscription_status').notNull(),
+    previousPaymentMethodStatus: text('previous_payment_method_status').notNull(),
+    nextPaymentMethodStatus: text('next_payment_method_status').notNull(),
+    previousEntitlementState: text('previous_entitlement_state').notNull(),
+    nextEntitlementState: text('next_entitlement_state').notNull(),
+    previousBillingInterval: text('previous_billing_interval'),
+    nextBillingInterval: text('next_billing_interval'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index('organization_billing_audit_event_org_idx').on(table.organizationId, table.sequenceNumber),
+    index('organization_billing_audit_event_event_idx').on(table.stripeEventId),
+  ],
+);
+
+export const organizationBillingSignal = sqliteTable(
+  'organization_billing_signal',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    sequenceNumber: integer('sequence_number').notNull(),
+    signalKind: text('signal_kind').notNull(),
+    signalStatus: text('signal_status').notNull(),
+    sourceKind: text('source_kind').notNull(),
+    reason: text('reason').notNull(),
+    stripeEventId: text('stripe_event_id'),
+    stripeCustomerId: text('stripe_customer_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    providerPlanState: text('provider_plan_state'),
+    providerSubscriptionStatus: text('provider_subscription_status'),
+    appPlanState: text('app_plan_state').notNull(),
+    appSubscriptionStatus: text('app_subscription_status').notNull(),
+    appPaymentMethodStatus: text('app_payment_method_status').notNull(),
+    appEntitlementState: text('app_entitlement_state').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index('organization_billing_signal_org_idx').on(table.organizationId, table.sequenceNumber),
+    index('organization_billing_signal_event_idx').on(table.stripeEventId),
+    index('organization_billing_signal_kind_idx').on(table.signalKind, table.signalStatus),
+  ],
+);
+
 export const classroom = sqliteTable(
   'classroom',
   {

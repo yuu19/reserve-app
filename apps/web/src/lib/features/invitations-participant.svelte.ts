@@ -4,6 +4,7 @@ import {
 	type ParticipantPayload
 } from '$lib/rpc-client';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import { readOrganizationPremiumRestriction } from './premium-restrictions';
 import { readWindowScopedRouteContext } from './scoped-routing';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -25,7 +26,7 @@ const asParticipants = (value: unknown): ParticipantPayload[] =>
 const asParticipantInvitations = (value: unknown): ParticipantInvitationPayload[] =>
 	Array.isArray(value) ? value.filter(isParticipantInvitation) : [];
 
-export const loadParticipantFeatureData = async (_organizationId?: string) => {
+export const loadParticipantFeatureData = async () => {
 	const userResponse = await authRpc.listUserParticipantInvitations();
 	const userPayload = await parseResponseBody(userResponse);
 	const received = userResponse.ok ? asParticipantInvitations(userPayload) : [];
@@ -79,13 +80,17 @@ export const createParticipantInvitation = async (input: {
 	}
 	const response = await authRpc.createParticipantInvitationScoped(context, input);
 	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? input.resend
 				? '参加者招待を再送しました。'
 				: '参加者招待を送信しました。'
+			: premiumRestriction
+				? 'この機能は組織のPremiumプランで利用できます。'
 			: toErrorMessage(payload, '参加者招待の作成に失敗しました。')
 	};
 };

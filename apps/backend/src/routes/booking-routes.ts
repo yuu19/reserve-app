@@ -6,6 +6,7 @@ import {
   findParticipantsByUserAndOrganization,
   getSessionIdentity,
   hasAdminOrOwnerAccess,
+  readOrganizationPremiumFeatureGate,
   resolveOrganizationId,
   resolveOrganizationClassroomAccess,
   resolveOrganizationClassroomContext,
@@ -1469,6 +1470,24 @@ export const registerBookingRoutes = ({
     );
   };
 
+  const serviceConfigurationRequiresPremium = ({
+    bookingPolicy,
+    requiresTicket,
+  }: {
+    bookingPolicy: 'instant' | 'approval';
+    requiresTicket: boolean;
+  }) => {
+    return bookingPolicy === 'approval' || requiresTicket;
+  };
+
+  const requireOrganizationPremiumFeature = async (organizationId: string) => {
+    return readOrganizationPremiumFeatureGate({
+      database,
+      env,
+      organizationId,
+    });
+  };
+
   const listParticipantRecordsForUser = async ({
     organizationId,
     classroomId,
@@ -2026,6 +2045,18 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
+    if (
+      serviceConfigurationRequiresPremium({
+        bookingPolicy: body.bookingPolicy ?? 'instant',
+        requiresTicket: body.requiresTicket ?? false,
+      })
+    ) {
+      const premiumGate = await requireOrganizationPremiumFeature(organizationId);
+      if (!premiumGate.allowed) {
+        return c.json(premiumGate.body, premiumGate.status);
+      }
+    }
+
     const createdId = crypto.randomUUID();
     await database.insert(dbSchema.service).values({
       id: createdId,
@@ -2120,6 +2151,8 @@ export const registerBookingRoutes = ({
         id: dbSchema.service.id,
         organizationId: dbSchema.service.organizationId,
         classroomId: dbSchema.service.classroomId,
+        bookingPolicy: dbSchema.service.bookingPolicy,
+        requiresTicket: dbSchema.service.requiresTicket,
       })
       .from(dbSchema.service)
       .where(eq(dbSchema.service.id, body.serviceId))
@@ -2140,6 +2173,18 @@ export const registerBookingRoutes = ({
     });
     if (!hasAccess) {
       return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    if (
+      serviceConfigurationRequiresPremium({
+        bookingPolicy: body.bookingPolicy ?? current.bookingPolicy,
+        requiresTicket: body.requiresTicket ?? current.requiresTicket,
+      })
+    ) {
+      const premiumGate = await requireOrganizationPremiumFeature(current.organizationId);
+      if (!premiumGate.allowed) {
+        return c.json(premiumGate.body, premiumGate.status);
+      }
     }
 
     if (body.timezone && !isSupportedTimezone(body.timezone)) {
@@ -2688,6 +2733,11 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
+    const premiumGate = await requireOrganizationPremiumFeature(organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
+    }
+
     if (body.frequency === 'weekly' && body.byWeekday && body.byWeekday.length === 0) {
       return c.json({ message: 'byWeekday must not be empty for weekly frequency.' }, 422);
     }
@@ -2838,6 +2888,11 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
+    const premiumGate = await requireOrganizationPremiumFeature(schedule.organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
+    }
+
     if (body.timezone && !isSupportedTimezone(body.timezone)) {
       return c.json({ message: `Only ${DEFAULT_TIMEZONE} is supported in MVP.` }, 422);
     }
@@ -2935,6 +2990,11 @@ export const registerBookingRoutes = ({
     });
     if (!hasAccess) {
       return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const premiumGate = await requireOrganizationPremiumFeature(schedule.organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
     }
 
     const existingRows = await database
@@ -3037,6 +3097,11 @@ export const registerBookingRoutes = ({
     });
     if (!hasAccess) {
       return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const premiumGate = await requireOrganizationPremiumFeature(schedule.organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
     }
 
     const defaultRange = defaultRecurringRange();
@@ -3773,6 +3838,11 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Only pending approval booking can be approved.' }, 409);
     }
 
+    const premiumGate = await requireOrganizationPremiumFeature(booking.organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
+    }
+
     const serviceRows = await database
       .select({
         requiresTicket: dbSchema.service.requiresTicket,
@@ -3981,6 +4051,11 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Only pending approval booking can be rejected.' }, 409);
     }
 
+    const premiumGate = await requireOrganizationPremiumFeature(booking.organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
+    }
+
     const updatedRows = await database
       .update(dbSchema.booking)
       .set({
@@ -4115,6 +4190,11 @@ export const registerBookingRoutes = ({
     });
     if (!hasAccess) {
       return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const premiumGate = await requireOrganizationPremiumFeature(organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
     }
 
     if (body.serviceIds && body.serviceIds.length > 0) {
@@ -4532,6 +4612,11 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Forbidden' }, 403);
     }
 
+    const premiumGate = await requireOrganizationPremiumFeature(purchase.organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
+    }
+
     const result = await approveTicketPurchaseWithIssue({
       purchaseId: body.purchaseId,
       actorUserId: identity.userId,
@@ -4594,6 +4679,11 @@ export const registerBookingRoutes = ({
 
     if (purchase.status !== TICKET_PURCHASE_STATUS.PENDING_APPROVAL) {
       return c.json({ message: 'Only pending approval purchase can be rejected.' }, 409);
+    }
+
+    const premiumGate = await requireOrganizationPremiumFeature(purchase.organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
     }
 
     const updatedRows = await database
@@ -4705,6 +4795,11 @@ export const registerBookingRoutes = ({
     });
     if (!hasAccess) {
       return c.json({ message: 'Forbidden' }, 403);
+    }
+
+    const premiumGate = await requireOrganizationPremiumFeature(organizationId);
+    if (!premiumGate.allowed) {
+      return c.json(premiumGate.body, premiumGate.status);
     }
 
     const participantRows = await database

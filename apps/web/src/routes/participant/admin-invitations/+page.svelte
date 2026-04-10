@@ -3,6 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
+	import PremiumRestrictionNotice from '$lib/components/premium-restriction-notice.svelte';
 	import {
 		actOperatorInvitation,
 		loadReceivedOperatorInvitations
@@ -12,7 +13,9 @@
 		loadSession,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
-	import type { InvitationPayload } from '$lib/rpc-client';
+	import { loadOrganizationBilling } from '$lib/features/organization-context.svelte';
+	import type { InvitationPayload, OrganizationBillingPayload } from '$lib/rpc-client';
+	import type { OrganizationPremiumRestrictionPayload } from '$lib/features/premium-restrictions';
 	import { toast } from 'svelte-sonner';
 
 	const invitationStatusLabel = (status: InvitationPayload['status']) =>
@@ -29,6 +32,8 @@
 
 	let loading = $state(true);
 	let busy = $state(false);
+	let billing = $state<OrganizationBillingPayload | null>(null);
+	let premiumRestriction = $state<OrganizationPremiumRestrictionPayload | null>(null);
 	let receivedInvitations = $state<InvitationPayload[]>([]);
 	const pendingReceivedCount = $derived(
 		receivedInvitations.filter((invitation) => invitation.status === 'pending').length
@@ -37,7 +42,8 @@
 		receivedInvitations.filter((invitation) => invitation.subjectKind === 'org_operator').length
 	);
 	const classroomInvitationCount = $derived(
-		receivedInvitations.filter((invitation) => invitation.subjectKind === 'classroom_operator').length
+		receivedInvitations.filter((invitation) => invitation.subjectKind === 'classroom_operator')
+			.length
 	);
 
 	const refresh = async () => {
@@ -47,6 +53,8 @@
 			return;
 		}
 		const data = await loadReceivedOperatorInvitations();
+		premiumRestriction = null;
+		billing = null;
 		receivedInvitations = data.received;
 	};
 
@@ -58,6 +66,15 @@
 		try {
 			const result = await actOperatorInvitation(type, invitationId);
 			if (!result.ok) {
+				const targetInvitation =
+					type === 'accept'
+						? receivedInvitations.find((invitation) => invitation.id === invitationId)
+						: null;
+				if (result.premiumRestriction && targetInvitation?.organizationId) {
+					premiumRestriction = result.premiumRestriction;
+					const billingResult = await loadOrganizationBilling(targetInvitation.organizationId);
+					billing = billingResult.ok ? billingResult.billing : null;
+				}
 				toast.error(result.message);
 				return;
 			}
@@ -82,55 +99,64 @@
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-slate-900">受信した運営招待</h1>
-		<p class="text-sm text-slate-600">
+		<h1 class="text-3xl font-semibold text-foreground">受信した運営招待</h1>
+		<p class="text-sm text-muted-foreground">
 			自分宛てに届いた組織運営招待と教室運営招待の承諾・辞退を行います。
 		</p>
 	</header>
 
+	{#if premiumRestriction}
+		<PremiumRestrictionNotice
+			featureLabel="運営招待の承諾"
+			restriction={premiumRestriction}
+			{billing}
+		/>
+	{/if}
+
 	<section class="grid gap-4 lg:grid-cols-3">
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-lg font-semibold text-slate-900">受信招待</h2>
+				<h2 class="text-lg font-semibold text-foreground">受信招待</h2>
 				<CardDescription>現在対応できる運営招待の総数です。</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<p class="text-2xl font-semibold text-slate-900">{receivedInvitations.length}</p>
+				<p class="text-2xl font-semibold text-foreground">{receivedInvitations.length}</p>
 			</CardContent>
 		</Card>
 
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-lg font-semibold text-slate-900">組織 / 教室</h2>
+				<h2 class="text-lg font-semibold text-foreground">組織 / 教室</h2>
 				<CardDescription>招待種別の内訳です。</CardDescription>
 			</CardHeader>
-			<CardContent class="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-				<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
-					<p class="text-xs text-slate-500">組織運営</p>
-					<p class="text-base font-semibold text-slate-900">{orgInvitationCount}</p>
+			<CardContent class="grid gap-2 text-sm text-secondary-foreground sm:grid-cols-2">
+				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+					<p class="text-xs text-muted-foreground">組織運営</p>
+					<p class="text-base font-semibold text-foreground">{orgInvitationCount}</p>
 				</div>
-				<div class="rounded-md border border-slate-200/80 bg-white/80 px-3 py-2">
-					<p class="text-xs text-slate-500">教室運営</p>
-					<p class="text-base font-semibold text-slate-900">{classroomInvitationCount}</p>
+				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+					<p class="text-xs text-muted-foreground">教室運営</p>
+					<p class="text-base font-semibold text-foreground">{classroomInvitationCount}</p>
 				</div>
 			</CardContent>
 		</Card>
 
-		<Card class="surface-panel border-slate-200/80 shadow-md">
+		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-lg font-semibold text-slate-900">対応待ち</h2>
+				<h2 class="text-lg font-semibold text-foreground">対応待ち</h2>
 				<CardDescription>未承諾の招待です。</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<p class="text-2xl font-semibold text-slate-900">{pendingReceivedCount}</p>
+				<p class="text-2xl font-semibold text-foreground">{pendingReceivedCount}</p>
 			</CardContent>
 		</Card>
 	</section>
 
-	<Card class="surface-panel border-slate-200/80 shadow-lg">
+	<Card class="surface-panel border-border/80 shadow-lg">
 		<CardHeader>
 			<h2 class="text-xl font-semibold">受信した運営招待一覧</h2>
-			<CardDescription>participant 招待は `/participant/invitations` で対応します。</CardDescription>
+			<CardDescription>participant 招待は `/participant/invitations` で対応します。</CardDescription
+			>
 		</CardHeader>
 		<CardContent>
 			{#if loading}
@@ -140,7 +166,9 @@
 			{:else}
 				<div class="space-y-2">
 					{#each receivedInvitations as invitation (invitation.id)}
-						<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-3">
+						<div
+							class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-card/80 p-3"
+						>
 							<div class="space-y-1">
 								<p class="text-sm font-semibold">{invitationKindLabel(invitation)}</p>
 								<p class="text-xs text-muted-foreground">

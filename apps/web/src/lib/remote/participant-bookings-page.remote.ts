@@ -16,7 +16,9 @@ export const getParticipantBookingsPageData = query(
 		const data = await getBookingsPageData({ orgSlug, classroomSlug, from, to, serviceId });
 		return {
 			activeContext: data.activeContext,
+			organizationId: data.organizationId,
 			canManage: false,
+			premiumRestriction: data.premiumRestriction,
 			participantAccessDenied: data.participantAccessDenied,
 			services: data.services,
 			slots: data.slots,

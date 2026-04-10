@@ -6,6 +6,7 @@ import type {
 	ServicePayload,
 	SlotPayload
 } from '$lib/rpc-client';
+import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import { createApiGetter, resolveScopedAccessContext, type ApiResult } from '$lib/server/scoped-api';
 import { z } from 'zod';
 
@@ -77,7 +78,9 @@ export const getAdminBookingsOperationsPageData = query(
 		if (!scopedAccess) {
 			return {
 				activeContext: null,
+				organizationId: null as string | null,
 				canManage: false,
+				premiumRestriction: null,
 				services: [] as ServicePayload[],
 				slots: [] as SlotPayload[],
 				staffBookings: [] as BookingPayload[],
@@ -88,7 +91,9 @@ export const getAdminBookingsOperationsPageData = query(
 		if (!scopedAccess.effective.canManageBookings) {
 			return {
 				activeContext,
+				organizationId: scopedAccess.organizationId,
 				canManage: false,
+				premiumRestriction: null,
 				services: [] as ServicePayload[],
 				slots: [] as SlotPayload[],
 				staffBookings: [] as BookingPayload[],
@@ -117,6 +122,24 @@ export const getAdminBookingsOperationsPageData = query(
 			getApi('/api/v1/auth/organizations/participants', scopedQuery)
 		]);
 
+		const premiumRestriction =
+			readOrganizationPremiumRestriction(servicesResult.payload) ??
+			readOrganizationPremiumRestriction(slotsResult.payload) ??
+			readOrganizationPremiumRestriction(staffBookingsResult.payload) ??
+			readOrganizationPremiumRestriction(participantsResult.payload);
+		if (premiumRestriction) {
+			return {
+				activeContext,
+				organizationId: scopedAccess.organizationId,
+				canManage: true,
+				premiumRestriction,
+				services: [] as ServicePayload[],
+				slots: [] as SlotPayload[],
+				staffBookings: [] as BookingPayload[],
+				staffParticipants: [] as ParticipantPayload[]
+			};
+		}
+
 		assertAllowedFailure(servicesResult, 'サービス一覧の取得に失敗しました。');
 		assertAllowedFailure(slotsResult, '枠一覧の取得に失敗しました。');
 		assertAllowedFailure(staffBookingsResult, '運営予約一覧の取得に失敗しました。');
@@ -124,7 +147,9 @@ export const getAdminBookingsOperationsPageData = query(
 
 		return {
 			activeContext,
+			organizationId: scopedAccess.organizationId,
 			canManage: true,
+			premiumRestriction: null,
 			services: asServices(servicesResult.payload),
 			slots: asSlots(slotsResult.payload),
 			staffBookings: asBookings(staffBookingsResult.payload),

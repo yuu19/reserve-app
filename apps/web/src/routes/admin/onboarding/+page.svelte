@@ -137,17 +137,18 @@
 <main class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
 		<Badge variant="outline">初回設定</Badge>
-		<h1 class="text-3xl font-semibold text-slate-900">最初の組織と教室を作成</h1>
-		<p class="text-sm text-slate-600">
+		<h1 class="text-3xl font-semibold text-foreground">最初の組織と教室を作成</h1>
+		<p class="text-sm text-muted-foreground">
 			管理画面を使い始めるために、まず組織を作成します。初期教室の設定は任意ですが、最初に決めておく運用を強く推奨します。
 		</p>
 	</header>
 
-	<Card class="surface-panel border-slate-200/80 shadow-lg">
+	<Card class="surface-panel border-border/80 shadow-lg">
 		<CardHeader class="space-y-2">
-			<h2 class="text-xl font-semibold text-slate-900">初期セットアップ</h2>
+			<h2 class="text-xl font-semibold text-foreground">初期セットアップ</h2>
 			<CardDescription>
-				組織作成は必須です。初期教室名と slug を空欄にすると、組織名ベースの初期教室を自動で用意し、あとから教室管理で変更できます。
+				組織作成は必須です。初期教室名と slug
+				を空欄にすると、組織名ベースの初期教室を自動で用意し、あとから教室管理で変更できます。
 			</CardDescription>
 		</CardHeader>
 		<CardContent>
@@ -204,8 +205,9 @@
 							/>
 						</div>
 					</div>
-					<p class="text-xs text-slate-600">
-						推奨: 初回教室もここで設定してください。未入力の場合は組織名と同じ初期教室が自動作成されます。
+					<p class="text-xs text-muted-foreground">
+						推奨:
+						初回教室もここで設定してください。未入力の場合は組織名と同じ初期教室が自動作成されます。
 					</p>
 
 					<div class="space-y-2">
@@ -218,7 +220,9 @@
 							disabled={busy}
 						/>
 						{#if selectedOrganizationLogoFile}
-							<p class="text-xs text-slate-600">選択中: {selectedOrganizationLogoFile.name}</p>
+							<p class="text-xs text-muted-foreground">
+								選択中: {selectedOrganizationLogoFile.name}
+							</p>
 						{/if}
 					</div>
 

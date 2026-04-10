@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/admin/services/new'),
 	getAdminServicesPageData: vi.fn(),
+	loadOrganizationBilling: vi.fn(),
 	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', classroomSlug: 'room-1' }))
 }));
 
@@ -33,6 +34,10 @@ vi.mock('$lib/remote/admin-services-page.remote', () => ({
 	getAdminServicesPageData: mocks.getAdminServicesPageData
 }));
 
+vi.mock('$lib/features/organization-context.svelte', () => ({
+	loadOrganizationBilling: mocks.loadOrganizationBilling
+}));
+
 vi.mock('$lib/features/scoped-routing', async () => {
 	const actual = await vi.importActual<typeof import('$lib/features/scoped-routing')>(
 		'$lib/features/scoped-routing'
@@ -49,6 +54,7 @@ describe('/admin/services/new/+page.svelte', () => {
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.getAdminServicesPageData.mockReset();
+		mocks.loadOrganizationBilling.mockReset();
 		mocks.readWindowScopedRouteContext.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
@@ -65,7 +71,9 @@ describe('/admin/services/new/+page.svelte', () => {
 				orgSlug: 'org-1',
 				classroomSlug: 'room-1'
 			},
+			organizationId: 'org-1',
 			canManage: true,
+			premiumRestriction: null,
 			services: [],
 			staffServices: []
 		});
@@ -125,7 +133,9 @@ describe('/admin/services/new/+page.svelte', () => {
 	it('should show organization-required message after load when no active organization', async () => {
 		mocks.getAdminServicesPageData.mockResolvedValue({
 			activeContext: null,
+			organizationId: null,
 			canManage: false,
+			premiumRestriction: null,
 			services: [],
 			staffServices: []
 		});
@@ -135,5 +145,52 @@ describe('/admin/services/new/+page.svelte', () => {
 		await expect
 			.element(page.getByText('利用中の組織を `/admin/dashboard` で選択してください。'))
 			.toBeInTheDocument();
+	});
+
+	it('shows premium restriction guidance with contracts CTA for owners', async () => {
+		mocks.getAdminServicesPageData.mockResolvedValue({
+			activeContext: {
+				orgSlug: 'org-1',
+				classroomSlug: 'room-1'
+			},
+			organizationId: 'org-1',
+			canManage: true,
+			premiumRestriction: {
+				message: 'Organization premium plan is required for this feature.',
+				code: 'organization_premium_required',
+				source: 'application_billing_state',
+				reason: 'organization_plan_is_free',
+				entitlementState: 'free_only',
+				planState: 'free',
+				trialEndsAt: null
+			},
+			services: [],
+			staffServices: []
+		});
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'free',
+				planState: 'free',
+				billingInterval: null,
+				paymentMethodStatus: 'not_started',
+				subscriptionStatus: 'free',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: null,
+				trialEndsAt: null,
+				canViewBilling: true,
+				canManageBilling: true
+			}
+		});
+
+		render(AdminServiceCreatePage);
+
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: 'サービス運用には Premiumプランが必要です' }))
+			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '契約画面を開く' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'サービスを作成' }))
+			.toBeDisabled();
 	});
 });

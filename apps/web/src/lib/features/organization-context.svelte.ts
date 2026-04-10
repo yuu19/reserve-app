@@ -16,6 +16,7 @@ import {
 	toErrorMessage
 } from './auth-session.svelte';
 import { authRpc } from '$lib/rpc-client';
+import { readOrganizationPremiumRestriction } from './premium-restrictions';
 import { writeLastUsedOrganizationId } from './organization-preference';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -364,11 +365,15 @@ export const createClassroom = async (orgSlug: string, input: { name: string; sl
 	const response = await authRpc.createClassroomByOrg(orgSlug, input);
 	const payload = await parseResponseBody(response);
 	const classroom = response.ok ? asCreatedOrUpdatedClassroom(payload) : null;
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? '教室を作成しました。'
+			: premiumRestriction
+				? 'この機能は組織のPremiumプランで利用できます。'
 			: toErrorMessage(payload, '教室の作成に失敗しました。'),
 		classroom
 	};
@@ -382,11 +387,15 @@ export const updateClassroom = async (
 	const response = await authRpc.updateClassroomByOrg(orgSlug, classroomSlug, input);
 	const payload = await parseResponseBody(response);
 	const classroom = response.ok ? asCreatedOrUpdatedClassroom(payload) : null;
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? '教室を更新しました。'
+			: premiumRestriction
+				? 'この機能は組織のPremiumプランで利用できます。'
 			: toErrorMessage(payload, '教室の更新に失敗しました。'),
 		classroom
 	};

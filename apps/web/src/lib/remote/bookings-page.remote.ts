@@ -10,6 +10,7 @@ import type {
 	TicketPurchasePayload,
 	TicketTypePayload
 } from '$lib/rpc-client';
+import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import {
 	buildScopedInvitationPath,
 	createApiGetter,
@@ -30,7 +31,9 @@ type JsonRecord = Record<string, unknown>;
 
 type BookingsPageData = {
 	activeContext: ScopedApiContext;
+	organizationId: string;
 	canManage: boolean;
+	premiumRestriction: ReturnType<typeof readOrganizationPremiumRestriction>;
 	services: ServicePayload[];
 	recurringSchedules: RecurringSchedulePayload[];
 	slots: SlotPayload[];
@@ -224,6 +227,18 @@ export const getBookingsPageData = query(
 			allowForbidden: true
 		});
 
+		const premiumRestriction =
+			readOrganizationPremiumRestriction(servicesResult.payload) ??
+			readOrganizationPremiumRestriction(recurringResult.payload) ??
+			readOrganizationPremiumRestriction(slotsResult.payload) ??
+			readOrganizationPremiumRestriction(availableResult.payload) ??
+			readOrganizationPremiumRestriction(myBookingsResult.payload) ??
+			readOrganizationPremiumRestriction(myTicketPacksResult.payload) ??
+			readOrganizationPremiumRestriction(purchasableTicketTypesResult.payload) ??
+			readOrganizationPremiumRestriction(myTicketPurchasesResult.payload) ??
+			readOrganizationPremiumRestriction(participantsResult.payload) ??
+			readOrganizationPremiumRestriction(participantInvitationsResult.payload);
+
 		const canManage = participantsResult.response.ok && participantInvitationsResult.response.ok;
 		const participantAccessDenied =
 			availableResult.response.status === 403 ||
@@ -262,7 +277,9 @@ export const getBookingsPageData = query(
 
 		return {
 			activeContext,
+			organizationId: scopedIdentifiers.organizationId,
 			canManage,
+			premiumRestriction,
 			services: asServices(servicesResult.payload),
 			recurringSchedules: asRecurring(recurringResult.payload),
 			slots: asSlots(slotsResult.payload),

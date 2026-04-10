@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { BookingNotificationEmail } from './templates/booking-notification-email.js';
 import { OrganizationInvitationEmail } from './templates/organization-invitation-email.js';
 import { ParticipantInvitationEmail } from './templates/participant-invitation-email.js';
+import { TrialEndingReminderEmail } from './templates/trial-ending-reminder-email.js';
 
 export type ResendEnv = {
   RESEND_API_KEY?: string;
@@ -55,6 +56,17 @@ export type SendBookingNotificationInput = {
   bookingId: string;
 };
 
+export type SendTrialEndingReminderEmailInput = {
+  env: ResendEnv;
+  inviteeEmail: string;
+  organizationName: string;
+  ownerName: string;
+  trialEndsAtLabel: string;
+  paymentMethodStatusLabel: string;
+  actionText: string;
+  noteText: string;
+};
+
 const createOrganizationInvitationAcceptUrl = ({
   env,
   invitationId,
@@ -98,6 +110,13 @@ const createBookingsUrl = ({ env }: { env: ResendEnv }) => {
   return 'http://localhost:5173/bookings';
 };
 
+const createContractsUrl = ({ env }: { env: ResendEnv }) => {
+  if (env.WEB_BASE_URL) {
+    return new URL('/admin/contracts', env.WEB_BASE_URL).toString();
+  }
+  return 'http://localhost:5173/admin/contracts';
+};
+
 const isValidFromField = (value: string) => {
   // Resend accepts either:
   // - email@example.com
@@ -121,6 +140,22 @@ const requireResendConfig = (env: ResendEnv) => {
       '[invite-email] RESEND_FROM_EMAIL format is invalid. Use `email@example.com` or `Name <email@example.com>`. Skipping invite email.',
     );
     return null;
+  }
+
+  return {
+    apiKey: env.RESEND_API_KEY,
+    fromEmail,
+  };
+};
+
+const requireStrictResendConfig = (env: ResendEnv) => {
+  if (!env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) {
+    throw new Error('RESEND_CONFIG_MISSING');
+  }
+
+  const fromEmail = env.RESEND_FROM_EMAIL.trim();
+  if (!isValidFromField(fromEmail)) {
+    throw new Error('RESEND_FROM_EMAIL_INVALID');
   }
 
   return {
@@ -347,5 +382,58 @@ export const sendBookingNotificationEmail = async ({
     }
 
     throw new Error(`Failed to send booking notification email via Resend: ${details}`);
+  }
+};
+
+export const sendTrialEndingReminderEmail = async ({
+  env,
+  inviteeEmail,
+  organizationName,
+  ownerName,
+  trialEndsAtLabel,
+  paymentMethodStatusLabel,
+  actionText,
+  noteText,
+}: SendTrialEndingReminderEmailInput) => {
+  const config = requireStrictResendConfig(env);
+  const contractsUrl = createContractsUrl({ env });
+  const subject = '【契約通知】プレミアムトライアルの終了が近づいています';
+  const html = await render(
+    createElement(TrialEndingReminderEmail, {
+      organizationName,
+      ownerName,
+      trialEndsAtLabel,
+      paymentMethodStatusLabel,
+      contractsUrl,
+      actionText,
+      noteText,
+    }),
+  );
+  const text = toPlainText(html);
+
+  let response: Response;
+  try {
+    response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: config.fromEmail,
+        to: [inviteeEmail],
+        subject,
+        html,
+        text,
+      }),
+    });
+  } catch (error) {
+    const details = error instanceof Error ? error.message : 'unknown transport error';
+    throw new Error(`Failed to send trial reminder email via Resend: ${details}`);
+  }
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Failed to send trial reminder email via Resend: ${details}`);
   }
 };

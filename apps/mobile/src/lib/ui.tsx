@@ -1,9 +1,11 @@
 import {
+  createContext,
   forwardRef,
   type FC,
   type ForwardRefExoticComponent,
   type ReactNode,
   type RefAttributes,
+  useContext,
 } from 'react';
 import {
   Platform,
@@ -14,6 +16,7 @@ import {
   type TextInputProps,
   View,
 } from 'react-native';
+import { smartHrColors, smartHrFontStack } from './design-system';
 
 type Theme = {
   theme: 'light' | 'dark';
@@ -74,6 +77,8 @@ type WebTextFieldType = FC<TextFieldProps> & {
 
 type NativeUIModule = typeof import('heroui-native');
 
+const WebButtonVariantContext = createContext<string>('primary');
+
 const WebHeroUINativeProvider: FC<ProviderProps> = ({ children }) => {
   return <>{children}</>;
 };
@@ -90,13 +95,25 @@ const WebButton = (({ children, onPress, isDisabled, variant }: ButtonProps) => 
 
   return (
     <Pressable onPress={onPress} disabled={isDisabled} style={[styles.button, variantStyle]}>
-      {children}
+      <WebButtonVariantContext.Provider value={variant ?? 'primary'}>
+        {children}
+      </WebButtonVariantContext.Provider>
     </Pressable>
   );
 }) as WebButtonType;
 
 WebButton.LabelContent = ({ children }: ButtonLabelProps) => {
-  return <Text style={styles.buttonLabel}>{children}</Text>;
+  const variant = useContext(WebButtonVariantContext);
+  const variantStyle =
+    variant === 'danger'
+      ? styles.buttonLabelOnColor
+      : variant === 'secondary'
+        ? styles.buttonLabelSecondary
+        : variant === 'ghost'
+          ? styles.buttonLabelGhost
+          : styles.buttonLabelOnColor;
+
+  return <Text style={[styles.buttonLabel, variantStyle]}>{children}</Text>;
 };
 
 const WebCard = (({ children }: CardProps) => {
@@ -135,8 +152,9 @@ const nativeUI: NativeUIModule | null = (() => {
 
 export const Button = (nativeUI?.Button ?? WebButton) as NativeUIModule['Button'] | WebButtonType;
 export const Card = (nativeUI?.Card ?? WebCard) as NativeUIModule['Card'] | WebCardType;
-export const HeroUINativeProvider = (nativeUI?.HeroUINativeProvider ??
-  WebHeroUINativeProvider) as NativeUIModule['HeroUINativeProvider'] | FC<ProviderProps>;
+export const HeroUINativeProvider = (nativeUI?.HeroUINativeProvider ?? WebHeroUINativeProvider) as
+  | NativeUIModule['HeroUINativeProvider']
+  | FC<ProviderProps>;
 export const TextField = (nativeUI?.TextField ?? WebTextField) as
   | NativeUIModule['TextField']
   | WebTextFieldType;
@@ -146,74 +164,94 @@ export const useTheme = (nativeUI?.useTheme ?? useWebTheme) as
 
 const styles = StyleSheet.create({
   card: {
-    borderColor: '#d4d4d8',
+    borderColor: smartHrColors.border,
     borderWidth: 1,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    borderRadius: 6,
+    backgroundColor: smartHrColors.white,
   },
   cardBody: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 10,
+    paddingVertical: 16,
+    gap: 8,
   },
   cardFooter: {
     paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingBottom: 16,
     paddingTop: 4,
     gap: 8,
   },
   cardTitle: {
-    fontSize: 18,
+    fontFamily: smartHrFontStack,
+    fontSize: 19,
     fontWeight: '700',
-    color: '#111827',
+    lineHeight: 29,
+    color: smartHrColors.textBlack,
   },
   cardDescription: {
-    fontSize: 13,
-    color: '#374151',
+    fontFamily: smartHrFontStack,
+    fontSize: 14,
+    lineHeight: 21,
+    color: smartHrColors.textGrey,
   },
   button: {
-    borderRadius: 10,
-    minHeight: 40,
+    borderRadius: 6,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     borderWidth: 1,
   },
   buttonPrimary: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
+    backgroundColor: smartHrColors.primary,
+    borderColor: smartHrColors.primary,
   },
   buttonSecondary: {
-    backgroundColor: '#ffffff',
-    borderColor: '#d1d5db',
+    backgroundColor: smartHrColors.white,
+    borderColor: smartHrColors.primary,
   },
   buttonDanger: {
-    backgroundColor: '#dc2626',
-    borderColor: '#dc2626',
+    backgroundColor: smartHrColors.danger,
+    borderColor: smartHrColors.danger,
   },
   buttonGhost: {
-    backgroundColor: '#ffffff',
-    borderColor: '#e5e7eb',
+    backgroundColor: smartHrColors.white,
+    borderColor: smartHrColors.border,
   },
   buttonLabel: {
-    color: '#111827',
+    fontFamily: smartHrFontStack,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
+    lineHeight: 21,
+  },
+  buttonLabelOnColor: {
+    color: smartHrColors.white,
+  },
+  buttonLabelSecondary: {
+    color: smartHrColors.primary,
+  },
+  buttonLabelGhost: {
+    color: smartHrColors.textBlack,
   },
   field: {
     gap: 6,
   },
   fieldLabel: {
-    fontSize: 13,
-    color: '#374151',
+    fontFamily: smartHrFontStack,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 21,
+    color: smartHrColors.textBlack,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    minHeight: 40,
-    paddingHorizontal: 10,
-    color: '#111827',
-    backgroundColor: '#ffffff',
+    borderColor: smartHrColors.border,
+    borderRadius: 6,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    fontFamily: smartHrFontStack,
+    fontSize: 16,
+    lineHeight: 24,
+    color: smartHrColors.textBlack,
+    backgroundColor: smartHrColors.white,
   },
 });

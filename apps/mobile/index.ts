@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import { registerRootComponent } from 'expo';
 
 import App from './App';
+import { smartHrColors } from './src/lib/design-system';
 
 const installWebFatalErrorOverlay = () => {
   if (Platform.OS !== 'web' || typeof document === 'undefined' || typeof window === 'undefined') {
@@ -25,11 +26,12 @@ const installWebFatalErrorOverlay = () => {
     element.style.zIndex = '2147483647';
     element.style.padding = '12px';
     element.style.margin = '0';
-    element.style.borderRadius = '10px';
-    element.style.border = '1px solid #fca5a5';
-    element.style.background = '#fee2e2';
-    element.style.color = '#7f1d1d';
-    element.style.font = '12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    element.style.borderRadius = '6px';
+    element.style.border = `1px solid ${smartHrColors.danger}`;
+    element.style.background = '#fbecf1';
+    element.style.color = smartHrColors.textBlack;
+    element.style.font =
+      '12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
     element.style.whiteSpace = 'pre-wrap';
     element.style.maxHeight = '45vh';
     element.style.overflow = 'auto';

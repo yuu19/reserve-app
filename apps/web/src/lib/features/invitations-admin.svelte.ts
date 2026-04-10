@@ -1,5 +1,6 @@
 import { authRpc, type InvitationPayload, type OrganizationInvitationRole } from '$lib/rpc-client';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import { readOrganizationPremiumRestriction } from './premium-restrictions';
 import { readWindowScopedRouteContext } from './scoped-routing';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -23,7 +24,7 @@ const toRole = (value: string): OrganizationInvitationRole | null => {
 	return null;
 };
 
-export const loadAdminInvitations = async (_organizationId?: string) => {
+export const loadAdminInvitations = async () => {
 	const userResponse = await authRpc.listUserInvitations();
 	const userPayload = await parseResponseBody(userResponse);
 	const received = userResponse.ok
@@ -41,15 +42,22 @@ export const loadAdminInvitations = async (_organizationId?: string) => {
 
 	const sentResponse = await authRpc.listOrganizationInvitationsByOrg(context.orgSlug);
 	const sentPayload = await parseResponseBody(sentResponse);
+	const premiumRestriction = readOrganizationPremiumRestriction(sentPayload);
 	if (sentResponse.status === 403) {
-		return { sent: [], received, canManage: false };
+		return {
+			sent: [],
+			received,
+			canManage: premiumRestriction !== null,
+			premiumRestriction
+		};
 	}
 	return {
 		sent: sentResponse.ok
 			? asInvitations(sentPayload).filter((invitation) => invitation.subjectKind === 'org_operator')
 			: [],
 		received,
-		canManage: sentResponse.ok
+		canManage: sentResponse.ok,
+		premiumRestriction: null
 	};
 };
 
@@ -73,13 +81,17 @@ export const createAdminInvitation = async (input: {
 		resend: input.resend
 	});
 	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? input.resend
 				? '管理者招待を再送しました。'
 				: '管理者招待を送信しました。'
+			: premiumRestriction
+				? 'この機能は組織のPremiumプランで利用できます。'
 			: toErrorMessage(payload, '管理者招待の作成に失敗しました。')
 	};
 };

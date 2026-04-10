@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
+	import PremiumRestrictionNotice from '$lib/components/premium-restriction-notice.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
@@ -19,6 +20,7 @@
 	import {
 		createClassroom,
 		listClassroomsByOrgSlug,
+		loadOrganizationBilling,
 		loadOrganizations,
 		updateClassroom,
 		type ClassroomContextPayload
@@ -31,7 +33,8 @@
 		resolvePortalHomePath
 	} from '$lib/features/auth-session.svelte';
 	import { buildScopedPath } from '$lib/features/scoped-routing';
-	import type { OrganizationPayload } from '$lib/rpc-client';
+	import type { OrganizationBillingPayload, OrganizationPayload } from '$lib/rpc-client';
+	import type { OrganizationPremiumRestrictionPayload } from '$lib/features/premium-restrictions';
 	import { toast } from 'svelte-sonner';
 
 	type ResolvablePath = Pathname;
@@ -42,6 +45,8 @@
 	let activeClassroom = $state<ClassroomContextPayload | null>(null);
 	let classrooms = $state<ClassroomContextPayload[]>([]);
 	let canManageOrganization = $state(false);
+	let billing = $state<OrganizationBillingPayload | null>(null);
+	let premiumRestriction = $state<OrganizationPremiumRestrictionPayload | null>(null);
 	let createForm = $state({ name: '', slug: '' });
 	let editDialogOpen = $state(false);
 	let editTarget = $state<ClassroomContextPayload | null>(null);
@@ -74,6 +79,8 @@
 		activeOrganization = nextOrganization;
 		activeClassroom = nextClassroom;
 		canManageOrganization = portalAccess.hasOrganizationAdminAccess;
+		billing = null;
+		premiumRestriction = null;
 		if (!portalAccess.hasOrganizationAdminAccess) {
 			classrooms = [];
 			await goto(resolve(resolvePortalHomePath(portalAccess) ?? '/participant/home'));
@@ -98,6 +105,11 @@
 		try {
 			const result = await createClassroom(activeOrganization.slug, createForm);
 			if (!result.ok) {
+				if (result.premiumRestriction) {
+					premiumRestriction = result.premiumRestriction;
+					const billingResult = await loadOrganizationBilling(activeOrganization.id);
+					billing = billingResult.ok ? billingResult.billing : null;
+				}
 				toast.error(result.message);
 				return;
 			}
@@ -129,6 +141,11 @@
 		try {
 			const result = await updateClassroom(activeOrganization.slug, editTarget.slug, editForm);
 			if (!result.ok || !result.classroom) {
+				if (result.premiumRestriction) {
+					premiumRestriction = result.premiumRestriction;
+					const billingResult = await loadOrganizationBilling(activeOrganization.id);
+					billing = billingResult.ok ? billingResult.billing : null;
+				}
 				toast.error(result.message);
 				return;
 			}
@@ -207,31 +224,39 @@
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-slate-900">教室管理</h1>
-		<p class="text-sm text-slate-600">
+		<h1 class="text-3xl font-semibold text-foreground">教室管理</h1>
+		<p class="text-sm text-muted-foreground">
 			教室の作成、名称・slug の更新、教室ごとの管理導線への遷移を行います。
 		</p>
 	</header>
 
+	{#if premiumRestriction}
+		<PremiumRestrictionNotice
+			featureLabel="複数教室管理"
+			restriction={premiumRestriction}
+			{billing}
+		/>
+	{/if}
+
 	{#if loading}
-		<Card class="surface-panel border-slate-200/80 shadow-lg">
+		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardContent class="py-6">
 				<p class="text-sm text-muted-foreground">教室情報を読み込み中…</p>
 			</CardContent>
 		</Card>
 	{:else if !activeOrganization}
-		<Card class="surface-panel border-slate-200/80 shadow-lg">
+		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardContent class="py-6">
 				<p class="text-sm text-muted-foreground">利用中の組織を選択してください。</p>
 			</CardContent>
 		</Card>
 	{:else}
 		<section class="grid gap-6 xl:grid-cols-[360px_1fr]">
-			<Card class="surface-panel border-slate-200/80 shadow-lg">
+			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader class="space-y-2">
-					<h2 class="text-xl font-semibold text-slate-900">教室を作成</h2>
+					<h2 class="text-xl font-semibold text-foreground">教室を作成</h2>
 					<CardDescription>
-						対象組織: <span class="font-medium text-slate-900">{activeOrganization.name}</span>
+						対象組織: <span class="font-medium text-foreground">{activeOrganization.name}</span>
 					</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
@@ -240,15 +265,30 @@
 							教室の作成と設定更新は owner / admin のみ実行できます。
 						</p>
 					{:else}
-						<form class="space-y-4 rounded-lg border border-slate-200/80 bg-white/80 p-4" onsubmit={submitCreateClassroom}>
+						<form
+							class="space-y-4 rounded-lg border border-border/80 bg-card/80 p-4"
+							onsubmit={submitCreateClassroom}
+						>
 							<div class="space-y-2">
 								<Label for="classroom-name">教室名</Label>
-								<Input id="classroom-name" name="classroom_name" bind:value={createForm.name} maxlength={120} required />
+								<Input
+									id="classroom-name"
+									name="classroom_name"
+									bind:value={createForm.name}
+									maxlength={120}
+									required
+								/>
 							</div>
 							<div class="space-y-2">
 								<Label for="classroom-slug">slug</Label>
-								<Input id="classroom-slug" name="classroom_slug" bind:value={createForm.slug} maxlength={120} required />
-								<p class="text-xs text-slate-500">slug は scoped URL に使われます。</p>
+								<Input
+									id="classroom-slug"
+									name="classroom_slug"
+									bind:value={createForm.slug}
+									maxlength={120}
+									required
+								/>
+								<p class="text-xs text-muted-foreground">slug は scoped URL に使われます。</p>
 							</div>
 							<Button type="submit" disabled={busy}>教室を作成</Button>
 						</form>
@@ -256,9 +296,9 @@
 				</CardContent>
 			</Card>
 
-			<Card class="surface-panel border-slate-200/80 shadow-lg">
+			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader class="space-y-2">
-					<h2 class="text-xl font-semibold text-slate-900">教室一覧</h2>
+					<h2 class="text-xl font-semibold text-foreground">教室一覧</h2>
 					<CardDescription>現在アクセス可能な教室と、その管理導線です。</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-3">
@@ -268,11 +308,11 @@
 						<div class="space-y-3">
 							{#each classrooms as classroom (classroom.id)}
 								{@const classroomRoleLabel = resolveClassroomRoleLabel(classroom)}
-								<div class="rounded-lg border border-slate-200/80 bg-white/80 p-4">
+								<div class="rounded-lg border border-border/80 bg-card/80 p-4">
 									<div class="flex flex-wrap items-start justify-between gap-3">
 										<div class="space-y-2">
 											<div class="flex flex-wrap items-center gap-2">
-												<p class="text-base font-semibold text-slate-900">{classroom.name}</p>
+												<p class="text-base font-semibold text-foreground">{classroom.name}</p>
 												{#if classroom.slug === activeClassroom?.slug}
 													<Badge variant="default">利用中</Badge>
 												{/if}
@@ -280,10 +320,14 @@
 													<Badge variant="outline">{classroomRoleLabel}</Badge>
 												{/if}
 											</div>
-											<p class="text-xs text-slate-500">slug: {classroom.slug}</p>
+											<p class="text-xs text-muted-foreground">slug: {classroom.slug}</p>
 										</div>
 										<div class="flex flex-wrap gap-2">
-											<Button type="button" variant="secondary" onclick={() => openClassroom(classroom.slug)}>
+											<Button
+												type="button"
+												variant="secondary"
+												onclick={() => openClassroom(classroom.slug)}
+											>
 												この教室を開く
 											</Button>
 											<Button
@@ -325,14 +369,31 @@
 			<form class="space-y-4" onsubmit={submitUpdateClassroom}>
 				<div class="space-y-2">
 					<Label for="edit-classroom-name">教室名</Label>
-					<Input id="edit-classroom-name" name="edit_classroom_name" bind:value={editForm.name} maxlength={120} required />
+					<Input
+						id="edit-classroom-name"
+						name="edit_classroom_name"
+						bind:value={editForm.name}
+						maxlength={120}
+						required
+					/>
 				</div>
 				<div class="space-y-2">
 					<Label for="edit-classroom-slug">slug</Label>
-					<Input id="edit-classroom-slug" name="edit_classroom_slug" bind:value={editForm.slug} maxlength={120} required />
+					<Input
+						id="edit-classroom-slug"
+						name="edit_classroom_slug"
+						bind:value={editForm.slug}
+						maxlength={120}
+						required
+					/>
 				</div>
 				<DialogFooter>
-					<Button type="button" variant="ghost" onclick={() => (editDialogOpen = false)} disabled={busy}>
+					<Button
+						type="button"
+						variant="ghost"
+						onclick={() => (editDialogOpen = false)}
+						disabled={busy}
+					>
 						閉じる
 					</Button>
 					<Button type="submit" disabled={busy}>保存</Button>

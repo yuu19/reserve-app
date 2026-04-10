@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/admin/schedules/recurring/new'),
 	getAdminRecurringPageData: vi.fn(),
+	loadOrganizationBilling: vi.fn(),
 	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', classroomSlug: 'room-1' }))
 }));
 
@@ -33,6 +34,10 @@ vi.mock('$lib/remote/admin-recurring-page.remote', () => ({
 	getAdminRecurringPageData: mocks.getAdminRecurringPageData
 }));
 
+vi.mock('$lib/features/organization-context.svelte', () => ({
+	loadOrganizationBilling: mocks.loadOrganizationBilling
+}));
+
 vi.mock('$lib/features/scoped-routing', async () => {
 	const actual = await vi.importActual<typeof import('$lib/features/scoped-routing')>(
 		'$lib/features/scoped-routing'
@@ -49,6 +54,7 @@ describe('/admin/schedules/recurring/new/+page.svelte', () => {
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.getAdminRecurringPageData.mockReset();
+		mocks.loadOrganizationBilling.mockReset();
 		mocks.readWindowScopedRouteContext.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
@@ -65,7 +71,9 @@ describe('/admin/schedules/recurring/new/+page.svelte', () => {
 				orgSlug: 'org-1',
 				classroomSlug: 'room-1'
 			},
+			organizationId: 'org-1',
 			canManage: true,
+			premiumRestriction: null,
 			services: [],
 			recurringSchedules: [],
 			staffRecurringSchedules: []
@@ -101,5 +109,52 @@ describe('/admin/schedules/recurring/new/+page.svelte', () => {
 		expect(createSection).toBeTruthy();
 		expect(createSection?.className ?? '').toContain('max-w-4xl');
 		expect(createSection?.querySelector('form')?.className ?? '').toContain('md:grid-cols-2');
+	});
+
+	it('shows premium restriction guidance on recurring create page', async () => {
+		mocks.getAdminRecurringPageData.mockResolvedValue({
+			activeContext: {
+				orgSlug: 'org-1',
+				classroomSlug: 'room-1'
+			},
+			organizationId: 'org-1',
+			canManage: true,
+			premiumRestriction: {
+				message: 'Organization premium plan is required for this feature.',
+				code: 'organization_premium_required',
+				source: 'application_billing_state',
+				reason: 'organization_plan_is_free',
+				entitlementState: 'free_only',
+				planState: 'free',
+				trialEndsAt: null
+			},
+			services: [],
+			recurringSchedules: [],
+			staffRecurringSchedules: []
+		});
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'free',
+				planState: 'free',
+				billingInterval: null,
+				paymentMethodStatus: 'not_started',
+				subscriptionStatus: 'free',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: null,
+				trialEndsAt: null,
+				canViewBilling: true,
+				canManageBilling: true
+			}
+		});
+
+		render(AdminRecurringCreatePage);
+
+		await expect
+			.element(page.getByText('定期スケジュール運用には Premiumプランが必要です'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '定期スケジュールを作成' }))
+			.toBeDisabled();
 	});
 });

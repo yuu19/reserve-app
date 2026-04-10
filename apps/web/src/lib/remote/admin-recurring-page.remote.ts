@@ -4,6 +4,7 @@ import type {
 	ScopedApiContext,
 	ServicePayload
 } from '$lib/rpc-client';
+import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import { createApiGetter, resolveScopedAccessContext, type ApiResult } from '$lib/server/scoped-api';
 import { z } from 'zod';
 
@@ -60,7 +61,9 @@ export const getAdminRecurringPageData = query(
 		if (!scopedAccess) {
 			return {
 				activeContext: null,
+				organizationId: null as string | null,
 				canManage: false,
+				premiumRestriction: null,
 				services: [] as ServicePayload[],
 				recurringSchedules: [] as RecurringSchedulePayload[],
 				staffRecurringSchedules: [] as RecurringSchedulePayload[]
@@ -70,7 +73,9 @@ export const getAdminRecurringPageData = query(
 		if (!scopedAccess.effective.canManageClassroom) {
 			return {
 				activeContext,
+				organizationId: scopedAccess.organizationId,
 				canManage: false,
+				premiumRestriction: null,
 				services: [] as ServicePayload[],
 				recurringSchedules: [] as RecurringSchedulePayload[],
 				staffRecurringSchedules: [] as RecurringSchedulePayload[]
@@ -90,13 +95,31 @@ export const getAdminRecurringPageData = query(
 			getApi('/api/v1/auth/organizations/recurring-schedules', scopedQuery)
 		]);
 
+		const premiumRestriction =
+			readOrganizationPremiumRestriction(servicesResult.payload) ??
+			readOrganizationPremiumRestriction(recurringResult.payload) ??
+			readOrganizationPremiumRestriction(staffRecurringResult.payload);
+		if (premiumRestriction) {
+			return {
+				activeContext,
+				organizationId: scopedAccess.organizationId,
+				canManage: true,
+				premiumRestriction,
+				services: [] as ServicePayload[],
+				recurringSchedules: [] as RecurringSchedulePayload[],
+				staffRecurringSchedules: [] as RecurringSchedulePayload[]
+			};
+		}
+
 		assertAllowedFailure(servicesResult, 'サービス一覧の取得に失敗しました。');
 		assertAllowedFailure(recurringResult, '定期スケジュールの取得に失敗しました。');
 		assertAllowedFailure(staffRecurringResult, '運営定期スケジュール一覧の取得に失敗しました。');
 
 		return {
 			activeContext,
+			organizationId: scopedAccess.organizationId,
 			canManage: true,
+			premiumRestriction: null,
 			services: asServices(servicesResult.payload),
 			recurringSchedules: asRecurring(recurringResult.payload),
 			staffRecurringSchedules: asRecurring(staffRecurringResult.payload)

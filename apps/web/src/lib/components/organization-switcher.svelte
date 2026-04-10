@@ -47,8 +47,8 @@
 		}
 		return activeOrganizationName;
 	});
-	const activeOrganization = $derived.by(() =>
-		organizations.find((organization) => organization.id === activeOrganizationId) ?? null
+	const activeOrganization = $derived.by(
+		() => organizations.find((organization) => organization.id === activeOrganizationId) ?? null
 	);
 
 	const selectOrganization = async (organizationId: string | null) => {
@@ -113,7 +113,7 @@
 							class={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
 								organization.id === activeOrganizationId
 									? 'border-primary/40 bg-primary/5'
-									: 'border-slate-200/80 bg-white hover:bg-slate-50'
+									: 'border-border/80 bg-card hover:bg-secondary'
 							}`}
 							onclick={() => void selectOrganization(organization.id)}
 							disabled={busy}
@@ -123,7 +123,7 @@
 								<div class="flex min-w-0 items-center gap-2">
 									<OrganizationLogo name={organization.name} logo={organization.logo} size="sm" />
 									<div class="min-w-0">
-										<p class="truncate text-sm font-medium text-slate-900">{organization.name}</p>
+										<p class="truncate text-sm font-medium text-foreground">{organization.name}</p>
 										<p class="truncate text-xs text-muted-foreground">slug: {organization.slug}</p>
 									</div>
 								</div>
@@ -139,7 +139,7 @@
 				{/if}
 			</div>
 
-			<div class="border-t border-slate-200/70 pt-2">
+			<div class="border-t border-border/70 pt-2">
 				<Button
 					type="button"
 					variant="ghost"

@@ -189,7 +189,10 @@
 						return url.toString();
 					})()
 				: undefined;
-		const oidcStartUrl = authRpc.buildGoogleOidcStartURL({ callbackURL, errorCallbackURL: callbackURL });
+		const oidcStartUrl = authRpc.buildGoogleOidcStartURL({
+			callbackURL,
+			errorCallbackURL: callbackURL
+		});
 		window.location.assign(oidcStartUrl);
 	};
 
@@ -200,27 +203,34 @@
 
 <main class="min-h-screen">
 	<div class="mx-auto flex w-full max-w-xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-		<header class="surface-panel rounded-2xl border border-slate-200/80 p-5 shadow-lg md:p-6">
+		<header class="surface-panel rounded-2xl border border-border/80 p-5 shadow-lg md:p-6">
 			<div class="space-y-3">
 				<Badge variant="outline">管理画面</Badge>
-				<h1 class="text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">管理画面ログイン</h1>
-				<p class="text-sm leading-relaxed text-slate-600 md:text-base">
+				<h1 class="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
+					管理画面ログイン
+				</h1>
+				<p class="text-sm leading-relaxed text-muted-foreground md:text-base">
 					管理者向けの予約運用・サービス管理・招待管理にアクセスします。
 				</p>
 				{#if nextPath}
-					<p class="text-xs text-slate-500">ログイン後の遷移先: {nextPath}</p>
+					<p class="text-xs text-muted-foreground">ログイン後の遷移先: {nextPath}</p>
 				{/if}
 			</div>
 		</header>
 
-		<Card class="surface-panel border-slate-200/80 shadow-lg">
+		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardHeader class="space-y-2">
-				<CardDescription>予約者向け入口を使う場合は下記リンクから移動してください。</CardDescription>
-				<Button href={participantLoginHref} variant="outline" class="w-full">予約者ページログインへ</Button>
+				<CardDescription>予約者向け入口を使う場合は下記リンクから移動してください。</CardDescription
+				>
+				<Button href={participantLoginHref} variant="outline" class="w-full"
+					>予約者ページログインへ</Button
+				>
 			</CardHeader>
 			<CardContent class="space-y-4">
 				{#if loadingSession}
-					<p class="text-sm text-muted-foreground" aria-live="polite">セッション情報を確認しています…</p>
+					<p class="text-sm text-muted-foreground" aria-live="polite">
+						セッション情報を確認しています…
+					</p>
 				{/if}
 				{#if authFeedback}
 					<p role="status" aria-live="polite" class="text-sm text-destructive">{authFeedback}</p>

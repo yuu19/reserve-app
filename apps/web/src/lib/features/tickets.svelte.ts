@@ -8,6 +8,7 @@ import {
 } from '$lib/rpc-client';
 import dayjs from 'dayjs';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
+import { readOrganizationPremiumRestriction } from './premium-restrictions';
 import { readWindowScopedRouteContext } from './scoped-routing';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -90,10 +91,14 @@ export const toTicketErrorMessage = (
 	fallback: string
 ): string => {
 	const message = isRecord(payload) && typeof payload.message === 'string' ? payload.message : null;
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	if (status === 401) {
 		return 'セッションの有効期限が切れました。再ログインしてください。';
 	}
 	if (status === 403) {
+		if (premiumRestriction) {
+			return 'この機能は組織のPremiumプランで利用できます。';
+		}
 		return 'この操作を実行する権限がありません。';
 	}
 	if (status === 404) {
@@ -147,7 +152,7 @@ export const toIsoFromDateTimeLocal = (value: string): string | undefined => {
 	return parsed.toISOString();
 };
 
-export const loadTicketManagementData = async (_organizationId?: string) => {
+export const loadTicketManagementData = async () => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
 		return {
@@ -243,9 +248,11 @@ export const createTicketType = async (input: {
 		stripePriceId: input.stripePriceId
 	});
 	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? '回数券種別を作成しました。'
 			: toTicketErrorMessage(response.status, payload, '回数券種別の作成に失敗しました。')
@@ -275,16 +282,18 @@ export const grantTicketPack = async (input: {
 		expiresAt: input.expiresAt
 	});
 	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? '回数券を付与しました。'
 			: toTicketErrorMessage(response.status, payload, '回数券付与に失敗しました。')
 	};
 };
 
-export const loadMyTicketPacks = async (_organizationId?: string) => {
+export const loadMyTicketPacks = async () => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
 		return {
@@ -308,7 +317,7 @@ export const loadMyTicketPacks = async (_organizationId?: string) => {
 	};
 };
 
-export const loadPurchasableTicketTypes = async (_organizationId?: string) => {
+export const loadPurchasableTicketTypes = async () => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
 		return {
@@ -371,7 +380,7 @@ export const createTicketPurchase = async (input: {
 	};
 };
 
-export const loadMyTicketPurchases = async (_organizationId?: string) => {
+export const loadMyTicketPurchases = async () => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
 		return {
@@ -432,9 +441,11 @@ export const approveTicketPurchase = async (purchaseId: string) => {
 	}
 	const response = await authRpc.approveTicketPurchaseScoped(context, { purchaseId });
 	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? '回数券購入申請を承認しました。'
 			: toTicketErrorMessage(response.status, payload, '回数券購入申請の承認に失敗しました。')
@@ -456,9 +467,11 @@ export const rejectTicketPurchase = async (purchaseId: string, reason?: string) 
 		reason: normalizedReason
 	});
 	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
+		premiumRestriction,
 		message: response.ok
 			? '回数券購入申請を却下しました。'
 			: toTicketErrorMessage(response.status, payload, '回数券購入申請の却下に失敗しました。')

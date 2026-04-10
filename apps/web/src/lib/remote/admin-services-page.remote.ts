@@ -1,5 +1,6 @@
 import { query } from '$app/server';
 import type { ScopedApiContext, ServicePayload } from '$lib/rpc-client';
+import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import { createApiGetter, resolveScopedAccessContext, type ApiResult } from '$lib/server/scoped-api';
 import { z } from 'zod';
 
@@ -57,7 +58,9 @@ export const getAdminServicesPageData = query(
 		if (!scopedAccess) {
 			return {
 				activeContext: null,
+				organizationId: null as string | null,
 				canManage: false,
+				premiumRestriction: null,
 				services: [] as ServicePayload[],
 				staffServices: [] as ServicePayload[]
 			};
@@ -66,7 +69,9 @@ export const getAdminServicesPageData = query(
 		if (!scopedAccess.effective.canManageClassroom) {
 			return {
 				activeContext,
+				organizationId: scopedAccess.organizationId,
 				canManage: false,
+				premiumRestriction: null,
 				services: [] as ServicePayload[],
 				staffServices: [] as ServicePayload[]
 			};
@@ -84,12 +89,28 @@ export const getAdminServicesPageData = query(
 			})
 		]);
 
+		const premiumRestriction =
+			readOrganizationPremiumRestriction(servicesResult.payload) ??
+			readOrganizationPremiumRestriction(staffServicesResult.payload);
+		if (premiumRestriction) {
+			return {
+				activeContext,
+				organizationId: scopedAccess.organizationId,
+				canManage: true,
+				premiumRestriction,
+				services: [] as ServicePayload[],
+				staffServices: [] as ServicePayload[]
+			};
+		}
+
 		assertAllowedFailure(servicesResult, 'サービス一覧の取得に失敗しました。');
 		assertAllowedFailure(staffServicesResult, '運営サービス一覧の取得に失敗しました。');
 
 		return {
 			activeContext,
+			organizationId: scopedAccess.organizationId,
 			canManage: true,
+			premiumRestriction: null,
 			services: asServices(servicesResult.payload),
 			staffServices: asServices(staffServicesResult.payload)
 		};

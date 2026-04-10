@@ -32,7 +32,7 @@
 <span
 	data-slot="organization-logo"
 	class={cn(
-		'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200/80 bg-slate-100',
+		'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/80 bg-secondary',
 		sizeClassMap[size],
 		className
 	)}
@@ -52,7 +52,7 @@
 		<Building2
 			data-slot="organization-logo-fallback"
 			aria-hidden="true"
-			class={cn('text-slate-500', iconClassMap[size])}
+			class={cn('text-muted-foreground', iconClassMap[size])}
 		/>
 	{/if}
 </span>

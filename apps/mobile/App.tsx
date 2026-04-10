@@ -5,6 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import './global.css';
 import { authClient, backendBaseURL } from './src/lib/auth-client';
 import { GestureRootView } from './src/lib/gesture-root';
+import { smartHrHeroUITheme } from './src/lib/design-system';
 import { Button, Card, HeroUINativeProvider, TextField, useTheme } from './src/lib/ui';
 import {
   mobileApi,
@@ -936,7 +937,7 @@ export default function App() {
   return (
     <GestureRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <HeroUINativeProvider config={{ colorScheme: 'system' }}>
+        <HeroUINativeProvider config={{ colorScheme: 'system', theme: smartHrHeroUITheme }}>
           <AppErrorBoundary>
             <AppConsole />
           </AppErrorBoundary>

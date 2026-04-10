@@ -7,6 +7,7 @@ import type {
 	TicketPurchasePayload,
 	TicketTypePayload
 } from '$lib/rpc-client';
+import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import {
 	buildScopedInvitationPath,
 	createApiGetter,
@@ -19,9 +20,11 @@ type JsonRecord = Record<string, unknown>;
 
 type ParticipantsPageData = {
 	activeContext: ScopedApiContext | null;
+	organizationId: string | null;
 	canManage: boolean;
 	canManageParticipants: boolean;
 	canManageClassroom: boolean;
+	premiumRestriction: ReturnType<typeof readOrganizationPremiumRestriction>;
 	participants: ParticipantPayload[];
 	sentInvitations: ParticipantInvitationPayload[];
 	receivedInvitations: ParticipantInvitationPayload[];
@@ -119,9 +122,11 @@ export const getParticipantsPageData = query(
 		if (!scopedAccess) {
 			return {
 				activeContext: null,
+				organizationId: null,
 				canManage: false,
 				canManageParticipants: false,
 				canManageClassroom: false,
+				premiumRestriction: null,
 				participants: [],
 				sentInvitations: [],
 				receivedInvitations: [],
@@ -173,6 +178,31 @@ export const getParticipantsPageData = query(
 			});
 		}
 
+		const premiumRestriction =
+			readOrganizationPremiumRestriction(participantsResult.payload) ??
+			readOrganizationPremiumRestriction(sentInvitationsResult.payload) ??
+			readOrganizationPremiumRestriction(servicesResult.payload) ??
+			readOrganizationPremiumRestriction(ticketTypesResult.payload) ??
+			readOrganizationPremiumRestriction(ticketPurchasesResult.payload);
+		if (premiumRestriction) {
+			return {
+				activeContext,
+				organizationId: scopedAccess.organizationId,
+				canManage:
+					scopedAccess.effective.canManageParticipants ||
+					scopedAccess.effective.canManageClassroom,
+				canManageParticipants: scopedAccess.effective.canManageParticipants,
+				canManageClassroom: scopedAccess.effective.canManageClassroom,
+				premiumRestriction,
+				participants: [],
+				sentInvitations: [],
+				receivedInvitations: asParticipantInvitations(receivedInvitationsResult.payload),
+				services: [],
+				ticketTypes: [],
+				ticketPurchases: []
+			};
+		}
+
 		assertAllowedFailure(participantsResult, '参加者情報の取得に失敗しました。', 'participants', {
 			allowForbidden: true
 		});
@@ -206,11 +236,13 @@ export const getParticipantsPageData = query(
 
 		return {
 			activeContext,
+			organizationId: scopedAccess.organizationId,
 			canManage:
 				scopedAccess.effective.canManageParticipants ||
 				scopedAccess.effective.canManageClassroom,
 			canManageParticipants: scopedAccess.effective.canManageParticipants,
 			canManageClassroom: scopedAccess.effective.canManageClassroom,
+			premiumRestriction: null,
 			participants: asParticipants(participantsResult.payload),
 			sentInvitations: asParticipantInvitations(sentInvitationsResult.payload),
 			receivedInvitations: asParticipantInvitations(receivedInvitationsResult.payload),

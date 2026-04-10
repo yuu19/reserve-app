@@ -184,7 +184,7 @@
 	></div>
 	<div class="relative mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 md:px-8 md:py-10">
 		<header
-			class="surface-panel relative overflow-hidden rounded-3xl border border-slate-200/80 p-6 shadow-xl md:p-8"
+			class="surface-panel relative overflow-hidden rounded-3xl border border-border/80 p-6 shadow-xl md:p-8"
 		>
 			<div
 				class="pointer-events-none absolute right-[-96px] top-[-120px] h-72 w-72 rounded-full bg-primary/15 blur-3xl"
@@ -194,16 +194,16 @@
 			>
 				<div class="space-y-5">
 					<Badge variant="outline">予約運用を一元化</Badge>
-					<h1 class="text-3xl font-semibold tracking-tight text-slate-900 md:text-5xl">
+					<h1 class="text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
 						予約運用を、ひとつの画面で。
 					</h1>
-					<p class="max-w-2xl text-sm leading-relaxed text-slate-600 md:text-base">
+					<p class="max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-base">
 						Reserve App は、管理者と予約者の導線を分離しながら、予約作成・受付運用・参加者対応を
 						一体で管理できる予約プラットフォームです。
 					</p>
 					{#if nextPath}
 						<p
-							class="rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-slate-700"
+							class="rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-secondary-foreground"
 						>
 							ログイン後の遷移先: {nextPath}
 						</p>
@@ -219,7 +219,7 @@
 
 				<div class="grid gap-4">
 					{#each portalCards as portal (portal.title)}
-						<Card class="border-slate-200/80 bg-white/90 shadow-sm">
+						<Card class="border-border/80 bg-card/90 shadow-sm">
 							<CardHeader class="space-y-2">
 								<CardTitle class="flex items-center gap-2 text-base">
 									<portal.icon class="size-4 text-primary" aria-hidden="true" />
@@ -236,20 +236,20 @@
 		<section class="space-y-4">
 			<div class="space-y-2">
 				<Badge variant="secondary">課題と解決</Badge>
-				<h2 class="text-2xl font-semibold text-slate-900 md:text-3xl">
+				<h2 class="text-2xl font-semibold text-foreground md:text-3xl">
 					予約運用のボトルネックを、実務視点で解消
 				</h2>
 			</div>
 			<div class="grid gap-4 md:grid-cols-2">
 				{#each challengeCards as item (item.title)}
-					<Card class="surface-panel border-slate-200/80 shadow-md">
+					<Card class="surface-panel border-border/80 shadow-md">
 						<CardHeader class="space-y-2">
 							<CardTitle class="text-lg">{item.title}</CardTitle>
 							<CardDescription>{item.challenge}</CardDescription>
 						</CardHeader>
 						<CardContent>
 							<p
-								class="rounded-md border border-emerald-200/70 bg-emerald-50/70 px-3 py-2 text-sm text-emerald-900"
+								class="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-foreground"
 							>
 								{item.solution}
 							</p>
@@ -262,13 +262,13 @@
 		<section class="space-y-4">
 			<div class="space-y-2">
 				<Badge variant="secondary">主要機能</Badge>
-				<h2 class="text-2xl font-semibold text-slate-900 md:text-3xl">
+				<h2 class="text-2xl font-semibold text-foreground md:text-3xl">
 					役割ごとに最適化された機能セット
 				</h2>
 			</div>
 			<div class="grid gap-4 md:grid-cols-2">
 				{#each featureColumns as feature (feature.title)}
-					<Card class="surface-panel border-slate-200/80 shadow-md">
+					<Card class="surface-panel border-border/80 shadow-md">
 						<CardHeader class="space-y-2">
 							<CardTitle class="flex items-center gap-2 text-lg">
 								<feature.icon class="size-4 text-primary" aria-hidden="true" />
@@ -277,9 +277,9 @@
 							<CardDescription>{feature.description}</CardDescription>
 						</CardHeader>
 						<CardContent>
-							<ul class="space-y-2 text-sm text-slate-700">
+							<ul class="space-y-2 text-sm text-secondary-foreground">
 								{#each feature.items as line (line)}
-									<li class="rounded-md border border-slate-200/70 bg-white/70 px-3 py-2">
+									<li class="rounded-md border border-border/70 bg-card/70 px-3 py-2">
 										{line}
 									</li>
 								{/each}
@@ -293,11 +293,11 @@
 		<section class="space-y-4">
 			<div class="space-y-2">
 				<Badge variant="secondary">導入フロー</Badge>
-				<h2 class="text-2xl font-semibold text-slate-900 md:text-3xl">最短4ステップで導入開始</h2>
+				<h2 class="text-2xl font-semibold text-foreground md:text-3xl">最短4ステップで導入開始</h2>
 			</div>
 			<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 				{#each onboardingSteps as step, index (step.title)}
-					<Card class="surface-panel border-slate-200/80 shadow-sm">
+					<Card class="surface-panel border-border/80 shadow-sm">
 						<CardHeader class="space-y-2">
 							<p class="text-xs font-semibold tracking-wide text-primary">STEP {index + 1}</p>
 							<CardTitle class="flex items-center gap-2 text-base">
@@ -306,7 +306,7 @@
 							</CardTitle>
 						</CardHeader>
 						<CardContent>
-							<p class="text-sm text-slate-700">{step.description}</p>
+							<p class="text-sm text-secondary-foreground">{step.description}</p>
 						</CardContent>
 					</Card>
 				{/each}
@@ -316,14 +316,16 @@
 		<section id="pricing" class="scroll-mt-24 space-y-4">
 			<div class="space-y-2">
 				<Badge variant="secondary">Pricing</Badge>
-				<h2 class="text-2xl font-semibold text-slate-900 md:text-3xl">料金プラン</h2>
-				<p class="text-sm text-slate-600">運用規模に合わせて選べる3プランを用意しています。</p>
+				<h2 class="text-2xl font-semibold text-foreground md:text-3xl">料金プラン</h2>
+				<p class="text-sm text-muted-foreground">
+					運用規模に合わせて選べる3プランを用意しています。
+				</p>
 			</div>
 
 			<div class="grid gap-4 md:grid-cols-3">
 				{#each pricingPlans as plan (plan.name)}
 					<Card
-						class={`surface-panel border-slate-200/80 shadow-md ${plan.recommended ? 'ring-2 ring-primary/40' : ''}`}
+						class={`surface-panel border-border/80 shadow-md ${plan.recommended ? 'ring-2 ring-primary/40' : ''}`}
 					>
 						<CardHeader class="space-y-2">
 							<div class="flex items-center justify-between gap-3">
@@ -332,13 +334,13 @@
 									<Badge>おすすめ</Badge>
 								{/if}
 							</div>
-							<p class="text-2xl font-semibold text-slate-900">{plan.price}</p>
+							<p class="text-2xl font-semibold text-foreground">{plan.price}</p>
 							<CardDescription>{plan.description}</CardDescription>
 						</CardHeader>
 						<CardContent class="space-y-4">
-							<ul class="space-y-2 text-sm text-slate-700">
+							<ul class="space-y-2 text-sm text-secondary-foreground">
 								{#each plan.highlights as highlight (highlight)}
-									<li class="rounded-md border border-slate-200/70 bg-white/70 px-3 py-2">
+									<li class="rounded-md border border-border/70 bg-card/70 px-3 py-2">
 										{highlight}
 									</li>
 								{/each}
@@ -353,14 +355,14 @@
 				{/each}
 			</div>
 
-			<Card class="surface-panel border-slate-200/80 shadow-sm">
+			<Card class="surface-panel border-border/80 shadow-sm">
 				<CardHeader>
 					<CardTitle class="text-base">プラン比較</CardTitle>
 				</CardHeader>
 				<CardContent>
 					<div class="overflow-x-auto">
 						<table class="w-full min-w-[560px] text-sm">
-							<thead class="bg-slate-50 text-slate-600">
+							<thead class="bg-secondary text-muted-foreground">
 								<tr>
 									<th class="px-3 py-2 text-left font-medium">項目</th>
 									<th class="px-3 py-2 text-left font-medium">Free</th>
@@ -369,10 +371,10 @@
 							</thead>
 							<tbody>
 								{#each comparisonRows as row (row.feature)}
-									<tr class="border-t border-slate-200/70">
-										<td class="px-3 py-2 font-medium text-slate-900">{row.feature}</td>
-										<td class="px-3 py-2 text-slate-700">{row.free}</td>
-										<td class="px-3 py-2 text-slate-700">{row.premium}</td>
+									<tr class="border-t border-border/70">
+										<td class="px-3 py-2 font-medium text-foreground">{row.feature}</td>
+										<td class="px-3 py-2 text-secondary-foreground">{row.free}</td>
+										<td class="px-3 py-2 text-secondary-foreground">{row.premium}</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -383,10 +385,10 @@
 		</section>
 
 		<section>
-			<Card class="surface-panel border-slate-200/80 bg-slate-900 text-slate-100 shadow-xl">
+			<Card class="surface-panel border-border/80 bg-stone-04 text-primary-foreground shadow-xl">
 				<CardHeader class="space-y-2">
 					<CardTitle class="text-2xl">まずは入口を選んで、運用を開始しましょう</CardTitle>
-					<CardDescription class="text-slate-300">
+					<CardDescription class="text-primary-foreground/80">
 						管理者は設定と運用、予約者は予約確認と参加者対応。役割に応じた入口からすぐ利用できます。
 					</CardDescription>
 				</CardHeader>
@@ -395,7 +397,7 @@
 					<Button
 						href={participantLoginHref}
 						variant="outline"
-						class="w-full border-slate-500 text-slate-100 hover:bg-slate-800 sm:w-auto"
+						class="w-full border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10 sm:w-auto"
 					>
 						予約者としてログイン
 					</Button>

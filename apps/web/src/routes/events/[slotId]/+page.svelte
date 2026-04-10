@@ -89,16 +89,16 @@
 
 <main class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-slate-900">イベント詳細</h1>
-		<p class="text-sm text-slate-600">
+		<h1 class="text-3xl font-semibold text-foreground">イベント詳細</h1>
+		<p class="text-sm text-muted-foreground">
 			閲覧はログイン不要です。参加登録・予約操作を行う場合はログインが必要です。
 		</p>
 	</header>
 
-	<Card class="surface-panel border-slate-200/80 shadow-lg">
+	<Card class="surface-panel border-border/80 shadow-lg">
 		<CardHeader class="space-y-2">
 			<div class="flex flex-wrap items-center justify-between gap-2">
-				<h2 class="text-xl font-semibold text-slate-900">
+				<h2 class="text-xl font-semibold text-foreground">
 					{detail?.serviceName ?? 'イベント情報'}
 				</h2>
 				<Badge variant={detail?.isBookable ? 'outline' : 'secondary'}>
@@ -115,7 +115,7 @@
 		</CardHeader>
 		<CardContent class="space-y-4">
 			{#if detail?.serviceImageUrl}
-				<div class="overflow-hidden rounded-md border border-slate-200/80 bg-slate-100/60">
+				<div class="overflow-hidden rounded-md border border-border/80 bg-secondary/60">
 					<img
 						src={detail.serviceImageUrl}
 						alt={`${detail.serviceName} の画像`}
@@ -127,14 +127,18 @@
 			{#if loading}
 				<p class="text-sm text-muted-foreground">公開イベント詳細を読み込み中…</p>
 			{:else if errorMessage}
-				<p class="text-sm text-rose-600">{errorMessage}</p>
+				<p class="text-sm text-destructive">{errorMessage}</p>
 			{:else if detail}
-				<div class="space-y-1 text-sm text-slate-600">
+				<div class="space-y-1 text-sm text-muted-foreground">
 					{#if detail.serviceDescription}
-						<p class="whitespace-pre-line text-slate-700">{detail.serviceDescription}</p>
+						<p class="whitespace-pre-line text-secondary-foreground">{detail.serviceDescription}</p>
 					{/if}
 					<p>残枠: {detail.remainingCount} / {detail.capacity}</p>
-					<p>予約受付: {formatJaDateTime(detail.bookingOpenAt)} 〜 {formatJaDateTime(detail.bookingCloseAt)}</p>
+					<p>
+						予約受付: {formatJaDateTime(detail.bookingOpenAt)} 〜 {formatJaDateTime(
+							detail.bookingCloseAt
+						)}
+					</p>
 					{#if detail.staffLabel}
 						<p>担当: {detail.staffLabel}</p>
 					{/if}

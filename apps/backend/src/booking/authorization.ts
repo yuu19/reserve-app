@@ -1,5 +1,10 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { AuthInstance, AuthRuntimeDatabase } from '../auth-runtime.js';
+import type { AuthRuntimeEnv } from '../auth-runtime.js';
+import {
+  readOrganizationPremiumEntitlementPolicy,
+  type OrganizationPremiumEntitlementPolicyResult,
+} from '../billing/organization-billing-policy.js';
 import * as dbSchema from '../db/schema.js';
 
 export type SessionIdentity = {
@@ -139,6 +144,78 @@ export const canManageBookingsByClassroomRole = (role: ClassroomStaffRole): bool
 
 export const canManageParticipantsByClassroomRole = (role: ClassroomStaffRole): boolean => {
   return role === 'manager' || role === 'staff';
+};
+
+export const ORGANIZATION_PREMIUM_REQUIRED_MESSAGE =
+  'Organization premium plan is required for this feature.';
+
+export type OrganizationPremiumFeatureDeniedPayload = {
+  message: typeof ORGANIZATION_PREMIUM_REQUIRED_MESSAGE;
+  code: 'organization_premium_required';
+  source: OrganizationPremiumEntitlementPolicyResult['source'];
+  reason: OrganizationPremiumEntitlementPolicyResult['reason'];
+  entitlementState: OrganizationPremiumEntitlementPolicyResult['entitlementState'];
+  planState: OrganizationPremiumEntitlementPolicyResult['planState'];
+  trialEndsAt: OrganizationPremiumEntitlementPolicyResult['trialEndsAt'];
+};
+
+export type OrganizationPremiumFeatureGate =
+  | {
+      allowed: true;
+      policy: OrganizationPremiumEntitlementPolicyResult;
+    }
+  | {
+      allowed: false;
+      policy: OrganizationPremiumEntitlementPolicyResult;
+      status: 403;
+      body: OrganizationPremiumFeatureDeniedPayload;
+    };
+
+export const buildOrganizationPremiumFeatureDeniedPayload = (
+  policy: OrganizationPremiumEntitlementPolicyResult,
+): OrganizationPremiumFeatureDeniedPayload => {
+  return {
+    message: ORGANIZATION_PREMIUM_REQUIRED_MESSAGE,
+    code: 'organization_premium_required',
+    source: policy.source,
+    reason: policy.reason,
+    entitlementState: policy.entitlementState,
+    planState: policy.planState,
+    trialEndsAt: policy.trialEndsAt,
+  };
+};
+
+export const readOrganizationPremiumFeatureGate = async ({
+  database,
+  env,
+  organizationId,
+  now,
+}: {
+  database: AuthRuntimeDatabase;
+  env: AuthRuntimeEnv;
+  organizationId: string;
+  now?: Date;
+}): Promise<OrganizationPremiumFeatureGate> => {
+  const policy = await readOrganizationPremiumEntitlementPolicy({
+    database,
+    env,
+    organizationId,
+    now,
+  });
+
+  if (policy.isPremiumEligible) {
+    return {
+      allowed: true,
+      policy,
+    };
+  }
+
+  return {
+    allowed: false,
+    policy,
+    status: 403,
+    body: buildOrganizationPremiumFeatureDeniedPayload(policy),
+  };
 };
 
 const buildDisplayBadges = ({
