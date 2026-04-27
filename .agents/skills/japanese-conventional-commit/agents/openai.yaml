@@ -1,0 +1,4 @@
+interface:
+  display_name: "Japanese Conventional Commit"
+  short_description: "日本語Conventional Commitメッセージ作成"
+  default_prompt: "Use $japanese-conventional-commit to write a Japanese Conventional Commit message for my staged changes."

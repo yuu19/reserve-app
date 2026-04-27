@@ -16,7 +16,8 @@ export default tseslint.config(
       '**/.expo/**',
       '**/.wrangler/**',
       '**/.turbo/**',
-      '**/coverage/**'
+      '**/coverage/**',
+      '**/*.min.js'
     ]
   },
   js.configs.recommended,

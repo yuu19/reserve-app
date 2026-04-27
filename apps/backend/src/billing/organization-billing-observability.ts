@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../db/schema.js';
 import {
@@ -12,6 +12,7 @@ import {
 import {
   resolveOrganizationPremiumEntitlementPolicy,
   type OrganizationBillingEntitlementState,
+  type OrganizationBillingPaidTier,
 } from './organization-billing-policy.js';
 import type { StripeSubscriptionSummary } from '../payment/stripe.js';
 
@@ -21,6 +22,7 @@ export type OrganizationBillingObservationSnapshot = {
   subscriptionStatus: OrganizationBillingSubscriptionStatus;
   paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
   entitlementState: OrganizationBillingEntitlementState;
+  paidTier: OrganizationBillingPaidTier | null;
   billingInterval: 'month' | 'year' | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
@@ -37,6 +39,63 @@ export type OrganizationBillingAuditSourceKind =
 
 export type OrganizationBillingSignalKind = 'reconciliation' | 'notification_delivery';
 export type OrganizationBillingSignalStatus = 'pending' | 'mismatch' | 'unavailable' | 'resolved';
+export type InternalBillingReconciliationStatus =
+  | 'not_applicable'
+  | 'aligned'
+  | 'mismatch'
+  | 'pending'
+  | 'unavailable'
+  | 'incomplete';
+
+type InternalBillingReconciliationSignalEntry = {
+  sequenceNumber: number;
+  signalStatus: OrganizationBillingSignalStatus;
+  sourceKind: string;
+  reason: string;
+  stripeEventId: string | null;
+  providerPlanState: OrganizationBillingPlanState | null;
+  providerSubscriptionStatus: OrganizationBillingSubscriptionStatus | null;
+  appPlanState: OrganizationBillingPlanState;
+  appSubscriptionStatus: OrganizationBillingSubscriptionStatus;
+  appPaymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+  appEntitlementState: OrganizationBillingEntitlementState;
+  createdAt: string | null;
+};
+
+type InternalBillingReconciliationWebhookEventEntry = {
+  id: string;
+  eventType: string;
+  processingStatus: 'processing' | 'processed' | 'failed';
+  failureReason: string | null;
+  createdAt: string | null;
+  processedAt: string | null;
+};
+
+type InternalBillingReconciliationWebhookFailureEntry = {
+  eventId: string | null;
+  eventType: string | null;
+  failureStage: string;
+  failureReason: string;
+  createdAt: string | null;
+};
+
+export type InternalBillingReconciliationInspection = {
+  status: InternalBillingReconciliationStatus;
+  comparable: boolean;
+  latestSignalStatus: OrganizationBillingSignalStatus | null;
+  latestSignalReason: string | null;
+  currentComparison: {
+    providerPlanState: OrganizationBillingPlanState | null;
+    providerSubscriptionStatus: OrganizationBillingSubscriptionStatus | null;
+    appPlanState: OrganizationBillingPlanState;
+    appSubscriptionStatus: OrganizationBillingSubscriptionStatus;
+    appPaymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+    appEntitlementState: OrganizationBillingEntitlementState;
+  };
+  recentSignals: InternalBillingReconciliationSignalEntry[];
+  recentWebhookEvents: InternalBillingReconciliationWebhookEventEntry[];
+  recentWebhookFailures: InternalBillingReconciliationWebhookFailureEntry[];
+};
 
 const resolveProviderPlanState = (
   subscriptionStatus: string | null,
@@ -56,6 +115,62 @@ const resolveProviderPlanState = (
     return 'free';
   }
   return null;
+};
+
+const toIsoDateString = (value: unknown): string | null => {
+  const candidate =
+    value instanceof Date ? value : typeof value === 'number' || typeof value === 'string' ? new Date(value) : null;
+
+  if (!candidate || Number.isNaN(candidate.getTime())) {
+    return null;
+  }
+
+  return candidate.toISOString();
+};
+
+const normalizeSignalProviderPlanState = (value: unknown): OrganizationBillingPlanState | null => {
+  return value === 'free' || value === 'premium_trial' || value === 'premium_paid' ? value : null;
+};
+
+const normalizeSignalProviderSubscriptionStatus = (
+  value: unknown,
+): OrganizationBillingSubscriptionStatus | null => {
+  return value === 'free'
+    || value === 'trialing'
+    || value === 'active'
+    || value === 'past_due'
+    || value === 'canceled'
+    || value === 'unpaid'
+    || value === 'incomplete'
+    ? value
+    : null;
+};
+
+const normalizeSignalAppPlanState = (value: unknown): OrganizationBillingPlanState => {
+  return value === 'premium_trial' || value === 'premium_paid' ? value : 'free';
+};
+
+const normalizeSignalAppSubscriptionStatus = (
+  value: unknown,
+): OrganizationBillingSubscriptionStatus => {
+  return value === 'trialing'
+    || value === 'active'
+    || value === 'past_due'
+    || value === 'canceled'
+    || value === 'unpaid'
+    || value === 'incomplete'
+    ? value
+    : 'free';
+};
+
+const normalizeSignalAppPaymentMethodStatus = (
+  value: unknown,
+): OrganizationBillingPaymentMethodStatus => {
+  return value === 'pending' || value === 'registered' ? value : 'not_started';
+};
+
+const normalizeSignalAppEntitlementState = (value: unknown): OrganizationBillingEntitlementState => {
+  return value === 'premium_enabled' ? value : 'free_only';
 };
 
 const selectNextBillingAuditSequenceNumber = async ({
@@ -104,6 +219,9 @@ const areBillingSnapshotsEqual = (
     && previousSnapshot.subscriptionStatus === nextSnapshot.subscriptionStatus
     && previousSnapshot.paymentMethodStatus === nextSnapshot.paymentMethodStatus
     && previousSnapshot.entitlementState === nextSnapshot.entitlementState
+    && previousSnapshot.paidTier?.code === nextSnapshot.paidTier?.code
+    && previousSnapshot.paidTier?.resolution === nextSnapshot.paidTier?.resolution
+    && previousSnapshot.paidTier?.diagnosticReason === nextSnapshot.paidTier?.diagnosticReason
     && previousSnapshot.billingInterval === nextSnapshot.billingInterval
     && previousSnapshot.stripeCustomerId === nextSnapshot.stripeCustomerId
     && previousSnapshot.stripeSubscriptionId === nextSnapshot.stripeSubscriptionId
@@ -145,6 +263,8 @@ export const readOrganizationBillingObservationSnapshot = async ({
     paymentMethodStatus,
     currentPeriodEnd:
       billing?.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd.toISOString() : null,
+    stripePriceId: billing?.stripePriceId ?? null,
+    env,
   });
 
   return {
@@ -153,6 +273,7 @@ export const readOrganizationBillingObservationSnapshot = async ({
     subscriptionStatus,
     paymentMethodStatus: policy.paymentMethodStatus,
     entitlementState: policy.entitlementState,
+    paidTier: policy.paidTier,
     billingInterval,
     stripeCustomerId: billing?.stripeCustomerId ?? null,
     stripeSubscriptionId: billing?.stripeSubscriptionId ?? null,
@@ -386,4 +507,186 @@ export const evaluateReconciliationMismatchReason = ({
     providerPlanState,
     reason: null,
   };
+};
+
+export const readInternalBillingReconciliationInspection = async ({
+  database,
+  organizationId,
+  stripeLinked,
+  appSnapshot,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  stripeLinked: boolean;
+  appSnapshot: Pick<
+    OrganizationBillingObservationSnapshot,
+    | 'planState'
+    | 'subscriptionStatus'
+    | 'paymentMethodStatus'
+    | 'entitlementState'
+  >;
+}) => {
+  const [signalRows, webhookEventRows, webhookFailureRows] = await Promise.all([
+    database
+      .select({
+        sequenceNumber: dbSchema.organizationBillingSignal.sequenceNumber,
+        signalStatus: dbSchema.organizationBillingSignal.signalStatus,
+        sourceKind: dbSchema.organizationBillingSignal.sourceKind,
+        reason: dbSchema.organizationBillingSignal.reason,
+        stripeEventId: dbSchema.organizationBillingSignal.stripeEventId,
+        providerPlanState: dbSchema.organizationBillingSignal.providerPlanState,
+        providerSubscriptionStatus: dbSchema.organizationBillingSignal.providerSubscriptionStatus,
+        appPlanState: dbSchema.organizationBillingSignal.appPlanState,
+        appSubscriptionStatus: dbSchema.organizationBillingSignal.appSubscriptionStatus,
+        appPaymentMethodStatus: dbSchema.organizationBillingSignal.appPaymentMethodStatus,
+        appEntitlementState: dbSchema.organizationBillingSignal.appEntitlementState,
+        createdAt: dbSchema.organizationBillingSignal.createdAt,
+      })
+      .from(dbSchema.organizationBillingSignal)
+      .where(
+        and(
+          eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
+          eq(dbSchema.organizationBillingSignal.signalKind, 'reconciliation'),
+        ),
+      )
+      .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+      .limit(5),
+    database
+      .select({
+        id: dbSchema.stripeWebhookEvent.id,
+        eventType: dbSchema.stripeWebhookEvent.eventType,
+        processingStatus: dbSchema.stripeWebhookEvent.processingStatus,
+        failureReason: dbSchema.stripeWebhookEvent.failureReason,
+        createdAt: dbSchema.stripeWebhookEvent.createdAt,
+        processedAt: dbSchema.stripeWebhookEvent.processedAt,
+      })
+      .from(dbSchema.stripeWebhookEvent)
+      .where(
+        and(
+          eq(dbSchema.stripeWebhookEvent.organizationId, organizationId),
+          eq(dbSchema.stripeWebhookEvent.scope, 'billing'),
+        ),
+      )
+      .orderBy(desc(dbSchema.stripeWebhookEvent.createdAt))
+      .limit(5),
+    database
+      .select({
+        eventId: dbSchema.stripeWebhookFailure.eventId,
+        eventType: dbSchema.stripeWebhookFailure.eventType,
+        failureStage: dbSchema.stripeWebhookFailure.failureStage,
+        failureReason: dbSchema.stripeWebhookFailure.failureReason,
+        createdAt: dbSchema.stripeWebhookFailure.createdAt,
+      })
+      .from(dbSchema.stripeWebhookFailure)
+      .where(
+        and(
+          eq(dbSchema.stripeWebhookFailure.organizationId, organizationId),
+          eq(dbSchema.stripeWebhookFailure.scope, 'billing'),
+        ),
+      )
+      .orderBy(desc(dbSchema.stripeWebhookFailure.createdAt))
+      .limit(5),
+  ]);
+
+  const recentSignals = signalRows
+    .reverse()
+    .map((row: (typeof signalRows)[number]): InternalBillingReconciliationSignalEntry => ({
+      sequenceNumber: row.sequenceNumber,
+      signalStatus: row.signalStatus as OrganizationBillingSignalStatus,
+      sourceKind: row.sourceKind,
+      reason: row.reason,
+      stripeEventId: row.stripeEventId ?? null,
+      providerPlanState: normalizeSignalProviderPlanState(row.providerPlanState),
+      providerSubscriptionStatus: normalizeSignalProviderSubscriptionStatus(
+        row.providerSubscriptionStatus,
+      ),
+      appPlanState: normalizeSignalAppPlanState(row.appPlanState),
+      appSubscriptionStatus: normalizeSignalAppSubscriptionStatus(row.appSubscriptionStatus),
+      appPaymentMethodStatus: normalizeSignalAppPaymentMethodStatus(row.appPaymentMethodStatus),
+      appEntitlementState: normalizeSignalAppEntitlementState(row.appEntitlementState),
+      createdAt: toIsoDateString(row.createdAt),
+    }));
+
+  const recentWebhookEvents = webhookEventRows
+    .reverse()
+    .map((row: (typeof webhookEventRows)[number]): InternalBillingReconciliationWebhookEventEntry => ({
+      id: row.id,
+      eventType: row.eventType,
+      processingStatus: row.processingStatus as 'processing' | 'processed' | 'failed',
+      failureReason: row.failureReason ?? null,
+      createdAt: toIsoDateString(row.createdAt),
+      processedAt: toIsoDateString(row.processedAt),
+    }));
+
+  const recentWebhookFailures = webhookFailureRows
+    .reverse()
+    .map((row: (typeof webhookFailureRows)[number]): InternalBillingReconciliationWebhookFailureEntry => ({
+      eventId: row.eventId ?? null,
+      eventType: row.eventType ?? null,
+      failureStage: row.failureStage,
+      failureReason: row.failureReason,
+      createdAt: toIsoDateString(row.createdAt),
+    }));
+
+  const latestSignal = recentSignals.at(-1) ?? null;
+  const fallbackAppPaymentMethodStatus =
+    stripeLinked
+    && appSnapshot.planState === 'premium_paid'
+    && (
+      appSnapshot.subscriptionStatus === 'active'
+      || appSnapshot.subscriptionStatus === 'past_due'
+      || appSnapshot.subscriptionStatus === 'unpaid'
+      || appSnapshot.subscriptionStatus === 'incomplete'
+    )
+      ? 'registered'
+      : appSnapshot.paymentMethodStatus;
+  const currentComparison = latestSignal
+    ? {
+        providerPlanState: latestSignal.providerPlanState,
+        providerSubscriptionStatus: latestSignal.providerSubscriptionStatus,
+        appPlanState: latestSignal.appPlanState,
+        appSubscriptionStatus: latestSignal.appSubscriptionStatus,
+        appPaymentMethodStatus: latestSignal.appPaymentMethodStatus,
+        appEntitlementState: latestSignal.appEntitlementState,
+      }
+      : {
+        providerPlanState: null,
+        providerSubscriptionStatus: null,
+        appPlanState: appSnapshot.planState,
+        appSubscriptionStatus: appSnapshot.subscriptionStatus,
+        appPaymentMethodStatus: fallbackAppPaymentMethodStatus,
+        appEntitlementState: appSnapshot.entitlementState,
+      };
+
+  const comparable =
+    currentComparison.providerPlanState !== null
+    && currentComparison.providerSubscriptionStatus !== null;
+
+  let status: InternalBillingReconciliationStatus;
+  if (!stripeLinked) {
+    status = 'not_applicable';
+  } else if (!latestSignal) {
+    status = 'incomplete';
+  } else if (latestSignal.signalStatus === 'unavailable') {
+    status = 'unavailable';
+  } else if (!comparable) {
+    status = 'incomplete';
+  } else if (latestSignal.signalStatus === 'resolved') {
+    status = 'aligned';
+  } else if (latestSignal.signalStatus === 'mismatch') {
+    status = 'mismatch';
+  } else {
+    status = 'pending';
+  }
+
+  return {
+    status,
+    comparable,
+    latestSignalStatus: latestSignal?.signalStatus ?? null,
+    latestSignalReason: latestSignal?.reason ?? null,
+    currentComparison,
+    recentSignals,
+    recentWebhookEvents,
+    recentWebhookFailures,
+  } satisfies InternalBillingReconciliationInspection;
 };

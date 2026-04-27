@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docs Japanese Writing"
+  short_description: "docs配下の日本語ドキュメント本文を業務中心に整える"
+  default_prompt: "Use $docs-japanese-writing to write or review a Japanese document under /docs."

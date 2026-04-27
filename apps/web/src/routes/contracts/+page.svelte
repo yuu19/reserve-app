@@ -24,6 +24,11 @@
 	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
 	import type { OrganizationBillingPayload, OrganizationPayload } from '$lib/rpc-client';
 
+	type OrganizationBillingHistoryEntry = Exclude<
+		OrganizationBillingPayload['history'],
+		null | undefined
+	>[number];
+
 	let loading = $state(true);
 	let busy = $state(false);
 	let activeOrganization = $state<OrganizationPayload | null>(null);
@@ -54,6 +59,13 @@
 	const billingReady = $derived(billing !== null);
 	const formatJaDate = (value: string | null | undefined) =>
 		value ? new Date(value).toLocaleDateString('ja-JP') : 'なし';
+	const formatJaDateTime = (value: string | null | undefined) =>
+		value
+			? new Date(value).toLocaleString('ja-JP', {
+					dateStyle: 'medium',
+					timeStyle: 'short'
+				})
+			: '日時未記録';
 	const currentPlanLabel = $derived.by(() => {
 		switch (billing?.planState) {
 			case 'premium_trial':
@@ -74,6 +86,15 @@
 				return '無料プランで基本運用を続けながら、Premiumトライアルで複数教室管理やスタッフ権限などの拡張機能を7日間確認できます。';
 		}
 	});
+	const paidTierLabel = $derived.by(() => {
+		if (billing?.paidTier?.label) {
+			return billing.paidTier.label;
+		}
+		return billing?.planCode === 'premium' ? 'Premium' : 'Free';
+	});
+	const showUnknownPaidTierNotice = $derived(
+		billing?.paidTier?.resolution === 'unknown_price'
+	);
 	const billingIntervalLabel = $derived(
 		billing?.billingInterval === 'month'
 			? '月額'
@@ -122,6 +143,15 @@
 		}
 	});
 	const showOwnerActions = $derived(Boolean(billing?.canManageBilling));
+	const billingHistoryEntries = $derived.by(() => {
+		if (!billing) {
+			return null;
+		}
+		if (Array.isArray(billing.history)) {
+			return billing.history;
+		}
+		return billing.canManageBilling ? [] : null;
+	});
 	const actionHeading = $derived(showOwnerActions ? '管理アクション' : '閲覧専用');
 	const actionDescription = $derived.by(() => {
 		if (!showOwnerActions) {
@@ -135,12 +165,14 @@
 				? 'organization owner はトライアル継続準備が完了していることをこの画面で確認できます。必要なら状態を見直し、他ロールは閲覧のみ行えます。'
 				: 'organization owner はこの billing workspace から支払い方法登録へ進み、トライアル終了前の継続準備を進められます。';
 		}
-		return 'organization owner は現在の契約状態を確認し、必要に応じて Stripe Customer Portal で管理できます。';
+		return 'organization owner は現在の契約状態を確認し、必要に応じて Stripe Customer Portal でプラン変更を開始できます。';
 	});
 	const ownerAuthorityNote =
 		'契約変更と支払い設定は organization owner のみです。教室や参加者の運用権限とは分かれて管理されます。';
 	const readOnlyAuthorityNote =
 		'あなたの role では契約状態の閲覧のみ可能です。教室や参加者の運用権限があっても、billing authority は付与されません。';
+	const readOnlyHistoryNote =
+		'契約履歴の詳細は organization owner のみ確認できます。必要な場合は owner に確認を依頼してください。';
 	const accessibleLifecycleSummary = $derived.by(() => {
 		if (!billingReady || !billing) {
 			return '';
@@ -200,6 +232,30 @@
 				return 'border-warning/45 bg-warning/15 text-warning-foreground';
 		}
 	});
+	const resolveHistoryTypeLabel = (
+		eventType: OrganizationBillingHistoryEntry['eventType']
+	): string => {
+		switch (eventType) {
+			case 'plan_transition':
+				return '契約変更';
+			case 'notification':
+				return '通知';
+			default:
+				return '状態確認';
+		}
+	};
+	const resolveHistoryToneClassName = (
+		tone: OrganizationBillingHistoryEntry['tone']
+	): string => {
+		switch (tone) {
+			case 'positive':
+				return 'border-success/30 bg-success/10';
+			case 'attention':
+				return 'border-warning/45 bg-warning/10';
+			default:
+				return 'border-border/80 bg-secondary/40';
+		}
+	};
 
 	const refreshContracts = async () => {
 		const { session } = await loadSession();
@@ -406,6 +462,12 @@
 						<Badge variant="secondary">{subscriptionStatusLabel}</Badge>
 					</div>
 					<p class="text-sm text-secondary-foreground">{currentPlanDescription}</p>
+					<p class="text-sm text-secondary-foreground">契約ティア: {paidTierLabel}</p>
+					{#if showUnknownPaidTierNotice}
+						<p class="text-sm text-muted-foreground">
+							契約ティアの詳細を確認中です。Premiumの基本機能は現在の契約状態に基づいて表示しています。
+						</p>
+					{/if}
 					{#if billing?.planState === 'premium_trial'}
 						<p class="text-sm text-secondary-foreground">トライアル終了日: {trialEndsAtLabel}</p>
 						<p class="text-sm text-secondary-foreground">
@@ -497,16 +559,62 @@
 				{:else}
 					<div class="space-y-3">
 						<p class="text-sm text-muted-foreground">
-							現在はPremiumプラン利用中です。重複した trial action
-							は不要で、必要な契約変更は契約管理から進めます。
+							現在はPremiumプラン利用中です。プラン変更は Stripe
+							の契約管理画面で進め、反映後の状態はこの画面で確認できます。
 						</p>
 						<p class="text-sm text-muted-foreground">{ownerAuthorityNote}</p>
 						<div class="flex flex-col gap-3 sm:flex-row">
 							<Button type="button" disabled={busy} onclick={redirectToBillingPortal}>
-								契約を管理
+								プランを変更
 							</Button>
 						</div>
 					</div>
+				{/if}
+			</CardContent>
+		</Card>
+	</section>
+
+	<section>
+		<Card class="surface-panel border-border/80 shadow-md">
+			<CardHeader>
+				<h2 class="text-xl font-semibold text-foreground">契約履歴</h2>
+				<CardDescription>
+					organization owner は、契約変更・通知・状態確認の履歴をこの画面から確認できます。
+				</CardDescription>
+			</CardHeader>
+			<CardContent class="space-y-4">
+				{#if loading}
+					<p class="text-sm text-muted-foreground" aria-live="polite">
+						契約履歴を確認しています。表示が反映されるまで少し時間がかかる場合があります。
+					</p>
+				{:else if !billing}
+					<p class="text-sm text-muted-foreground">契約履歴を取得できませんでした。</p>
+				{:else if !showOwnerActions}
+					<p class="text-sm text-muted-foreground">{readOnlyHistoryNote}</p>
+				{:else if !billingHistoryEntries || billingHistoryEntries.length === 0}
+					<p class="text-sm text-muted-foreground">
+						まだ表示できる契約履歴はありません。トライアル開始や契約更新が記録されると、ここに反映されます。
+					</p>
+				{:else}
+					<ul class="space-y-3">
+						{#each billingHistoryEntries as entry (entry.id)}
+							<li class={`rounded-lg border p-4 ${resolveHistoryToneClassName(entry.tone)}`}>
+								<div class="flex flex-wrap items-center gap-2">
+									<Badge variant={entry.tone === 'positive' ? 'default' : 'secondary'}>
+										{resolveHistoryTypeLabel(entry.eventType)}
+									</Badge>
+									<span class="text-xs text-muted-foreground">
+										{formatJaDateTime(entry.occurredAt)}
+									</span>
+								</div>
+								<p class="mt-3 text-sm font-semibold text-foreground">{entry.title}</p>
+								<p class="mt-1 text-sm text-secondary-foreground">{entry.summary}</p>
+								{#if entry.billingContext}
+									<p class="mt-2 text-xs text-muted-foreground">{entry.billingContext}</p>
+								{/if}
+							</li>
+						{/each}
+					</ul>
 				{/if}
 			</CardContent>
 		</Card>

@@ -10,6 +10,7 @@ export type AuthRuntimeEnv = {
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_TRUSTED_ORIGINS?: string;
   BETTER_AUTH_COOKIE_DOMAIN?: string;
+  INTERNAL_OPERATOR_EMAILS?: string;
   PUBLIC_EVENTS_ORG_SLUG?: string;
   PUBLIC_EVENTS_CLASSROOM_SLUG?: string;
   STRIPE_SECRET_KEY?: string;

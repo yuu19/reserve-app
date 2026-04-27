@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '../app.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
@@ -62,6 +61,13 @@
 	type ResolvablePath = Pathname;
 
 	let { children } = $props();
+
+	const brandName = 'WakuReserve';
+	const brandTagline = '予約管理プラットフォーム';
+	const brandMarkHref = '/brand/reservation-logo-44x44.svg';
+	const brandIcon16Href = '/brand/reservation-logo-16x16.svg';
+	const brandIcon32Href = '/brand/reservation-logo-32x32.svg';
+	const brandAppleTouchHref = '/brand/reservation-logo-180x180.svg';
 
 	let loadingSession = $state(true);
 	let isLoggedIn = $state(false);
@@ -830,7 +836,9 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" type="image/svg+xml" sizes="32x32" href={brandIcon32Href} />
+	<link rel="icon" type="image/svg+xml" sizes="16x16" href={brandIcon16Href} />
+	<link rel="apple-touch-icon" href={brandAppleTouchHref} />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 	<link
@@ -865,22 +873,28 @@
 			<div
 				class={`space-y-6 py-6 transition-[padding] duration-200 ease-out motion-reduce:transition-none ${desktopSidebarCollapsed ? 'px-3' : 'px-5'}`}
 			>
-				<div class="space-y-3">
-					<div class="flex items-center justify-between gap-2">
-						<div class="flex min-w-0 items-center gap-2">
-							<p
-								class={`text-base font-semibold text-foreground transition-[opacity,transform] duration-150 ease-out whitespace-nowrap motion-reduce:transition-none motion-reduce:transform-none ${desktopSidebarCollapsed ? 'absolute pointer-events-none -translate-x-1 select-none opacity-0' : 'relative translate-x-0 opacity-100'}`}
-							>
-								Reserve App
-							</p>
-							<p
-								class={`text-base font-semibold text-foreground transition-[opacity,transform] duration-150 ease-out whitespace-nowrap motion-reduce:transition-none motion-reduce:transform-none ${desktopSidebarCollapsed ? 'relative translate-x-0 opacity-100' : 'absolute pointer-events-none translate-x-1 select-none opacity-0'}`}
-							>
-								RA
-							</p>
-							<div
-								class={`transition-[opacity,transform] duration-150 ease-out whitespace-nowrap motion-reduce:transition-none motion-reduce:transform-none ${sidebarLabelClass}`}
-							>
+					<div class="space-y-3">
+						<div class="flex items-center justify-between gap-2">
+							<div class="flex min-w-0 items-center gap-3">
+								<img
+									alt=""
+									aria-hidden="true"
+									class="size-11 shrink-0 rounded-2xl border border-border/80 bg-white shadow-sm"
+									height="44"
+									src={brandMarkHref}
+									width="44"
+								/>
+								<div
+									class={`min-w-0 transition-[opacity,transform,max-width] duration-150 ease-out motion-reduce:transition-none motion-reduce:transform-none ${desktopSidebarCollapsed ? 'pointer-events-none -translate-x-1 overflow-hidden opacity-0 max-w-0' : 'translate-x-0 opacity-100 max-w-[11rem]'}`}
+								>
+									<p class="truncate text-base font-semibold text-foreground">{brandName}</p>
+									<p class="truncate text-xs font-medium text-secondary-foreground/80">
+										{brandTagline}
+									</p>
+								</div>
+								<div
+									class={`transition-[opacity,transform] duration-150 ease-out whitespace-nowrap motion-reduce:transition-none motion-reduce:transform-none ${sidebarLabelClass}`}
+								>
 								{#if loadingSession}
 									<Badge variant="secondary">確認中…</Badge>
 								{:else}
@@ -1070,21 +1084,32 @@
 				</div>
 			</header>
 
-			<header
-				class="sticky top-0 z-40 flex items-center justify-between border-b border-border/80 bg-card/90 px-4 py-3 backdrop-blur md:hidden"
-			>
-				<div class="flex items-center gap-2">
-					<Button
-						type="button"
-						variant="ghost"
+				<header
+					class="sticky top-0 z-40 flex items-center justify-between border-b border-border/80 bg-card/90 px-4 py-3 backdrop-blur md:hidden"
+				>
+					<div class="flex items-center gap-3">
+						<Button
+							type="button"
+							variant="ghost"
 						size="icon"
 						onclick={() => (mobileMenuOpen = true)}
 						aria-label="メニューを開く"
-					>
-						<Menu class="size-5" aria-hidden="true" />
-					</Button>
-					<p class="text-sm font-semibold text-foreground">Reserve App</p>
-				</div>
+						>
+							<Menu class="size-5" aria-hidden="true" />
+						</Button>
+						<img
+							alt=""
+							aria-hidden="true"
+							class="size-9 shrink-0 rounded-xl border border-border/80 bg-white shadow-sm"
+							height="36"
+							src={brandMarkHref}
+							width="36"
+						/>
+						<div class="min-w-0">
+							<p class="truncate text-sm font-semibold text-foreground">{brandName}</p>
+							<p class="truncate text-[11px] text-muted-foreground">{brandTagline}</p>
+						</div>
+					</div>
 				<div class="flex items-center gap-2">
 					<OrganizationSwitcher
 						{organizations}
@@ -1115,29 +1140,43 @@
 
 	{#if mobileMenuOpen}
 		<div class="fixed inset-0 z-50 md:hidden">
-			<button
-				type="button"
+				<button
+					type="button"
 				class="absolute inset-0 bg-stone-04/35"
 				onclick={closeMobileMenu}
 				aria-label="メニューを閉じる"
 			></button>
-			<aside class="absolute inset-y-0 left-0 w-72 border-r border-border/80 bg-sidebar shadow-xl">
-				<div class="flex h-full flex-col justify-between">
-					<div class="space-y-5 px-5 py-5">
-						<div class="flex items-center justify-between">
-							<p class="text-sm font-semibold text-foreground">{sessionUserName}</p>
-							<Button
-								type="button"
-								variant="ghost"
+				<aside class="absolute inset-y-0 left-0 w-72 border-r border-border/80 bg-sidebar shadow-xl">
+					<div class="flex h-full flex-col justify-between">
+						<div class="space-y-5 px-5 py-5">
+							<div class="flex items-start justify-between gap-3">
+								<div class="flex min-w-0 items-center gap-3">
+									<img
+										alt=""
+										aria-hidden="true"
+										class="size-10 shrink-0 rounded-2xl border border-border/80 bg-white shadow-sm"
+										height="40"
+										src={brandMarkHref}
+										width="40"
+									/>
+									<div class="min-w-0">
+										<p class="truncate text-sm font-semibold text-foreground">{brandName}</p>
+										<p class="truncate text-xs text-muted-foreground">{brandTagline}</p>
+									</div>
+								</div>
+								<Button
+									type="button"
+									variant="ghost"
 								size="icon"
 								onclick={closeMobileMenu}
 								aria-label="メニューを閉じる"
-							>
-								<X class="size-5" aria-hidden="true" />
-							</Button>
-						</div>
+								>
+									<X class="size-5" aria-hidden="true" />
+								</Button>
+							</div>
+							<p class="text-sm font-semibold text-foreground">{sessionUserName}</p>
 
-						{#if canSwitchToAdmin || canSwitchToParticipant}
+							{#if canSwitchToAdmin || canSwitchToParticipant}
 							<div class="grid grid-cols-1 gap-2">
 								{#if canSwitchToAdmin}
 									<Button
@@ -1234,8 +1273,29 @@
 			</aside>
 		</div>
 	{/if}
-{:else}
-	<div class="min-h-screen">
-		{@render children()}
-	</div>
-{/if}
+	{:else}
+		<div class="min-h-screen bg-background">
+			<header class="border-b border-border/70 bg-card/90 backdrop-blur">
+				<div class="mx-auto flex w-full max-w-7xl items-center px-4 py-3 md:px-8">
+					<a
+						href={resolve('/' as ResolvablePath)}
+						class="inline-flex items-center gap-3 text-foreground no-underline hover:no-underline"
+					>
+						<img
+							alt=""
+							aria-hidden="true"
+							class="size-11 shrink-0 rounded-2xl border border-border/80 bg-white shadow-sm"
+							height="44"
+							src={brandMarkHref}
+							width="44"
+						/>
+						<span class="flex min-w-0 flex-col">
+							<span class="truncate text-sm font-semibold md:text-base">{brandName}</span>
+							<span class="truncate text-xs text-muted-foreground md:text-sm">{brandTagline}</span>
+						</span>
+					</a>
+				</div>
+			</header>
+			{@render children()}
+		</div>
+	{/if}

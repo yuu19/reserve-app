@@ -5,3 +5,4 @@ packages:
 nodeLinker: hoisted
 onlyBuiltDependencies:
   - esbuild
+  - '@tailwindcss/oxide'

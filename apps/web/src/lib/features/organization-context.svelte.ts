@@ -22,11 +22,71 @@ import { writeLastUsedOrganizationId } from './organization-preference';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
 
+const isOrganizationBillingHistoryEntry = (value: unknown): boolean =>
+	isRecord(value) &&
+	typeof value.id === 'string' &&
+	(value.eventType === 'plan_transition' ||
+		value.eventType === 'notification' ||
+		value.eventType === 'reconciliation') &&
+	(typeof value.occurredAt === 'string' || value.occurredAt === null || value.occurredAt === undefined) &&
+	typeof value.title === 'string' &&
+	typeof value.summary === 'string' &&
+	(typeof value.billingContext === 'string' ||
+		value.billingContext === null ||
+		value.billingContext === undefined) &&
+	(value.tone === 'neutral' || value.tone === 'positive' || value.tone === 'attention');
+
+const isOrganizationBillingDocument = (value: unknown): boolean =>
+	isRecord(value) &&
+	(value.documentKind === 'invoice' || value.documentKind === 'receipt') &&
+	typeof value.providerDocumentId === 'string' &&
+	(typeof value.hostedInvoiceUrl === 'string' || value.hostedInvoiceUrl === null) &&
+	(typeof value.invoicePdfUrl === 'string' || value.invoicePdfUrl === null) &&
+	(typeof value.receiptUrl === 'string' || value.receiptUrl === null) &&
+	(value.availability === 'available' ||
+		value.availability === 'unavailable' ||
+		value.availability === 'missing') &&
+	(value.ownerFacingStatus === 'available' || value.ownerFacingStatus === 'unavailable');
+
+const isOrganizationBillingPaymentDocuments = (
+	value: unknown
+): value is NonNullable<OrganizationBillingPayload['paymentDocuments']> =>
+	isRecord(value) &&
+	value.aggregateRoot === 'organization_billing' &&
+	typeof value.organizationId === 'string' &&
+	value.provider === 'stripe' &&
+	(typeof value.stripeCustomerId === 'string' || value.stripeCustomerId === null) &&
+	(typeof value.stripeSubscriptionId === 'string' || value.stripeSubscriptionId === null) &&
+	value.ownerAccess === 'owner_only' &&
+	value.persistenceStrategy === 'provider_reference_only' &&
+	Array.isArray(value.documents) &&
+	value.documents.every(isOrganizationBillingDocument);
+
 const isOrganizationPayload = (value: unknown): value is OrganizationPayload =>
 	isRecord(value) &&
 	typeof value.id === 'string' &&
 	typeof value.name === 'string' &&
 	typeof value.slug === 'string';
+
+const isOrganizationBillingPaidTier = (
+	value: unknown
+): value is NonNullable<OrganizationBillingPayload['paidTier']> =>
+	isRecord(value) &&
+	(value.code === 'premium_default' ||
+		value.code === 'premium_growth' ||
+		value.code === 'premium_scale' ||
+		value.code === 'premium_unknown') &&
+	typeof value.label === 'string' &&
+	(value.resolution === 'legacy_default' ||
+		value.resolution === 'known_price' ||
+		value.resolution === 'unknown_price') &&
+	Array.isArray(value.capabilities) &&
+	value.capabilities.every(
+		(capability) =>
+			capability === 'organization_premium_features' ||
+			capability === 'advanced_billing_communications'
+	) &&
+	(typeof value.diagnosticReason === 'string' || value.diagnosticReason === null);
 
 const isOrganizationBillingPayload = (value: unknown): value is OrganizationBillingPayload =>
 	isRecord(value) &&
@@ -34,6 +94,9 @@ const isOrganizationBillingPayload = (value: unknown): value is OrganizationBill
 	(value.planState === 'free' ||
 		value.planState === 'premium_trial' ||
 		value.planState === 'premium_paid') &&
+	(value.paidTier === undefined ||
+		value.paidTier === null ||
+		isOrganizationBillingPaidTier(value.paidTier)) &&
 	(value.billingInterval === 'month' ||
 		value.billingInterval === 'year' ||
 		value.billingInterval === null ||
@@ -49,7 +112,13 @@ const isOrganizationBillingPayload = (value: unknown): value is OrganizationBill
 		value.paymentMethodStatus === 'pending' ||
 		value.paymentMethodStatus === 'registered') &&
 	typeof value.canViewBilling === 'boolean' &&
-	typeof value.canManageBilling === 'boolean';
+	typeof value.canManageBilling === 'boolean' &&
+	(value.history === undefined ||
+		value.history === null ||
+		(Array.isArray(value.history) && value.history.every(isOrganizationBillingHistoryEntry))) &&
+	(value.paymentDocuments === undefined ||
+		value.paymentDocuments === null ||
+		isOrganizationBillingPaymentDocuments(value.paymentDocuments));
 
 export type ClassroomContextPayload = {
 	id: string;

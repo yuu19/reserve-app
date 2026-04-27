@@ -502,29 +502,330 @@ const selectUserIdByEmail = async (email: string) => {
   return row?.id ?? null;
 };
 
+const setUserEmailVerified = async ({ email, verified = true }: { email: string; verified?: boolean }) => {
+  await d1
+    .prepare('UPDATE user SET email_verified = ? WHERE email = ?')
+    .bind(verified ? 1 : 0, email)
+    .run();
+};
+
 const setOrganizationBillingState = async ({
   organizationId,
   planCode,
   subscriptionStatus,
   billingInterval,
   currentPeriodEnd,
+  stripeCustomerId,
+  stripeSubscriptionId,
+  stripePriceId,
+  cancelAtPeriodEnd,
+  currentPeriodStart,
 }: {
   organizationId: string;
   planCode: 'free' | 'premium';
   subscriptionStatus: 'free' | 'trialing' | 'active' | 'past_due' | 'unpaid' | 'incomplete' | 'canceled';
-  billingInterval?: 'monthly' | 'yearly' | null;
+  billingInterval?: 'month' | 'year' | null;
   currentPeriodEnd?: Date | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodStart?: Date | null;
 }) => {
   await d1
     .prepare(
-      'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, billing_interval = ?, current_period_end = ? WHERE organization_id = ?',
+      'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, billing_interval = ?, current_period_start = ?, current_period_end = ?, stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, cancel_at_period_end = ? WHERE organization_id = ?',
     )
     .bind(
       planCode,
       subscriptionStatus,
       billingInterval ?? null,
+      currentPeriodStart ? currentPeriodStart.getTime() : null,
       currentPeriodEnd ? currentPeriodEnd.getTime() : null,
+      stripeCustomerId ?? null,
+      stripeSubscriptionId ?? null,
+      stripePriceId ?? null,
+      cancelAtPeriodEnd ?? false,
       organizationId,
+    )
+    .run();
+};
+
+const insertOrganizationBillingAuditEventRow = async ({
+  organizationId,
+  sequenceNumber,
+  sourceKind,
+  previousPlanCode,
+  nextPlanCode,
+  previousPlanState,
+  nextPlanState,
+  previousSubscriptionStatus,
+  nextSubscriptionStatus,
+  previousPaymentMethodStatus,
+  nextPaymentMethodStatus,
+  previousEntitlementState,
+  nextEntitlementState,
+  previousBillingInterval = null,
+  nextBillingInterval = null,
+  stripeCustomerId = null,
+  stripeSubscriptionId = null,
+  stripeEventId = null,
+  sourceContext = null,
+  createdAt,
+}: {
+  organizationId: string;
+  sequenceNumber: number;
+  sourceKind: string;
+  previousPlanCode: string;
+  nextPlanCode: string;
+  previousPlanState: string;
+  nextPlanState: string;
+  previousSubscriptionStatus: string;
+  nextSubscriptionStatus: string;
+  previousPaymentMethodStatus: string;
+  nextPaymentMethodStatus: string;
+  previousEntitlementState: string;
+  nextEntitlementState: string;
+  previousBillingInterval?: string | null;
+  nextBillingInterval?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeEventId?: string | null;
+  sourceContext?: string | null;
+  createdAt?: Date;
+}) => {
+  await d1
+    .prepare(
+      'INSERT INTO organization_billing_audit_event (id, organization_id, sequence_number, source_kind, stripe_event_id, stripe_customer_id, stripe_subscription_id, source_context, previous_plan_code, next_plan_code, previous_plan_state, next_plan_state, previous_subscription_status, next_subscription_status, previous_payment_method_status, next_payment_method_status, previous_entitlement_state, next_entitlement_state, previous_billing_interval, next_billing_interval, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      crypto.randomUUID(),
+      organizationId,
+      sequenceNumber,
+      sourceKind,
+      stripeEventId,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      sourceContext,
+      previousPlanCode,
+      nextPlanCode,
+      previousPlanState,
+      nextPlanState,
+      previousSubscriptionStatus,
+      nextSubscriptionStatus,
+      previousPaymentMethodStatus,
+      nextPaymentMethodStatus,
+      previousEntitlementState,
+      nextEntitlementState,
+      previousBillingInterval,
+      nextBillingInterval,
+      (createdAt ?? new Date()).getTime(),
+    )
+    .run();
+};
+
+const insertOrganizationBillingSignalRow = async ({
+  organizationId,
+  sequenceNumber,
+  signalKind,
+  signalStatus,
+  sourceKind,
+  reason,
+  appPlanState,
+  appSubscriptionStatus,
+  appPaymentMethodStatus,
+  appEntitlementState,
+  providerPlanState = null,
+  providerSubscriptionStatus = null,
+  stripeCustomerId = null,
+  stripeSubscriptionId = null,
+  stripeEventId = null,
+  createdAt,
+}: {
+  organizationId: string;
+  sequenceNumber: number;
+  signalKind: string;
+  signalStatus: string;
+  sourceKind: string;
+  reason: string;
+  appPlanState: string;
+  appSubscriptionStatus: string;
+  appPaymentMethodStatus: string;
+  appEntitlementState: string;
+  providerPlanState?: string | null;
+  providerSubscriptionStatus?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeEventId?: string | null;
+  createdAt?: Date;
+}) => {
+  await d1
+    .prepare(
+      'INSERT INTO organization_billing_signal (id, organization_id, sequence_number, signal_kind, signal_status, source_kind, reason, stripe_event_id, stripe_customer_id, stripe_subscription_id, provider_plan_state, provider_subscription_status, app_plan_state, app_subscription_status, app_payment_method_status, app_entitlement_state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      crypto.randomUUID(),
+      organizationId,
+      sequenceNumber,
+      signalKind,
+      signalStatus,
+      sourceKind,
+      reason,
+      stripeEventId,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      providerPlanState,
+      providerSubscriptionStatus,
+      appPlanState,
+      appSubscriptionStatus,
+      appPaymentMethodStatus,
+      appEntitlementState,
+      (createdAt ?? new Date()).getTime(),
+    )
+    .run();
+};
+
+const insertOrganizationBillingNotificationRow = async ({
+  organizationId,
+  sequenceNumber,
+  deliveryState,
+  attemptNumber,
+  stripeEventId = null,
+  recipientEmail = null,
+  recipientUserId = null,
+  notificationKind = 'trial_will_end_email',
+  channel = 'email',
+  planState = 'premium_trial',
+  subscriptionStatus = 'trialing',
+  paymentMethodStatus = 'pending',
+  trialEndsAt = null,
+  failureReason = null,
+  stripeCustomerId = null,
+  stripeSubscriptionId = null,
+  createdAt,
+}: {
+  organizationId: string;
+  sequenceNumber: number;
+  deliveryState: string;
+  attemptNumber: number;
+  stripeEventId?: string | null;
+  recipientEmail?: string | null;
+  recipientUserId?: string | null;
+  notificationKind?: string;
+  channel?: string;
+  planState?: string;
+  subscriptionStatus?: string;
+  paymentMethodStatus?: string;
+  trialEndsAt?: Date | null;
+  failureReason?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  createdAt?: Date;
+}) => {
+  await d1
+    .prepare(
+      'INSERT INTO organization_billing_notification (id, organization_id, recipient_user_id, notification_kind, channel, sequence_number, delivery_state, attempt_number, stripe_event_id, stripe_customer_id, stripe_subscription_id, recipient_email, plan_state, subscription_status, payment_method_status, trial_ends_at, failure_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      crypto.randomUUID(),
+      organizationId,
+      recipientUserId,
+      notificationKind,
+      channel,
+      sequenceNumber,
+      deliveryState,
+      attemptNumber,
+      stripeEventId,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      recipientEmail,
+      planState,
+      subscriptionStatus,
+      paymentMethodStatus,
+      trialEndsAt ? trialEndsAt.getTime() : null,
+      failureReason,
+      (createdAt ?? new Date()).getTime(),
+    )
+    .run();
+};
+
+const insertStripeWebhookEventRow = async ({
+  id,
+  eventType,
+  scope = 'billing',
+  processingStatus = 'processed',
+  organizationId = null,
+  stripeCustomerId = null,
+  stripeSubscriptionId = null,
+  failureReason = null,
+  createdAt,
+}: {
+  id: string;
+  eventType: string;
+  scope?: string;
+  processingStatus?: string;
+  organizationId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  failureReason?: string | null;
+  createdAt?: Date;
+}) => {
+  const timestamp = (createdAt ?? new Date()).getTime();
+  await d1
+    .prepare(
+      'INSERT INTO stripe_webhook_event (id, event_type, scope, processing_status, organization_id, stripe_customer_id, stripe_subscription_id, failure_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      id,
+      eventType,
+      scope,
+      processingStatus,
+      organizationId,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      failureReason,
+      timestamp,
+      timestamp,
+    )
+    .run();
+};
+
+const insertStripeWebhookFailureRow = async ({
+  eventId,
+  eventType,
+  scope = 'billing',
+  failureStage,
+  failureReason,
+  organizationId = null,
+  stripeCustomerId = null,
+  stripeSubscriptionId = null,
+  createdAt,
+}: {
+  eventId?: string | null;
+  eventType?: string | null;
+  scope?: string;
+  failureStage: string;
+  failureReason: string;
+  organizationId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  createdAt?: Date;
+}) => {
+  await d1
+    .prepare(
+      'INSERT INTO stripe_webhook_failure (id, event_id, event_type, scope, failure_stage, failure_reason, organization_id, stripe_customer_id, stripe_subscription_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      crypto.randomUUID(),
+      eventId,
+      eventType,
+      scope,
+      failureStage,
+      failureReason,
+      organizationId,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      (createdAt ?? new Date()).getTime(),
     )
     .run();
 };
@@ -534,7 +835,7 @@ const enablePremiumForOrganization = async (organizationId: string) => {
     organizationId,
     planCode: 'premium',
     subscriptionStatus: 'active',
-    billingInterval: 'monthly',
+    billingInterval: 'month',
     currentPeriodEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 };
@@ -995,6 +1296,7 @@ describe('backend app', () => {
         ],
       },
     };
+    let lastPortalSessionBody = '';
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url =
         typeof input === 'string'
@@ -1019,6 +1321,7 @@ describe('backend app', () => {
       }
 
       if (url === 'https://api.stripe.com/v1/billing_portal/sessions') {
+        lastPortalSessionBody = typeof init?.body === 'string' ? init.body : '';
         return new Response(
           JSON.stringify({
             url: 'https://billing.stripe.com/p/session/test_portal',
@@ -1091,6 +1394,17 @@ describe('backend app', () => {
       expect(ownerBillingPayload.canViewBilling).toBe(true);
       expect(ownerBillingPayload.canManageBilling).toBe(true);
       expect(ownerBillingPayload.trialEndsAt).toBeNull();
+      expect(ownerBillingPayload.history).toEqual([]);
+      expect(ownerBillingPayload.paymentDocuments).toEqual({
+        aggregateRoot: 'organization_billing',
+        organizationId,
+        provider: 'stripe',
+        stripeCustomerId: null,
+        stripeSubscriptionId: null,
+        ownerAccess: 'owner_only',
+        persistenceStrategy: 'provider_reference_only',
+        documents: [],
+      });
 
       const adminBillingResponse = await admin.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -1100,6 +1414,8 @@ describe('backend app', () => {
       expect(adminBillingPayload.planState).toBe('free');
       expect(adminBillingPayload.canViewBilling).toBe(true);
       expect(adminBillingPayload.canManageBilling).toBe(false);
+      expect(adminBillingPayload.history).toBeNull();
+      expect(adminBillingPayload.paymentDocuments).toBeNull();
 
       const memberBillingResponse = await member.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -1110,6 +1426,8 @@ describe('backend app', () => {
       expect(memberBillingPayload.planState).toBe('free');
       expect(memberBillingPayload.canViewBilling).toBe(true);
       expect(memberBillingPayload.canManageBilling).toBe(false);
+      expect(memberBillingPayload.history).toBeNull();
+      expect(memberBillingPayload.paymentDocuments).toBeNull();
 
       const adminCheckoutResponse = await admin.request('/api/v1/auth/organizations/billing/checkout', {
         method: 'POST',
@@ -1208,6 +1526,7 @@ describe('backend app', () => {
         subscriptionActivePayload,
         stripeWebhookSecret,
       );
+      const subscriptionActiveStartedAt = Date.now();
       const subscriptionActiveResponse = await appWithStripe.request('/api/webhooks/stripe', {
         method: 'POST',
         headers: {
@@ -1246,7 +1565,23 @@ describe('backend app', () => {
       const activeBillingPayload = (await toJson(activeBillingResponse)) as Record<string, unknown>;
       expect(activeBillingPayload.planCode).toBe('premium');
       expect(activeBillingPayload.planState).toBe('premium_paid');
+      expect(activeBillingPayload.paidTier).toMatchObject({
+        code: 'premium_default',
+        label: 'Premium',
+        resolution: 'known_price',
+        capabilities: ['organization_premium_features'],
+      });
       expect(activeBillingPayload.trialEndsAt).toBeNull();
+      expect(Date.now() - subscriptionActiveStartedAt).toBeLessThan(60_000);
+
+      const adminPortalResponse = await admin.request('/api/v1/auth/organizations/billing/portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+        }),
+      });
+      expect(adminPortalResponse.status).toBe(403);
 
       const ownerPortalResponse = await owner.request('/api/v1/auth/organizations/billing/portal', {
         method: 'POST',
@@ -1258,6 +1593,92 @@ describe('backend app', () => {
       expect(ownerPortalResponse.status).toBe(200);
       const ownerPortalPayload = (await toJson(ownerPortalResponse)) as Record<string, unknown>;
       expect(ownerPortalPayload.url).toBe('https://billing.stripe.com/p/session/test_portal');
+      const portalParams = new URLSearchParams(lastPortalSessionBody);
+      expect(portalParams.get('customer')).toBe('cus_test_org');
+      expect(portalParams.get('return_url')).toBe('http://localhost:5173/admin/contracts');
+      expect(portalParams.get('flow_data[type]')).toBe('subscription_update');
+      expect(portalParams.get('flow_data[subscription_update][subscription]')).toBe('sub_test_org');
+      expect(portalParams.get('flow_data[after_completion][type]')).toBe('redirect');
+      expect(portalParams.get('flow_data[after_completion][redirect][return_url]')).toBe(
+        'http://localhost:5173/admin/contracts?subscription=success',
+      );
+
+      latestOrganizationSubscriptionPayload = {
+        id: 'sub_test_org',
+        customer: 'cus_test_org',
+        status: 'active',
+        cancel_at_period_end: false,
+        current_period_start: 1777688400,
+        current_period_end: 1780280400,
+        items: {
+          data: [
+            {
+              price: {
+                id: stripeYearlyPriceId,
+              },
+            },
+          ],
+        },
+      };
+
+      const subscriptionPlanChangedPayload = JSON.stringify({
+        id: 'evt_org_subscription_plan_changed',
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_test_org',
+            customer: 'cus_test_org',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_start: 1777688400,
+            current_period_end: 1780280400,
+            items: {
+              data: [
+                {
+                  price: {
+                    id: stripeYearlyPriceId,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const subscriptionPlanChangedSignature = await createStripeSignatureHeader(
+        subscriptionPlanChangedPayload,
+        stripeWebhookSecret,
+      );
+      const subscriptionPlanChangedResponse = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': subscriptionPlanChangedSignature,
+        },
+        body: subscriptionPlanChangedPayload,
+      });
+      expect(subscriptionPlanChangedResponse.status).toBe(200);
+
+      const billingAfterPlanChange = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterPlanChange?.planCode).toBe('premium');
+      expect(billingAfterPlanChange?.subscriptionStatus).toBe('active');
+      expect(billingAfterPlanChange?.billingInterval).toBe('year');
+      expect(billingAfterPlanChange?.stripePriceId).toBe(stripeYearlyPriceId);
+      expect(billingAfterPlanChange?.currentPeriodStart).toBe(1777688400000);
+      expect(billingAfterPlanChange?.currentPeriodEnd).toBe(1780280400000);
+      const planChangedSummaryResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(planChangedSummaryResponse.status).toBe(200);
+      const planChangedSummaryPayload = (await toJson(planChangedSummaryResponse)) as Record<
+        string,
+        unknown
+      >;
+      expect(planChangedSummaryPayload.planState).toBe('premium_paid');
+      expect(planChangedSummaryPayload.billingInterval).toBe('year');
+      expect(planChangedSummaryPayload.paidTier).toMatchObject({
+        code: 'premium_default',
+        resolution: 'known_price',
+      });
 
       latestOrganizationSubscriptionPayload = {
         id: 'sub_test_org',
@@ -1268,7 +1689,7 @@ describe('backend app', () => {
           data: [
             {
               price: {
-                id: stripeMonthlyPriceId,
+                id: stripeYearlyPriceId,
               },
             },
           ],
@@ -1327,6 +1748,26 @@ describe('backend app', () => {
         }),
       });
       expect(freePortalResponse.status).toBe(409);
+
+      await d1
+        .prepare(
+          'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, stripe_customer_id = ?, stripe_subscription_id = ? WHERE organization_id = ?',
+        )
+        .bind('premium', 'active', 'cus_missing_subscription', null, organizationId)
+        .run();
+      const missingSubscriptionPortalResponse = await owner.request(
+        '/api/v1/auth/organizations/billing/portal',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            organizationId,
+          }),
+        },
+      );
+      expect(missingSubscriptionPortalResponse.status).toBe(409);
+      const billingAfterMissingSubscriptionPortal = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterMissingSubscriptionPortal?.stripeSubscriptionId).toBeNull();
 
       const trialPeriodEnd = 1778800000000;
       await d1
@@ -1406,6 +1847,162 @@ describe('backend app', () => {
       failureStage: 'payload_parse',
       failureReason: 'invalid_payload',
     });
+  });
+
+  it('returns owner-safe billing history while restricting history detail for non-owners', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Owner Billing History Fixture',
+      email: 'owner-billing-history@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Owner Billing History Org',
+      slug: 'owner-billing-history-org',
+    });
+
+    const admin = createAuthAgent(app);
+    await signUpUser({
+      agent: admin,
+      name: 'Owner Billing History Admin',
+      email: 'owner-billing-history-admin@example.com',
+    });
+    await insertOrganizationMember({
+      organizationId,
+      userId: (await selectUserIdByEmail('owner-billing-history-admin@example.com')) as string,
+      role: 'admin',
+    });
+
+    const now = Date.now();
+    const currentPeriodStart = new Date(now - 2 * 24 * 60 * 60 * 1000);
+    const currentPeriodEnd = new Date(now + 28 * 24 * 60 * 60 * 1000);
+    const trialEndsAt = new Date(now + 2 * 24 * 60 * 60 * 1000);
+
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      billingInterval: 'month',
+      currentPeriodStart,
+      currentPeriodEnd,
+      stripeCustomerId: 'cus_owner_billing_history',
+      stripeSubscriptionId: 'sub_owner_billing_history',
+      stripePriceId: 'price_owner_billing_history',
+    });
+    await insertOrganizationBillingAuditEventRow({
+      organizationId,
+      sequenceNumber: 1,
+      sourceKind: 'trial_start',
+      previousPlanCode: 'free',
+      nextPlanCode: 'premium',
+      previousPlanState: 'free',
+      nextPlanState: 'premium_trial',
+      previousSubscriptionStatus: 'free',
+      nextSubscriptionStatus: 'trialing',
+      previousPaymentMethodStatus: 'not_started',
+      nextPaymentMethodStatus: 'pending',
+      previousEntitlementState: 'free_only',
+      nextEntitlementState: 'premium_enabled',
+      stripeCustomerId: 'cus_owner_billing_history',
+      createdAt: new Date(now - 300_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId,
+      sequenceNumber: 1,
+      deliveryState: 'failed',
+      attemptNumber: 1,
+      stripeEventId: 'evt_owner_billing_history_trial',
+      recipientEmail: 'owner-billing-history@example.com',
+      stripeCustomerId: 'cus_owner_billing_history',
+      stripeSubscriptionId: 'sub_owner_billing_history',
+      trialEndsAt,
+      failureReason: 'owner_not_found',
+      createdAt: new Date(now - 200_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId,
+      sequenceNumber: 2,
+      notificationKind: 'trial_will_end',
+      channel: 'in_app',
+      deliveryState: 'sent',
+      attemptNumber: 1,
+      stripeEventId: 'evt_owner_billing_history_trial_in_app',
+      recipientEmail: null,
+      stripeCustomerId: 'cus_owner_billing_history',
+      stripeSubscriptionId: 'sub_owner_billing_history',
+      trialEndsAt,
+      createdAt: new Date(now - 150_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'unavailable',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'provider_lookup_failed',
+      stripeEventId: 'evt_owner_billing_history_subscription',
+      stripeCustomerId: 'cus_owner_billing_history',
+      stripeSubscriptionId: 'sub_owner_billing_history',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 100_000),
+    });
+
+    const ownerResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(ownerResponse.status).toBe(200);
+
+    const ownerPayload = (await toJson(ownerResponse)) as Record<string, unknown>;
+    expect(ownerPayload).toMatchObject({
+      planCode: 'premium',
+      planState: 'premium_paid',
+      canManageBilling: true,
+      history: expect.any(Array),
+    });
+
+    const ownerHistory = ownerPayload.history as Array<Record<string, unknown>>;
+    expect(ownerHistory).toHaveLength(4);
+    expect(ownerHistory[0]).toMatchObject({
+      eventType: 'reconciliation',
+      title: '契約状態を確認できませんでした',
+      tone: 'attention',
+    });
+    expect(ownerHistory[1]).toMatchObject({
+      eventType: 'notification',
+      title: 'トライアル終了前のお知らせをアプリ内通知で送信しました',
+      tone: 'positive',
+    });
+    expect(ownerHistory[1]?.billingContext).toContain('チャネル: アプリ内通知');
+    expect(ownerHistory[2]).toMatchObject({
+      eventType: 'notification',
+      title: 'トライアル終了前のお知らせをメールで送信できませんでした',
+      tone: 'attention',
+    });
+    expect(ownerHistory[2]?.billingContext).toContain('チャネル: メール');
+    expect(ownerHistory[3]).toMatchObject({
+      eventType: 'plan_transition',
+      title: 'Premiumトライアルを開始しました',
+      tone: 'positive',
+    });
+    expect(ownerHistory[0]?.billingContext).toBe(
+      '契約状態: Premiumプラン / ステータス: 有効 / 支払い方法: 登録済み',
+    );
+    expect(JSON.stringify(ownerHistory)).not.toContain('owner_not_found');
+    expect(JSON.stringify(ownerHistory)).not.toContain('provider_lookup_failed');
+    expect(JSON.stringify(ownerHistory)).not.toContain('provider_reconciliation');
+
+    const adminResponse = await admin.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(adminResponse.status).toBe(200);
+    const adminPayload = (await toJson(adminResponse)) as Record<string, unknown>;
+    expect(adminPayload.canManageBilling).toBe(false);
+    expect(adminPayload.history).toBeNull();
   });
 
   it('retries unmatched billing subscription webhooks until organization linkage is ready', async () => {
@@ -7384,6 +7981,1766 @@ describe('backend app', () => {
     expect(skippedSlotRow?.status).toBe('canceled');
   });
 
+  it('denies internal billing inspection to non-internal users even when they own the organization', async () => {
+    const authRuntimeWithInternalInspection = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        INTERNAL_OPERATOR_EMAILS: 'internal-ops@example.com',
+      },
+    });
+    const appWithInternalInspection = createApp(authRuntimeWithInternalInspection);
+
+    const owner = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: owner,
+      name: 'Inspection Owner',
+      email: 'inspection-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Inspection Denied Org',
+      slug: 'inspection-denied-org',
+    });
+
+    const deniedResponse = await owner.request(
+      `/api/v1/auth/internal/organizations/${encodeURIComponent(organizationId)}/billing-inspection`,
+    );
+
+    expect(deniedResponse.status).toBe(403);
+    await expect(toJson(deniedResponse)).resolves.toEqual({
+      message: 'Internal billing inspection access denied.',
+    });
+  });
+
+  it('requires allowlisted operators to have a verified email before accessing internal billing inspection', async () => {
+    const authRuntimeWithInternalInspection = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        INTERNAL_OPERATOR_EMAILS: 'internal-ops-verified@example.com',
+      },
+    });
+    const appWithInternalInspection = createApp(authRuntimeWithInternalInspection);
+
+    const internalOperator = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: internalOperator,
+      name: 'Internal Operator',
+      email: 'internal-ops-verified@example.com',
+    });
+
+    const owner = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: owner,
+      name: 'Inspection Fixture Owner',
+      email: 'inspection-verified-fixture-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Inspection Verified Org',
+      slug: 'inspection-verified-org',
+    });
+
+    const deniedResponse = await internalOperator.request(
+      `/api/v1/auth/internal/organizations/${encodeURIComponent(organizationId)}/billing-inspection`,
+    );
+    expect(deniedResponse.status).toBe(403);
+
+    await setUserEmailVerified({ email: 'internal-ops-verified@example.com' });
+
+    const allowedResponse = await internalOperator.request(
+      `/api/v1/auth/internal/organizations/${encodeURIComponent(organizationId)}/billing-inspection`,
+    );
+    expect(allowedResponse.status).toBe(200);
+  });
+
+  it('returns a read-only internal billing inspection view with normalized auth and billing edge cases', async () => {
+    const authRuntimeWithInternalInspection = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        INTERNAL_OPERATOR_EMAILS: 'internal-ops-inspection@example.com',
+      },
+    });
+    const appWithInternalInspection = createApp(authRuntimeWithInternalInspection);
+
+    const internalOperator = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: internalOperator,
+      name: 'Internal Operator',
+      email: 'internal-ops-inspection@example.com',
+    });
+    await setUserEmailVerified({ email: 'internal-ops-inspection@example.com' });
+
+    const owner = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: owner,
+      name: 'Inspection Fixture Owner',
+      email: 'inspection-edge-fixture-owner@example.com',
+    });
+
+    const freeOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Inspection Free Org',
+      slug: 'inspection-free-org',
+    });
+    const trialOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Inspection Trial Org',
+      slug: 'inspection-trial-org',
+    });
+    const paidOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Inspection Paid Org',
+      slug: 'inspection-paid-org',
+    });
+    const canceledOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Inspection Canceled Org',
+      slug: 'inspection-canceled-org',
+    });
+    const linkedWithoutSignalOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Inspection Linked No Signal Org',
+      slug: 'inspection-linked-no-signal-org',
+    });
+    const malformedOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Inspection Malformed Org',
+      slug: 'inspection-malformed-org',
+    });
+
+    const now = Date.now();
+    const trialEndsAt = new Date(now + 3 * 24 * 60 * 60 * 1000);
+    const paidPeriodStart = new Date(now - 2 * 24 * 60 * 60 * 1000);
+    const paidPeriodEnd = new Date(now + 28 * 24 * 60 * 60 * 1000);
+    const canceledPeriodEnd = new Date(now + 14 * 24 * 60 * 60 * 1000);
+
+    await setOrganizationBillingState({
+      organizationId: trialOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'trialing',
+      billingInterval: null,
+      currentPeriodEnd: trialEndsAt,
+      stripeCustomerId: 'cus_trial_inspection',
+      stripeSubscriptionId: 'sub_trial_inspection',
+      stripePriceId: 'price_trial_inspection',
+    });
+    await insertOrganizationBillingAuditEventRow({
+      organizationId: trialOrganizationId,
+      sequenceNumber: 1,
+      sourceKind: 'trial_start',
+      previousPlanCode: 'free',
+      nextPlanCode: 'premium',
+      previousPlanState: 'free',
+      nextPlanState: 'premium_trial',
+      previousSubscriptionStatus: 'free',
+      nextSubscriptionStatus: 'trialing',
+      previousPaymentMethodStatus: 'not_started',
+      nextPaymentMethodStatus: 'pending',
+      previousEntitlementState: 'free_only',
+      nextEntitlementState: 'premium_enabled',
+      sourceContext: 'owner_started_premium_trial',
+      stripeCustomerId: 'cus_trial_inspection',
+      stripeSubscriptionId: 'sub_trial_inspection',
+      createdAt: new Date(now - 60_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: trialOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'pending',
+      sourceKind: 'trial_completion',
+      reason: 'trial_completion_pending',
+      providerPlanState: 'premium_trial',
+      providerSubscriptionStatus: 'trialing',
+      appPlanState: 'premium_trial',
+      appSubscriptionStatus: 'trialing',
+      appPaymentMethodStatus: 'pending',
+      appEntitlementState: 'premium_enabled',
+      stripeCustomerId: 'cus_trial_inspection',
+      stripeSubscriptionId: 'sub_trial_inspection',
+      createdAt: new Date(now - 30_000),
+    });
+
+    await setOrganizationBillingState({
+      organizationId: paidOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      billingInterval: 'month',
+      currentPeriodStart: paidPeriodStart,
+      currentPeriodEnd: paidPeriodEnd,
+      stripeCustomerId: 'cus_paid_inspection',
+      stripeSubscriptionId: 'sub_paid_inspection',
+      stripePriceId: 'price_paid_inspection',
+      cancelAtPeriodEnd: true,
+    });
+    await insertOrganizationBillingAuditEventRow({
+      organizationId: paidOrganizationId,
+      sequenceNumber: 1,
+      sourceKind: 'webhook_subscription_lifecycle',
+      previousPlanCode: 'premium',
+      nextPlanCode: 'premium',
+      previousPlanState: 'premium_trial',
+      nextPlanState: 'premium_paid',
+      previousSubscriptionStatus: 'trialing',
+      nextSubscriptionStatus: 'active',
+      previousPaymentMethodStatus: 'pending',
+      nextPaymentMethodStatus: 'registered',
+      previousEntitlementState: 'premium_enabled',
+      nextEntitlementState: 'premium_enabled',
+      previousBillingInterval: null,
+      nextBillingInterval: 'month',
+      sourceContext: 'stripe_subscription_activated',
+      stripeCustomerId: 'cus_paid_inspection',
+      stripeSubscriptionId: 'sub_paid_inspection',
+      stripeEventId: 'evt_paid_inspection',
+      createdAt: new Date(now - 120_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: paidOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'resolved',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'billing_state_synchronized',
+      providerPlanState: 'premium_paid',
+      providerSubscriptionStatus: 'active',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      stripeCustomerId: 'cus_paid_inspection',
+      stripeSubscriptionId: 'sub_paid_inspection',
+      stripeEventId: 'evt_paid_inspection',
+      createdAt: new Date(now - 90_000),
+    });
+
+    await setOrganizationBillingState({
+      organizationId: canceledOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'canceled',
+      billingInterval: 'month',
+      currentPeriodStart: paidPeriodStart,
+      currentPeriodEnd: canceledPeriodEnd,
+      stripeCustomerId: 'cus_canceled_inspection',
+      stripeSubscriptionId: 'sub_canceled_inspection',
+      stripePriceId: 'price_canceled_inspection',
+      cancelAtPeriodEnd: true,
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: canceledOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'resolved',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'subscription_canceled',
+      providerPlanState: 'premium_paid',
+      providerSubscriptionStatus: 'canceled',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'canceled',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'free_only',
+      stripeCustomerId: 'cus_canceled_inspection',
+      stripeSubscriptionId: 'sub_canceled_inspection',
+      stripeEventId: 'evt_canceled_inspection',
+      createdAt: new Date(now - 45_000),
+    });
+
+    await setOrganizationBillingState({
+      organizationId: linkedWithoutSignalOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      billingInterval: 'year',
+      currentPeriodStart: paidPeriodStart,
+      currentPeriodEnd: paidPeriodEnd,
+      stripeCustomerId: 'cus_linked_without_signal',
+      stripeSubscriptionId: 'sub_linked_without_signal',
+      stripePriceId: 'price_linked_without_signal',
+    });
+
+    await setOrganizationBillingState({
+      organizationId: malformedOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'trialing',
+      billingInterval: null,
+      stripeCustomerId: 'cus_malformed_inspection',
+      stripeSubscriptionId: 'sub_malformed_inspection',
+      stripePriceId: 'price_malformed_inspection',
+    });
+    await d1
+      .prepare('UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?')
+      .bind('not-a-real-timestamp', malformedOrganizationId)
+      .run();
+    await insertOrganizationBillingSignalRow({
+      organizationId: malformedOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'resolved',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'billing_state_synchronized',
+      providerPlanState: 'unexpected_provider_state',
+      providerSubscriptionStatus: 'unexpected_subscription_state',
+      appPlanState: 'premium_trial',
+      appSubscriptionStatus: 'trialing',
+      appPaymentMethodStatus: 'pending',
+      appEntitlementState: 'premium_enabled',
+      stripeCustomerId: 'cus_malformed_inspection',
+      stripeSubscriptionId: 'sub_malformed_inspection',
+      stripeEventId: 'evt_malformed_inspection',
+      createdAt: new Date(now - 15_000),
+    });
+
+    const [freeResponse, trialResponse, paidResponse, canceledResponse, linkedWithoutSignalResponse, malformedResponse] =
+      await Promise.all([
+        internalOperator.request(
+          `/api/v1/auth/internal/organizations/${encodeURIComponent(freeOrganizationId)}/billing-inspection`,
+        ),
+        internalOperator.request(
+          `/api/v1/auth/internal/organizations/${encodeURIComponent(trialOrganizationId)}/billing-inspection`,
+        ),
+        internalOperator.request(
+          `/api/v1/auth/internal/organizations/${encodeURIComponent(paidOrganizationId)}/billing-inspection`,
+        ),
+        internalOperator.request(
+          `/api/v1/auth/internal/organizations/${encodeURIComponent(canceledOrganizationId)}/billing-inspection`,
+        ),
+        internalOperator.request(
+          `/api/v1/auth/internal/organizations/${encodeURIComponent(linkedWithoutSignalOrganizationId)}/billing-inspection`,
+        ),
+        internalOperator.request(
+          `/api/v1/auth/internal/organizations/${encodeURIComponent(malformedOrganizationId)}/billing-inspection`,
+        ),
+      ]);
+
+    expect(freeResponse.status).toBe(200);
+    expect(trialResponse.status).toBe(200);
+    expect(paidResponse.status).toBe(200);
+    expect(canceledResponse.status).toBe(200);
+    expect(linkedWithoutSignalResponse.status).toBe(200);
+    expect(malformedResponse.status).toBe(200);
+
+    const freePayload = (await toJson(freeResponse)) as Record<string, unknown>;
+    expect(freePayload).toMatchObject({
+      organizationId: freeOrganizationId,
+      summary: {
+        planCode: 'free',
+        planState: 'free',
+        lifecycleStage: 'free',
+        paymentMethodStatus: 'not_started',
+      },
+      provider: null,
+    });
+
+    const trialPayload = (await toJson(trialResponse)) as Record<string, unknown>;
+    expect(trialPayload).toMatchObject({
+      organizationId: trialOrganizationId,
+      summary: {
+        planCode: 'premium',
+        planState: 'premium_trial',
+        lifecycleStage: 'trial',
+        subscriptionStatus: 'trialing',
+        stripeLinked: true,
+      },
+      provider: {
+        stripeCustomerId: 'cus_trial_inspection',
+        stripeSubscriptionId: 'sub_trial_inspection',
+        stripePriceId: 'price_trial_inspection',
+        providerSubscriptionStatus: 'trialing',
+        providerPlanState: 'premium_trial',
+      },
+    });
+    expect(trialPayload).toHaveProperty('lifecycle.recentEvents');
+    expect(trialPayload).toHaveProperty('lifecycle.latestSignal');
+    expect(trialPayload).toHaveProperty('paymentDocuments', {
+      aggregateRoot: 'organization_billing',
+      provider: 'stripe',
+      ownerAccess: 'owner_only',
+      persistenceStrategy: 'provider_reference_only',
+      stripeCustomerId: 'cus_trial_inspection',
+      stripeSubscriptionId: 'sub_trial_inspection',
+      diagnosticReason: null,
+      documents: [],
+    });
+    expect(trialPayload).not.toHaveProperty('actions');
+    expect(trialPayload).not.toHaveProperty('rawProviderPayload');
+    expect((trialPayload.provider as Record<string, unknown>)).not.toHaveProperty('rawPayload');
+
+    const paidPayload = (await toJson(paidResponse)) as Record<string, unknown>;
+    expect(paidPayload).toMatchObject({
+      organizationId: paidOrganizationId,
+      summary: {
+        planCode: 'premium',
+        planState: 'premium_paid',
+        paidTier: {
+          code: 'premium_unknown',
+          label: 'Premium',
+          resolution: 'unknown_price',
+          diagnosticReason: 'stripe_price_id_not_in_paid_tier_catalog',
+        },
+        lifecycleStage: 'paid',
+        subscriptionStatus: 'active',
+        billingInterval: 'month',
+        cancelAtPeriodEnd: true,
+        stripeLinked: true,
+      },
+      provider: {
+        stripeCustomerId: 'cus_paid_inspection',
+        stripeSubscriptionId: 'sub_paid_inspection',
+        stripePriceId: 'price_paid_inspection',
+        providerSubscriptionStatus: 'active',
+        providerPlanState: 'premium_paid',
+      },
+      lifecycle: {
+        latestSignal: {
+          signalStatus: 'resolved',
+          reason: 'billing_state_synchronized',
+        },
+      },
+    });
+    expect(paidPayload).not.toHaveProperty('actions');
+    expect(paidPayload).toHaveProperty('paymentDocuments.stripeCustomerId', 'cus_paid_inspection');
+    expect(paidPayload).toHaveProperty('paymentDocuments.stripeSubscriptionId', 'sub_paid_inspection');
+
+    const canceledPayload = (await toJson(canceledResponse)) as Record<string, unknown>;
+    expect(canceledPayload).toMatchObject({
+      organizationId: canceledOrganizationId,
+      summary: {
+        planCode: 'premium',
+        planState: 'free',
+        lifecycleStage: 'free',
+        lifecycleReason: 'premium_paid_state_unexpected',
+        subscriptionStatus: 'canceled',
+        billingInterval: 'month',
+        cancelAtPeriodEnd: true,
+        stripeLinked: true,
+      },
+      provider: {
+        stripeCustomerId: 'cus_canceled_inspection',
+        stripeSubscriptionId: 'sub_canceled_inspection',
+        stripePriceId: 'price_canceled_inspection',
+        providerPlanState: 'premium_paid',
+        providerSubscriptionStatus: 'canceled',
+      },
+    });
+
+    const linkedWithoutSignalPayload =
+      (await toJson(linkedWithoutSignalResponse)) as Record<string, unknown>;
+    expect(linkedWithoutSignalPayload).toMatchObject({
+      organizationId: linkedWithoutSignalOrganizationId,
+      summary: {
+        planCode: 'premium',
+        planState: 'premium_paid',
+        lifecycleStage: 'paid',
+        subscriptionStatus: 'active',
+        billingInterval: 'year',
+        stripeLinked: true,
+      },
+      provider: {
+        stripeCustomerId: 'cus_linked_without_signal',
+        stripeSubscriptionId: 'sub_linked_without_signal',
+        stripePriceId: 'price_linked_without_signal',
+        providerPlanState: null,
+        providerSubscriptionStatus: null,
+      },
+      lifecycle: {
+        latestSignal: null,
+      },
+    });
+
+    const malformedPayload = (await toJson(malformedResponse)) as Record<string, unknown>;
+    expect(malformedPayload).toMatchObject({
+      organizationId: malformedOrganizationId,
+      summary: {
+        planCode: 'premium',
+        planState: 'free',
+        lifecycleStage: 'free',
+        lifecycleReason: 'premium_trial_missing_end',
+        subscriptionStatus: 'trialing',
+        currentPeriodEnd: null,
+        trialEndsAt: null,
+        stripeLinked: true,
+      },
+      provider: {
+        stripeCustomerId: 'cus_malformed_inspection',
+        stripeSubscriptionId: 'sub_malformed_inspection',
+        stripePriceId: 'price_malformed_inspection',
+        providerPlanState: null,
+        providerSubscriptionStatus: null,
+      },
+      lifecycle: {
+        latestSignal: {
+          providerPlanState: null,
+          providerSubscriptionStatus: null,
+        },
+      },
+    });
+  });
+
+  it('returns internal reminder delivery audit inspection for delivered, pending, failed, missing, and unknown reminder outcomes', async () => {
+    const authRuntimeWithInternalInspection = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        INTERNAL_OPERATOR_EMAILS: 'internal-ops-reminder-audit@example.com',
+      },
+    });
+    const appWithInternalInspection = createApp(authRuntimeWithInternalInspection);
+
+    const internalOperator = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: internalOperator,
+      name: 'Internal Reminder Audit Operator',
+      email: 'internal-ops-reminder-audit@example.com',
+    });
+    await setUserEmailVerified({ email: 'internal-ops-reminder-audit@example.com' });
+
+    const owner = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: owner,
+      name: 'Reminder Audit Fixture Owner',
+      email: 'reminder-audit-fixture-owner@example.com',
+    });
+
+    const deliveredOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reminder Delivered Org',
+      slug: 'reminder-delivered-org',
+    });
+    const pendingOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reminder Pending Org',
+      slug: 'reminder-pending-org',
+    });
+    const failedOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reminder Failed Org',
+      slug: 'reminder-failed-org',
+    });
+    const missingOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reminder Missing Org',
+      slug: 'reminder-missing-org',
+    });
+    const unknownOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reminder Unknown Org',
+      slug: 'reminder-unknown-org',
+    });
+
+    const now = Date.now();
+    const deliveredTrialEndsAt = new Date(now + 2 * 24 * 60 * 60 * 1000);
+    const pendingTrialEndsAt = new Date(now + 2 * 24 * 60 * 60 * 1000);
+    const failedTrialEndsAt = new Date(now + 2 * 24 * 60 * 60 * 1000);
+    const missingTrialEndsAt = new Date(now + 2 * 24 * 60 * 60 * 1000);
+    const unknownTrialEndsAt = new Date(now + 2 * 24 * 60 * 60 * 1000);
+
+    for (const [organizationId, stripeCustomerId, stripeSubscriptionId, stripePriceId, currentPeriodEnd] of [
+      [deliveredOrganizationId, 'cus_delivered_audit', 'sub_delivered_audit', 'price_delivered_audit', deliveredTrialEndsAt],
+      [pendingOrganizationId, 'cus_pending_audit', 'sub_pending_audit', 'price_pending_audit', pendingTrialEndsAt],
+      [failedOrganizationId, 'cus_failed_audit', 'sub_failed_audit', 'price_failed_audit', failedTrialEndsAt],
+      [missingOrganizationId, 'cus_missing_audit', 'sub_missing_audit', 'price_missing_audit', missingTrialEndsAt],
+      [unknownOrganizationId, 'cus_unknown_audit', 'sub_unknown_audit', 'price_unknown_audit', unknownTrialEndsAt],
+    ] as const) {
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        billingInterval: null,
+        currentPeriodEnd,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        stripePriceId,
+      });
+    }
+
+    await insertOrganizationBillingNotificationRow({
+      organizationId: deliveredOrganizationId,
+      sequenceNumber: 1,
+      deliveryState: 'requested',
+      attemptNumber: 1,
+      stripeEventId: 'evt_delivered_audit',
+      recipientEmail: 'reminder-audit-fixture-owner@example.com',
+      stripeCustomerId: 'cus_delivered_audit',
+      stripeSubscriptionId: 'sub_delivered_audit',
+      trialEndsAt: deliveredTrialEndsAt,
+      createdAt: new Date(now - 120_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: deliveredOrganizationId,
+      sequenceNumber: 2,
+      deliveryState: 'sent',
+      attemptNumber: 1,
+      stripeEventId: 'evt_delivered_audit',
+      recipientEmail: 'reminder-audit-fixture-owner@example.com',
+      stripeCustomerId: 'cus_delivered_audit',
+      stripeSubscriptionId: 'sub_delivered_audit',
+      trialEndsAt: deliveredTrialEndsAt,
+      createdAt: new Date(now - 90_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: deliveredOrganizationId,
+      sequenceNumber: 3,
+      notificationKind: 'trial_will_end',
+      channel: 'web_push',
+      deliveryState: 'sent',
+      attemptNumber: 1,
+      stripeEventId: 'evt_delivered_audit_push',
+      recipientEmail: null,
+      stripeCustomerId: 'cus_delivered_audit',
+      stripeSubscriptionId: 'sub_delivered_audit',
+      trialEndsAt: deliveredTrialEndsAt,
+      createdAt: new Date(now - 85_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: deliveredOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'notification_delivery',
+      signalStatus: 'resolved',
+      sourceKind: 'trial_will_end_email',
+      reason: 'trial_reminder_delivery_succeeded',
+      stripeEventId: 'evt_delivered_audit',
+      stripeCustomerId: 'cus_delivered_audit',
+      stripeSubscriptionId: 'sub_delivered_audit',
+      appPlanState: 'premium_trial',
+      appSubscriptionStatus: 'trialing',
+      appPaymentMethodStatus: 'pending',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 80_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_delivered_audit',
+      eventType: 'customer.subscription.trial_will_end',
+      processingStatus: 'processed',
+      organizationId: deliveredOrganizationId,
+      stripeCustomerId: 'cus_delivered_audit',
+      stripeSubscriptionId: 'sub_delivered_audit',
+      createdAt: new Date(now - 95_000),
+    });
+
+    await insertOrganizationBillingNotificationRow({
+      organizationId: pendingOrganizationId,
+      sequenceNumber: 1,
+      deliveryState: 'requested',
+      attemptNumber: 1,
+      stripeEventId: 'evt_pending_audit',
+      recipientEmail: 'reminder-audit-fixture-owner@example.com',
+      stripeCustomerId: 'cus_pending_audit',
+      stripeSubscriptionId: 'sub_pending_audit',
+      trialEndsAt: pendingTrialEndsAt,
+      createdAt: new Date(now - 110_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: pendingOrganizationId,
+      sequenceNumber: 2,
+      deliveryState: 'failed',
+      attemptNumber: 1,
+      stripeEventId: 'evt_pending_audit',
+      recipientEmail: 'reminder-audit-fixture-owner@example.com',
+      stripeCustomerId: 'cus_pending_audit',
+      stripeSubscriptionId: 'sub_pending_audit',
+      trialEndsAt: pendingTrialEndsAt,
+      failureReason: 'resend_delivery_failed',
+      createdAt: new Date(now - 100_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: pendingOrganizationId,
+      sequenceNumber: 3,
+      deliveryState: 'retried',
+      attemptNumber: 2,
+      stripeEventId: 'evt_pending_audit',
+      recipientEmail: 'reminder-audit-fixture-owner@example.com',
+      stripeCustomerId: 'cus_pending_audit',
+      stripeSubscriptionId: 'sub_pending_audit',
+      trialEndsAt: pendingTrialEndsAt,
+      createdAt: new Date(now - 90_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: pendingOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'notification_delivery',
+      signalStatus: 'pending',
+      sourceKind: 'trial_will_end_email',
+      reason: 'resend_delivery_failed',
+      stripeEventId: 'evt_pending_audit',
+      stripeCustomerId: 'cus_pending_audit',
+      stripeSubscriptionId: 'sub_pending_audit',
+      appPlanState: 'premium_trial',
+      appSubscriptionStatus: 'trialing',
+      appPaymentMethodStatus: 'pending',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 85_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_pending_audit',
+      eventType: 'customer.subscription.trial_will_end',
+      processingStatus: 'failed',
+      organizationId: pendingOrganizationId,
+      stripeCustomerId: 'cus_pending_audit',
+      stripeSubscriptionId: 'sub_pending_audit',
+      failureReason: 'trial_reminder_delivery_failed',
+      createdAt: new Date(now - 92_000),
+    });
+
+    await insertOrganizationBillingNotificationRow({
+      organizationId: failedOrganizationId,
+      sequenceNumber: 1,
+      deliveryState: 'requested',
+      attemptNumber: 1,
+      stripeEventId: 'evt_failed_audit',
+      recipientEmail: 'reminder-audit-fixture-owner@example.com',
+      stripeCustomerId: 'cus_failed_audit',
+      stripeSubscriptionId: 'sub_failed_audit',
+      trialEndsAt: failedTrialEndsAt,
+      createdAt: new Date(now - 75_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: failedOrganizationId,
+      sequenceNumber: 2,
+      deliveryState: 'failed',
+      attemptNumber: 1,
+      stripeEventId: 'evt_failed_audit',
+      recipientEmail: 'reminder-audit-fixture-owner@example.com',
+      stripeCustomerId: 'cus_failed_audit',
+      stripeSubscriptionId: 'sub_failed_audit',
+      trialEndsAt: failedTrialEndsAt,
+      failureReason: 'owner_not_found',
+      createdAt: new Date(now - 70_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: failedOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'notification_delivery',
+      signalStatus: 'unavailable',
+      sourceKind: 'trial_will_end_email',
+      reason: 'owner_not_found',
+      stripeEventId: 'evt_failed_audit',
+      stripeCustomerId: 'cus_failed_audit',
+      stripeSubscriptionId: 'sub_failed_audit',
+      appPlanState: 'premium_trial',
+      appSubscriptionStatus: 'trialing',
+      appPaymentMethodStatus: 'pending',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 65_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_failed_audit',
+      eventType: 'customer.subscription.trial_will_end',
+      processingStatus: 'failed',
+      organizationId: failedOrganizationId,
+      stripeCustomerId: 'cus_failed_audit',
+      stripeSubscriptionId: 'sub_failed_audit',
+      failureReason: 'trial_reminder_owner_not_found',
+      createdAt: new Date(now - 72_000),
+    });
+
+    await insertStripeWebhookEventRow({
+      id: 'evt_unknown_audit',
+      eventType: 'customer.subscription.trial_will_end',
+      processingStatus: 'processed',
+      organizationId: unknownOrganizationId,
+      stripeCustomerId: 'cus_unknown_audit',
+      stripeSubscriptionId: 'sub_unknown_audit',
+      createdAt: new Date(now - 55_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: unknownOrganizationId,
+      sequenceNumber: 1,
+      notificationKind: 'trial_will_end',
+      channel: 'web_push',
+      deliveryState: 'provider_unknown',
+      attemptNumber: 1,
+      stripeEventId: 'evt_unknown_audit',
+      recipientEmail: null,
+      stripeCustomerId: 'cus_unknown_audit',
+      stripeSubscriptionId: 'sub_unknown_audit',
+      trialEndsAt: unknownTrialEndsAt,
+      failureReason: 'push_provider_pending',
+      createdAt: new Date(now - 50_000),
+    });
+
+    const [
+      deliveredResponse,
+      pendingResponse,
+      failedResponse,
+      missingResponse,
+      unknownResponse,
+    ] = await Promise.all([
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(deliveredOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(pendingOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(failedOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(missingOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(unknownOrganizationId)}/billing-inspection`,
+      ),
+    ]);
+
+    expect(deliveredResponse.status).toBe(200);
+    expect(pendingResponse.status).toBe(200);
+    expect(failedResponse.status).toBe(200);
+    expect(missingResponse.status).toBe(200);
+    expect(unknownResponse.status).toBe(200);
+
+    const deliveredPayload = (await toJson(deliveredResponse)) as Record<string, unknown>;
+    expect(deliveredPayload).toMatchObject({
+      organizationId: deliveredOrganizationId,
+      notifications: {
+        reminderDelivery: {
+          status: 'delivered',
+          expected: true,
+          eventFound: true,
+          outcomeKnown: true,
+          latestEventId: 'evt_delivered_audit',
+          latestEventProcessingStatus: 'processed',
+          latestSignalStatus: 'resolved',
+          latestSignalReason: 'trial_reminder_delivery_succeeded',
+        },
+      },
+    });
+    expect(deliveredPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.0.deliveryState',
+      'requested',
+    );
+    expect(deliveredPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.1.deliveryState',
+      'sent',
+    );
+    expect(deliveredPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.1.recipientEmail',
+      'reminder-audit-fixture-owner@example.com',
+    );
+    expect(deliveredPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.2.notificationKind',
+      'trial_will_end',
+    );
+    expect(deliveredPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.2.communicationType',
+      'trial_will_end',
+    );
+    expect(deliveredPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.2.channel',
+      'web_push',
+    );
+    expect(deliveredPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.2.channelLabel',
+      'プッシュ通知',
+    );
+    expect(deliveredPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.2.deliveryOutcome',
+      'delivered',
+    );
+
+    const pendingPayload = (await toJson(pendingResponse)) as Record<string, unknown>;
+    expect(pendingPayload).toMatchObject({
+      organizationId: pendingOrganizationId,
+      notifications: {
+        reminderDelivery: {
+          status: 'pending',
+          expected: true,
+          eventFound: true,
+          outcomeKnown: false,
+          latestEventId: 'evt_pending_audit',
+          latestEventProcessingStatus: 'failed',
+          latestSignalStatus: 'pending',
+          latestSignalReason: 'resend_delivery_failed',
+          latestFailureReason: 'resend_delivery_failed',
+        },
+      },
+    });
+    expect(pendingPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.2.deliveryState',
+      'retried',
+    );
+
+    const failedPayload = (await toJson(failedResponse)) as Record<string, unknown>;
+    expect(failedPayload).toMatchObject({
+      organizationId: failedOrganizationId,
+      notifications: {
+        reminderDelivery: {
+          status: 'failed',
+          expected: true,
+          eventFound: true,
+          outcomeKnown: true,
+          latestEventId: 'evt_failed_audit',
+          latestEventProcessingStatus: 'failed',
+          latestSignalStatus: 'unavailable',
+          latestSignalReason: 'owner_not_found',
+          latestFailureReason: 'owner_not_found',
+        },
+      },
+    });
+    expect(failedPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.1.failureReason',
+      'owner_not_found',
+    );
+
+    const missingPayload = (await toJson(missingResponse)) as Record<string, unknown>;
+    expect(missingPayload).toMatchObject({
+      organizationId: missingOrganizationId,
+      notifications: {
+        reminderDelivery: {
+          status: 'missing',
+          expected: true,
+          eventFound: false,
+          outcomeKnown: false,
+          latestEventId: null,
+          latestSignalStatus: null,
+        },
+      },
+    });
+    expect(missingPayload).toHaveProperty('notifications.reminderDelivery.history', []);
+
+    const unknownPayload = (await toJson(unknownResponse)) as Record<string, unknown>;
+    expect(unknownPayload).toMatchObject({
+      organizationId: unknownOrganizationId,
+      notifications: {
+        reminderDelivery: {
+          status: 'unknown',
+          expected: true,
+          eventFound: true,
+          outcomeKnown: false,
+          latestEventId: 'evt_unknown_audit',
+          latestEventProcessingStatus: 'processed',
+          latestSignalStatus: null,
+        },
+      },
+    });
+    expect(unknownPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.0.channel',
+      'web_push',
+    );
+    expect(unknownPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.0.channelLabel',
+      'プッシュ通知',
+    );
+    expect(unknownPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.0.deliveryState',
+      'unknown',
+    );
+    expect(unknownPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.0.deliveryOutcome',
+      'unknown',
+    );
+    expect(unknownPayload).toHaveProperty(
+      'notifications.reminderDelivery.history.0.failureReason',
+      'push_provider_pending',
+    );
+  });
+
+  it('returns internal reconciliation diagnosis for mismatch, aligned recovery, pending, unavailable, incomplete, and not-applicable organizations', async () => {
+    const authRuntimeWithInternalInspection = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        INTERNAL_OPERATOR_EMAILS: 'internal-ops-reconciliation@example.com',
+      },
+    });
+    const appWithInternalInspection = createApp(authRuntimeWithInternalInspection);
+
+    const internalOperator = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: internalOperator,
+      name: 'Internal Reconciliation Operator',
+      email: 'internal-ops-reconciliation@example.com',
+    });
+    await setUserEmailVerified({ email: 'internal-ops-reconciliation@example.com' });
+
+    const owner = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: owner,
+      name: 'Reconciliation Fixture Owner',
+      email: 'reconciliation-fixture-owner@example.com',
+    });
+
+    const mismatchOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reconciliation Mismatch Org',
+      slug: 'reconciliation-mismatch-org',
+    });
+    const recoveredOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reconciliation Recovered Org',
+      slug: 'reconciliation-recovered-org',
+    });
+    const pendingOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reconciliation Pending Org',
+      slug: 'reconciliation-pending-org',
+    });
+    const unavailableOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reconciliation Unavailable Org',
+      slug: 'reconciliation-unavailable-org',
+    });
+    const linkedWithoutSignalOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reconciliation Linked Without Signal Org',
+      slug: 'reconciliation-linked-without-signal-org',
+    });
+    const freeOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Reconciliation Free Org',
+      slug: 'reconciliation-free-org',
+    });
+
+    const now = Date.now();
+    const futurePeriodEnd = new Date(now + 14 * 24 * 60 * 60 * 1000);
+    const futureTrialEnd = new Date(now + 2 * 24 * 60 * 60 * 1000);
+    const currentPeriodStart = new Date(now - 2 * 24 * 60 * 60 * 1000);
+
+    await setOrganizationBillingState({
+      organizationId: mismatchOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      billingInterval: 'month',
+      currentPeriodStart,
+      currentPeriodEnd: futurePeriodEnd,
+      stripeCustomerId: 'cus_reconciliation_mismatch',
+      stripeSubscriptionId: 'sub_reconciliation_mismatch',
+      stripePriceId: 'price_reconciliation_mismatch',
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: mismatchOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'mismatch',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'plan_state_mismatch',
+      stripeEventId: 'evt_reconciliation_mismatch',
+      stripeCustomerId: 'cus_reconciliation_mismatch',
+      stripeSubscriptionId: 'sub_reconciliation_mismatch',
+      providerPlanState: 'free',
+      providerSubscriptionStatus: 'canceled',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 140_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_reconciliation_mismatch',
+      eventType: 'customer.subscription.deleted',
+      processingStatus: 'processed',
+      organizationId: mismatchOrganizationId,
+      stripeCustomerId: 'cus_reconciliation_mismatch',
+      stripeSubscriptionId: 'sub_reconciliation_mismatch',
+      createdAt: new Date(now - 145_000),
+    });
+
+    await setOrganizationBillingState({
+      organizationId: recoveredOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      billingInterval: 'month',
+      currentPeriodStart,
+      currentPeriodEnd: futurePeriodEnd,
+      stripeCustomerId: 'cus_reconciliation_recovered',
+      stripeSubscriptionId: 'sub_reconciliation_recovered',
+      stripePriceId: 'price_reconciliation_recovered',
+    });
+    await insertOrganizationBillingAuditEventRow({
+      organizationId: recoveredOrganizationId,
+      sequenceNumber: 1,
+      sourceKind: 'webhook_checkout_completed',
+      previousPlanCode: 'free',
+      nextPlanCode: 'premium',
+      previousPlanState: 'free',
+      nextPlanState: 'premium_paid',
+      previousSubscriptionStatus: 'free',
+      nextSubscriptionStatus: 'active',
+      previousPaymentMethodStatus: 'not_started',
+      nextPaymentMethodStatus: 'registered',
+      previousEntitlementState: 'free_only',
+      nextEntitlementState: 'premium_enabled',
+      nextBillingInterval: 'month',
+      stripeCustomerId: 'cus_reconciliation_recovered',
+      stripeSubscriptionId: 'sub_reconciliation_recovered',
+      stripeEventId: 'evt_recovered_checkout',
+      sourceContext: 'checkout.session.completed',
+      createdAt: new Date(now - 210_000),
+    });
+    await insertOrganizationBillingAuditEventRow({
+      organizationId: recoveredOrganizationId,
+      sequenceNumber: 2,
+      sourceKind: 'webhook_subscription_lifecycle',
+      previousPlanCode: 'premium',
+      nextPlanCode: 'premium',
+      previousPlanState: 'premium_paid',
+      nextPlanState: 'premium_paid',
+      previousSubscriptionStatus: 'active',
+      nextSubscriptionStatus: 'active',
+      previousPaymentMethodStatus: 'registered',
+      nextPaymentMethodStatus: 'registered',
+      previousEntitlementState: 'premium_enabled',
+      nextEntitlementState: 'premium_enabled',
+      previousBillingInterval: 'month',
+      nextBillingInterval: 'month',
+      stripeCustomerId: 'cus_reconciliation_recovered',
+      stripeSubscriptionId: 'sub_reconciliation_recovered',
+      stripeEventId: 'evt_recovered_subscription',
+      sourceContext: 'customer.subscription.updated',
+      createdAt: new Date(now - 120_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: recoveredOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'mismatch',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'plan_state_mismatch',
+      stripeEventId: 'evt_recovered_checkout',
+      stripeCustomerId: 'cus_reconciliation_recovered',
+      stripeSubscriptionId: 'sub_reconciliation_recovered',
+      providerPlanState: 'free',
+      providerSubscriptionStatus: 'canceled',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 180_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: recoveredOrganizationId,
+      sequenceNumber: 2,
+      signalKind: 'reconciliation',
+      signalStatus: 'resolved',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'provider_and_app_state_aligned',
+      stripeEventId: 'evt_recovered_subscription',
+      stripeCustomerId: 'cus_reconciliation_recovered',
+      stripeSubscriptionId: 'sub_reconciliation_recovered',
+      providerPlanState: 'premium_paid',
+      providerSubscriptionStatus: 'active',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 110_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: recoveredOrganizationId,
+      sequenceNumber: 3,
+      signalKind: 'notification_delivery',
+      signalStatus: 'resolved',
+      sourceKind: 'trial_will_end_email',
+      reason: 'trial_reminder_delivery_succeeded',
+      stripeEventId: 'evt_recovered_notification',
+      stripeCustomerId: 'cus_reconciliation_recovered',
+      stripeSubscriptionId: 'sub_reconciliation_recovered',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 60_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_recovered_checkout',
+      eventType: 'checkout.session.completed',
+      processingStatus: 'processed',
+      organizationId: recoveredOrganizationId,
+      stripeCustomerId: 'cus_reconciliation_recovered',
+      stripeSubscriptionId: 'sub_reconciliation_recovered',
+      createdAt: new Date(now - 205_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_recovered_subscription',
+      eventType: 'customer.subscription.updated',
+      processingStatus: 'processed',
+      organizationId: recoveredOrganizationId,
+      stripeCustomerId: 'cus_reconciliation_recovered',
+      stripeSubscriptionId: 'sub_reconciliation_recovered',
+      createdAt: new Date(now - 115_000),
+    });
+
+    await setOrganizationBillingState({
+      organizationId: pendingOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'trialing',
+      billingInterval: null,
+      currentPeriodEnd: futureTrialEnd,
+      stripeCustomerId: 'cus_reconciliation_pending',
+      stripeSubscriptionId: 'sub_reconciliation_pending',
+      stripePriceId: 'price_reconciliation_pending',
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: pendingOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'pending',
+      sourceKind: 'webhook_trial_completion',
+      reason: 'trial_completion_pending',
+      stripeEventId: 'evt_reconciliation_pending',
+      stripeCustomerId: 'cus_reconciliation_pending',
+      stripeSubscriptionId: 'sub_reconciliation_pending',
+      providerPlanState: 'premium_trial',
+      providerSubscriptionStatus: 'trialing',
+      appPlanState: 'premium_trial',
+      appSubscriptionStatus: 'trialing',
+      appPaymentMethodStatus: 'pending',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 80_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_reconciliation_pending',
+      eventType: 'customer.subscription.updated',
+      processingStatus: 'failed',
+      organizationId: pendingOrganizationId,
+      stripeCustomerId: 'cus_reconciliation_pending',
+      stripeSubscriptionId: 'sub_reconciliation_pending',
+      failureReason: 'trial_completion_pending',
+      createdAt: new Date(now - 82_000),
+    });
+
+    await setOrganizationBillingState({
+      organizationId: unavailableOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      billingInterval: 'month',
+      currentPeriodStart,
+      currentPeriodEnd: futurePeriodEnd,
+      stripeCustomerId: 'cus_reconciliation_unavailable',
+      stripeSubscriptionId: 'sub_reconciliation_unavailable',
+      stripePriceId: 'price_reconciliation_unavailable',
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: unavailableOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'unavailable',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'provider_subscription_unavailable',
+      stripeEventId: 'evt_reconciliation_unavailable',
+      stripeCustomerId: 'cus_reconciliation_unavailable',
+      stripeSubscriptionId: 'sub_reconciliation_unavailable',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 70_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_reconciliation_unavailable',
+      eventType: 'customer.subscription.updated',
+      processingStatus: 'failed',
+      organizationId: unavailableOrganizationId,
+      stripeCustomerId: 'cus_reconciliation_unavailable',
+      stripeSubscriptionId: 'sub_reconciliation_unavailable',
+      failureReason: 'latest_subscription_lookup_failed',
+      createdAt: new Date(now - 75_000),
+    });
+    await insertStripeWebhookFailureRow({
+      eventId: 'evt_reconciliation_unavailable',
+      eventType: 'customer.subscription.updated',
+      failureStage: 'provider_reconciliation',
+      failureReason: 'provider_lookup_failed',
+      organizationId: unavailableOrganizationId,
+      stripeCustomerId: 'cus_reconciliation_unavailable',
+      stripeSubscriptionId: 'sub_reconciliation_unavailable',
+      createdAt: new Date(now - 74_000),
+    });
+
+    await setOrganizationBillingState({
+      organizationId: linkedWithoutSignalOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      billingInterval: 'year',
+      currentPeriodStart,
+      currentPeriodEnd: futurePeriodEnd,
+      stripeCustomerId: 'cus_reconciliation_linked_no_signal',
+      stripeSubscriptionId: 'sub_reconciliation_linked_no_signal',
+      stripePriceId: 'price_reconciliation_linked_no_signal',
+    });
+
+    const [
+      mismatchResponse,
+      recoveredResponse,
+      pendingResponse,
+      unavailableResponse,
+      linkedWithoutSignalResponse,
+      freeResponse,
+    ] = await Promise.all([
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(mismatchOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(recoveredOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(pendingOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(unavailableOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(linkedWithoutSignalOrganizationId)}/billing-inspection`,
+      ),
+      internalOperator.request(
+        `/api/v1/auth/internal/organizations/${encodeURIComponent(freeOrganizationId)}/billing-inspection`,
+      ),
+    ]);
+
+    expect(mismatchResponse.status).toBe(200);
+    expect(recoveredResponse.status).toBe(200);
+    expect(pendingResponse.status).toBe(200);
+    expect(unavailableResponse.status).toBe(200);
+    expect(linkedWithoutSignalResponse.status).toBe(200);
+    expect(freeResponse.status).toBe(200);
+
+    const mismatchPayload = (await toJson(mismatchResponse)) as Record<string, unknown>;
+    expect(mismatchPayload).toMatchObject({
+      organizationId: mismatchOrganizationId,
+      reconciliation: {
+        status: 'mismatch',
+        comparable: true,
+        latestSignalStatus: 'mismatch',
+        latestSignalReason: 'plan_state_mismatch',
+        currentComparison: {
+          providerPlanState: 'free',
+          providerSubscriptionStatus: 'canceled',
+          appPlanState: 'premium_paid',
+          appSubscriptionStatus: 'active',
+          appPaymentMethodStatus: 'registered',
+          appEntitlementState: 'premium_enabled',
+        },
+      },
+    });
+    expect(mismatchPayload).toHaveProperty(
+      'reconciliation.recentSignals.0.reason',
+      'plan_state_mismatch',
+    );
+    expect(mismatchPayload).toHaveProperty(
+      'reconciliation.recentWebhookEvents.0.id',
+      'evt_reconciliation_mismatch',
+    );
+
+    const recoveredPayload = (await toJson(recoveredResponse)) as Record<string, unknown>;
+    expect(recoveredPayload).toMatchObject({
+      organizationId: recoveredOrganizationId,
+      provider: {
+        stripeCustomerId: 'cus_reconciliation_recovered',
+        stripeSubscriptionId: 'sub_reconciliation_recovered',
+        stripePriceId: 'price_reconciliation_recovered',
+        providerPlanState: 'premium_paid',
+        providerSubscriptionStatus: 'active',
+      },
+      reconciliation: {
+        status: 'aligned',
+        comparable: true,
+        latestSignalStatus: 'resolved',
+        latestSignalReason: 'provider_and_app_state_aligned',
+        currentComparison: {
+          providerPlanState: 'premium_paid',
+          providerSubscriptionStatus: 'active',
+          appPlanState: 'premium_paid',
+          appSubscriptionStatus: 'active',
+          appPaymentMethodStatus: 'registered',
+          appEntitlementState: 'premium_enabled',
+        },
+      },
+    });
+    expect(recoveredPayload).toHaveProperty(
+      'reconciliation.recentSignals.0.signalStatus',
+      'mismatch',
+    );
+    expect(recoveredPayload).toHaveProperty(
+      'reconciliation.recentSignals.1.signalStatus',
+      'resolved',
+    );
+    expect(recoveredPayload).toHaveProperty(
+      'reconciliation.recentWebhookEvents.0.id',
+      'evt_recovered_checkout',
+    );
+    expect(recoveredPayload).toHaveProperty(
+      'reconciliation.recentWebhookEvents.1.id',
+      'evt_recovered_subscription',
+    );
+
+    const pendingPayload = (await toJson(pendingResponse)) as Record<string, unknown>;
+    expect(pendingPayload).toMatchObject({
+      organizationId: pendingOrganizationId,
+      reconciliation: {
+        status: 'pending',
+        comparable: true,
+        latestSignalStatus: 'pending',
+        latestSignalReason: 'trial_completion_pending',
+        currentComparison: {
+          providerPlanState: 'premium_trial',
+          providerSubscriptionStatus: 'trialing',
+          appPlanState: 'premium_trial',
+          appSubscriptionStatus: 'trialing',
+          appPaymentMethodStatus: 'pending',
+          appEntitlementState: 'premium_enabled',
+        },
+      },
+    });
+
+    const unavailablePayload = (await toJson(unavailableResponse)) as Record<string, unknown>;
+    expect(unavailablePayload).toMatchObject({
+      organizationId: unavailableOrganizationId,
+      reconciliation: {
+        status: 'unavailable',
+        comparable: false,
+        latestSignalStatus: 'unavailable',
+        latestSignalReason: 'provider_subscription_unavailable',
+        currentComparison: {
+          providerPlanState: null,
+          providerSubscriptionStatus: null,
+          appPlanState: 'premium_paid',
+          appSubscriptionStatus: 'active',
+          appPaymentMethodStatus: 'registered',
+          appEntitlementState: 'premium_enabled',
+        },
+      },
+    });
+    expect(unavailablePayload).toHaveProperty(
+      'reconciliation.recentWebhookFailures.0.failureStage',
+      'provider_reconciliation',
+    );
+    expect(unavailablePayload).toHaveProperty(
+      'reconciliation.recentWebhookFailures.0.failureReason',
+      'provider_lookup_failed',
+    );
+
+    const linkedWithoutSignalPayload =
+      (await toJson(linkedWithoutSignalResponse)) as Record<string, unknown>;
+    expect(linkedWithoutSignalPayload).toMatchObject({
+      organizationId: linkedWithoutSignalOrganizationId,
+      reconciliation: {
+        status: 'incomplete',
+        comparable: false,
+        latestSignalStatus: null,
+        latestSignalReason: null,
+        currentComparison: {
+          providerPlanState: null,
+          providerSubscriptionStatus: null,
+          appPlanState: 'premium_paid',
+          appSubscriptionStatus: 'active',
+          appPaymentMethodStatus: 'registered',
+          appEntitlementState: 'premium_enabled',
+        },
+      },
+    });
+    expect(linkedWithoutSignalPayload).toHaveProperty('reconciliation.recentSignals', []);
+
+    const freePayload = (await toJson(freeResponse)) as Record<string, unknown>;
+    expect(freePayload).toMatchObject({
+      organizationId: freeOrganizationId,
+      reconciliation: {
+        status: 'not_applicable',
+        comparable: false,
+        latestSignalStatus: null,
+        latestSignalReason: null,
+        currentComparison: {
+          providerPlanState: null,
+          providerSubscriptionStatus: null,
+          appPlanState: 'free',
+          appSubscriptionStatus: 'free',
+          appPaymentMethodStatus: 'not_started',
+          appEntitlementState: 'free_only',
+        },
+      },
+    });
+    expect(freePayload).toHaveProperty('reconciliation.recentWebhookEvents', []);
+  });
+
+  it('returns an internal billing investigation timeline that correlates billing, reminder, reconciliation, and webhook context', async () => {
+    const authRuntimeWithInternalInspection = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        INTERNAL_OPERATOR_EMAILS: 'internal-ops-timeline@example.com',
+      },
+    });
+    const appWithInternalInspection = createApp(authRuntimeWithInternalInspection);
+
+    const internalOperator = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: internalOperator,
+      name: 'Internal Timeline Operator',
+      email: 'internal-ops-timeline@example.com',
+    });
+    await setUserEmailVerified({ email: 'internal-ops-timeline@example.com' });
+
+    const owner = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: owner,
+      name: 'Timeline Fixture Owner',
+      email: 'timeline-fixture-owner@example.com',
+    });
+
+    const timelineOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Timeline Investigation Org',
+      slug: `timeline-investigation-${crypto.randomUUID().slice(0, 8)}`,
+    });
+
+    const now = Date.now();
+    const currentPeriodStart = new Date(now - 3 * 24 * 60 * 60 * 1000);
+    const futurePeriodEnd = new Date(now + 28 * 24 * 60 * 60 * 1000);
+    const reminderTrialEnd = new Date(now + 2 * 24 * 60 * 60 * 1000);
+
+    await setOrganizationBillingState({
+      organizationId: timelineOrganizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      billingInterval: 'month',
+      currentPeriodStart,
+      currentPeriodEnd: futurePeriodEnd,
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      stripePriceId: 'price_timeline_inspection',
+    });
+    await insertOrganizationBillingAuditEventRow({
+      organizationId: timelineOrganizationId,
+      sequenceNumber: 1,
+      sourceKind: 'trial_start',
+      previousPlanCode: 'free',
+      nextPlanCode: 'premium',
+      previousPlanState: 'free',
+      nextPlanState: 'premium_trial',
+      previousSubscriptionStatus: 'free',
+      nextSubscriptionStatus: 'trialing',
+      previousPaymentMethodStatus: 'not_started',
+      nextPaymentMethodStatus: 'pending',
+      previousEntitlementState: 'free_only',
+      nextEntitlementState: 'premium_enabled',
+      sourceContext: 'owner_started_premium_trial',
+      stripeCustomerId: 'cus_timeline_inspection',
+      createdAt: new Date(now - 320_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_timeline_trial_will_end',
+      eventType: 'customer.subscription.trial_will_end',
+      processingStatus: 'processed',
+      organizationId: timelineOrganizationId,
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      createdAt: new Date(now - 250_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: timelineOrganizationId,
+      sequenceNumber: 1,
+      deliveryState: 'requested',
+      attemptNumber: 1,
+      stripeEventId: 'evt_timeline_trial_will_end',
+      recipientEmail: 'timeline-fixture-owner@example.com',
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      trialEndsAt: reminderTrialEnd,
+      createdAt: new Date(now - 240_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: timelineOrganizationId,
+      sequenceNumber: 2,
+      deliveryState: 'sent',
+      attemptNumber: 1,
+      stripeEventId: 'evt_timeline_trial_will_end',
+      recipientEmail: 'timeline-fixture-owner@example.com',
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      trialEndsAt: reminderTrialEnd,
+      createdAt: new Date(now - 230_000),
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId: timelineOrganizationId,
+      sequenceNumber: 3,
+      notificationKind: 'trial_will_end',
+      channel: 'in_app',
+      deliveryState: 'sent',
+      attemptNumber: 1,
+      stripeEventId: 'evt_timeline_trial_will_end',
+      recipientEmail: null,
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      trialEndsAt: reminderTrialEnd,
+      createdAt: new Date(now - 220_000),
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_timeline_subscription_updated',
+      eventType: 'customer.subscription.updated',
+      processingStatus: 'failed',
+      organizationId: timelineOrganizationId,
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      failureReason: 'latest_subscription_lookup_failed',
+      createdAt: new Date(now - 140_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: timelineOrganizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'unavailable',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'provider_subscription_unavailable',
+      stripeEventId: 'evt_timeline_subscription_updated',
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      appPlanState: 'premium_trial',
+      appSubscriptionStatus: 'trialing',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 130_000),
+    });
+    await insertStripeWebhookFailureRow({
+      eventId: 'evt_timeline_subscription_updated',
+      eventType: 'customer.subscription.updated',
+      failureStage: 'provider_reconciliation',
+      failureReason: 'provider_lookup_failed',
+      organizationId: timelineOrganizationId,
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      createdAt: new Date(now - 120_000),
+    });
+    await insertOrganizationBillingAuditEventRow({
+      organizationId: timelineOrganizationId,
+      sequenceNumber: 2,
+      sourceKind: 'webhook_subscription_lifecycle',
+      previousPlanCode: 'premium',
+      nextPlanCode: 'premium',
+      previousPlanState: 'premium_trial',
+      nextPlanState: 'premium_paid',
+      previousSubscriptionStatus: 'trialing',
+      nextSubscriptionStatus: 'active',
+      previousPaymentMethodStatus: 'registered',
+      nextPaymentMethodStatus: 'registered',
+      previousEntitlementState: 'premium_enabled',
+      nextEntitlementState: 'premium_enabled',
+      previousBillingInterval: null,
+      nextBillingInterval: 'month',
+      stripeEventId: 'evt_timeline_subscription_updated',
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      sourceContext: 'stripe_subscription_activated',
+      createdAt: new Date(now - 100_000),
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId: timelineOrganizationId,
+      sequenceNumber: 2,
+      signalKind: 'reconciliation',
+      signalStatus: 'resolved',
+      sourceKind: 'webhook_subscription_lifecycle',
+      reason: 'provider_and_app_state_aligned',
+      stripeEventId: 'evt_timeline_subscription_updated',
+      stripeCustomerId: 'cus_timeline_inspection',
+      stripeSubscriptionId: 'sub_timeline_inspection',
+      providerPlanState: 'premium_paid',
+      providerSubscriptionStatus: 'active',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+      createdAt: new Date(now - 90_000),
+    });
+
+    const response = await internalOperator.request(
+      `/api/v1/auth/internal/organizations/${encodeURIComponent(timelineOrganizationId)}/billing-inspection`,
+    );
+    expect(response.status).toBe(200);
+
+    const payload = (await toJson(response)) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      organizationId: timelineOrganizationId,
+      timeline: {
+        entries: expect.any(Array),
+      },
+    });
+
+    const timelineEntries = (
+      (payload.timeline as Record<string, unknown>).entries as Array<Record<string, unknown>>
+    );
+    expect(timelineEntries.length).toBeGreaterThanOrEqual(10);
+    expect(timelineEntries.map((entry) => entry.lane)).toEqual(
+      expect.arrayContaining([
+        'billing_state',
+        'notification',
+        'reconciliation',
+        'provider_webhook',
+      ]),
+    );
+    expect(timelineEntries.map((entry) => entry.entryType)).toEqual([
+      'audit_event',
+      'webhook_event',
+      'notification',
+      'notification',
+      'notification',
+      'webhook_event',
+      'signal',
+      'webhook_failure',
+      'audit_event',
+      'signal',
+    ]);
+    expect(
+      timelineEntries.map((entry) => Date.parse(String(entry.occurredAt))),
+    ).toEqual(
+      [...timelineEntries.map((entry) => Date.parse(String(entry.occurredAt)))]
+        .sort((left, right) => left - right),
+    );
+    expect(timelineEntries[0]).toMatchObject({
+      lane: 'billing_state',
+      entryType: 'audit_event',
+      headline: 'Billing state changed',
+      sequenceNumber: 1,
+      sourceKind: 'trial_start',
+    });
+    expect(timelineEntries[2]).toMatchObject({
+      lane: 'notification',
+      entryType: 'notification',
+      stripeEventId: 'evt_timeline_trial_will_end',
+      deliveryState: 'requested',
+      notificationChannel: 'email',
+    });
+    expect(timelineEntries[4]).toMatchObject({
+      lane: 'notification',
+      entryType: 'notification',
+      stripeEventId: 'evt_timeline_trial_will_end',
+      deliveryState: 'sent',
+      notificationChannel: 'in_app',
+    });
+    expect(timelineEntries[6]).toMatchObject({
+      lane: 'reconciliation',
+      entryType: 'signal',
+      stripeEventId: 'evt_timeline_subscription_updated',
+      signalKind: 'reconciliation',
+      signalStatus: 'unavailable',
+      summary: 'provider_subscription_unavailable',
+    });
+    expect(timelineEntries[7]).toMatchObject({
+      lane: 'provider_webhook',
+      entryType: 'webhook_failure',
+      stripeEventId: 'evt_timeline_subscription_updated',
+      webhookFailureStage: 'provider_reconciliation',
+    });
+    expect(timelineEntries[9]).toMatchObject({
+      lane: 'reconciliation',
+      entryType: 'signal',
+      signalStatus: 'resolved',
+      summary: 'provider_and_app_state_aligned',
+    });
+    expect(payload).not.toHaveProperty('actions');
+    expect(payload).not.toHaveProperty('rawProviderPayload');
+  });
+
   it('sets CORS headers for API routes', async () => {
     const origin = 'http://localhost:5173';
     const response = await app.request('/api/health', {
@@ -7457,6 +9814,14 @@ describe('backend app', () => {
     expect(body.paths['/api/v1/auth/organizations/ticket-purchases/approve']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-purchases/reject']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-purchases/cancel']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/billing']).toBeDefined();
+    expect(body.paths['/api/v1/auth/internal/organizations/{organizationId}/billing-inspection']).toBeDefined();
+    expect(JSON.stringify(body)).toContain('plan_transition');
+    expect(JSON.stringify(body)).toContain('reconciliation');
+    expect(JSON.stringify(body)).toContain('history');
+    expect(JSON.stringify(body)).toContain('reminderDelivery');
+    expect(JSON.stringify(body)).toContain('reconciliation');
+    expect(JSON.stringify(body)).toContain('timeline');
     expect(body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events']).toBeDefined();
     expect(body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events/{slotId}']).toBeDefined();
   });

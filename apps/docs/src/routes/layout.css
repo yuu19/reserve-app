@@ -1,0 +1,217 @@
+@import 'tailwindcss';
+
+@font-face {
+	font-family: AdjustedYuGothic;
+	font-weight: 400;
+	src: local('Yu Gothic Medium');
+}
+
+@font-face {
+	font-family: AdjustedYuGothic;
+	font-weight: 700;
+	src: local('Yu Gothic Bold');
+}
+
+@theme {
+	--font-sans: AdjustedYuGothic, 'Yu Gothic', YuGothic, 'Hiragino Sans', sans-serif;
+
+	--color-ink: #23221e;
+	--color-muted: #706d65;
+	--color-soft: #4e4c49;
+	--color-primary: #0077c7;
+	--color-link-blue: #0071c1;
+	--color-accent: #00c4cc;
+	--color-danger: #e01e5a;
+	--color-page: #f8f7f6;
+	--color-panel: #ffffff;
+	--color-panel-soft: #f2f1f0;
+	--color-line: #d6d3d0;
+	--color-line-soft: #edebe8;
+	--color-disabled: #c1bdb7;
+
+	--radius-control: 6px;
+	--radius-panel: 20px;
+
+	--shadow-panel: 0 2px 4px rgba(0, 0, 0, 0.1);
+	--shadow-floating: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+@layer base {
+	html {
+		scroll-behavior: smooth;
+		background: var(--color-page);
+	}
+
+	body {
+		margin: 0;
+		min-height: 100vh;
+		overflow-wrap: break-word;
+		background: linear-gradient(180deg, #fcfcfb 0%, var(--color-page) 58%, #f2f1f0 100%);
+		color: var(--color-ink);
+		font-family: var(--font-sans);
+		line-height: 1.5;
+	}
+
+	a {
+		color: var(--color-link-blue);
+		text-decoration: none;
+	}
+
+	a:hover {
+		text-decoration: underline;
+	}
+
+	img {
+		display: block;
+		max-width: 100%;
+		height: auto;
+	}
+
+	::selection {
+		background: color-mix(in srgb, var(--color-primary) 18%, white);
+	}
+}
+
+@layer components {
+	.manual-prose {
+		max-width: 760px;
+		color: var(--color-ink);
+		font-size: 1rem;
+		line-height: 1.75;
+	}
+
+	.manual-prose > :first-child {
+		margin-top: 0;
+	}
+
+	.manual-prose :is(h1, h2, h3) {
+		color: var(--color-ink);
+		font-weight: 700;
+	}
+
+	.manual-prose h1 {
+		margin: 0 0 1rem;
+		font-size: clamp(2rem, 4vw, 2.75rem);
+		line-height: 1.2;
+	}
+
+	.manual-prose h1 + p {
+		max-width: 60ch;
+		margin-top: 0;
+		color: var(--color-muted);
+		font-size: 1.06rem;
+		line-height: 1.85;
+	}
+
+	.manual-prose h2 {
+		margin: 2.75rem 0 1rem;
+		padding: 0.875rem 1.125rem;
+		border-left: 5px solid var(--color-primary);
+		border-radius: 0 1rem 1rem 0;
+		background: linear-gradient(90deg, rgba(238, 246, 251, 0.96), rgba(255, 255, 255, 0.96));
+		font-size: 1.32rem;
+		line-height: 1.3;
+		scroll-margin-top: 6.75rem;
+	}
+
+	.manual-prose h3 {
+		margin: 1.75rem 0 0.625rem;
+		font-size: 1.08rem;
+		line-height: 1.45;
+		scroll-margin-top: 6.75rem;
+	}
+
+	.manual-prose p,
+	.manual-prose ul,
+	.manual-prose ol,
+	.manual-prose table,
+	.manual-prose blockquote {
+		margin: 0.875rem 0 0;
+	}
+
+	.manual-prose li,
+	.manual-prose td,
+	.manual-prose th,
+	.manual-prose blockquote {
+		font-size: 1rem;
+		line-height: 1.75;
+	}
+
+	.manual-prose ul,
+	.manual-prose ol {
+		padding-left: 1.25rem;
+	}
+
+	.manual-prose li + li {
+		margin-top: 0.5rem;
+	}
+
+	.manual-prose strong {
+		font-weight: 700;
+	}
+
+	.manual-prose code {
+		padding: 0.16rem 0.4rem;
+		border-radius: 0.5rem;
+		background: var(--color-panel-soft);
+		font-family:
+			ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+		font-size: 0.92em;
+	}
+
+	.manual-prose pre {
+		margin-top: 1.125rem;
+		overflow-x: auto;
+		border-radius: 1rem;
+		background: #1f2937;
+		padding: 1.125rem;
+		color: #f9fafb;
+		line-height: 1.75;
+	}
+
+	.manual-prose pre code {
+		padding: 0;
+		background: transparent;
+		color: inherit;
+	}
+
+	.manual-prose blockquote {
+		padding: 1rem 1.125rem;
+		border-left: 4px solid var(--color-primary);
+		border-radius: 0 1rem 1rem 0;
+		background: #eef6fb;
+		color: var(--color-soft);
+	}
+
+	.manual-prose table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+
+	.manual-prose th,
+	.manual-prose td {
+		padding: 0.75rem 0.875rem;
+		border: 1px solid var(--color-line);
+		text-align: left;
+		vertical-align: top;
+	}
+
+	.manual-prose th {
+		background: var(--color-line-soft);
+	}
+
+	.manual-prose hr {
+		margin: 1.75rem 0;
+		border: 0;
+		border-top: 1px solid var(--color-line-soft);
+	}
+
+	.manual-prose img {
+		width: 100%;
+		margin: 1.25rem 0 0.375rem;
+		border: 1px solid rgba(214, 211, 208, 0.95);
+		border-radius: 1rem;
+		background: #fff;
+		box-shadow: var(--shadow-panel);
+	}
+}

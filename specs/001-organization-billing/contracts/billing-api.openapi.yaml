@@ -1,0 +1,276 @@
+openapi: 3.1.0
+info:
+  title: Organization Billing Contracts
+  version: 1.0.0
+  description: >
+    Contract for organization-scoped billing workspace, trial lifecycle,
+    payment-method handoff, provider event intake, and internal billing inspection.
+servers:
+  - url: https://api.example.com
+    description: Production API origin
+security:
+  - sessionAuth: []
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+    providerWebhookSignature:
+      type: apiKey
+      in: header
+      name: stripe-signature
+  schemas:
+    PlanState:
+      type: string
+      enum: [free, premium_trial, premium_paid]
+    ProviderSubscriptionStatus:
+      type: string
+      enum: [free, trialing, active, past_due, unpaid, incomplete, canceled]
+    BillingSummary:
+      type: object
+      required:
+        - organizationId
+        - planState
+        - premiumEligible
+        - canManageBilling
+        - capabilities
+      properties:
+        organizationId:
+          type: string
+        planState:
+          $ref: '#/components/schemas/PlanState'
+        premiumEligible:
+          type: boolean
+        canManageBilling:
+          type: boolean
+        billingInterval:
+          type: [string, 'null']
+          enum: [month, year, null]
+        subscriptionStatus:
+          $ref: '#/components/schemas/ProviderSubscriptionStatus'
+        trialStartedAt:
+          type: [string, 'null']
+          format: date-time
+        trialEndsAt:
+          type: [string, 'null']
+          format: date-time
+        paymentMethodRegistered:
+          type: boolean
+        capabilities:
+          type: array
+          items:
+            type: string
+        latestSignal:
+          type: [object, 'null']
+          properties:
+            kind:
+              type: string
+            status:
+              type: string
+            reason:
+              type: string
+    StartTrialRequest:
+      type: object
+      required: [organizationId]
+      properties:
+        organizationId:
+          type: string
+    PaymentMethodRequest:
+      type: object
+      required: [organizationId]
+      properties:
+        organizationId:
+          type: string
+        returnUrl:
+          type: string
+          format: uri
+    HandoffResponse:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+    BillingInspection:
+      type: object
+      required:
+        - organizationId
+        - currentBilling
+        - notifications
+        - signals
+        - timeline
+      properties:
+        organizationId:
+          type: string
+        currentBilling:
+          $ref: '#/components/schemas/BillingSummary'
+        notifications:
+          type: array
+          items:
+            type: object
+        signals:
+          type: array
+          items:
+            type: object
+        timeline:
+          type: array
+          items:
+            type: object
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+paths:
+  /api/v1/auth/organizations/billing:
+    get:
+      summary: Get organization billing summary for current context
+      responses:
+        '200':
+          description: Billing summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingSummary'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: No organization access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/auth/organizations/billing/trial:
+    post:
+      summary: Start an eligible organization's 7-day premium trial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTrialRequest'
+      responses:
+        '200':
+          description: Updated billing summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingSummary'
+        '403':
+          description: Owner-only billing action denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Trial already active or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/auth/organizations/billing/payment-method:
+    post:
+      summary: Create payment method registration handoff for trial continuation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentMethodRequest'
+      responses:
+        '200':
+          description: Provider-hosted handoff URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandoffResponse'
+        '403':
+          description: Owner-only billing action denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/auth/organizations/billing/checkout:
+    post:
+      summary: Create paid checkout handoff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentMethodRequest'
+      responses:
+        '200':
+          description: Provider-hosted checkout URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandoffResponse'
+        '403':
+          description: Owner-only billing action denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/auth/organizations/billing/portal:
+    post:
+      summary: Create provider billing portal handoff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentMethodRequest'
+      responses:
+        '200':
+          description: Provider-hosted portal URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandoffResponse'
+        '403':
+          description: Owner-only billing action denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/webhooks/stripe:
+    post:
+      summary: Receive provider billing lifecycle events
+      security:
+        - providerWebhookSignature: []
+      responses:
+        '200':
+          description: Event accepted, ignored, or idempotently recognized
+        '400':
+          description: Invalid payload or signature
+  /api/v1/auth/internal/organizations/{organizationId}/billing-inspection:
+    get:
+      summary: Inspect organization billing state for support triage
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Internal billing inspection read model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingInspection'
+        '403':
+          description: Internal operator access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

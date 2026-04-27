@@ -108,6 +108,12 @@ describe('/contracts/+page.svelte', () => {
 			url: 'https://checkout.stripe.com/c/pay/cs_test_payment_method_setup',
 			message: ''
 		});
+		mocks.createOrganizationBillingPortal.mockResolvedValue({
+			ok: true,
+			status: 200,
+			url: 'https://billing.stripe.com/p/session/test_portal',
+			message: ''
+		});
 	});
 
 	it('should render free plan summary and premium comparison for owners', async () => {
@@ -134,6 +140,15 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
+	it('should display the primary billing state within the 3-second success criterion', async () => {
+		const startedAt = performance.now();
+
+		render(ContractsPage);
+
+		await expect.element(page.getByText(/^無料プラン$/)).toBeInTheDocument();
+		expect(performance.now() - startedAt).toBeLessThan(3_000);
+	});
+
 	it('redirects non org-admin users away from contracts', async () => {
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false
@@ -147,12 +162,18 @@ describe('/contracts/+page.svelte', () => {
 		});
 	});
 
-	it('should render billing portal action for premium plan', async () => {
+	it('should render plan change action for premium plan owners', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: {
 				planCode: 'premium',
 				planState: 'premium_paid',
+				paidTier: {
+					code: 'premium_default',
+					label: 'Premium',
+					resolution: 'legacy_default',
+					capabilities: ['organization_premium_features']
+				},
 				billingInterval: 'month',
 				subscriptionStatus: 'active',
 				cancelAtPeriodEnd: false,
@@ -166,7 +187,15 @@ describe('/contracts/+page.svelte', () => {
 
 		render(ContractsPage);
 
-		await expect.element(page.getByRole('button', { name: '契約を管理' })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'プランを変更' })).toBeInTheDocument();
+		await expect.element(page.getByText('契約ティア: Premium')).toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'現在はPremiumプラン利用中です。プラン変更は Stripe の契約管理画面で進め、反映後の状態はこの画面で確認できます。'
+				)
+			)
+			.toBeInTheDocument();
 	});
 
 	it('should render trial end guidance for premium trial state', async () => {
@@ -203,6 +232,53 @@ describe('/contracts/+page.svelte', () => {
 		await expect
 			.element(page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }))
 			.not.toBeInTheDocument();
+	});
+
+	it('renders owner billing history entries when history is available', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'premium',
+				planState: 'premium_paid',
+				billingInterval: 'month',
+				subscriptionStatus: 'active',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: '2026-05-01T00:00:00.000Z',
+				trialEndsAt: null,
+				paymentMethodStatus: 'registered',
+				canViewBilling: true,
+				canManageBilling: true,
+				history: [
+					{
+						id: 'history-1',
+						eventType: 'reconciliation',
+						occurredAt: '2026-04-20T03:00:00.000Z',
+						title: '契約状態の同期を確認しました',
+						summary: 'アプリ内の契約状態と決済サービスの状態が一致していることを確認しました。',
+						billingContext: '契約状態: Premiumプラン / ステータス: 有効 / 支払い方法: 登録済み',
+						tone: 'positive'
+					},
+					{
+						id: 'history-2',
+						eventType: 'notification',
+						occurredAt: '2026-04-18T03:00:00.000Z',
+						title: 'トライアル終了前のお知らせを送信しました',
+						summary: '契約内容の確認案内を送信しました。',
+						billingContext: '契約状態: Premiumトライアル / ステータス: トライアル中 / 支払い方法: 未登録',
+						tone: 'neutral'
+					}
+				]
+			}
+		});
+
+		render(ContractsPage);
+
+		await expect.element(page.getByRole('heading', { level: 2, name: '契約履歴' })).toBeInTheDocument();
+		await expect.element(page.getByText('契約状態の同期を確認しました')).toBeInTheDocument();
+		await expect.element(page.getByText('トライアル終了前のお知らせを送信しました')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('契約状態: Premiumプラン / ステータス: 有効 / 支払い方法: 登録済み'))
+			.toBeInTheDocument();
 	});
 
 	it('starts a premium trial for free-plan owners and refreshes the summary', async () => {
@@ -281,6 +357,13 @@ describe('/contracts/+page.svelte', () => {
 		await expect
 			.element(page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }))
 			.not.toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'契約履歴の詳細は organization owner のみ確認できます。必要な場合は owner に確認を依頼してください。'
+				)
+			)
+			.toBeInTheDocument();
 	});
 
 	it('should explain paid lifecycle without showing duplicate trial entry', async () => {
@@ -305,14 +388,51 @@ describe('/contracts/+page.svelte', () => {
 		await expect
 			.element(
 				page.getByText(
-					'現在はPremiumプラン利用中です。重複した trial action は不要で、必要な契約変更は契約管理から進めます。'
+					'現在はPremiumプラン利用中です。プラン変更は Stripe の契約管理画面で進め、反映後の状態はこの画面で確認できます。'
 				)
 			)
 			.toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: '契約を管理' })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'プランを変更' })).toBeInTheDocument();
 		await expect
 			.element(page.getByRole('button', { name: '7日間のPremiumトライアルを開始' }))
 			.not.toBeInTheDocument();
+	});
+
+	it('should hide plan change action for read-only premium users', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: {
+				planCode: 'premium',
+				planState: 'premium_paid',
+				paidTier: {
+					code: 'premium_unknown',
+					label: 'Premium',
+					resolution: 'unknown_price',
+					diagnosticReason: 'stripe_price_id_not_in_paid_tier_catalog',
+					capabilities: ['organization_premium_features']
+				},
+				billingInterval: 'year',
+				subscriptionStatus: 'active',
+				cancelAtPeriodEnd: false,
+				currentPeriodEnd: '2026-05-01T00:00:00.000Z',
+				trialEndsAt: null,
+				paymentMethodStatus: 'registered',
+				canViewBilling: true,
+				canManageBilling: false
+			}
+		});
+
+		render(ContractsPage);
+
+		await expect.element(page.getByRole('button', { name: 'プランを変更' })).not.toBeInTheDocument();
+		await expect.element(page.getByText('契約ティア: Premium')).toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'契約状態は確認できますが、契約変更と支払い設定は organization owner のみが扱います。'
+				)
+			)
+			.toBeInTheDocument();
 	});
 
 	it('should show text-based loading and intermediate status messaging', async () => {

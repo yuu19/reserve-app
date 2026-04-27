@@ -22,6 +22,13 @@ export type OrganizationPayload = {
 export type OrganizationBillingPayload = {
 	planCode: 'free' | 'premium';
 	planState: 'free' | 'premium_trial' | 'premium_paid';
+	paidTier?: {
+		code: 'premium_default' | 'premium_growth' | 'premium_scale' | 'premium_unknown';
+		label: string;
+		resolution: 'not_paid' | 'legacy_default' | 'known_price' | 'unknown_price';
+		capabilities: Array<'organization_premium_features' | 'advanced_billing_communications'>;
+		diagnosticReason: string | null;
+	} | null;
 	billingInterval: 'month' | 'year' | null;
 	paymentMethodStatus: 'not_started' | 'pending' | 'registered';
 	subscriptionStatus:
@@ -38,6 +45,35 @@ export type OrganizationBillingPayload = {
 	trialEndsAt: string | null;
 	canViewBilling: boolean;
 	canManageBilling: boolean;
+	history?:
+		| Array<{
+				id: string;
+				eventType: 'plan_transition' | 'notification' | 'reconciliation';
+				occurredAt: string | null;
+				title: string;
+				summary: string;
+				billingContext: string | null;
+				tone: 'neutral' | 'positive' | 'attention';
+		  }>
+		| null;
+	paymentDocuments?: {
+		aggregateRoot: 'organization_billing';
+		organizationId: string;
+		provider: 'stripe';
+		stripeCustomerId: string | null;
+		stripeSubscriptionId: string | null;
+		ownerAccess: 'owner_only';
+		persistenceStrategy: 'provider_reference_only';
+		documents: Array<{
+			documentKind: 'invoice' | 'receipt';
+			providerDocumentId: string;
+			hostedInvoiceUrl: string | null;
+			invoicePdfUrl: string | null;
+			receiptUrl: string | null;
+			availability: 'available' | 'unavailable' | 'missing';
+			ownerFacingStatus: 'available' | 'unavailable';
+		}>;
+	} | null;
 	[key: string]: unknown;
 };
 

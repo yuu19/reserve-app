@@ -1,4 +1,4 @@
-import { and, count, eq, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, or, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../db/schema.js';
 import {
@@ -16,13 +16,34 @@ import {
   readOrganizationBillingObservationSnapshot,
 } from './organization-billing-observability.js';
 
-export type OrganizationBillingNotificationKind = 'trial_will_end_email';
-export type OrganizationBillingNotificationChannel = 'email';
+export type OrganizationBillingNotificationKind =
+  | 'trial_will_end_email'
+  | 'trial_will_end'
+  | 'unknown';
+export type OrganizationBillingCommunicationType = 'trial_will_end' | 'unknown';
+export type OrganizationBillingNotificationChannel =
+  | 'email'
+  | 'in_app'
+  | 'web_push'
+  | 'unknown';
 export type OrganizationBillingNotificationDeliveryState =
   | 'requested'
   | 'retried'
   | 'sent'
-  | 'failed';
+  | 'failed'
+  | 'unknown';
+export type OrganizationBillingNotificationDeliveryOutcome =
+  | 'pending'
+  | 'delivered'
+  | 'failed'
+  | 'unknown';
+export type InternalTrialReminderDeliveryStatus =
+  | 'not_expected'
+  | 'missing'
+  | 'pending'
+  | 'delivered'
+  | 'failed'
+  | 'unknown';
 
 type OrganizationBillingOwnerContact = {
   userId: string;
@@ -44,7 +65,50 @@ type TrialReminderCopy = {
   noteText: string;
 };
 
+type TrialReminderDeliveryAuditHistoryEntry = {
+  sequenceNumber: number;
+  notificationKind: OrganizationBillingNotificationKind;
+  communicationType: OrganizationBillingCommunicationType;
+  channel: OrganizationBillingNotificationChannel;
+  channelLabel: string;
+  deliveryState: OrganizationBillingNotificationDeliveryState;
+  deliveryOutcome: OrganizationBillingNotificationDeliveryOutcome;
+  attemptNumber: number;
+  stripeEventId: string | null;
+  recipientEmail: string | null;
+  planState: OrganizationBillingPlanState;
+  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+  trialEndsAt: string | null;
+  failureReason: string | null;
+  createdAt: string | null;
+};
+
+type TrialReminderDeliverySignalSummary = {
+  signalStatus: 'pending' | 'mismatch' | 'unavailable' | 'resolved';
+  reason: string;
+  createdAt: string | null;
+};
+
+type TrialReminderWebhookEventSummary = {
+  id: string;
+  processingStatus: 'processing' | 'processed' | 'failed';
+  failureReason: string | null;
+  createdAt: string | null;
+};
+
 const TRIAL_WILL_END_NOTIFICATION_KIND: OrganizationBillingNotificationKind = 'trial_will_end_email';
+type TrialWillEndCommunicationKind = Extract<
+  OrganizationBillingNotificationKind,
+  'trial_will_end_email' | 'trial_will_end'
+>;
+const TRIAL_REMINDER_EXPECTATION_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+const isTrialWillEndCommunicationKind = (
+  value: OrganizationBillingNotificationKind,
+): value is TrialWillEndCommunicationKind => {
+  return value === 'trial_will_end_email' || value === 'trial_will_end';
+};
 
 const paymentMethodStatusLabelMap: Record<OrganizationBillingPaymentMethodStatus, string> = {
   not_started: '未登録',
@@ -84,12 +148,142 @@ const trialReminderFailureReasonFromError = (error: unknown): string => {
   return 'unexpected_error';
 };
 
+export const normalizeOrganizationBillingNotificationKind = (
+  value: unknown,
+): OrganizationBillingNotificationKind => {
+  return value === 'trial_will_end_email' || value === 'trial_will_end' ? value : 'unknown';
+};
+
+export const normalizeOrganizationBillingNotificationChannel = (
+  value: unknown,
+): OrganizationBillingNotificationChannel => {
+  return value === 'email' || value === 'in_app' || value === 'web_push' ? value : 'unknown';
+};
+
+export const normalizeOrganizationBillingNotificationDeliveryState = (
+  value: unknown,
+): OrganizationBillingNotificationDeliveryState => {
+  return value === 'requested' || value === 'retried' || value === 'sent' || value === 'failed'
+    ? value
+    : 'unknown';
+};
+
+export const resolveOrganizationBillingNotificationDeliveryOutcome = (
+  deliveryState: OrganizationBillingNotificationDeliveryState,
+): OrganizationBillingNotificationDeliveryOutcome => {
+  switch (deliveryState) {
+    case 'sent':
+      return 'delivered';
+    case 'failed':
+      return 'failed';
+    case 'requested':
+    case 'retried':
+      return 'pending';
+    default:
+      return 'unknown';
+  }
+};
+
+export const resolveOrganizationBillingCommunicationType = ({
+  notificationKind,
+  channel,
+}: {
+  notificationKind: OrganizationBillingNotificationKind;
+  channel: OrganizationBillingNotificationChannel;
+}): OrganizationBillingCommunicationType => {
+  return channel !== 'unknown' && isTrialWillEndCommunicationKind(notificationKind)
+    ? 'trial_will_end'
+    : 'unknown';
+};
+
+export const resolveOrganizationBillingNotificationChannelLabel = (
+  channel: OrganizationBillingNotificationChannel,
+) => {
+  switch (channel) {
+    case 'email':
+      return 'メール';
+    case 'in_app':
+      return 'アプリ内通知';
+    case 'web_push':
+      return 'プッシュ通知';
+    default:
+      return '未対応チャネル';
+  }
+};
+
 const formatTrialEndsAtLabel = (trialEndsAt: string) => {
   return new Intl.DateTimeFormat('ja-JP', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: 'Asia/Tokyo',
   }).format(new Date(trialEndsAt));
+};
+
+const toIsoDateString = (value: unknown): string | null => {
+  const candidate =
+    value instanceof Date ? value : typeof value === 'number' || typeof value === 'string' ? new Date(value) : null;
+
+  if (!candidate || Number.isNaN(candidate.getTime())) {
+    return null;
+  }
+
+  return candidate.toISOString();
+};
+
+const isTrialReminderExpected = ({
+  planState,
+  trialEndsAt,
+  now,
+}: {
+  planState: OrganizationBillingPlanState;
+  trialEndsAt: string | null;
+  now: Date;
+}) => {
+  if (planState !== 'premium_trial' || !trialEndsAt) {
+    return false;
+  }
+
+  const trialEndsAtDate = new Date(trialEndsAt);
+  if (Number.isNaN(trialEndsAtDate.getTime())) {
+    return false;
+  }
+
+  const diffMs = trialEndsAtDate.getTime() - now.getTime();
+  return diffMs > 0 && diffMs <= TRIAL_REMINDER_EXPECTATION_WINDOW_MS;
+};
+
+const resolveTrialReminderDeliveryStatus = ({
+  expected,
+  eventFound,
+  latestHistory,
+  latestSignal,
+}: {
+  expected: boolean;
+  eventFound: boolean;
+  latestHistory: TrialReminderDeliveryAuditHistoryEntry | null;
+  latestSignal: TrialReminderDeliverySignalSummary | null;
+}): InternalTrialReminderDeliveryStatus => {
+  if (latestHistory?.deliveryState === 'sent' || latestSignal?.signalStatus === 'resolved') {
+    return 'delivered';
+  }
+
+  if (latestSignal?.signalStatus === 'pending') {
+    return 'pending';
+  }
+
+  if (latestSignal?.signalStatus === 'unavailable') {
+    return 'failed';
+  }
+
+  if (latestHistory?.deliveryState === 'failed') {
+    return expected || eventFound ? 'unknown' : 'not_expected';
+  }
+
+  if (!eventFound) {
+    return expected ? 'missing' : 'not_expected';
+  }
+
+  return 'unknown';
 };
 
 const selectOrganizationBillingOwnerContact = async ({
@@ -247,6 +441,8 @@ export const resolveOrganizationTrialReminderContext = async ({
     paymentMethodStatus,
     currentPeriodEnd:
       billing.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd.toISOString() : null,
+    stripePriceId: billing.stripePriceId ?? null,
+    env,
   });
 
   return {
@@ -256,6 +452,177 @@ export const resolveOrganizationTrialReminderContext = async ({
     trialEndsAt: policy.trialEndsAt,
     stripeCustomerId: billing.stripeCustomerId ?? null,
     stripeSubscriptionId: billing.stripeSubscriptionId ?? null,
+  };
+};
+
+export const readTrialReminderDeliveryAuditInspection = async ({
+  database,
+  organizationId,
+  planState,
+  trialEndsAt,
+  now = new Date(),
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  planState: OrganizationBillingPlanState;
+  trialEndsAt: string | null;
+  now?: Date;
+}) => {
+  const [historyRows, latestSignalRows, latestEventRows] = await Promise.all([
+    database
+      .select({
+        sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
+        notificationKind: dbSchema.organizationBillingNotification.notificationKind,
+        channel: dbSchema.organizationBillingNotification.channel,
+        deliveryState: dbSchema.organizationBillingNotification.deliveryState,
+        attemptNumber: dbSchema.organizationBillingNotification.attemptNumber,
+        stripeEventId: dbSchema.organizationBillingNotification.stripeEventId,
+        recipientEmail: dbSchema.organizationBillingNotification.recipientEmail,
+        planState: dbSchema.organizationBillingNotification.planState,
+        subscriptionStatus: dbSchema.organizationBillingNotification.subscriptionStatus,
+        paymentMethodStatus: dbSchema.organizationBillingNotification.paymentMethodStatus,
+        trialEndsAt: dbSchema.organizationBillingNotification.trialEndsAt,
+        failureReason: dbSchema.organizationBillingNotification.failureReason,
+        createdAt: dbSchema.organizationBillingNotification.createdAt,
+      })
+      .from(dbSchema.organizationBillingNotification)
+      .where(
+        and(
+          eq(dbSchema.organizationBillingNotification.organizationId, organizationId),
+          or(
+            eq(dbSchema.organizationBillingNotification.notificationKind, 'trial_will_end_email'),
+            eq(dbSchema.organizationBillingNotification.notificationKind, 'trial_will_end'),
+          ),
+        ),
+      )
+      .orderBy(dbSchema.organizationBillingNotification.sequenceNumber),
+    database
+      .select({
+        signalStatus: dbSchema.organizationBillingSignal.signalStatus,
+        reason: dbSchema.organizationBillingSignal.reason,
+        createdAt: dbSchema.organizationBillingSignal.createdAt,
+      })
+      .from(dbSchema.organizationBillingSignal)
+      .where(
+        and(
+          eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
+          eq(dbSchema.organizationBillingSignal.signalKind, 'notification_delivery'),
+          eq(dbSchema.organizationBillingSignal.sourceKind, 'trial_will_end_email'),
+        ),
+      )
+      .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+      .limit(1),
+    database
+      .select({
+        id: dbSchema.stripeWebhookEvent.id,
+        processingStatus: dbSchema.stripeWebhookEvent.processingStatus,
+        failureReason: dbSchema.stripeWebhookEvent.failureReason,
+        createdAt: dbSchema.stripeWebhookEvent.createdAt,
+      })
+      .from(dbSchema.stripeWebhookEvent)
+      .where(
+        and(
+          eq(dbSchema.stripeWebhookEvent.organizationId, organizationId),
+          eq(dbSchema.stripeWebhookEvent.eventType, 'customer.subscription.trial_will_end'),
+        ),
+      )
+      .orderBy(desc(dbSchema.stripeWebhookEvent.createdAt))
+      .limit(1),
+  ]);
+
+  const history = historyRows.map((
+    row: (typeof historyRows)[number],
+  ): TrialReminderDeliveryAuditHistoryEntry => {
+    const notificationKind = normalizeOrganizationBillingNotificationKind(row.notificationKind);
+    const channel = normalizeOrganizationBillingNotificationChannel(row.channel);
+    const deliveryState = normalizeOrganizationBillingNotificationDeliveryState(row.deliveryState);
+
+    return {
+      sequenceNumber: row.sequenceNumber,
+      notificationKind,
+      communicationType: resolveOrganizationBillingCommunicationType({
+        notificationKind,
+        channel,
+      }),
+      channel,
+      channelLabel: resolveOrganizationBillingNotificationChannelLabel(channel),
+      deliveryState,
+      deliveryOutcome: resolveOrganizationBillingNotificationDeliveryOutcome(deliveryState),
+      attemptNumber: row.attemptNumber,
+      stripeEventId: row.stripeEventId ?? null,
+      recipientEmail: row.recipientEmail ?? null,
+      planState: row.planState as OrganizationBillingPlanState,
+      subscriptionStatus: row.subscriptionStatus as OrganizationBillingSubscriptionStatus,
+      paymentMethodStatus: row.paymentMethodStatus as OrganizationBillingPaymentMethodStatus,
+      trialEndsAt: toIsoDateString(row.trialEndsAt),
+      failureReason: row.failureReason ?? null,
+      createdAt: toIsoDateString(row.createdAt),
+    };
+  });
+
+  const latestHistory = history.at(-1) ?? null;
+  const latestSignalRow = latestSignalRows[0] ?? null;
+  const latestSignal = latestSignalRow
+    ? ({
+        signalStatus: latestSignalRow.signalStatus,
+        reason: latestSignalRow.reason,
+        createdAt: toIsoDateString(latestSignalRow.createdAt),
+      } satisfies TrialReminderDeliverySignalSummary)
+    : null;
+  const latestEventRow = latestEventRows[0] ?? null;
+  const latestEvent = latestEventRow
+    ? ({
+        id: latestEventRow.id,
+        processingStatus: latestEventRow.processingStatus,
+        failureReason: latestEventRow.failureReason ?? null,
+        createdAt: toIsoDateString(latestEventRow.createdAt),
+      } satisfies TrialReminderWebhookEventSummary)
+    : null;
+  const expected = isTrialReminderExpected({
+    planState,
+    trialEndsAt,
+    now,
+  });
+  const eventFound = Boolean(
+    latestEvent
+    || history.find(
+      (entry: TrialReminderDeliveryAuditHistoryEntry) =>
+        entry.stripeEventId && entry.stripeEventId.length > 0,
+    ),
+  );
+  const latestFailedHistory = [...history]
+    .reverse()
+    .find(
+      (entry: TrialReminderDeliveryAuditHistoryEntry) =>
+        entry.deliveryState === 'failed' && entry.failureReason,
+    );
+  const latestFailureReason =
+    latestFailedHistory?.failureReason
+    ?? latestEvent?.failureReason
+    ?? (latestSignal?.signalStatus === 'pending' || latestSignal?.signalStatus === 'unavailable'
+      ? latestSignal.reason
+      : null);
+  const status = resolveTrialReminderDeliveryStatus({
+    expected,
+    eventFound,
+    latestHistory,
+    latestSignal,
+  });
+
+  return {
+    reminderDelivery: {
+      status,
+      expected,
+      eventFound,
+      outcomeKnown: status === 'delivered' || status === 'failed',
+      latestEventId: latestEvent?.id ?? latestHistory?.stripeEventId ?? null,
+      latestEventProcessingStatus: latestEvent?.processingStatus ?? null,
+      latestEventAt: latestEvent?.createdAt ?? null,
+      latestSignalStatus: latestSignal?.signalStatus ?? null,
+      latestSignalReason: latestSignal?.reason ?? null,
+      latestFailureReason: latestFailureReason ?? null,
+      history,
+    },
   };
 };
 

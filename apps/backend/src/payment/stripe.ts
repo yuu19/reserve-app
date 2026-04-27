@@ -32,6 +32,10 @@ type StripeBillingPortalSessionCreateInput = {
   env: AuthRuntimeEnv;
   customerId: string;
   returnUrl: string;
+  subscriptionUpdate?: {
+    subscriptionId: string;
+    afterCompletionReturnUrl: string;
+  };
 };
 
 export type StripeCheckoutSession = {
@@ -69,6 +73,20 @@ export type StripeSubscriptionSummary = {
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
   priceId: string | null;
+};
+
+export type StripeInvoiceDocumentSummary = {
+  id: string;
+  customerId: string | null;
+  subscriptionId: string | null;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+};
+
+export type StripeChargeReceiptDocumentSummary = {
+  id: string;
+  customerId: string | null;
+  receiptUrl: string | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -387,10 +405,20 @@ export const createBillingPortalSession = async ({
   env,
   customerId,
   returnUrl,
+  subscriptionUpdate,
 }: StripeBillingPortalSessionCreateInput): Promise<{ url: string }> => {
   const params = new URLSearchParams();
   params.set('customer', customerId);
   params.set('return_url', returnUrl);
+  if (subscriptionUpdate) {
+    params.set('flow_data[type]', 'subscription_update');
+    params.set('flow_data[subscription_update][subscription]', subscriptionUpdate.subscriptionId);
+    params.set('flow_data[after_completion][type]', 'redirect');
+    params.set(
+      'flow_data[after_completion][redirect][return_url]',
+      subscriptionUpdate.afterCompletionReturnUrl,
+    );
+  }
 
   const payload = await postStripeForm({
     env,
@@ -530,6 +558,16 @@ export const parseStripeWebhookEvent = (rawBody: string): StripeWebhookEvent | n
 const readString = (value: unknown): string | null =>
   typeof value === 'string' && value.length > 0 ? value : null;
 
+const readStripeObjectId = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    return readString(value);
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+  return readString(value.id);
+};
+
 const readBoolean = (value: unknown): boolean => value === true;
 
 const readUnixSecondsDate = (value: unknown): Date | null => {
@@ -587,6 +625,77 @@ export const readStripeBillingCheckoutMetadata = (
     planCode,
     billingInterval,
   };
+};
+
+export const readStripeInvoiceDocumentSummary = (
+  value: unknown,
+): StripeInvoiceDocumentSummary | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = readString(value.id);
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    customerId: readStripeObjectId(value.customer),
+    subscriptionId: readStripeObjectId(value.subscription),
+    hostedInvoiceUrl: readString(value.hosted_invoice_url),
+    invoicePdfUrl: readString(value.invoice_pdf),
+  };
+};
+
+export const readStripeChargeReceiptDocumentSummary = (
+  value: unknown,
+): StripeChargeReceiptDocumentSummary | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = readString(value.id);
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    customerId: readStripeObjectId(value.customer),
+    receiptUrl: readString(value.receipt_url),
+  };
+};
+
+export const readStripeSubscriptionInvoiceDocumentSummaries = async ({
+  env,
+  customerId,
+  subscriptionId,
+  limit = 10,
+}: {
+  env: AuthRuntimeEnv;
+  customerId: string;
+  subscriptionId?: string | null;
+  limit?: number;
+}): Promise<StripeInvoiceDocumentSummary[]> => {
+  const query = new URLSearchParams();
+  query.set('customer', customerId);
+  if (subscriptionId) {
+    query.set('subscription', subscriptionId);
+  }
+  query.set('limit', String(Math.max(1, Math.min(Math.trunc(limit), 100))));
+  query.append('expand[]', 'data.payment_intent.latest_charge');
+
+  const payload = await getStripeJson({
+    env,
+    path: 'invoices',
+    query,
+  });
+  const data = isRecord(payload) && Array.isArray(payload.data) ? payload.data : [];
+
+  return data
+    .map(readStripeInvoiceDocumentSummary)
+    .filter((summary): summary is StripeInvoiceDocumentSummary => summary !== null);
 };
 
 export const readStripeCheckoutSessionSummary = (

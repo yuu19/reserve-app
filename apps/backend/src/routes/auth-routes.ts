@@ -22,6 +22,13 @@ import {
   startOrganizationPremiumTrial,
   updateOrganizationBillingStripeCustomerId,
 } from '../billing/organization-billing.js';
+import { buildBillingDocumentReadiness } from '../billing/organization-billing-documents.js';
+import { readOrganizationOwnerBillingHistory } from '../billing/organization-billing-history.js';
+import { readInternalBillingInspection } from '../billing/internal-billing-inspection.js';
+import {
+  canAccessInternalBillingInspection,
+  INTERNAL_BILLING_INSPECTION_DENIED_MESSAGE,
+} from '../billing/internal-operator-access.js';
 import { resolveOrganizationPremiumEntitlementPolicy } from '../billing/organization-billing-policy.js';
 import {
   appendOrganizationBillingAuditEvent,
@@ -365,6 +372,18 @@ const organizationBillingTrialCompletionBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+const internalBillingInspectionParamsSchema = z.object({
+  organizationId: z.string().min(1),
+});
+
+const organizationBillingPaidTierSchema = z.object({
+  code: z.enum(['premium_default', 'premium_growth', 'premium_scale', 'premium_unknown']),
+  label: z.string().min(1),
+  resolution: z.enum(['not_paid', 'legacy_default', 'known_price', 'unknown_price']),
+  capabilities: z.array(z.enum(['organization_premium_features', 'advanced_billing_communications'])),
+  diagnosticReason: z.string().nullable(),
+});
+
 const organizationBillingSummarySchema = z.object({
   planCode: z.enum(['free', 'premium']),
   planState: z.enum(['free', 'premium_trial', 'premium_paid']),
@@ -376,8 +395,36 @@ const organizationBillingSummarySchema = z.object({
   currentPeriodEnd: z.string().nullable(),
   trialEndsAt: z.string().nullable(),
   paymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
+  paidTier: organizationBillingPaidTierSchema.nullable(),
   canViewBilling: z.boolean(),
   canManageBilling: z.boolean(),
+  history: z.array(z.object({
+    id: z.string().min(1),
+    eventType: z.enum(['plan_transition', 'notification', 'reconciliation']),
+    occurredAt: z.string().nullable(),
+    title: z.string().min(1),
+    summary: z.string().min(1),
+    billingContext: z.string().nullable(),
+    tone: z.enum(['neutral', 'positive', 'attention']),
+  })).nullable(),
+  paymentDocuments: z.object({
+    aggregateRoot: z.literal('organization_billing'),
+    organizationId: z.string().min(1),
+    provider: z.literal('stripe'),
+    stripeCustomerId: z.string().nullable(),
+    stripeSubscriptionId: z.string().nullable(),
+    ownerAccess: z.literal('owner_only'),
+    persistenceStrategy: z.literal('provider_reference_only'),
+    documents: z.array(z.object({
+      documentKind: z.enum(['invoice', 'receipt']),
+      providerDocumentId: z.string().min(1),
+      hostedInvoiceUrl: z.string().url().nullable(),
+      invoicePdfUrl: z.string().url().nullable(),
+      receiptUrl: z.string().url().nullable(),
+      availability: z.enum(['available', 'unavailable', 'missing']),
+      ownerFacingStatus: z.enum(['available', 'unavailable']),
+    })),
+  }).nullable(),
 });
 
 const organizationBillingActionResponseSchema = z.object({
@@ -386,6 +433,229 @@ const organizationBillingActionResponseSchema = z.object({
 
 const organizationBillingTrialResponseSchema = z.object({
   message: z.string().min(1),
+});
+
+const internalBillingInspectionSummarySchema = z.object({
+  planCode: z.enum(['free', 'premium']),
+  planState: z.enum(['free', 'premium_trial', 'premium_paid']),
+  lifecycleStage: z.enum(['free', 'trial', 'paid']),
+  lifecycleReason: z.string().min(1),
+  entitlementState: z.enum(['free_only', 'premium_enabled']),
+  billingInterval: z.enum(['month', 'year']).nullable(),
+  subscriptionStatus: z.enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete']),
+  paymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
+  currentPeriodEnd: z.string().nullable(),
+  trialEndsAt: z.string().nullable(),
+  cancelAtPeriodEnd: z.boolean(),
+  stripeLinked: z.boolean(),
+  paidTier: organizationBillingPaidTierSchema.nullable(),
+});
+
+const internalBillingInspectionProviderSchema = z.object({
+  stripeCustomerId: z.string().nullable(),
+  stripeSubscriptionId: z.string().nullable(),
+  stripePriceId: z.string().nullable(),
+  providerPlanState: z.enum(['free', 'premium_trial', 'premium_paid']).nullable(),
+  providerSubscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
+    .nullable(),
+  paymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
+  paidTier: organizationBillingPaidTierSchema.nullable(),
+});
+
+const internalBillingInspectionLifecycleEventSchema = z.object({
+  sequenceNumber: z.number().int().nonnegative(),
+  sourceKind: z.string().min(1),
+  sourceContext: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  transition: z.object({
+    previousPlanState: z.string().min(1),
+    nextPlanState: z.string().min(1),
+    previousSubscriptionStatus: z.string().min(1),
+    nextSubscriptionStatus: z.string().min(1),
+    previousPaymentMethodStatus: z.string().min(1),
+    nextPaymentMethodStatus: z.string().min(1),
+    previousEntitlementState: z.string().min(1),
+    nextEntitlementState: z.string().min(1),
+  }),
+});
+
+const internalBillingInspectionSignalSchema = z.object({
+  sequenceNumber: z.number().int().nonnegative(),
+  signalKind: z.string().min(1),
+  signalStatus: z.string().min(1),
+  sourceKind: z.string().min(1),
+  reason: z.string().min(1),
+  providerPlanState: z.enum(['free', 'premium_trial', 'premium_paid']).nullable(),
+  providerSubscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
+    .nullable(),
+  createdAt: z.string().nullable(),
+});
+
+const internalBillingInspectionReconciliationCurrentComparisonSchema = z.object({
+  providerPlanState: z.enum(['free', 'premium_trial', 'premium_paid']).nullable(),
+  providerSubscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
+    .nullable(),
+  appPlanState: z.enum(['free', 'premium_trial', 'premium_paid']),
+  appSubscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete']),
+  appPaymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
+  appEntitlementState: z.enum(['free_only', 'premium_enabled']),
+});
+
+const internalBillingInspectionReconciliationSignalSchema = z.object({
+  sequenceNumber: z.number().int().nonnegative(),
+  signalStatus: z.enum(['pending', 'mismatch', 'unavailable', 'resolved']),
+  sourceKind: z.string().min(1),
+  reason: z.string().min(1),
+  stripeEventId: z.string().min(1).nullable(),
+  providerPlanState: z.enum(['free', 'premium_trial', 'premium_paid']).nullable(),
+  providerSubscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
+    .nullable(),
+  appPlanState: z.enum(['free', 'premium_trial', 'premium_paid']),
+  appSubscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete']),
+  appPaymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
+  appEntitlementState: z.enum(['free_only', 'premium_enabled']),
+  createdAt: z.string().nullable(),
+});
+
+const internalBillingInspectionReconciliationWebhookEventSchema = z.object({
+  id: z.string().min(1),
+  eventType: z.string().min(1),
+  processingStatus: z.enum(['processing', 'processed', 'failed']),
+  failureReason: z.string().min(1).nullable(),
+  createdAt: z.string().nullable(),
+  processedAt: z.string().nullable(),
+});
+
+const internalBillingInspectionReconciliationWebhookFailureSchema = z.object({
+  eventId: z.string().min(1).nullable(),
+  eventType: z.string().min(1).nullable(),
+  failureStage: z.string().min(1),
+  failureReason: z.string().min(1),
+  createdAt: z.string().nullable(),
+});
+
+const internalBillingInspectionReconciliationSchema = z.object({
+  status: z.enum([
+    'not_applicable',
+    'aligned',
+    'mismatch',
+    'pending',
+    'unavailable',
+    'incomplete',
+  ]),
+  comparable: z.boolean(),
+  latestSignalStatus: z.enum(['pending', 'mismatch', 'unavailable', 'resolved']).nullable(),
+  latestSignalReason: z.string().min(1).nullable(),
+  currentComparison: internalBillingInspectionReconciliationCurrentComparisonSchema,
+  recentSignals: z.array(internalBillingInspectionReconciliationSignalSchema),
+  recentWebhookEvents: z.array(internalBillingInspectionReconciliationWebhookEventSchema),
+  recentWebhookFailures: z.array(internalBillingInspectionReconciliationWebhookFailureSchema),
+});
+
+const internalBillingInspectionNotificationHistoryEntrySchema = z.object({
+  sequenceNumber: z.number().int().nonnegative(),
+  notificationKind: z.enum(['trial_will_end_email', 'trial_will_end', 'unknown']),
+  communicationType: z.enum(['trial_will_end', 'unknown']),
+  channel: z.enum(['email', 'in_app', 'web_push', 'unknown']),
+  channelLabel: z.string().min(1),
+  deliveryState: z.enum(['requested', 'retried', 'sent', 'failed', 'unknown']),
+  deliveryOutcome: z.enum(['pending', 'delivered', 'failed', 'unknown']),
+  attemptNumber: z.number().int().positive(),
+  stripeEventId: z.string().min(1).nullable(),
+  recipientEmail: z.string().min(1).nullable(),
+  planState: z.enum(['free', 'premium_trial', 'premium_paid']),
+  subscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete']),
+  paymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
+  trialEndsAt: z.string().nullable(),
+  failureReason: z.string().min(1).nullable(),
+  createdAt: z.string().nullable(),
+});
+
+const internalBillingInspectionReminderDeliverySchema = z.object({
+  status: z.enum(['not_expected', 'missing', 'pending', 'delivered', 'failed', 'unknown']),
+  expected: z.boolean(),
+  eventFound: z.boolean(),
+  outcomeKnown: z.boolean(),
+  latestEventId: z.string().min(1).nullable(),
+  latestEventProcessingStatus: z.enum(['processing', 'processed', 'failed']).nullable(),
+  latestEventAt: z.string().nullable(),
+  latestSignalStatus: z.enum(['pending', 'mismatch', 'unavailable', 'resolved']).nullable(),
+  latestSignalReason: z.string().min(1).nullable(),
+  latestFailureReason: z.string().min(1).nullable(),
+  history: z.array(internalBillingInspectionNotificationHistoryEntrySchema),
+});
+
+const internalBillingInspectionNotificationsSchema = z.object({
+  reminderDelivery: internalBillingInspectionReminderDeliverySchema,
+});
+
+const internalBillingInspectionPaymentDocumentsSchema = z.object({
+  aggregateRoot: z.literal('organization_billing'),
+  provider: z.literal('stripe'),
+  ownerAccess: z.literal('owner_only'),
+  persistenceStrategy: z.literal('provider_reference_only'),
+  stripeCustomerId: z.string().nullable(),
+  stripeSubscriptionId: z.string().nullable(),
+  diagnosticReason: z.string().min(1).nullable(),
+  documents: z.array(z.object({
+    documentKind: z.enum(['invoice', 'receipt']),
+    providerDocumentId: z.string().min(1),
+    hostedInvoiceUrl: z.string().url().nullable(),
+    invoicePdfUrl: z.string().url().nullable(),
+    receiptUrl: z.string().url().nullable(),
+    availability: z.enum(['available', 'unavailable', 'missing']),
+    ownerFacingStatus: z.enum(['available', 'unavailable']),
+    providerDerived: z.boolean(),
+  })),
+});
+
+const internalBillingInspectionTimelineEntrySchema = z.object({
+  id: z.string().min(1),
+  lane: z.enum(['billing_state', 'reconciliation', 'notification', 'provider_webhook']),
+  entryType: z.enum(['audit_event', 'signal', 'notification', 'webhook_event', 'webhook_failure']),
+  occurredAt: z.string().nullable(),
+  headline: z.string().min(1),
+  summary: z.string().min(1),
+  notificationKind: z.string().min(1).nullable(),
+  communicationType: z.enum(['trial_will_end', 'unknown']).nullable(),
+  notificationChannel: z.enum(['email', 'in_app', 'web_push', 'unknown']).nullable(),
+  notificationChannelLabel: z.string().min(1).nullable(),
+  sequenceNumber: z.number().int().nonnegative().nullable(),
+  stripeEventId: z.string().min(1).nullable(),
+  sourceKind: z.string().min(1).nullable(),
+  signalKind: z.enum(['reconciliation', 'notification_delivery']).nullable(),
+  signalStatus: z.enum(['pending', 'mismatch', 'unavailable', 'resolved']).nullable(),
+  deliveryState: z.enum(['requested', 'retried', 'sent', 'failed', 'unknown']).nullable(),
+  webhookEventType: z.string().min(1).nullable(),
+  webhookProcessingStatus: z.enum(['processing', 'processed', 'failed']).nullable(),
+  webhookFailureStage: z.string().min(1).nullable(),
+});
+
+const internalBillingInspectionTimelineSchema = z.object({
+  entries: z.array(internalBillingInspectionTimelineEntrySchema),
+});
+
+const internalBillingInspectionResponseSchema = z.object({
+  organizationId: z.string().min(1),
+  organizationName: z.string().min(1),
+  organizationSlug: z.string().min(1),
+  summary: internalBillingInspectionSummarySchema,
+  provider: internalBillingInspectionProviderSchema.nullable(),
+  lifecycle: z.object({
+    recentEvents: z.array(internalBillingInspectionLifecycleEventSchema),
+    latestSignal: internalBillingInspectionSignalSchema.nullable(),
+  }),
+  reconciliation: internalBillingInspectionReconciliationSchema,
+  notifications: internalBillingInspectionNotificationsSchema,
+  paymentDocuments: internalBillingInspectionPaymentDocumentsSchema,
+  timeline: internalBillingInspectionTimelineSchema,
 });
 
 const getOrganizationBillingRoute = createRoute({
@@ -634,6 +904,38 @@ const createOrganizationBillingTrialCompletionRoute = createRoute({
     },
     503: {
       description: 'Stripe payment method reflection is still syncing',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+  },
+});
+
+const getInternalBillingInspectionRoute = createRoute({
+  method: 'get',
+  path: '/internal/organizations/{organizationId}/billing-inspection',
+  tags: ['Internal Billing'],
+  summary: 'Get internal read-only billing inspection view for an organization',
+  request: {
+    params: internalBillingInspectionParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Internal billing inspection view',
+      content: {
+        'application/json': {
+          schema: internalBillingInspectionResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Internal billing inspection access denied.',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    404: {
+      description: 'Organization not found',
       content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
     },
   },
@@ -1277,7 +1579,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
   const getSessionIdentity = async (
     headers: Headers,
-  ): Promise<{ userId: string; email: string | null; activeOrganizationId: string | null } | null> => {
+  ): Promise<{
+    userId: string;
+    email: string | null;
+    emailVerified: boolean;
+    activeOrganizationId: string | null;
+  } | null> => {
     const session = await auth.api.getSession({ headers });
     const userId = getStringValue(session?.user?.id);
     if (!userId) {
@@ -1288,6 +1595,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return {
       userId,
       email: userEmail ? normalizeEmail(userEmail) : null,
+      emailVerified: session?.user?.emailVerified === true,
       activeOrganizationId: getActiveOrganizationId(session?.session),
     };
   };
@@ -2642,11 +2950,29 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         subscriptionStatus,
         paymentMethodStatus,
         currentPeriodEnd,
+        stripePriceId: billing?.stripePriceId ?? null,
+        env,
       });
+      const history =
+        role === 'owner'
+          ? (await readOrganizationOwnerBillingHistory({
+              database,
+              organizationId,
+            })).entries
+          : null;
+      const paymentDocuments =
+        role === 'owner'
+          ? buildBillingDocumentReadiness({
+              organizationId,
+              stripeCustomerId: billing?.stripeCustomerId ?? null,
+              stripeSubscriptionId: billing?.stripeSubscriptionId ?? null,
+            })
+          : null;
       return c.json(
         {
           planCode,
           planState: entitlementPolicy.planState,
+          paidTier: entitlementPolicy.paidTier,
           billingInterval,
           subscriptionStatus,
           cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
@@ -2655,6 +2981,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           paymentMethodStatus,
           canViewBilling: true,
           canManageBilling: role === 'owner',
+          history,
+          paymentDocuments,
         },
         200,
       );
@@ -2960,20 +3288,57 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       const billing = await selectOrganizationBillingSummary(database, organizationId);
       if (
         !billing?.stripeCustomerId
+        || !billing.stripeSubscriptionId
         || billing.planCode !== 'premium'
-        || !hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))
+        || billing.subscriptionStatus !== 'active'
       ) {
         return c.json({ message: 'Organization does not have a premium subscription.' }, 409);
       }
 
       const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+      const contractsUrl = `${webBaseUrl}/admin/contracts`;
       const portalSession = await createBillingPortalSession({
         env,
         customerId: billing.stripeCustomerId,
-        returnUrl: `${webBaseUrl}/admin/contracts`,
+        returnUrl: contractsUrl,
+        subscriptionUpdate: {
+          subscriptionId: billing.stripeSubscriptionId,
+          afterCompletionReturnUrl: `${contractsUrl}?subscription=success`,
+        },
       });
 
       return c.json({ url: portalSession.url }, 200);
+    })();
+  });
+
+  authRoutes.openapi(getInternalBillingInspectionRoute, (c) => {
+    return (async () => {
+      const { organizationId } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      if (
+        !canAccessInternalBillingInspection({
+          env,
+          email: identity.email,
+          emailVerified: identity.emailVerified,
+        })
+      ) {
+        return c.json({ message: INTERNAL_BILLING_INSPECTION_DENIED_MESSAGE }, 403);
+      }
+
+      const inspection = await readInternalBillingInspection({
+        database,
+        env,
+        organizationId,
+      });
+      if (!inspection) {
+        return c.json({ message: 'Organization not found.' }, 404);
+      }
+
+      return c.json(inspection, 200);
     })();
   });
 
