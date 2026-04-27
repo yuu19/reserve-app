@@ -25,5 +25,9 @@ Thumbs.db
 .idea/
 .agents/*
 !.agents/skills/
-!.agents/skills/**
+.agents/skills/*
+!.agents/skills/docs-japanese-writing/
+!.agents/skills/docs-japanese-writing/**
+!.agents/skills/japanese-conventional-commit/
+!.agents/skills/japanese-conventional-commit/**
 _bmad-output/
