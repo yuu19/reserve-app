@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Modern reservation system logo</title>
+  <desc id="desc">A SmartHR-style modern reservation mark: a minimal calendar frame with an integrated confirmation check.</desc>
+
+  
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M126 142h260c33.137 0 60 26.863 60 60v178c0 33.137-26.863 60-60 60H126c-33.137 0-60-26.863-60-60V202c0-33.137 26.863-60 60-60Z"
+      stroke="#00c4cc" stroke-width="34"/>
+    <path d="M178 100v62M334 100v62"
+      stroke="#0077c7" stroke-width="32"/>
+    <rect x="160" y="270" width="78" height="78" rx="18" fill="#00c4cc"/>
+    <path d="M270 314l48 48 112-116"
+      stroke="#00c4cc" stroke-width="36"/>
+  </g>
+</svg>

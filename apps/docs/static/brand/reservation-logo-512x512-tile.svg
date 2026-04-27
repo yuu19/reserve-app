@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Modern reservation system logo</title>
+  <desc id="desc">A SmartHR-style modern reservation mark: a minimal calendar frame with an integrated confirmation check.</desc>
+
+  <rect width="512" height="512" rx="0" fill="#f8f7f6"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- open calendar frame -->
+    <path d="M129 131h254c35.346 0 64 28.654 64 64v72"
+      stroke="#00c4cc" stroke-width="28"/>
+    <path d="M447 323v61c0 35.346-28.654 64-64 64H129c-35.346 0-64-28.654-64-64V195c0-35.346 28.654-64 64-64"
+      stroke="#00c4cc" stroke-width="28"/>
+    <path d="M206 131h100"
+      stroke="#00c4cc" stroke-width="28"/>
+
+    <!-- calendar rings / product accent -->
+    <path d="M172 82v76M340 82v76"
+      stroke="#0077c7" stroke-width="24"/>
+
+    <!-- reserved slot -->
+    <rect x="151" y="271" width="84" height="84" rx="19" fill="#00c4cc"/>
+
+    <!-- integrated confirmation stroke -->
+    <path d="M284 322l45 45 128-132"
+      stroke="#00c4cc" stroke-width="31"/>
+  </g>
+</svg>
