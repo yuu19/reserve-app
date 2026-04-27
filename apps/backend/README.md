@@ -22,6 +22,7 @@ pnpm --filter @apps/backend run dev
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `BETTER_AUTH_COOKIE_DOMAIN` (例: `.wakureserve.com`, staging は `.stg.wakureserve.com`)
+- `INTERNAL_OPERATOR_EMAILS` (Epic 4 の internal billing inspection を許可するカンマ区切りメールアドレス)
 
 任意 (招待メールを Resend で送信):
 
@@ -84,6 +85,7 @@ pnpm --filter @apps/backend run dev
   - User invitation endpoint: `GET /api/v1/auth/invitations/user`
   - Invitation detail endpoint: `GET /api/v1/auth/invitations/{invitationId}`
   - Invitation action endpoints: `POST /api/v1/auth/invitations/{invitationId}/{accept|reject|cancel}`
+  - Internal billing inspection endpoint: `GET /api/v1/auth/internal/organizations/{organizationId}/billing-inspection`
 - Public events routes: `/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events*`
 
 `@better-auth/expo` server plugin を有効化しているため、Expo クライアントからの認証にも対応しています。
@@ -126,6 +128,8 @@ STRIPE_SECRET_KEY=sk_test_xxx pnpm --filter @apps/backend run stripe:catalog:cre
 - `STRIPE_PREMIUM_MONTHLY_PRICE_ID`
 - `STRIPE_PREMIUM_YEARLY_PRICE_ID`
 
+Paid 契約後のプラン変更は Stripe Customer Portal の subscription update flow を使います。Stripe Dashboard の Customer Portal configuration で subscription update を有効化し、対象 product / price（monthly / yearly の Premium prices）を `features.subscription_update.products` に含めてください。Portal 側の設定が不足している場合、アプリは provider-backed handoff を開始できません。
+
 ## Cloudflare Workers deploy setup
 
 1. D1 を作成:
@@ -162,6 +166,7 @@ pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
 - `BETTER_AUTH_URL`
 - `BETTER_AUTH_TRUSTED_ORIGINS` (web の URL を含む)
 - `BETTER_AUTH_COOKIE_DOMAIN` (cross-subdomain cookie 共有)
+- `INTERNAL_OPERATOR_EMAILS` (internal billing inspection を許可するカンマ区切りメールアドレス)
 - `INVITATION_ACCEPT_URL_BASE` (招待メールのリンク先。`/invitations/accept` を含める)
 - `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` (参加者招待メールのリンク先。`/participants/invitations/accept` を含める)
 - `WEB_BASE_URL` (`INVITATION_ACCEPT_URL_BASE` / `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` 未設定時のフォールバック)

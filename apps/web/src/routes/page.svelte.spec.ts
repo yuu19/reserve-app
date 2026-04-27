@@ -23,13 +23,17 @@ describe('/+page.svelte', () => {
 	it('should render landing sections and login links', async () => {
 		render(Page);
 
-		const heading = page.getByRole('heading', { level: 1, name: '予約運用を、ひとつの画面で。' });
+		const heading = page.getByRole('heading', {
+			level: 1,
+			name: /予約運用を、\s*ひとつの画面で。/
+		});
 		const pricingHeading = page.getByRole('heading', { level: 2, name: '料金プラン' });
 
 		await expect.element(heading).toBeInTheDocument();
 		await expect.element(pricingHeading).toBeInTheDocument();
 		expect(document.body.textContent ?? '').toContain('Free');
 		expect(document.body.textContent ?? '').toContain('Premium');
+		expect(document.body.textContent ?? '').toContain('開発者情報');
 
 		const adminLinks = Array.from(document.querySelectorAll('a')).filter(
 			(element) => element.textContent?.trim() === '管理者としてログイン'
@@ -37,8 +41,12 @@ describe('/+page.svelte', () => {
 		const participantLinks = Array.from(document.querySelectorAll('a')).filter(
 			(element) => element.textContent?.trim() === '予約者としてログイン'
 		);
+		const footerLoginLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === 'ログイン'
+		);
 		expect(adminLinks.length).toBeGreaterThan(0);
 		expect(participantLinks.length).toBeGreaterThan(0);
+		expect(footerLoginLink?.getAttribute('href')).toBe('#portal-entry');
 	});
 
 	it('should carry next query into login links', async () => {

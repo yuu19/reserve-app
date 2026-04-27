@@ -3,6 +3,8 @@ BETTER_AUTH_SECRET=replace-with-at-least-32-characters
 BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://localhost:5173,mobile://
 # Prod: .wakureserve.com / Staging: .stg.wakureserve.com
 BETTER_AUTH_COOKIE_DOMAIN=
+# Optional: comma-separated internal operator emails for Epic 4 billing inspection routes
+INTERNAL_OPERATOR_EMAILS=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 RESEND_API_KEY=

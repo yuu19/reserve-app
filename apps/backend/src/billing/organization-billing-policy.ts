@@ -11,6 +11,34 @@ import {
 } from './organization-billing.js';
 
 export type OrganizationBillingEntitlementState = 'free_only' | 'premium_enabled';
+export type OrganizationBillingPaidTierCode =
+  | 'premium_default'
+  | 'premium_growth'
+  | 'premium_scale'
+  | 'premium_unknown';
+export type OrganizationBillingPaidTierCapability =
+  | 'organization_premium_features'
+  | 'advanced_billing_communications';
+export type OrganizationBillingPaidTierResolution =
+  | 'not_paid'
+  | 'legacy_default'
+  | 'known_price'
+  | 'unknown_price';
+
+export type OrganizationBillingPaidTierCatalogEntry = {
+  code: Exclude<OrganizationBillingPaidTierCode, 'premium_unknown'>;
+  label: string;
+  capabilities: OrganizationBillingPaidTierCapability[];
+  priceIds: string[];
+};
+
+export type OrganizationBillingPaidTier = {
+  code: OrganizationBillingPaidTierCode;
+  label: string;
+  resolution: OrganizationBillingPaidTierResolution;
+  capabilities: OrganizationBillingPaidTierCapability[];
+  diagnosticReason: string | null;
+};
 
 export type OrganizationPremiumEntitlementReason =
   | 'organization_plan_is_free'
@@ -27,6 +55,12 @@ export type OrganizationPremiumEntitlementPolicyInput = {
   subscriptionStatus: OrganizationBillingSubscriptionStatus;
   paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
   currentPeriodEnd: string | null;
+  stripePriceId?: string | null;
+  env?: Partial<Pick<
+    AuthRuntimeEnv,
+    'STRIPE_PREMIUM_MONTHLY_PRICE_ID' | 'STRIPE_PREMIUM_YEARLY_PRICE_ID'
+  >>;
+  additionalTierCatalogEntries?: OrganizationBillingPaidTierCatalogEntry[];
   now?: Date;
 };
 
@@ -38,8 +72,89 @@ export type OrganizationPremiumEntitlementPolicyResult = {
   trialEndsAt: string | null;
   entitlementState: OrganizationBillingEntitlementState;
   isPremiumEligible: boolean;
+  paidTier: OrganizationBillingPaidTier | null;
   reason: OrganizationPremiumEntitlementReason;
 };
+
+const defaultPaidTierCapabilities = [
+  'organization_premium_features',
+] satisfies OrganizationBillingPaidTierCapability[];
+
+export const ORGANIZATION_BILLING_DEFAULT_PAID_TIER: OrganizationBillingPaidTierCatalogEntry = {
+  code: 'premium_default',
+  label: 'Premium',
+  capabilities: [...defaultPaidTierCapabilities],
+  priceIds: [],
+};
+
+const normalizePriceIds = (priceIds: Array<string | undefined>): string[] =>
+  priceIds
+    .map((priceId) => priceId?.trim() ?? '')
+    .filter((priceId): priceId is string => priceId.length > 0);
+
+export const resolveOrganizationBillingPaidTier = ({
+  planCode,
+  stripePriceId,
+  env,
+  additionalCatalogEntries = [],
+}: {
+  planCode: OrganizationBillingPlanCode;
+  stripePriceId?: string | null;
+  env?: Partial<Pick<
+    AuthRuntimeEnv,
+    'STRIPE_PREMIUM_MONTHLY_PRICE_ID' | 'STRIPE_PREMIUM_YEARLY_PRICE_ID'
+  >>;
+  additionalCatalogEntries?: OrganizationBillingPaidTierCatalogEntry[];
+}): OrganizationBillingPaidTier | null => {
+  if (planCode !== 'premium') {
+    return null;
+  }
+
+  const defaultEntry = {
+    ...ORGANIZATION_BILLING_DEFAULT_PAID_TIER,
+    priceIds: normalizePriceIds([
+      env?.STRIPE_PREMIUM_MONTHLY_PRICE_ID,
+      env?.STRIPE_PREMIUM_YEARLY_PRICE_ID,
+    ]),
+  };
+  const catalog = [defaultEntry, ...additionalCatalogEntries];
+  const normalizedPriceId = stripePriceId?.trim() ?? '';
+
+  if (!normalizedPriceId) {
+    return {
+      code: defaultEntry.code,
+      label: defaultEntry.label,
+      resolution: 'legacy_default',
+      capabilities: [...defaultEntry.capabilities],
+      diagnosticReason: null,
+    };
+  }
+
+  const matchedEntry = catalog.find((entry) =>
+    entry.priceIds.some((priceId) => priceId === normalizedPriceId));
+  if (matchedEntry) {
+    return {
+      code: matchedEntry.code,
+      label: matchedEntry.label,
+      resolution: 'known_price',
+      capabilities: [...matchedEntry.capabilities],
+      diagnosticReason: null,
+    };
+  }
+
+  return {
+    code: 'premium_unknown',
+    label: defaultEntry.label,
+    resolution: 'unknown_price',
+    capabilities: [...defaultPaidTierCapabilities],
+    diagnosticReason: 'stripe_price_id_not_in_paid_tier_catalog',
+  };
+};
+
+export const hasOrganizationBillingPaidTierCapability = (
+  paidTier: OrganizationBillingPaidTier | null,
+  capability: OrganizationBillingPaidTierCapability,
+): boolean => paidTier?.capabilities.includes(capability) ?? false;
 
 const premiumPaidGraceStatuses = new Set<OrganizationBillingSubscriptionStatus>([
   'past_due',
@@ -52,6 +167,9 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
   subscriptionStatus,
   paymentMethodStatus,
   currentPeriodEnd,
+  stripePriceId,
+  env,
+  additionalTierCatalogEntries,
   now = new Date(),
 }: OrganizationPremiumEntitlementPolicyInput): OrganizationPremiumEntitlementPolicyResult => {
   const planState = resolveOrganizationBillingPlanState({
@@ -61,6 +179,12 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
   const trialEndsAt = resolveOrganizationBillingTrialEndsAt({
     planState,
     currentPeriodEnd,
+  });
+  const paidTier = resolveOrganizationBillingPaidTier({
+    planCode,
+    stripePriceId,
+    env,
+    additionalCatalogEntries: additionalTierCatalogEntries,
   });
 
   if (planState === 'free') {
@@ -72,6 +196,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
       trialEndsAt,
       entitlementState: 'free_only',
       isPremiumEligible: false,
+      paidTier: null,
       reason: 'organization_plan_is_free',
     };
   }
@@ -86,6 +211,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
         trialEndsAt,
         entitlementState: 'free_only',
         isPremiumEligible: false,
+        paidTier,
         reason: 'premium_trial_missing_end',
       };
     }
@@ -99,6 +225,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
         trialEndsAt,
         entitlementState: 'free_only',
         isPremiumEligible: false,
+        paidTier,
         reason: 'premium_trial_expired',
       };
     }
@@ -111,6 +238,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
       trialEndsAt,
       entitlementState: 'premium_enabled',
       isPremiumEligible: true,
+      paidTier,
       reason:
         paymentMethodStatus === 'registered'
           ? 'premium_trial_active_with_payment_method_registered'
@@ -127,6 +255,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
       trialEndsAt,
       entitlementState: 'premium_enabled',
       isPremiumEligible: true,
+      paidTier,
       reason: 'premium_paid_active',
     };
   }
@@ -140,6 +269,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
       trialEndsAt,
       entitlementState: 'premium_enabled',
       isPremiumEligible: true,
+      paidTier,
       reason: 'premium_paid_grace_state',
     };
   }
@@ -152,6 +282,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
     trialEndsAt,
     entitlementState: 'free_only',
     isPremiumEligible: false,
+    paidTier,
     reason: 'premium_paid_state_unexpected',
   };
 };
@@ -190,6 +321,8 @@ export const readOrganizationPremiumEntitlementPolicy = async ({
     paymentMethodStatus,
     currentPeriodEnd:
       billing?.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd.toISOString() : null,
+    stripePriceId: billing?.stripePriceId ?? null,
+    env,
     now,
   });
 };

@@ -2,6 +2,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { AuthInstance, AuthRuntimeDatabase } from '../auth-runtime.js';
 import type { AuthRuntimeEnv } from '../auth-runtime.js';
 import {
+  hasOrganizationBillingPaidTierCapability,
   readOrganizationPremiumEntitlementPolicy,
   type OrganizationPremiumEntitlementPolicyResult,
 } from '../billing/organization-billing-policy.js';
@@ -203,7 +204,10 @@ export const readOrganizationPremiumFeatureGate = async ({
     now,
   });
 
-  if (policy.isPremiumEligible) {
+  if (
+    policy.isPremiumEligible
+    && hasOrganizationBillingPaidTierCapability(policy.paidTier, 'organization_premium_features')
+  ) {
     return {
       allowed: true,
       policy,
