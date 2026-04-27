@@ -6,6 +6,7 @@
 
 - [architecture.md](./architecture.md)
 - [authorization.md](./authorization.md)
+- [billing.md](./billing.md)
 - [database-er.md](./database-er.md)
 - [test-strategy.md](./test-strategy.md)
 
@@ -130,16 +131,19 @@ pnpm test:watch
 # backend
 pnpm deploy:backend
 
+# docs
+pnpm deploy:docs
+
 # web
 pnpm deploy:web
 
-# backend -> web を順番に実行
+# backend -> web -> docs を順番に実行
 pnpm deploy:workers
 ```
 
 ## GitHub Actions による自動デプロイ
 
-`main` ブランチへの push（または手動実行）で、`backend -> web` の順に Workers をデプロイします。  
+`main` ブランチへの push（または手動実行）で、`backend` / `web` / `docs` の各 Worker を変更内容に応じてデプロイします。  
 ワークフロー: `.github/workflows/deploy-workers.yml`
 
 GitHub シークレット:
@@ -155,6 +159,7 @@ GitHub シークレット:
 GitHub 変数:
 
 - `BETTER_AUTH_URL`
+- `INTERNAL_OPERATOR_EMAILS`（internal billing inspection を許可するカンマ区切りメールアドレス）
 - `BETTER_AUTH_TRUSTED_ORIGINS`
 - `BETTER_AUTH_COOKIE_DOMAIN`
 - `PUBLIC_BACKEND_URL`
@@ -168,14 +173,17 @@ GitHub 変数:
 
 - backend デプロイ時に `wrangler d1 migrations apply --remote` を実行します。
 - web デプロイ前ビルドで Sentry sourcemap upload を実行します（`SENTRY_RELEASE=${{ github.sha }}`）。
+- docs デプロイは Cloudflare 認証情報のみで実行します。
 - Stripe webhook は `POST /api/webhooks/stripe` で受け付けます（`STRIPE_WEBHOOK_SECRET` 必須）。
 - カスタムドメイン運用時は以下の値を推奨します。
   - Prod: `BETTER_AUTH_URL=https://api.wakureserve.com`, `PUBLIC_BACKEND_URL=https://api.wakureserve.com`, `BETTER_AUTH_COOKIE_DOMAIN=.wakureserve.com`
   - Staging: `BETTER_AUTH_URL=https://api.stg.wakureserve.com`, `PUBLIC_BACKEND_URL=https://api.stg.wakureserve.com`, `BETTER_AUTH_COOKIE_DOMAIN=.stg.wakureserve.com`
   - 現在の実運用は prod のみ適用済みで、staging は将来別 Worker で構築予定です。
+- docs の本番公開 URL は `https://docs.wakureserve.com` を想定しています。
 - backend の `database_id` は、事前に `apps/backend/wrangler.jsonc` に設定してください。
 
 詳細な設定手順:
 
 - backend: `apps/backend/README.md`
+- docs: `apps/docs/README.md`
 - web: `apps/web/README.md`
