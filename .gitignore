@@ -17,4 +17,13 @@ build
 apps/backend/data
 coverage
 .DS_Store
-.agents
+Thumbs.db
+*.log
+*.tmp
+*.swp
+.vscode/
+.idea/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
+_bmad-output/
