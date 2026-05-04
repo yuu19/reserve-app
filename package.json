@@ -7,6 +7,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
     "test:watch": "turbo run test:watch --parallel",
     "format": "turbo run format",
     "format:check": "turbo run format:check",

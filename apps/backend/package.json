@@ -8,6 +8,7 @@
     "cf:tail": "wrangler tail",
     "cf:types": "wrangler types",
     "d1:migrate:local": "wrangler d1 migrations apply reserve-app --local",
+    "d1:migrate:e2e": "CI=1 XDG_CONFIG_HOME=../../.wrangler/e2e/config wrangler d1 migrations apply reserve-app --local --persist-to ../../.wrangler/e2e",
     "d1:migrate:remote": "wrangler d1 migrations apply reserve-app --remote",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -20,7 +21,8 @@
     "auth:generate": "better-auth generate --output src/db/schema.ts",
     "db:generate": "drizzle-kit generate",
     "clean": "rm -rf dist .turbo",
-    "start": "wrangler dev --local --port 3000"
+    "start": "wrangler dev --local --port 3000",
+    "dev:e2e": "pnpm run d1:migrate:e2e && XDG_CONFIG_HOME=../../.wrangler/e2e/config wrangler dev --local --port 3000 --persist-to ../../.wrangler/e2e --env-file .dev.vars.example --show-interactive-dev-session=false"
   },
   "dependencies": {
     "@better-auth/expo": "^1.4.18",

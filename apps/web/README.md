@@ -145,6 +145,50 @@ pnpm --filter @apps/web run cf:deploy
 pnpm --filter @apps/web run cf:dev
 ```
 
+## Full-stack E2E
+
+web の E2E は、実ブラウザで管理者の初回登録から組織・教室作成までを確認します。
+テスト実行時に backend Worker と web の Vite dev server を起動します。
+backend は local D1 を使い、永続化先はリポジトリ直下の `.wrangler/e2e` です。
+
+使用ポート:
+
+- backend: `http://localhost:3000`
+- web: `http://localhost:5173`
+
+実行:
+
+```bash
+pnpm --filter @apps/web run test:e2e
+```
+
+テスト一覧だけを確認する場合:
+
+```bash
+pnpm --filter @apps/web run test:e2e -- --list
+```
+
+ブラウザを表示して確認する場合:
+
+```bash
+pnpm --filter @apps/web run test:e2e:headed
+```
+
+UI モードを使う場合:
+
+```bash
+pnpm --filter @apps/web run test:e2e:ui
+```
+
+DB と Playwright の出力を消す場合:
+
+```bash
+pnpm --filter @apps/web run clean:e2e
+```
+
+CI では pull request と `main` push で Chromium の E2E を実行します。
+失敗時の調査に使う `playwright-report` と `test-results` は GitHub Actions artifact に保存されます。
+
 ## GitHub Actions deploy
 
 `.github/workflows/deploy-workers.yml` で web Worker をデプロイします。  
