@@ -20,6 +20,7 @@ export type OrganizationPayload = {
 };
 
 export type OrganizationBillingPayload = {
+	organizationId?: string;
 	planCode: 'free' | 'premium';
 	planState: 'free' | 'premium_trial' | 'premium_paid';
 	paidTier?: {
@@ -41,21 +42,45 @@ export type OrganizationBillingPayload = {
 		| 'incomplete'
 		| null;
 	cancelAtPeriodEnd: boolean;
+	trialStartedAt?: string | null;
 	currentPeriodEnd: string | null;
+	paymentIssueStartedAt?: string | null;
+	pastDueGraceEndsAt?: string | null;
+	lastReconciledAt?: string | null;
+	lastReconciliationReason?: string | null;
 	trialEndsAt: string | null;
+	premiumEligible?: boolean;
+	entitlementState?: 'free_only' | 'premium_enabled';
+	entitlementReason?: string;
+	capabilities?: string[];
 	canViewBilling: boolean;
 	canManageBilling: boolean;
-	history?:
-		| Array<{
-				id: string;
-				eventType: 'plan_transition' | 'notification' | 'reconciliation';
-				occurredAt: string | null;
-				title: string;
-				summary: string;
-				billingContext: string | null;
-				tone: 'neutral' | 'positive' | 'attention';
-		  }>
-		| null;
+	actionAvailability?: {
+		canStartTrial: boolean;
+		canStartPaidCheckout: boolean;
+		canRegisterPaymentMethod: boolean;
+		canOpenBillingPortal: boolean;
+		trialUsed: boolean;
+		availableIntervals: Array<'month' | 'year'>;
+		nextOwnerAction: string | null;
+		readOnlyReason: string | null;
+	};
+	billingProfileReadiness?: {
+		state: 'complete' | 'incomplete' | 'unavailable' | 'not_required';
+		nextAction: string | null;
+		checkedAt: string | null;
+		gatesCheckout: false;
+		gatesPremiumEligibility: false;
+	};
+	history?: Array<{
+		id: string;
+		eventType: 'plan_transition' | 'notification' | 'reconciliation' | 'payment_event';
+		occurredAt: string | null;
+		title: string;
+		summary: string;
+		billingContext: string | null;
+		tone: 'neutral' | 'positive' | 'attention';
+	}> | null;
 	paymentDocuments?: {
 		aggregateRoot: 'organization_billing';
 		organizationId: string;
@@ -70,11 +95,51 @@ export type OrganizationBillingPayload = {
 			hostedInvoiceUrl: string | null;
 			invoicePdfUrl: string | null;
 			receiptUrl: string | null;
-			availability: 'available' | 'unavailable' | 'missing';
-			ownerFacingStatus: 'available' | 'unavailable';
+			availability: 'available' | 'unavailable' | 'missing' | 'checking';
+			ownerFacingStatus: 'available' | 'unavailable' | 'checking';
+			providerDerived?: boolean;
 		}>;
 	} | null;
+	invoicePaymentEvents?: Array<{
+		id: string;
+		organizationId: string;
+		stripeEventId: string | null;
+		eventType:
+			| 'invoice_available'
+			| 'payment_succeeded'
+			| 'payment_failed'
+			| 'payment_action_required';
+		stripeCustomerId: string | null;
+		stripeSubscriptionId: string | null;
+		stripeInvoiceId: string | null;
+		stripePaymentIntentId: string | null;
+		providerStatus: string | null;
+		ownerFacingStatus:
+			| 'available'
+			| 'checking'
+			| 'missing'
+			| 'action_required'
+			| 'failed'
+			| 'succeeded';
+		occurredAt: string | null;
+		createdAt: string | null;
+	}>;
 	[key: string]: unknown;
+};
+
+export type OrganizationBillingActionEnvelope = {
+	status: 'succeeded' | 'processing' | 'conflict' | 'failed';
+	message: string | null;
+	billing: OrganizationBillingPayload | null;
+	url?: string | null;
+	handoff: {
+		provider: 'stripe';
+		purpose: 'trial_start' | 'paid_checkout' | 'payment_method_setup' | 'billing_portal';
+		url: string;
+		expiresAt: string;
+		reused: boolean;
+		operationAttemptId?: string;
+	} | null;
 };
 
 export type ClassroomPayload = {

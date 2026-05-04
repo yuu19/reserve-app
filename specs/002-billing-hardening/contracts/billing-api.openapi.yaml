@@ -1,0 +1,693 @@
+openapi: 3.1.0
+info:
+  title: Billing Production Hardening Contracts
+  version: 1.0.0
+  description: >
+    Contract for organization-scoped billing hardening: summary, trial, paid checkout,
+    payment method setup, billing portal handoff, invoice/payment history, provider webhook
+    intake, and internal inspection.
+servers:
+  - url: https://api.example.com
+    description: Production API origin
+security:
+  - sessionAuth: []
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+    stripeWebhookSignature:
+      type: apiKey
+      in: header
+      name: stripe-signature
+  schemas:
+    BillingInterval:
+      type: string
+      enum: [month, year]
+    PlanCode:
+      type: string
+      enum: [free, premium]
+    PlanState:
+      type: string
+      enum: [free, premium_trial, premium_paid]
+    ProviderSubscriptionStatus:
+      type: string
+      enum: [free, trialing, active, past_due, unpaid, incomplete, canceled]
+    EntitlementState:
+      type: string
+      enum: [free_only, premium_enabled]
+    BillingProfileReadiness:
+      type: object
+      required: [state, gatesCheckout, gatesPremiumEligibility]
+      properties:
+        state:
+          type: string
+          enum: [complete, incomplete, unavailable, not_required]
+        nextAction:
+          type: [string, 'null']
+        checkedAt:
+          type: [string, 'null']
+          format: date-time
+        gatesCheckout:
+          type: boolean
+          const: false
+        gatesPremiumEligibility:
+          type: boolean
+          const: false
+    PaidTier:
+      type: object
+      required: [code, label, resolution, capabilities, diagnosticReason]
+      properties:
+        code:
+          type: string
+          enum: [premium_default, premium_growth, premium_scale, premium_unknown]
+        label:
+          type: string
+        resolution:
+          type: string
+          enum: [not_paid, legacy_default, known_price, unknown_price]
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum: [organization_premium_features, advanced_billing_communications]
+        diagnosticReason:
+          type: [string, 'null']
+    PaymentDocumentReference:
+      type: object
+      required:
+        - documentKind
+        - providerDocumentId
+        - availability
+        - ownerFacingStatus
+      properties:
+        documentKind:
+          type: string
+          enum: [invoice, receipt]
+        providerDocumentId:
+          type: string
+        hostedInvoiceUrl:
+          type: [string, 'null']
+          format: uri
+        invoicePdfUrl:
+          type: [string, 'null']
+          format: uri
+        receiptUrl:
+          type: [string, 'null']
+          format: uri
+        availability:
+          type: string
+          enum: [available, unavailable, missing, checking]
+        ownerFacingStatus:
+          type: string
+          enum: [available, unavailable, checking]
+        providerDerived:
+          type: boolean
+          const: true
+    InvoicePaymentEvent:
+      type: object
+      required:
+        - id
+        - organizationId
+        - stripeEventId
+        - eventType
+        - stripeCustomerId
+        - stripeSubscriptionId
+        - stripeInvoiceId
+        - stripePaymentIntentId
+        - providerStatus
+        - ownerFacingStatus
+        - occurredAt
+        - createdAt
+      properties:
+        id:
+          type: string
+        organizationId:
+          type: string
+        eventType:
+          type: string
+          enum: [invoice_available, payment_succeeded, payment_failed, payment_action_required]
+        stripeEventId:
+          type: [string, 'null']
+        stripeCustomerId:
+          type: [string, 'null']
+        stripeSubscriptionId:
+          type: [string, 'null']
+        stripeInvoiceId:
+          type: [string, 'null']
+        stripePaymentIntentId:
+          type: [string, 'null']
+        providerStatus:
+          type: [string, 'null']
+        ownerFacingStatus:
+          type: string
+          enum: [available, checking, missing, action_required, failed, succeeded]
+        occurredAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: [string, 'null']
+          format: date-time
+    BillingActionAvailability:
+      type: object
+      required:
+        - canStartTrial
+        - canStartPaidCheckout
+        - canRegisterPaymentMethod
+        - canOpenBillingPortal
+        - trialUsed
+        - availableIntervals
+      properties:
+        canStartTrial:
+          type: boolean
+        canStartPaidCheckout:
+          type: boolean
+        canRegisterPaymentMethod:
+          type: boolean
+        canOpenBillingPortal:
+          type: boolean
+        trialUsed:
+          type: boolean
+        availableIntervals:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingInterval'
+        nextOwnerAction:
+          type: [string, 'null']
+        readOnlyReason:
+          type: [string, 'null']
+    BillingSummary:
+      type: object
+      required:
+        - organizationId
+        - planCode
+        - planState
+        - billingInterval
+        - subscriptionStatus
+        - cancelAtPeriodEnd
+        - trialStartedAt
+        - currentPeriodEnd
+        - paymentIssueStartedAt
+        - pastDueGraceEndsAt
+        - lastReconciledAt
+        - lastReconciliationReason
+        - trialEndsAt
+        - premiumEligible
+        - entitlementState
+        - entitlementReason
+        - capabilities
+        - paymentMethodStatus
+        - canViewBilling
+        - canManageBilling
+        - actionAvailability
+        - billingProfileReadiness
+        - history
+        - paymentDocuments
+        - invoicePaymentEvents
+      properties:
+        organizationId:
+          type: string
+        planCode:
+          $ref: '#/components/schemas/PlanCode'
+        planState:
+          $ref: '#/components/schemas/PlanState'
+        subscriptionStatus:
+          anyOf:
+            - $ref: '#/components/schemas/ProviderSubscriptionStatus'
+            - type: 'null'
+        billingInterval:
+          anyOf:
+            - $ref: '#/components/schemas/BillingInterval'
+            - type: 'null'
+        cancelAtPeriodEnd:
+          type: boolean
+        trialStartedAt:
+          type: [string, 'null']
+          format: date-time
+        currentPeriodEnd:
+          type: [string, 'null']
+          format: date-time
+        paymentIssueStartedAt:
+          type: [string, 'null']
+          format: date-time
+        pastDueGraceEndsAt:
+          type: [string, 'null']
+          format: date-time
+        lastReconciledAt:
+          type: [string, 'null']
+          format: date-time
+        lastReconciliationReason:
+          type: [string, 'null']
+        trialEndsAt:
+          type: [string, 'null']
+          format: date-time
+        premiumEligible:
+          type: boolean
+        entitlementState:
+          $ref: '#/components/schemas/EntitlementState'
+        entitlementReason:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        paymentMethodStatus:
+          type: string
+          enum: [not_started, pending, registered]
+        paidTier:
+          anyOf:
+            - $ref: '#/components/schemas/PaidTier'
+            - type: 'null'
+        canViewBilling:
+          type: boolean
+        canManageBilling:
+          type: boolean
+        actionAvailability:
+          $ref: '#/components/schemas/BillingActionAvailability'
+        billingProfileReadiness:
+          $ref: '#/components/schemas/BillingProfileReadiness'
+        history:
+          type: [array, 'null']
+          items:
+            type: object
+        paymentDocuments:
+          anyOf:
+            - type: object
+              required:
+                - aggregateRoot
+                - organizationId
+                - provider
+                - stripeCustomerId
+                - stripeSubscriptionId
+                - ownerAccess
+                - persistenceStrategy
+                - documents
+              properties:
+                aggregateRoot:
+                  type: string
+                  enum: [organization_billing]
+                organizationId:
+                  type: string
+                provider:
+                  type: string
+                  enum: [stripe]
+                stripeCustomerId:
+                  type: [string, 'null']
+                stripeSubscriptionId:
+                  type: [string, 'null']
+                ownerAccess:
+                  type: string
+                  enum: [owner_only]
+                persistenceStrategy:
+                  type: string
+                  enum: [provider_reference_only]
+                documents:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/PaymentDocumentReference'
+            - type: 'null'
+        invoicePaymentEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoicePaymentEvent'
+    BillingHandoff:
+      type: object
+      required: [provider, purpose, url, expiresAt, reused]
+      properties:
+        provider:
+          type: string
+          enum: [stripe]
+        purpose:
+          type: string
+          enum: [trial_start, paid_checkout, payment_method_setup, billing_portal]
+        url:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+        reused:
+          type: boolean
+        operationAttemptId:
+          type: string
+    BillingActionEnvelope:
+      type: object
+      required: [status, message, billing, handoff]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, processing, conflict, failed]
+        message:
+          type: [string, 'null']
+        billing:
+          anyOf:
+            - $ref: '#/components/schemas/BillingSummary'
+            - type: 'null'
+        handoff:
+          anyOf:
+            - $ref: '#/components/schemas/BillingHandoff'
+            - type: 'null'
+        url:
+          type: [string, 'null']
+          format: uri
+    BillingActionRequest:
+      type: object
+      properties:
+        organizationId:
+          type: string
+    PaidCheckoutRequest:
+      type: object
+      required: [billingInterval]
+      properties:
+        organizationId:
+          type: string
+        billingInterval:
+          $ref: '#/components/schemas/BillingInterval'
+    InternalBillingOperationAttempt:
+      type: object
+      required: [id, purpose, billingInterval, state, handoffExpiresAt, provider]
+      properties:
+        id:
+          type: string
+        purpose:
+          type: string
+          enum: [trial_start, paid_checkout, payment_method_setup, billing_portal]
+        billingInterval:
+          anyOf:
+            - $ref: '#/components/schemas/BillingInterval'
+            - type: 'null'
+        state:
+          type: string
+          enum: [processing, succeeded, conflict, expired, failed]
+        handoffExpiresAt:
+          type: [string, 'null']
+          format: date-time
+        provider:
+          type: string
+          enum: [stripe]
+        stripeCustomerId:
+          type: [string, 'null']
+        stripeSubscriptionId:
+          type: [string, 'null']
+        stripeCheckoutSessionId:
+          type: [string, 'null']
+        stripePortalSessionId:
+          type: [string, 'null']
+        failureReason:
+          type: [string, 'null']
+        createdByUserId:
+          type: [string, 'null']
+        createdAt:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: [string, 'null']
+          format: date-time
+    InternalBillingInspectionSummary:
+      type: object
+      required:
+        - planCode
+        - planState
+        - lifecycleStage
+        - lifecycleReason
+        - entitlementState
+        - billingInterval
+        - subscriptionStatus
+        - paymentMethodStatus
+        - currentPeriodEnd
+        - trialEndsAt
+        - cancelAtPeriodEnd
+        - stripeLinked
+        - paidTier
+        - billingProfileReadiness
+      properties:
+        planCode:
+          $ref: '#/components/schemas/PlanCode'
+        planState:
+          $ref: '#/components/schemas/PlanState'
+        lifecycleStage:
+          type: string
+          enum: [free, trial, paid]
+        lifecycleReason:
+          type: string
+        entitlementState:
+          $ref: '#/components/schemas/EntitlementState'
+        billingInterval:
+          anyOf:
+            - $ref: '#/components/schemas/BillingInterval'
+            - type: 'null'
+        subscriptionStatus:
+          $ref: '#/components/schemas/ProviderSubscriptionStatus'
+        paymentMethodStatus:
+          type: string
+          enum: [not_started, pending, registered]
+        currentPeriodEnd:
+          type: [string, 'null']
+          format: date-time
+        trialEndsAt:
+          type: [string, 'null']
+          format: date-time
+        cancelAtPeriodEnd:
+          type: boolean
+        stripeLinked:
+          type: boolean
+        paidTier:
+          anyOf:
+            - $ref: '#/components/schemas/PaidTier'
+            - type: 'null'
+        billingProfileReadiness:
+          $ref: '#/components/schemas/BillingProfileReadiness'
+    InternalBillingInspection:
+      type: object
+      required:
+        - organizationId
+        - organizationName
+        - organizationSlug
+        - summary
+        - provider
+        - lifecycle
+        - reconciliation
+        - notifications
+        - paymentDocuments
+        - invoicePaymentEvents
+        - operationAttempts
+        - timeline
+      properties:
+        organizationId:
+          type: string
+        organizationName:
+          type: string
+        organizationSlug:
+          type: string
+        summary:
+          $ref: '#/components/schemas/InternalBillingInspectionSummary'
+        provider:
+          type: [object, 'null']
+          description: Support-safe Stripe customer, subscription, price, status, payment method, and paid tier summary.
+        lifecycle:
+          type: object
+          required: [recentEvents, latestSignal]
+          properties:
+            recentEvents:
+              type: array
+              items:
+                type: object
+            latestSignal:
+              type: [object, 'null']
+        reconciliation:
+          type: object
+          description: Current comparison, recent signals, webhook receipts, duplicate no-ops, and sanitized webhook failures.
+        notifications:
+          type: object
+          description: Reminder/payment issue notification delivery summary and history.
+        paymentDocuments:
+          type: object
+          description: Owner-only provider-derived invoice and receipt references.
+        invoicePaymentEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoicePaymentEvent'
+        operationAttempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/InternalBillingOperationAttempt'
+        timeline:
+          type: object
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        code:
+          type: [string, 'null']
+paths:
+  /api/v1/auth/organizations/billing:
+    get:
+      summary: Get active organization billing summary
+      parameters:
+        - name: organizationId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Billing summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingSummary'
+        '401':
+          description: Authentication required
+        '403':
+          description: Organization access denied
+        '422':
+          description: organizationId is required when no active organization can be resolved
+  /api/v1/auth/organizations/billing/trial:
+    post:
+      summary: Start eligible premium trial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingActionRequest'
+      responses:
+        '200':
+          description: Trial started or existing operation returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingActionEnvelope'
+        '403':
+          description: Owner-only billing action denied
+        '409':
+          description: Trial unavailable or conflicting lifecycle
+        '422':
+          description: organizationId is required
+  /api/v1/auth/organizations/billing/trial/complete:
+    post:
+      summary: Evaluate and apply premium trial completion lifecycle rules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingActionRequest'
+      responses:
+        '200':
+          description: Trial lifecycle transition applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingActionEnvelope'
+        '403':
+          description: Owner-only billing action denied
+        '409':
+          description: Organization does not have a completeable premium trial
+        '422':
+          description: Stripe billing is not configured or request is invalid
+        '503':
+          description: Stripe payment method reflection is still syncing
+  /api/v1/auth/organizations/billing/checkout:
+    post:
+      summary: Create or reuse paid checkout handoff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaidCheckoutRequest'
+      responses:
+        '200':
+          description: Provider-hosted checkout handoff
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingActionEnvelope'
+        '403':
+          description: Owner-only billing action denied
+        '409':
+          description: Paid checkout not currently allowed
+        '422':
+          description: Stripe billing is not configured or billing interval is unavailable
+        '500':
+          description: Stripe checkout creation failed
+  /api/v1/auth/organizations/billing/payment-method:
+    post:
+      summary: Create or reuse payment method setup handoff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingActionRequest'
+      responses:
+        '200':
+          description: Provider-hosted setup handoff
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingActionEnvelope'
+        '403':
+          description: Owner-only billing action denied
+        '409':
+          description: Payment method setup not currently allowed
+        '422':
+          description: Stripe billing is not configured
+  /api/v1/auth/organizations/billing/portal:
+    post:
+      summary: Create or reuse billing portal handoff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingActionRequest'
+      responses:
+        '200':
+          description: Provider-hosted portal handoff
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingActionEnvelope'
+        '403':
+          description: Owner-only billing action denied
+        '409':
+          description: Portal handoff is unavailable for free, canceled, or no-provider-subscription state
+        '422':
+          description: Stripe billing is not configured
+  /api/v1/auth/internal/organizations/{organizationId}/billing-inspection:
+    get:
+      summary: Get internal read-only billing inspection
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Internal billing inspection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalBillingInspection'
+        '403':
+          description: Internal operator access denied
+        '404':
+          description: Organization not found
+  /api/webhooks/stripe:
+    post:
+      summary: Receive Stripe webhook events for organization billing
+      security:
+        - stripeWebhookSignature: []
+      responses:
+        '200':
+          description: Event accepted, duplicate no-op, or unsupported non-billing event ignored
+        '400':
+          description: Missing, mismatched, or expired signature; no billing state changed
+        '500':
+          description: Retryable provider reconciliation or processing failure

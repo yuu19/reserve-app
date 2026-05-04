@@ -13,11 +13,16 @@ import {
   resolveOrganizationBillingCommunicationType,
   resolveOrganizationBillingNotificationChannelLabel,
 } from './organization-billing-notifications.js';
+import {
+  readOrganizationBillingInvoicePaymentEvents,
+  type OrganizationBillingInvoicePaymentEvent,
+} from './organization-billing-invoice-events.js';
 
 export type OrganizationOwnerBillingHistoryEntryType =
   | 'plan_transition'
   | 'notification'
-  | 'reconciliation';
+  | 'reconciliation'
+  | 'payment_event';
 export type OrganizationOwnerBillingHistoryEntryTone = 'neutral' | 'positive' | 'attention';
 
 export type OrganizationOwnerBillingHistoryEntry = {
@@ -124,19 +129,17 @@ const normalizePlanState = (value: unknown): OrganizationBillingPlanState => {
 };
 
 const normalizeSubscriptionStatus = (value: unknown): OrganizationBillingSubscriptionStatus => {
-  return value === 'trialing'
-    || value === 'active'
-    || value === 'past_due'
-    || value === 'canceled'
-    || value === 'unpaid'
-    || value === 'incomplete'
+  return value === 'trialing' ||
+    value === 'active' ||
+    value === 'past_due' ||
+    value === 'canceled' ||
+    value === 'unpaid' ||
+    value === 'incomplete'
     ? value
     : 'free';
 };
 
-const normalizePaymentMethodStatus = (
-  value: unknown,
-): OrganizationBillingPaymentMethodStatus => {
+const normalizePaymentMethodStatus = (value: unknown): OrganizationBillingPaymentMethodStatus => {
   return value === 'pending' || value === 'registered' ? value : 'not_started';
 };
 
@@ -271,6 +274,58 @@ const resolveNotificationSummary = ({
   return `${channelLabel}で契約内容の確認案内の送信準備を開始しました。`;
 };
 
+const resolvePaymentIssueNotificationTitle = ({
+  notificationKind,
+  deliveryState,
+  channelLabel,
+}: {
+  notificationKind: string;
+  deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown';
+  channelLabel: string;
+}) => {
+  const issueLabel =
+    notificationKind === 'payment_action_required_email'
+      ? '支払い認証依頼'
+      : notificationKind === 'past_due_grace_reminder_email'
+        ? '支払い遅延の猶予案内'
+        : '支払い失敗のお知らせ';
+
+  switch (deliveryState) {
+    case 'sent':
+      return `${issueLabel}を${channelLabel}で送信しました`;
+    case 'failed':
+      return `${issueLabel}を${channelLabel}で送信できませんでした`;
+    case 'retried':
+      return `${issueLabel}を${channelLabel}で再送しています`;
+    case 'unknown':
+      return `${issueLabel}の状態を確認しています`;
+    default:
+      return `${issueLabel}を${channelLabel}で準備しました`;
+  }
+};
+
+const resolvePaymentIssueNotificationSummary = ({
+  deliveryState,
+  channelLabel,
+}: {
+  deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown';
+  channelLabel: string;
+}) => {
+  if (deliveryState === 'sent') {
+    return `${channelLabel}で支払い状況の確認案内を送信しました。`;
+  }
+  if (deliveryState === 'failed') {
+    return `${channelLabel}で支払い状況の確認案内を送信できませんでした。契約ページでも状態を確認できます。`;
+  }
+  if (deliveryState === 'retried') {
+    return `${channelLabel}で支払い状況の確認案内を再送しています。`;
+  }
+  if (deliveryState === 'unknown') {
+    return '支払い状況の確認案内の配信状態を確認しています。';
+  }
+  return `${channelLabel}で支払い状況の確認案内の送信準備を開始しました。`;
+};
+
 const resolveReconciliationTitle = (
   signalStatus: 'pending' | 'mismatch' | 'unavailable' | 'resolved',
 ) => {
@@ -376,22 +431,39 @@ const buildNotificationEntry = (row: {
     id: `notification:${row.sequenceNumber}`,
     eventType: 'notification',
     occurredAt: toIsoDateString(row.createdAt),
-    title: resolveNotificationTitle({
-      deliveryState,
-      channelLabel,
-    }),
-    summary: resolveNotificationSummary({
-      deliveryState,
-      trialEndsAt,
-      channelLabel,
-    }),
+    title:
+      communicationType === 'payment_issue'
+        ? resolvePaymentIssueNotificationTitle({
+            notificationKind,
+            deliveryState,
+            channelLabel,
+          })
+        : resolveNotificationTitle({
+            deliveryState,
+            channelLabel,
+          }),
+    summary:
+      communicationType === 'payment_issue'
+        ? resolvePaymentIssueNotificationSummary({
+            deliveryState,
+            channelLabel,
+          })
+        : resolveNotificationSummary({
+            deliveryState,
+            trialEndsAt,
+            channelLabel,
+          }),
     billingContext: [
       buildBillingContext({
         planState,
         subscriptionStatus,
         paymentMethodStatus,
       }),
-      communicationType === 'trial_will_end' ? `通知種別: トライアル終了前のお知らせ` : null,
+      communicationType === 'trial_will_end'
+        ? `通知種別: トライアル終了前のお知らせ`
+        : communicationType === 'payment_issue'
+          ? `通知種別: 支払い状況のお知らせ`
+          : null,
       `チャネル: ${channelLabel}`,
       trialEndsAt ? `終了予定: ${formatJaDateTime(trialEndsAt)}` : null,
     ]
@@ -439,6 +511,53 @@ const buildReconciliationEntry = (row: {
 
 type OwnerBillingReconciliationHistoryRow = Parameters<typeof buildReconciliationEntry>[0];
 
+const buildInvoicePaymentHistoryEntry = (
+  event: OrganizationBillingInvoicePaymentEvent,
+  index: number,
+) => {
+  const title =
+    event.eventType === 'invoice_available'
+      ? '請求書の参照を確認しました'
+      : event.eventType === 'payment_succeeded'
+        ? '支払いが完了しました'
+        : event.eventType === 'payment_action_required'
+          ? '支払い方法の認証が必要です'
+          : '支払いを完了できませんでした';
+  const summary =
+    event.eventType === 'invoice_available'
+      ? 'Stripe 上の請求書参照を契約ページで確認できます。'
+      : event.eventType === 'payment_succeeded'
+        ? 'Stripe から支払い成功イベントを受信しました。'
+        : event.eventType === 'payment_action_required'
+          ? '支払い方法の認証が必要な状態です。契約ページから対応状況を確認できます。'
+          : 'Stripe から支払い失敗イベントを受信しました。契約ページから対応状況を確認できます。';
+
+  return {
+    id: `invoice-payment-event:${event.id}`,
+    eventType: 'payment_event',
+    occurredAt: event.occurredAt ?? event.createdAt,
+    title,
+    summary,
+    billingContext:
+      [
+        event.providerStatus ? `provider status: ${event.providerStatus}` : null,
+        event.stripeInvoiceId ? `Stripe invoice: ${event.stripeInvoiceId}` : null,
+        event.stripePaymentIntentId
+          ? `Stripe payment intent: ${event.stripePaymentIntentId}`
+          : null,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(' / ') || null,
+    tone:
+      event.eventType === 'payment_succeeded' || event.eventType === 'invoice_available'
+        ? 'positive'
+        : event.eventType === 'payment_failed' || event.eventType === 'payment_action_required'
+          ? 'attention'
+          : 'neutral',
+    sortSequence: index * -1,
+  } satisfies SortableOwnerBillingHistoryEntry;
+};
+
 const compareHistoryEntries = (
   left: SortableOwnerBillingHistoryEntry,
   right: SortableOwnerBillingHistoryEntry,
@@ -465,68 +584,77 @@ export const readOrganizationOwnerBillingHistory = async ({
   database: AuthRuntimeDatabase;
   organizationId: string;
 }) => {
-  const [auditRows, notificationRows, reconciliationSignalRows] = await Promise.all([
-    database
-      .select({
-        sequenceNumber: dbSchema.organizationBillingAuditEvent.sequenceNumber,
-        sourceKind: dbSchema.organizationBillingAuditEvent.sourceKind,
-        previousPlanState: dbSchema.organizationBillingAuditEvent.previousPlanState,
-        nextPlanState: dbSchema.organizationBillingAuditEvent.nextPlanState,
-        previousSubscriptionStatus: dbSchema.organizationBillingAuditEvent.previousSubscriptionStatus,
-        nextSubscriptionStatus: dbSchema.organizationBillingAuditEvent.nextSubscriptionStatus,
-        nextPaymentMethodStatus: dbSchema.organizationBillingAuditEvent.nextPaymentMethodStatus,
-        nextBillingInterval: dbSchema.organizationBillingAuditEvent.nextBillingInterval,
-        createdAt: dbSchema.organizationBillingAuditEvent.createdAt,
-      })
-      .from(dbSchema.organizationBillingAuditEvent)
-      .where(eq(dbSchema.organizationBillingAuditEvent.organizationId, organizationId))
-      .orderBy(desc(dbSchema.organizationBillingAuditEvent.sequenceNumber))
-      .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
-    database
-      .select({
-        sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
-        notificationKind: dbSchema.organizationBillingNotification.notificationKind,
-        channel: dbSchema.organizationBillingNotification.channel,
-        deliveryState: dbSchema.organizationBillingNotification.deliveryState,
-        planState: dbSchema.organizationBillingNotification.planState,
-        subscriptionStatus: dbSchema.organizationBillingNotification.subscriptionStatus,
-        paymentMethodStatus: dbSchema.organizationBillingNotification.paymentMethodStatus,
-        trialEndsAt: dbSchema.organizationBillingNotification.trialEndsAt,
-        createdAt: dbSchema.organizationBillingNotification.createdAt,
-      })
-      .from(dbSchema.organizationBillingNotification)
-      .where(eq(dbSchema.organizationBillingNotification.organizationId, organizationId))
-      .orderBy(desc(dbSchema.organizationBillingNotification.sequenceNumber))
-      .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
-    database
-      .select({
-        sequenceNumber: dbSchema.organizationBillingSignal.sequenceNumber,
-        signalStatus: dbSchema.organizationBillingSignal.signalStatus,
-        appPlanState: dbSchema.organizationBillingSignal.appPlanState,
-        appSubscriptionStatus: dbSchema.organizationBillingSignal.appSubscriptionStatus,
-        appPaymentMethodStatus: dbSchema.organizationBillingSignal.appPaymentMethodStatus,
-        createdAt: dbSchema.organizationBillingSignal.createdAt,
-      })
-      .from(dbSchema.organizationBillingSignal)
-      .where(
-        and(
-          eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
-          eq(dbSchema.organizationBillingSignal.signalKind, 'reconciliation'),
-        ),
-      )
-      .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
-      .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
-  ]);
+  const [auditRows, notificationRows, reconciliationSignalRows, invoicePaymentEvents] =
+    await Promise.all([
+      database
+        .select({
+          sequenceNumber: dbSchema.organizationBillingAuditEvent.sequenceNumber,
+          sourceKind: dbSchema.organizationBillingAuditEvent.sourceKind,
+          previousPlanState: dbSchema.organizationBillingAuditEvent.previousPlanState,
+          nextPlanState: dbSchema.organizationBillingAuditEvent.nextPlanState,
+          previousSubscriptionStatus:
+            dbSchema.organizationBillingAuditEvent.previousSubscriptionStatus,
+          nextSubscriptionStatus: dbSchema.organizationBillingAuditEvent.nextSubscriptionStatus,
+          nextPaymentMethodStatus: dbSchema.organizationBillingAuditEvent.nextPaymentMethodStatus,
+          nextBillingInterval: dbSchema.organizationBillingAuditEvent.nextBillingInterval,
+          createdAt: dbSchema.organizationBillingAuditEvent.createdAt,
+        })
+        .from(dbSchema.organizationBillingAuditEvent)
+        .where(eq(dbSchema.organizationBillingAuditEvent.organizationId, organizationId))
+        .orderBy(desc(dbSchema.organizationBillingAuditEvent.sequenceNumber))
+        .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
+      database
+        .select({
+          sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
+          notificationKind: dbSchema.organizationBillingNotification.notificationKind,
+          channel: dbSchema.organizationBillingNotification.channel,
+          deliveryState: dbSchema.organizationBillingNotification.deliveryState,
+          planState: dbSchema.organizationBillingNotification.planState,
+          subscriptionStatus: dbSchema.organizationBillingNotification.subscriptionStatus,
+          paymentMethodStatus: dbSchema.organizationBillingNotification.paymentMethodStatus,
+          trialEndsAt: dbSchema.organizationBillingNotification.trialEndsAt,
+          createdAt: dbSchema.organizationBillingNotification.createdAt,
+        })
+        .from(dbSchema.organizationBillingNotification)
+        .where(eq(dbSchema.organizationBillingNotification.organizationId, organizationId))
+        .orderBy(desc(dbSchema.organizationBillingNotification.sequenceNumber))
+        .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
+      database
+        .select({
+          sequenceNumber: dbSchema.organizationBillingSignal.sequenceNumber,
+          signalStatus: dbSchema.organizationBillingSignal.signalStatus,
+          appPlanState: dbSchema.organizationBillingSignal.appPlanState,
+          appSubscriptionStatus: dbSchema.organizationBillingSignal.appSubscriptionStatus,
+          appPaymentMethodStatus: dbSchema.organizationBillingSignal.appPaymentMethodStatus,
+          createdAt: dbSchema.organizationBillingSignal.createdAt,
+        })
+        .from(dbSchema.organizationBillingSignal)
+        .where(
+          and(
+            eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
+            eq(dbSchema.organizationBillingSignal.signalKind, 'reconciliation'),
+          ),
+        )
+        .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+        .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
+      readOrganizationBillingInvoicePaymentEvents({
+        database,
+        organizationId,
+        limit: OWNER_BILLING_HISTORY_ENTRY_LIMIT,
+      }),
+    ]);
 
   const entries = [
     ...auditRows.map(buildPlanTransitionEntry),
     ...notificationRows
-      .filter((row: { deliveryState: unknown }) =>
-        row.deliveryState === 'requested'
-        || row.deliveryState === 'retried'
-        || row.deliveryState === 'sent'
-        || row.deliveryState === 'failed'
-        || typeof row.deliveryState === 'string')
+      .filter(
+        (row: { deliveryState: unknown }) =>
+          row.deliveryState === 'requested' ||
+          row.deliveryState === 'retried' ||
+          row.deliveryState === 'sent' ||
+          row.deliveryState === 'failed' ||
+          typeof row.deliveryState === 'string',
+      )
       .map((row: OwnerBillingNotificationHistoryRow) =>
         buildNotificationEntry({
           sequenceNumber: row.sequenceNumber,
@@ -538,13 +666,16 @@ export const readOrganizationOwnerBillingHistory = async ({
           paymentMethodStatus: row.paymentMethodStatus,
           trialEndsAt: row.trialEndsAt,
           createdAt: row.createdAt,
-        })),
+        }),
+      ),
     ...reconciliationSignalRows
-      .filter((row: { signalStatus: unknown }) =>
-        row.signalStatus === 'pending'
-        || row.signalStatus === 'mismatch'
-        || row.signalStatus === 'unavailable'
-        || row.signalStatus === 'resolved')
+      .filter(
+        (row: { signalStatus: unknown }) =>
+          row.signalStatus === 'pending' ||
+          row.signalStatus === 'mismatch' ||
+          row.signalStatus === 'unavailable' ||
+          row.signalStatus === 'resolved',
+      )
       .map((row: OwnerBillingReconciliationHistoryRow) =>
         buildReconciliationEntry({
           sequenceNumber: row.sequenceNumber,
@@ -553,7 +684,9 @@ export const readOrganizationOwnerBillingHistory = async ({
           appSubscriptionStatus: row.appSubscriptionStatus,
           appPaymentMethodStatus: row.appPaymentMethodStatus,
           createdAt: row.createdAt,
-        })),
+        }),
+      ),
+    ...invoicePaymentEvents.map(buildInvoicePaymentHistoryEntry),
   ]
     .sort(compareHistoryEntries)
     .slice(0, OWNER_BILLING_HISTORY_ENTRY_LIMIT)

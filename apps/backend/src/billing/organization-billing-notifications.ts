@@ -9,7 +9,7 @@ import {
   type OrganizationBillingSubscriptionStatus,
 } from './organization-billing.js';
 import { resolveOrganizationPremiumEntitlementPolicy } from './organization-billing-policy.js';
-import { sendTrialEndingReminderEmail } from '../email/resend.js';
+import { sendBillingPaymentIssueEmail, sendTrialEndingReminderEmail } from '../email/resend.js';
 import {
   appendOrganizationBillingSignal,
   appendResolvedBillingSignalIfNeeded,
@@ -19,13 +19,12 @@ import {
 export type OrganizationBillingNotificationKind =
   | 'trial_will_end_email'
   | 'trial_will_end'
+  | 'payment_failed_email'
+  | 'payment_action_required_email'
+  | 'past_due_grace_reminder_email'
   | 'unknown';
-export type OrganizationBillingCommunicationType = 'trial_will_end' | 'unknown';
-export type OrganizationBillingNotificationChannel =
-  | 'email'
-  | 'in_app'
-  | 'web_push'
-  | 'unknown';
+export type OrganizationBillingCommunicationType = 'trial_will_end' | 'payment_issue' | 'unknown';
+export type OrganizationBillingNotificationChannel = 'email' | 'in_app' | 'web_push' | 'unknown';
 export type OrganizationBillingNotificationDeliveryState =
   | 'requested'
   | 'retried'
@@ -97,7 +96,13 @@ type TrialReminderWebhookEventSummary = {
   createdAt: string | null;
 };
 
-const TRIAL_WILL_END_NOTIFICATION_KIND: OrganizationBillingNotificationKind = 'trial_will_end_email';
+const TRIAL_WILL_END_NOTIFICATION_KIND: OrganizationBillingNotificationKind =
+  'trial_will_end_email';
+const paymentIssueNotificationKinds = new Set<OrganizationBillingNotificationKind>([
+  'payment_failed_email',
+  'payment_action_required_email',
+  'past_due_grace_reminder_email',
+]);
 type TrialWillEndCommunicationKind = Extract<
   OrganizationBillingNotificationKind,
   'trial_will_end_email' | 'trial_will_end'
@@ -116,14 +121,19 @@ const paymentMethodStatusLabelMap: Record<OrganizationBillingPaymentMethodStatus
   registered: '登録済み',
 };
 
-const paymentMethodStatusCopyMap: Record<OrganizationBillingPaymentMethodStatus, TrialReminderCopy> = {
+const paymentMethodStatusCopyMap: Record<
+  OrganizationBillingPaymentMethodStatus,
+  TrialReminderCopy
+> = {
   not_started: {
     actionText: '契約ページで支払い方法の登録を完了してください',
-    noteText: '支払い方法の登録が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
+    noteText:
+      '支払い方法の登録が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
   },
   pending: {
     actionText: '契約ページで登録状況を確認し、未完了であれば支払い方法の登録を完了してください',
-    noteText: '支払い方法の登録状況の反映が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
+    noteText:
+      '支払い方法の登録状況の反映が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
   },
   registered: {
     actionText: '追加の登録は不要です。契約ページで継続予定と登録済みの支払い方法をご確認ください',
@@ -145,13 +155,22 @@ const trialReminderFailureReasonFromError = (error: unknown): string => {
   if (error.message.startsWith('Failed to send trial reminder email via Resend:')) {
     return 'resend_delivery_failed';
   }
+  if (error.message.startsWith('Failed to send billing payment issue email via Resend:')) {
+    return 'resend_delivery_failed';
+  }
   return 'unexpected_error';
 };
 
 export const normalizeOrganizationBillingNotificationKind = (
   value: unknown,
 ): OrganizationBillingNotificationKind => {
-  return value === 'trial_will_end_email' || value === 'trial_will_end' ? value : 'unknown';
+  return value === 'trial_will_end_email' ||
+    value === 'trial_will_end' ||
+    value === 'payment_failed_email' ||
+    value === 'payment_action_required_email' ||
+    value === 'past_due_grace_reminder_email'
+    ? value
+    : 'unknown';
 };
 
 export const normalizeOrganizationBillingNotificationChannel = (
@@ -191,9 +210,16 @@ export const resolveOrganizationBillingCommunicationType = ({
   notificationKind: OrganizationBillingNotificationKind;
   channel: OrganizationBillingNotificationChannel;
 }): OrganizationBillingCommunicationType => {
-  return channel !== 'unknown' && isTrialWillEndCommunicationKind(notificationKind)
-    ? 'trial_will_end'
-    : 'unknown';
+  if (channel === 'unknown') {
+    return 'unknown';
+  }
+  if (isTrialWillEndCommunicationKind(notificationKind)) {
+    return 'trial_will_end';
+  }
+  if (paymentIssueNotificationKinds.has(notificationKind)) {
+    return 'payment_issue';
+  }
+  return 'unknown';
 };
 
 export const resolveOrganizationBillingNotificationChannelLabel = (
@@ -221,7 +247,11 @@ const formatTrialEndsAtLabel = (trialEndsAt: string) => {
 
 const toIsoDateString = (value: unknown): string | null => {
   const candidate =
-    value instanceof Date ? value : typeof value === 'number' || typeof value === 'string' ? new Date(value) : null;
+    value instanceof Date
+      ? value
+      : typeof value === 'number' || typeof value === 'string'
+        ? new Date(value)
+        : null;
 
   if (!candidate || Number.isNaN(candidate.getTime())) {
     return null;
@@ -302,24 +332,47 @@ const selectOrganizationBillingOwnerContact = async ({
     .from(dbSchema.member)
     .innerJoin(dbSchema.user, eq(dbSchema.member.userId, dbSchema.user.id))
     .where(
-      and(
-        eq(dbSchema.member.organizationId, organizationId),
-        eq(dbSchema.member.role, 'owner'),
-      ),
+      and(eq(dbSchema.member.organizationId, organizationId), eq(dbSchema.member.role, 'owner')),
     )
     .limit(1);
 
   return rows[0] ?? null;
 };
 
+const selectOrganizationBillingVerifiedOwnerContacts = async ({
+  database,
+  organizationId,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+}): Promise<OrganizationBillingOwnerContact[]> => {
+  return database
+    .select({
+      userId: dbSchema.user.id,
+      email: dbSchema.user.email,
+      name: dbSchema.user.name,
+    })
+    .from(dbSchema.member)
+    .innerJoin(dbSchema.user, eq(dbSchema.member.userId, dbSchema.user.id))
+    .where(
+      and(
+        eq(dbSchema.member.organizationId, organizationId),
+        eq(dbSchema.member.role, 'owner'),
+        eq(dbSchema.user.emailVerified, true),
+      ),
+    );
+};
+
 const selectNextOrganizationBillingNotificationAttempt = async ({
   database,
   organizationId,
   stripeEventId,
+  notificationKind = TRIAL_WILL_END_NOTIFICATION_KIND,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
   stripeEventId: string;
+  notificationKind?: OrganizationBillingNotificationKind;
 }) => {
   const rows = await database
     .select({
@@ -329,7 +382,7 @@ const selectNextOrganizationBillingNotificationAttempt = async ({
     .where(
       and(
         eq(dbSchema.organizationBillingNotification.organizationId, organizationId),
-        eq(dbSchema.organizationBillingNotification.notificationKind, TRIAL_WILL_END_NOTIFICATION_KIND),
+        eq(dbSchema.organizationBillingNotification.notificationKind, notificationKind),
         eq(dbSchema.organizationBillingNotification.stripeEventId, stripeEventId),
         or(
           eq(dbSchema.organizationBillingNotification.deliveryState, 'requested'),
@@ -350,8 +403,7 @@ const selectNextOrganizationBillingNotificationSequence = async ({
 }) => {
   const rows = await database
     .select({
-      maxSequenceNumber:
-        sql<number>`coalesce(max(${dbSchema.organizationBillingNotification.sequenceNumber}), 0)`,
+      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.organizationBillingNotification.sequenceNumber}), 0)`,
     })
     .from(dbSchema.organizationBillingNotification)
     .where(eq(dbSchema.organizationBillingNotification.organizationId, organizationId));
@@ -366,6 +418,7 @@ const insertOrganizationBillingNotification = async ({
   recipientEmail,
   deliveryState,
   attemptNumber,
+  notificationKind = TRIAL_WILL_END_NOTIFICATION_KIND,
   stripeEventId,
   stripeCustomerId,
   stripeSubscriptionId,
@@ -381,6 +434,7 @@ const insertOrganizationBillingNotification = async ({
   recipientEmail?: string | null;
   deliveryState: OrganizationBillingNotificationDeliveryState;
   attemptNumber: number;
+  notificationKind?: OrganizationBillingNotificationKind;
   stripeEventId: string;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
@@ -399,7 +453,7 @@ const insertOrganizationBillingNotification = async ({
     id: crypto.randomUUID(),
     organizationId,
     recipientUserId: recipientUserId ?? null,
-    notificationKind: TRIAL_WILL_END_NOTIFICATION_KIND,
+    notificationKind,
     channel: 'email',
     sequenceNumber,
     deliveryState,
@@ -441,6 +495,9 @@ export const resolveOrganizationTrialReminderContext = async ({
     paymentMethodStatus,
     currentPeriodEnd:
       billing.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd.toISOString() : null,
+    pastDueGraceEndsAt:
+      billing.pastDueGraceEndsAt instanceof Date ? billing.pastDueGraceEndsAt.toISOString() : null,
+    cancelAtPeriodEnd: Boolean(billing.cancelAtPeriodEnd),
     stripePriceId: billing.stripePriceId ?? null,
     env,
   });
@@ -530,35 +587,37 @@ export const readTrialReminderDeliveryAuditInspection = async ({
       .limit(1),
   ]);
 
-  const history = historyRows.map((
-    row: (typeof historyRows)[number],
-  ): TrialReminderDeliveryAuditHistoryEntry => {
-    const notificationKind = normalizeOrganizationBillingNotificationKind(row.notificationKind);
-    const channel = normalizeOrganizationBillingNotificationChannel(row.channel);
-    const deliveryState = normalizeOrganizationBillingNotificationDeliveryState(row.deliveryState);
+  const history = historyRows.map(
+    (row: (typeof historyRows)[number]): TrialReminderDeliveryAuditHistoryEntry => {
+      const notificationKind = normalizeOrganizationBillingNotificationKind(row.notificationKind);
+      const channel = normalizeOrganizationBillingNotificationChannel(row.channel);
+      const deliveryState = normalizeOrganizationBillingNotificationDeliveryState(
+        row.deliveryState,
+      );
 
-    return {
-      sequenceNumber: row.sequenceNumber,
-      notificationKind,
-      communicationType: resolveOrganizationBillingCommunicationType({
+      return {
+        sequenceNumber: row.sequenceNumber,
         notificationKind,
+        communicationType: resolveOrganizationBillingCommunicationType({
+          notificationKind,
+          channel,
+        }),
         channel,
-      }),
-      channel,
-      channelLabel: resolveOrganizationBillingNotificationChannelLabel(channel),
-      deliveryState,
-      deliveryOutcome: resolveOrganizationBillingNotificationDeliveryOutcome(deliveryState),
-      attemptNumber: row.attemptNumber,
-      stripeEventId: row.stripeEventId ?? null,
-      recipientEmail: row.recipientEmail ?? null,
-      planState: row.planState as OrganizationBillingPlanState,
-      subscriptionStatus: row.subscriptionStatus as OrganizationBillingSubscriptionStatus,
-      paymentMethodStatus: row.paymentMethodStatus as OrganizationBillingPaymentMethodStatus,
-      trialEndsAt: toIsoDateString(row.trialEndsAt),
-      failureReason: row.failureReason ?? null,
-      createdAt: toIsoDateString(row.createdAt),
-    };
-  });
+        channelLabel: resolveOrganizationBillingNotificationChannelLabel(channel),
+        deliveryState,
+        deliveryOutcome: resolveOrganizationBillingNotificationDeliveryOutcome(deliveryState),
+        attemptNumber: row.attemptNumber,
+        stripeEventId: row.stripeEventId ?? null,
+        recipientEmail: row.recipientEmail ?? null,
+        planState: row.planState as OrganizationBillingPlanState,
+        subscriptionStatus: row.subscriptionStatus as OrganizationBillingSubscriptionStatus,
+        paymentMethodStatus: row.paymentMethodStatus as OrganizationBillingPaymentMethodStatus,
+        trialEndsAt: toIsoDateString(row.trialEndsAt),
+        failureReason: row.failureReason ?? null,
+        createdAt: toIsoDateString(row.createdAt),
+      };
+    },
+  );
 
   const latestHistory = history.at(-1) ?? null;
   const latestSignalRow = latestSignalRows[0] ?? null;
@@ -584,8 +643,8 @@ export const readTrialReminderDeliveryAuditInspection = async ({
     now,
   });
   const eventFound = Boolean(
-    latestEvent
-    || history.find(
+    latestEvent ||
+    history.find(
       (entry: TrialReminderDeliveryAuditHistoryEntry) =>
         entry.stripeEventId && entry.stripeEventId.length > 0,
     ),
@@ -597,9 +656,9 @@ export const readTrialReminderDeliveryAuditInspection = async ({
         entry.deliveryState === 'failed' && entry.failureReason,
     );
   const latestFailureReason =
-    latestFailedHistory?.failureReason
-    ?? latestEvent?.failureReason
-    ?? (latestSignal?.signalStatus === 'pending' || latestSignal?.signalStatus === 'unavailable'
+    latestFailedHistory?.failureReason ??
+    latestEvent?.failureReason ??
+    (latestSignal?.signalStatus === 'pending' || latestSignal?.signalStatus === 'unavailable'
       ? latestSignal.reason
       : null);
   const status = resolveTrialReminderDeliveryStatus({
@@ -651,9 +710,9 @@ export const sendOrganizationTrialWillEndReminder = async ({
     organizationId,
   });
   if (
-    !reminderContext
-    || reminderContext.planState !== 'premium_trial'
-    || !reminderContext.trialEndsAt
+    !reminderContext ||
+    reminderContext.planState !== 'premium_trial' ||
+    !reminderContext.trialEndsAt
   ) {
     return { ok: true, reminderSent: false };
   }
@@ -747,13 +806,14 @@ export const sendOrganizationTrialWillEndReminder = async ({
     await sendTrialEndingReminderEmail({
       env,
       inviteeEmail: owner.email,
-      organizationName: (
-        await database
-          .select({ name: dbSchema.organization.name })
-          .from(dbSchema.organization)
-          .where(eq(dbSchema.organization.id, organizationId))
-          .limit(1)
-      )[0]?.name ?? 'Your organization',
+      organizationName:
+        (
+          await database
+            .select({ name: dbSchema.organization.name })
+            .from(dbSchema.organization)
+            .where(eq(dbSchema.organization.id, organizationId))
+            .limit(1)
+        )[0]?.name ?? 'Your organization',
       ownerName: owner.name,
       trialEndsAtLabel: formatTrialEndsAtLabel(reminderContext.trialEndsAt),
       paymentMethodStatusLabel: paymentMethodStatusLabelMap[reminderContext.paymentMethodStatus],
@@ -839,4 +899,234 @@ export const sendOrganizationTrialWillEndReminder = async ({
       failureReason,
     };
   }
+};
+
+export const sendOrganizationPaymentIssueNotification = async ({
+  database,
+  env,
+  organizationId,
+  notificationKind,
+  stripeEventId,
+  stripeCustomerId,
+  stripeSubscriptionId,
+  stripeInvoiceId,
+}: {
+  database: AuthRuntimeDatabase;
+  env: AuthRuntimeEnv;
+  organizationId: string;
+  notificationKind:
+    | 'payment_failed_email'
+    | 'payment_action_required_email'
+    | 'past_due_grace_reminder_email';
+  stripeEventId: string;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeInvoiceId?: string | null;
+}): Promise<
+  | { ok: true; notificationSent: true }
+  | { ok: true; notificationSent: false }
+  | { ok: false; retryable: boolean; message: string; failureReason: string }
+> => {
+  const billing = await selectOrganizationBillingSummary(database, organizationId);
+  if (!billing) {
+    return { ok: true, notificationSent: false };
+  }
+
+  const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+    env,
+    planCode: billing.planCode,
+    stripeCustomerId: billing.stripeCustomerId ?? null,
+  });
+  const currentPeriodEnd =
+    billing.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd.toISOString() : null;
+  const pastDueGraceEndsAt =
+    billing.pastDueGraceEndsAt instanceof Date ? billing.pastDueGraceEndsAt.toISOString() : null;
+  const policy = resolveOrganizationPremiumEntitlementPolicy({
+    planCode: billing.planCode,
+    subscriptionStatus: billing.subscriptionStatus,
+    paymentMethodStatus,
+    currentPeriodEnd,
+    pastDueGraceEndsAt,
+    cancelAtPeriodEnd: Boolean(billing.cancelAtPeriodEnd),
+    stripePriceId: billing.stripePriceId ?? null,
+    env,
+  });
+
+  const owners = await selectOrganizationBillingVerifiedOwnerContacts({
+    database,
+    organizationId,
+  });
+  const attemptNumber = await selectNextOrganizationBillingNotificationAttempt({
+    database,
+    organizationId,
+    stripeEventId,
+    notificationKind,
+  });
+  const commonNotificationInput = {
+    database,
+    organizationId,
+    deliveryState: attemptNumber === 1 ? ('requested' as const) : ('retried' as const),
+    attemptNumber,
+    notificationKind,
+    stripeEventId,
+    stripeCustomerId: stripeCustomerId ?? billing.stripeCustomerId,
+    stripeSubscriptionId: stripeSubscriptionId ?? billing.stripeSubscriptionId,
+    planState: policy.planState,
+    subscriptionStatus: billing.subscriptionStatus,
+    paymentMethodStatus,
+    trialEndsAt: policy.trialEndsAt,
+  };
+
+  if (owners.length === 0) {
+    await insertOrganizationBillingNotification({
+      ...commonNotificationInput,
+      failureReason: 'verified_owner_not_found',
+    });
+    await insertOrganizationBillingNotification({
+      ...commonNotificationInput,
+      deliveryState: 'failed',
+      failureReason: 'verified_owner_not_found',
+    });
+    await appendOrganizationBillingSignal({
+      database,
+      organizationId,
+      signalKind: 'notification_delivery',
+      signalStatus: 'unavailable',
+      sourceKind: notificationKind,
+      reason: 'verified_owner_not_found',
+      appSnapshot: await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId,
+      }),
+      stripeEventId,
+      stripeCustomerId: stripeCustomerId ?? billing.stripeCustomerId,
+      stripeSubscriptionId: stripeSubscriptionId ?? billing.stripeSubscriptionId,
+    });
+    return {
+      ok: false,
+      retryable: false,
+      message: 'Verified organization owner could not be resolved for payment issue notification.',
+      failureReason: 'verified_owner_not_found',
+    };
+  }
+
+  const organizationName =
+    (
+      await database
+        .select({ name: dbSchema.organization.name })
+        .from(dbSchema.organization)
+        .where(eq(dbSchema.organization.id, organizationId))
+        .limit(1)
+    )[0]?.name ?? 'Your organization';
+  const issueCopy =
+    notificationKind === 'payment_action_required_email'
+      ? {
+          issueTitle: '支払い方法の認証が必要です',
+          actionText:
+            '契約ページから Stripe の契約管理画面を開き、支払い方法の認証を完了してください。',
+          noteText: '認証が完了するまで Premium の利用が停止または制限される場合があります。',
+        }
+      : notificationKind === 'past_due_grace_reminder_email'
+        ? {
+            issueTitle: '支払い遅延の猶予期間中です',
+            actionText: '猶予期限までに契約ページから支払い方法または請求状況を確認してください。',
+            noteText: '猶予期限を過ぎても支払いが回復しない場合、Premium の利用は停止されます。',
+          }
+        : {
+            issueTitle: '支払いを完了できませんでした',
+            actionText:
+              '契約ページから Stripe の契約管理画面を開き、支払い方法を更新してください。',
+            noteText: '支払いが回復すると Premium の利用状態は自動的に再確認されます。',
+          };
+
+  let retryableFailureReason: string | null = null;
+  let terminalFailureReason: string | null = null;
+
+  for (const owner of owners) {
+    await insertOrganizationBillingNotification({
+      ...commonNotificationInput,
+      recipientUserId: owner.userId,
+      recipientEmail: owner.email,
+    });
+
+    try {
+      await sendBillingPaymentIssueEmail({
+        env,
+        inviteeEmail: owner.email,
+        organizationName,
+        ownerName: owner.name,
+        issueTitle: issueCopy.issueTitle,
+        actionText: issueCopy.actionText,
+        noteText: issueCopy.noteText,
+        invoiceReference: stripeInvoiceId ?? null,
+        graceEndsAtLabel: pastDueGraceEndsAt ? formatTrialEndsAtLabel(pastDueGraceEndsAt) : null,
+      });
+
+      await insertOrganizationBillingNotification({
+        ...commonNotificationInput,
+        recipientUserId: owner.userId,
+        recipientEmail: owner.email,
+        deliveryState: 'sent',
+      });
+    } catch (error) {
+      const failureReason = trialReminderFailureReasonFromError(error);
+      await insertOrganizationBillingNotification({
+        ...commonNotificationInput,
+        recipientUserId: owner.userId,
+        recipientEmail: owner.email,
+        deliveryState: 'failed',
+        failureReason,
+      });
+      await appendOrganizationBillingSignal({
+        database,
+        organizationId,
+        signalKind: 'notification_delivery',
+        signalStatus: failureReason === 'resend_delivery_failed' ? 'pending' : 'unavailable',
+        sourceKind: notificationKind,
+        reason: failureReason,
+        appSnapshot: await readOrganizationBillingObservationSnapshot({
+          database,
+          env,
+          organizationId,
+        }),
+        stripeEventId,
+        stripeCustomerId: stripeCustomerId ?? billing.stripeCustomerId,
+        stripeSubscriptionId: stripeSubscriptionId ?? billing.stripeSubscriptionId,
+      });
+
+      if (failureReason === 'resend_delivery_failed') {
+        retryableFailureReason ??= failureReason;
+      } else {
+        terminalFailureReason ??= failureReason;
+      }
+    }
+  }
+
+  if (retryableFailureReason || terminalFailureReason) {
+    const failureReason = retryableFailureReason ?? terminalFailureReason ?? 'unexpected_error';
+    return {
+      ok: false,
+      retryable: Boolean(retryableFailureReason),
+      message: `Payment issue email delivery failed: ${failureReason}`,
+      failureReason,
+    };
+  }
+
+  await appendResolvedBillingSignalIfNeeded({
+    database,
+    organizationId,
+    signalKind: 'notification_delivery',
+    sourceKind: notificationKind,
+    reason: 'payment_issue_notification_delivery_succeeded',
+    appSnapshot: await readOrganizationBillingObservationSnapshot({
+      database,
+      env,
+      organizationId,
+    }),
+    stripeEventId,
+    stripeCustomerId: stripeCustomerId ?? billing.stripeCustomerId,
+    stripeSubscriptionId: stripeSubscriptionId ?? billing.stripeSubscriptionId,
+  });
+  return { ok: true, notificationSent: true };
 };

@@ -8,6 +8,9 @@
 ## Active Technologies
 - TypeScript strict / Cloudflare Workers + Hono / SvelteKit / Expo / Better Auth / Drizzle ORM / Cloudflare D1 / Stripe / Resend / Sentry (001-organization-billing)
 - Organization billing は既存 `organization_billing` を主 aggregate とし、webhook event、notification、audit/signal 系の append-only tables を併用する (001-organization-billing)
+- TypeScript strict / Cloudflare Workers + Hono / SvelteKit / Expo / Better Auth / Drizzle ORM / Cloudflare D1 / Stripe Billing, Checkout, Customer Portal / Resend / Sentry (002-billing-hardening)
+- Billing hardening は既存 `organization_billing` を主 aggregate とし、operation attempt、webhook receipt、invoice/payment event、document reference、notification、audit/signal 系の append-only data を併用する (002-billing-hardening)
 
 ## Recent Changes
 - 001-organization-billing: Speckit plan artifacts を organization 単位課金、trial-to-paid lifecycle、premium entitlement、internal billing inspection 向けに追加
+- 002-billing-hardening: Speckit plan artifacts を未払い/incomplete 制御、Stripe handoff 冪等性、reconciliation、invoice/payment event、owner notification、Customer Portal 条件、unknown price 対応向けに追加

@@ -12,20 +12,20 @@
       "enabled": true,
       "invocation_logs": true,
       "head_sampling_rate": 1,
-      "persist": true
-    }
+      "persist": true,
+    },
   },
   "triggers": {
-    "crons": ["10 18 * * *"]
+    "crons": ["10 18 * * *"],
   },
   "images": {
-    "binding": "IMAGES"
+    "binding": "IMAGES",
   },
   "r2_buckets": [
     {
       "binding": "ORG_LOGO_BUCKET",
-      "bucket_name": "reserve-app-org-logos"
-    }
+      "bucket_name": "reserve-app-org-logos",
+    },
   ],
   // Set these for Cloudflare deploy (or move to secrets/CI vars).
   "vars": {
@@ -39,19 +39,20 @@
     "STRIPE_BILLING_PRODUCT_ID": "prod_UET1NpsLWSCVqn",
     "STRIPE_PREMIUM_MONTHLY_PRICE_ID": "price_1TG05o6ocOPyTkH6Rr4BOJNn",
     "STRIPE_PREMIUM_YEARLY_PRICE_ID": "price_1TG05p6ocOPyTkH6cADDU5Ko",
+    "STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED": "true",
     "PUBLIC_EVENTS_ORGANIZATION_SLUG": "public-events",
     "ORG_LOGO_MAX_UPLOAD_BYTES": "5242880",
     "ORG_LOGO_PUBLIC_BASE_URL": "",
     "SERVICE_IMAGE_MAX_UPLOAD_BYTES": "8388608",
     "SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS": "300",
-    "SERVICE_IMAGE_UPLOAD_SIGNING_SECRET": "",
     "SERVICE_IMAGE_PUBLIC_BASE_URL": "",
+    "SENTRY_ENVIRONMENT": "production",
   },
   "routes": [
     {
       "pattern": "api.wakureserve.com",
-      "custom_domain": true
-    }
+      "custom_domain": true,
+    },
   ],
   "d1_databases": [
     {

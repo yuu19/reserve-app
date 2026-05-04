@@ -73,8 +73,7 @@
 		totalCount: '10',
 		expiresInDays: '',
 		serviceIds: [] as string[],
-		isForSale: false,
-		stripePriceId: ''
+		isForSale: false
 	});
 	let ticketGrantForm = $state({
 		participantId: '',
@@ -139,7 +138,7 @@
 		cancelled_by_participant: '取り下げ'
 	};
 	const ticketPurchaseMethodLabelMap: Record<TicketPurchasePayload['paymentMethod'], string> = {
-		stripe: 'Stripe',
+		stripe: 'Stripe（保留）',
 		cash_on_site: '現地決済',
 		bank_transfer: '銀行振込'
 	};
@@ -335,12 +334,6 @@
 			toast.error('有効日数は 1 以上の整数で入力してください。');
 			return;
 		}
-		const stripePriceId = normalizeToText(ticketTypeForm.stripePriceId);
-		if (ticketTypeForm.isForSale && !stripePriceId) {
-			toast.error('販売対象にする場合は Stripe 価格IDを入力してください。');
-			return;
-		}
-
 		busy = true;
 		try {
 			const result = await createTicketType({
@@ -349,8 +342,7 @@
 				totalCount,
 				expiresInDays,
 				serviceIds: ticketTypeForm.serviceIds,
-				isForSale: ticketTypeForm.isForSale,
-				stripePriceId: stripePriceId || undefined
+				isForSale: ticketTypeForm.isForSale
 			});
 			if (!result.ok) {
 				if (result.premiumRestriction) {
@@ -365,8 +357,7 @@
 				totalCount: '10',
 				expiresInDays: '',
 				serviceIds: [],
-				isForSale: false,
-				stripePriceId: ''
+				isForSale: false
 			};
 			await refresh();
 		} finally {
@@ -752,6 +743,9 @@
 						</CardDescription>
 					</CardHeader>
 					<CardContent class="space-y-4">
+						<p class="text-sm text-muted-foreground">
+							参加者の購入申請は、現地決済または銀行振込の承認フローで受け付けます。
+						</p>
 						{#if premiumRestriction}
 							<p class="text-sm text-muted-foreground">
 								回数券管理は Premium 利用開始後に利用できます。
@@ -809,16 +803,6 @@
 												bind:checked={ticketTypeForm.isForSale}
 											/>
 											<Label for="ticket-type-is-for-sale">参加者が購入できるようにする</Label>
-										</div>
-										<div class="space-y-2">
-											<Label for="ticket-type-stripe-price-id">Stripe 価格ID（販売時必須）</Label>
-											<Input
-												id="ticket-type-stripe-price-id"
-												name="ticket_type_stripe_price_id"
-												type="text"
-												bind:value={ticketTypeForm.stripePriceId}
-												placeholder="price_xxx"
-											/>
 										</div>
 										<div class="space-y-2">
 											<p class="text-sm font-medium">対象サービス（任意）</p>
@@ -957,9 +941,6 @@
 														{ticketType.isForSale ? '公開' : '非公開'}
 													</p>
 													<p class="text-xs text-muted-foreground">
-														Stripe価格ID: {ticketType.stripePriceId || '-'}
-													</p>
-													<p class="text-xs text-muted-foreground">
 														作成: {formatDateTime(ticketType.createdAt)}
 													</p>
 												</div>
@@ -1005,7 +986,6 @@
 												bind:value={ticketPurchaseFilter.paymentMethod}
 											>
 												<option value="all">all</option>
-												<option value="stripe">stripe</option>
 												<option value="cash_on_site">cash_on_site</option>
 												<option value="bank_transfer">bank_transfer</option>
 											</select>

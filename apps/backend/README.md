@@ -35,10 +35,13 @@ pnpm --filter @apps/backend run dev
 予約通知メールも同じ `RESEND_API_KEY` / `RESEND_FROM_EMAIL` を利用します。  
 通知メール内の予約一覧リンクは `WEB_BASE_URL` を使って `/bookings` を生成します。
 
-任意 (回数券購入の Stripe 決済):
+任意 (Premium 課金の Stripe 連携):
 
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PREMIUM_MONTHLY_PRICE_ID`
+- `STRIPE_PREMIUM_YEARLY_PRICE_ID`
+- `STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED` (`true` の場合、trial 開始時に Stripe subscription も作成)
 - `STRIPE_BILLING_PRODUCT_NAME` (default: `WakureServe Premium`)
 - `STRIPE_BILLING_MONTHLY_LOOKUP_KEY` (default: `wakureserve_premium_monthly`)
 - `STRIPE_BILLING_YEARLY_LOOKUP_KEY` (default: `wakureserve_premium_yearly`)
@@ -104,10 +107,9 @@ pnpm --filter @apps/backend run dev
 ## 回数券購入フロー
 
 - participant は `ticket-types/purchasable` から券種を選択して購入申請できます。
-- `paymentMethod=stripe`: 購入申請は `pending_payment` で作成され、`/api/webhooks/stripe` の
-  `checkout.session.completed` 到達で `approved` になり、回数券が即時利用可能になります。
 - `paymentMethod=cash_on_site|bank_transfer`: `pending_approval` で作成され、admin/owner の承認時に回数券が付与されます。
-- 重複 webhook は idempotent に処理され、二重付与を防止します。
+- `paymentMethod=stripe`: 現在は受け付けません。回数券のアプリ内 Stripe 決済は、将来の Stripe Connect 対応まで保留です。
+- 既存の Stripe Checkout 完了通知を処理する経路は、過去に作成済みの checkout session を完了させるためだけに残します。新しい回数券購入では checkout session を作成しません。
 
 ## Premium サブスクリプション用の Stripe カタログ作成
 
@@ -158,6 +160,9 @@ pnpm --filter @apps/backend run d1:migrate:remote
 ```bash
 pnpm --filter @apps/backend exec wrangler secret put BETTER_AUTH_SECRET
 pnpm --filter @apps/backend exec wrangler secret put RESEND_API_KEY
+pnpm --filter @apps/backend exec wrangler secret put RESEND_FROM_EMAIL
+pnpm --filter @apps/backend exec wrangler secret put STRIPE_SECRET_KEY
+pnpm --filter @apps/backend exec wrangler secret put STRIPE_WEBHOOK_SECRET
 pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
 ```
 
@@ -170,17 +175,17 @@ pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
 - `INVITATION_ACCEPT_URL_BASE` (招待メールのリンク先。`/invitations/accept` を含める)
 - `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` (参加者招待メールのリンク先。`/participants/invitations/accept` を含める)
 - `WEB_BASE_URL` (`INVITATION_ACCEPT_URL_BASE` / `PARTICIPANT_INVITATION_ACCEPT_URL_BASE` 未設定時のフォールバック)
-- `RESEND_FROM_EMAIL`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PREMIUM_MONTHLY_PRICE_ID`
+- `STRIPE_PREMIUM_YEARLY_PRICE_ID`
+- `STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED`
 - `ORG_LOGO_MAX_UPLOAD_BYTES`
 - `ORG_LOGO_PUBLIC_BASE_URL`
 - `SERVICE_IMAGE_MAX_UPLOAD_BYTES`
 - `SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS`
-- `SERVICE_IMAGE_UPLOAD_SIGNING_SECRET`
 - `SERVICE_IMAGE_PUBLIC_BASE_URL`
 - `SENTRY_ENVIRONMENT`
-- `SENTRY_RELEASE`
+
+`SERVICE_IMAGE_UPLOAD_SIGNING_SECRET` を個別に使う場合は、`wrangler secret put` で secret として設定します。
 
 8. デプロイ:
 
@@ -200,11 +205,17 @@ pnpm --filter @apps/backend run cf:deploy
 
 ## GitHub Actions deploy
 
-このリポジトリの `.github/workflows/deploy-workers.yml` で backend をデプロイします。  
-workflow 内では次を実行します。
+このリポジトリの `.github/workflows/deploy-workers.yml` で本番 Worker をまとめてデプロイします。
+`main` への push または手動実行で、検証後に `backend -> web -> docs` の順に反映します。
+通常の環境変数は `wrangler.jsonc` を正とし、workflow は secrets と release だけを注入します。
+
+workflow 内では backend について次を実行します。
 
 1. `wrangler secret put BETTER_AUTH_SECRET`
-2. `wrangler secret put SENTRY_DSN_BACKEND`
-3. `wrangler secret put RESEND_API_KEY` (招待メールを使う場合)
-4. `wrangler d1 migrations apply ... --remote`
-5. `wrangler deploy` (`SENTRY_ENVIRONMENT` / `SENTRY_RELEASE` を `--var` で注入)
+2. `wrangler secret put RESEND_API_KEY`
+3. `wrangler secret put RESEND_FROM_EMAIL`
+4. `wrangler secret put STRIPE_SECRET_KEY`
+5. `wrangler secret put STRIPE_WEBHOOK_SECRET`
+6. `wrangler secret put SENTRY_DSN_BACKEND`
+7. `wrangler d1 migrations apply ... --remote`
+8. `wrangler deploy` (`SENTRY_RELEASE` を `--var` で注入)

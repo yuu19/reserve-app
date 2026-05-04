@@ -17,6 +17,7 @@ export type AuthRuntimeEnv = {
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PREMIUM_MONTHLY_PRICE_ID?: string;
   STRIPE_PREMIUM_YEARLY_PRICE_ID?: string;
+  STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
 } & ResendEnv;

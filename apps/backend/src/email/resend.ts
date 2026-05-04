@@ -1,6 +1,7 @@
 import { render, toPlainText } from '@react-email/render';
 import { createElement } from 'react';
 import { BookingNotificationEmail } from './templates/booking-notification-email.js';
+import { BillingPaymentIssueEmail } from './templates/billing-payment-issue-email.js';
 import { OrganizationInvitationEmail } from './templates/organization-invitation-email.js';
 import { ParticipantInvitationEmail } from './templates/participant-invitation-email.js';
 import { TrialEndingReminderEmail } from './templates/trial-ending-reminder-email.js';
@@ -65,6 +66,18 @@ export type SendTrialEndingReminderEmailInput = {
   paymentMethodStatusLabel: string;
   actionText: string;
   noteText: string;
+};
+
+export type SendBillingPaymentIssueEmailInput = {
+  env: ResendEnv;
+  inviteeEmail: string;
+  organizationName: string;
+  ownerName: string;
+  issueTitle: string;
+  actionText: string;
+  noteText: string;
+  invoiceReference?: string | null;
+  graceEndsAtLabel?: string | null;
 };
 
 const createOrganizationInvitationAcceptUrl = ({
@@ -184,7 +197,7 @@ export const sendOrganizationInvitationEmail = async ({
       ? inviterEmail
         ? `${inviterName} (${inviterEmail})`
         : inviterName
-      : inviterEmail ?? 'organization owner';
+      : (inviterEmail ?? 'organization owner');
 
   const subject = `${organizationName} に招待されました`;
   const html = await render(
@@ -250,7 +263,7 @@ export const sendParticipantInvitationEmail = async ({
       ? inviterEmail
         ? `${inviterName} (${inviterEmail})`
         : inviterName
-      : inviterEmail ?? 'organization admin';
+      : (inviterEmail ?? 'organization admin');
 
   const subject = `${organizationName} の参加者招待が届いています`;
   const html = await render(
@@ -435,5 +448,60 @@ export const sendTrialEndingReminderEmail = async ({
   if (!response.ok) {
     const details = await response.text();
     throw new Error(`Failed to send trial reminder email via Resend: ${details}`);
+  }
+};
+
+export const sendBillingPaymentIssueEmail = async ({
+  env,
+  inviteeEmail,
+  organizationName,
+  ownerName,
+  issueTitle,
+  actionText,
+  noteText,
+  invoiceReference,
+  graceEndsAtLabel,
+}: SendBillingPaymentIssueEmailInput) => {
+  const config = requireStrictResendConfig(env);
+  const contractsUrl = createContractsUrl({ env });
+  const subject = `【契約通知】${issueTitle}`;
+  const html = await render(
+    createElement(BillingPaymentIssueEmail, {
+      organizationName,
+      ownerName,
+      issueTitle,
+      contractsUrl,
+      actionText,
+      noteText,
+      invoiceReference,
+      graceEndsAtLabel,
+    }),
+  );
+  const text = toPlainText(html);
+
+  let response: Response;
+  try {
+    response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: config.fromEmail,
+        to: [inviteeEmail],
+        subject,
+        html,
+        text,
+      }),
+    });
+  } catch (error) {
+    const details = error instanceof Error ? error.message : 'unknown transport error';
+    throw new Error(`Failed to send billing payment issue email via Resend: ${details}`);
+  }
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Failed to send billing payment issue email via Resend: ${details}`);
   }
 };

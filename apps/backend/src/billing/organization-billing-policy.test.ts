@@ -122,12 +122,13 @@ describe('organization billing premium entitlement policy', () => {
     });
   });
 
-  it('keeps paid grace states eligible without relying on raw provider shortcuts in consumers', () => {
+  it('keeps past_due eligible during the seven-day grace window', () => {
     const result = resolveOrganizationPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'past_due',
       paymentMethodStatus: 'registered',
       currentPeriodEnd: null,
+      pastDueGraceEndsAt: '2026-04-10T12:00:00.000Z',
       now,
     });
 
@@ -135,7 +136,66 @@ describe('organization billing premium entitlement policy', () => {
       planState: 'premium_paid',
       entitlementState: 'premium_enabled',
       isPremiumEligible: true,
-      reason: 'premium_paid_grace_state',
+      reason: 'premium_paid_past_due_grace_active',
+    });
+  });
+
+  it('stops premium after past_due grace expires', () => {
+    const result = resolveOrganizationPremiumEntitlementPolicy({
+      planCode: 'premium',
+      subscriptionStatus: 'past_due',
+      paymentMethodStatus: 'registered',
+      currentPeriodEnd: null,
+      pastDueGraceEndsAt: '2026-04-09T11:59:59.000Z',
+      now,
+    });
+
+    expect(result).toMatchObject({
+      planState: 'premium_paid',
+      entitlementState: 'free_only',
+      isPremiumEligible: false,
+      reason: 'premium_paid_past_due_grace_expired',
+    });
+  });
+
+  it('stops premium immediately for unpaid, incomplete, and canceled paid states', () => {
+    for (const [subscriptionStatus, reason] of [
+      ['unpaid', 'premium_paid_unpaid'],
+      ['incomplete', 'premium_paid_incomplete'],
+      ['canceled', 'premium_paid_canceled'],
+    ] as const) {
+      const result = resolveOrganizationPremiumEntitlementPolicy({
+        planCode: 'premium',
+        subscriptionStatus,
+        paymentMethodStatus: 'registered',
+        currentPeriodEnd: null,
+        now,
+      });
+
+      expect(result).toMatchObject({
+        planState: 'premium_paid',
+        entitlementState: 'free_only',
+        isPremiumEligible: false,
+        reason,
+      });
+    }
+  });
+
+  it('keeps scheduled period-end cancellation eligible until provider state changes', () => {
+    const result = resolveOrganizationPremiumEntitlementPolicy({
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      paymentMethodStatus: 'registered',
+      currentPeriodEnd: '2026-05-01T00:00:00.000Z',
+      cancelAtPeriodEnd: true,
+      now,
+    });
+
+    expect(result).toMatchObject({
+      planState: 'premium_paid',
+      entitlementState: 'premium_enabled',
+      isPremiumEligible: true,
+      reason: 'premium_paid_scheduled_cancellation_active',
     });
   });
 
@@ -182,7 +242,7 @@ describe('organization billing premium entitlement policy', () => {
     });
   });
 
-  it('keeps unknown paid provider prices on the legacy capability floor instead of escalating tiers', () => {
+  it('exposes unknown paid provider prices without granting capabilities', () => {
     const result = resolveOrganizationBillingPaidTier({
       planCode: 'premium',
       stripePriceId: 'price_unmapped_provider_value',
@@ -196,8 +256,33 @@ describe('organization billing premium entitlement policy', () => {
       label: 'Premium',
       resolution: 'unknown_price',
       diagnosticReason: 'stripe_price_id_not_in_paid_tier_catalog',
-      capabilities: ['organization_premium_features'],
+      capabilities: [],
     });
     expect(result.capabilities).not.toContain('advanced_billing_communications');
+  });
+
+  it('stops premium eligibility for unknown paid provider prices', () => {
+    const result = resolveOrganizationPremiumEntitlementPolicy({
+      planCode: 'premium',
+      subscriptionStatus: 'active',
+      paymentMethodStatus: 'registered',
+      currentPeriodEnd: null,
+      stripePriceId: 'price_unmapped_provider_value',
+      env: {
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: 'price_current_monthly',
+      },
+      now,
+    });
+
+    expect(result).toMatchObject({
+      planState: 'premium_paid',
+      entitlementState: 'free_only',
+      isPremiumEligible: false,
+      reason: 'premium_paid_unknown_price',
+      paidTier: {
+        code: 'premium_unknown',
+        resolution: 'unknown_price',
+      },
+    });
   });
 });

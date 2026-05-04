@@ -1,6 +1,11 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createWorkerAuthRuntime, type BackendWorkerEnv } from './auth-worker.js';
 import { runDailyBookingMaintenance } from './booking/scheduler.js';
+import {
+  completeExpiredOrganizationPremiumTrials,
+  reconcileProviderLinkedOrganizationBillingStates,
+  reconcileRiskyOrganizationBillingStates,
+} from './billing/organization-billing-maintenance.js';
 import { createApp } from './app.js';
 import { createOrganizationLogoService } from './organization-logo-service.js';
 import { createServiceImageUploadService } from './service-image-upload-service.js';
@@ -42,26 +47,37 @@ const handler = {
   ) {
     const runtime = getWorkerRuntime(env);
     ctx.waitUntil(
-      runDailyBookingMaintenance({
-        database: runtime.database,
-      }),
+      Promise.all([
+        runDailyBookingMaintenance({
+          database: runtime.database,
+        }),
+        completeExpiredOrganizationPremiumTrials({
+          database: runtime.database,
+          env: runtime.env,
+        }),
+        reconcileRiskyOrganizationBillingStates({
+          database: runtime.database,
+          env: runtime.env,
+        }),
+        reconcileProviderLinkedOrganizationBillingStates({
+          database: runtime.database,
+          env: runtime.env,
+        }),
+      ]),
     );
   },
 };
 
-export default Sentry.withSentry(
-  (env: BackendWorkerEnv) => {
-    if (!env.SENTRY_DSN_BACKEND) {
-      return undefined;
-    }
+export default Sentry.withSentry((env: BackendWorkerEnv) => {
+  if (!env.SENTRY_DSN_BACKEND) {
+    return undefined;
+  }
 
-    return {
-      dsn: env.SENTRY_DSN_BACKEND,
-      environment: env.SENTRY_ENVIRONMENT ?? 'production',
-      release: env.SENTRY_RELEASE,
-      tracesSampleRate: 0.05,
-      sendDefaultPii: false,
-    };
-  },
-  handler,
-);
+  return {
+    dsn: env.SENTRY_DSN_BACKEND,
+    environment: env.SENTRY_ENVIRONMENT ?? 'production',
+    release: env.SENTRY_RELEASE,
+    tracesSampleRate: 0.05,
+    sendDefaultPii: false,
+  };
+}, handler);

@@ -9,8 +9,15 @@ export type OrganizationPremiumEntitlementReason =
 	| 'premium_trial_active_with_payment_method_registered'
 	| 'premium_trial_missing_end'
 	| 'premium_trial_expired'
+	| 'premium_paid_unknown_price'
 	| 'premium_paid_active'
-	| 'premium_paid_grace_state'
+	| 'premium_paid_scheduled_cancellation_active'
+	| 'premium_paid_past_due_grace_active'
+	| 'premium_paid_past_due_grace_missing'
+	| 'premium_paid_past_due_grace_expired'
+	| 'premium_paid_unpaid'
+	| 'premium_paid_incomplete'
+	| 'premium_paid_canceled'
 	| 'premium_paid_state_unexpected';
 
 export type OrganizationPremiumEntitlementState = 'free_only' | 'premium_enabled';
@@ -48,8 +55,15 @@ export const isOrganizationPremiumRestrictionPayload = (
 		value.reason === 'premium_trial_active_with_payment_method_registered' ||
 		value.reason === 'premium_trial_missing_end' ||
 		value.reason === 'premium_trial_expired' ||
+		value.reason === 'premium_paid_unknown_price' ||
 		value.reason === 'premium_paid_active' ||
-		value.reason === 'premium_paid_grace_state' ||
+		value.reason === 'premium_paid_scheduled_cancellation_active' ||
+		value.reason === 'premium_paid_past_due_grace_active' ||
+		value.reason === 'premium_paid_past_due_grace_missing' ||
+		value.reason === 'premium_paid_past_due_grace_expired' ||
+		value.reason === 'premium_paid_unpaid' ||
+		value.reason === 'premium_paid_incomplete' ||
+		value.reason === 'premium_paid_canceled' ||
 		value.reason === 'premium_paid_state_unexpected') &&
 	(value.entitlementState === 'free_only' || value.entitlementState === 'premium_enabled') &&
 	(value.planState === 'free' ||
@@ -98,6 +112,13 @@ const resolveRestrictionDescription = (
 			return `${featureLabel}は Premium対象機能ですが、トライアル状態の確認が完了していないため現在は利用できません。`;
 		case 'premium_paid_state_unexpected':
 			return `${featureLabel}は Premium対象機能ですが、契約状態の再確認が必要です。契約画面で現在の状態を確認してください。`;
+		case 'premium_paid_unknown_price':
+			return `${featureLabel}は Premium対象機能ですが、未登録の価格IDを検出したため現在は利用できません。契約画面で状態を確認してください。`;
+		case 'premium_paid_past_due_grace_expired':
+		case 'premium_paid_unpaid':
+		case 'premium_paid_incomplete':
+		case 'premium_paid_canceled':
+			return `${featureLabel}は Premium対象機能ですが、支払いまたは契約状態に対応が必要なため現在は利用できません。契約画面で現在の状態を確認してください。`;
 		default:
 			return `${featureLabel}は Premium対象機能です。現在の契約状態では利用できません。`;
 	}

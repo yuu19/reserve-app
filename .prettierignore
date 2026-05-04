@@ -12,3 +12,7 @@ apps/mobile/dist
 apps/mobile/.expo
 apps/web/.svelte-kit
 apps/web/build
+
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

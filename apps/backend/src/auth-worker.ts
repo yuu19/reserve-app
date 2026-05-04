@@ -14,17 +14,14 @@ type R2BucketBinding = {
       customMetadata?: Record<string, string>;
     },
   ) => Promise<{ key: string }>;
-  get: (key: string) => Promise<
-    | {
-        body: ReadableStream;
-        httpMetadata?: {
-          contentType?: string;
-          cacheControl?: string;
-        };
-        writeHttpMetadata?: (headers: Headers) => void;
-      }
-    | null
-  >;
+  get: (key: string) => Promise<{
+    body: ReadableStream;
+    httpMetadata?: {
+      contentType?: string;
+      cacheControl?: string;
+    };
+    writeHttpMetadata?: (headers: Headers) => void;
+  } | null>;
 };
 
 type ImagesBinding = {
@@ -66,6 +63,7 @@ export type BackendWorkerEnv = AuthRuntimeEnv & {
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PREMIUM_MONTHLY_PRICE_ID?: string;
   STRIPE_PREMIUM_YEARLY_PRICE_ID?: string;
+  STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED?: string;
   ORG_LOGO_BUCKET?: R2BucketBinding;
   SERVICE_IMAGE_BUCKET?: R2BucketBinding;
   IMAGES?: ImagesBinding;

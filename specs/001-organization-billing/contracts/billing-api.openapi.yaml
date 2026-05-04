@@ -57,10 +57,32 @@ components:
           format: date-time
         paymentMethodRegistered:
           type: boolean
+          deprecated: true
+          description: Use paymentMethodStatus in the implementation response.
+        paymentMethodStatus:
+          type: string
+          enum: [not_started, pending, registered]
         capabilities:
           type: array
           items:
             type: string
+        paidTier:
+          type: [object, 'null']
+          properties:
+            code:
+              type: string
+            label:
+              type: string
+            resolution:
+              type: string
+            diagnosticReason:
+              type: [string, 'null']
+        history:
+          type: [array, 'null']
+          items:
+            type: object
+        paymentDocuments:
+          type: [object, 'null']
         latestSignal:
           type: [object, 'null']
           properties:

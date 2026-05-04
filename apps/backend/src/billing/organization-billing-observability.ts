@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../db/schema.js';
 import {
@@ -31,13 +31,29 @@ export type OrganizationBillingObservationSnapshot = {
 
 export type OrganizationBillingAuditSourceKind =
   | 'trial_start'
+  | 'paid_checkout_started'
+  | 'payment_method_setup_started'
+  | 'billing_portal_started'
   | 'payment_method_customer_linked'
+  | 'payment_method_registered'
   | 'trial_completion'
   | 'webhook_checkout_completed'
   | 'webhook_subscription_lifecycle'
-  | 'webhook_trial_completion';
+  | 'webhook_trial_completion'
+  | 'webhook_invoice_available'
+  | 'webhook_payment_succeeded'
+  | 'webhook_payment_failed'
+  | 'webhook_payment_action_required'
+  | 'reconciliation_targeted'
+  | 'reconciliation_full'
+  | 'payment_issue_notification'
+  | 'billing_profile_readiness_changed';
 
-export type OrganizationBillingSignalKind = 'reconciliation' | 'notification_delivery';
+export type OrganizationBillingSignalKind =
+  | 'reconciliation'
+  | 'notification_delivery'
+  | 'billing_profile'
+  | 'security_audit';
 export type OrganizationBillingSignalStatus = 'pending' | 'mismatch' | 'unavailable' | 'resolved';
 export type InternalBillingReconciliationStatus =
   | 'not_applicable'
@@ -67,6 +83,10 @@ type InternalBillingReconciliationWebhookEventEntry = {
   eventType: string;
   processingStatus: 'processing' | 'processed' | 'failed';
   failureReason: string | null;
+  signatureVerificationStatus: string;
+  duplicateDetected: boolean;
+  duplicateDetectedAt: string | null;
+  receiptStatus: string;
   createdAt: string | null;
   processedAt: string | null;
 };
@@ -104,10 +124,10 @@ const resolveProviderPlanState = (
     return 'premium_trial';
   }
   if (
-    subscriptionStatus === 'active'
-    || subscriptionStatus === 'past_due'
-    || subscriptionStatus === 'unpaid'
-    || subscriptionStatus === 'incomplete'
+    subscriptionStatus === 'active' ||
+    subscriptionStatus === 'past_due' ||
+    subscriptionStatus === 'unpaid' ||
+    subscriptionStatus === 'incomplete'
   ) {
     return 'premium_paid';
   }
@@ -119,7 +139,11 @@ const resolveProviderPlanState = (
 
 const toIsoDateString = (value: unknown): string | null => {
   const candidate =
-    value instanceof Date ? value : typeof value === 'number' || typeof value === 'string' ? new Date(value) : null;
+    value instanceof Date
+      ? value
+      : typeof value === 'number' || typeof value === 'string'
+        ? new Date(value)
+        : null;
 
   if (!candidate || Number.isNaN(candidate.getTime())) {
     return null;
@@ -135,13 +159,13 @@ const normalizeSignalProviderPlanState = (value: unknown): OrganizationBillingPl
 const normalizeSignalProviderSubscriptionStatus = (
   value: unknown,
 ): OrganizationBillingSubscriptionStatus | null => {
-  return value === 'free'
-    || value === 'trialing'
-    || value === 'active'
-    || value === 'past_due'
-    || value === 'canceled'
-    || value === 'unpaid'
-    || value === 'incomplete'
+  return value === 'free' ||
+    value === 'trialing' ||
+    value === 'active' ||
+    value === 'past_due' ||
+    value === 'canceled' ||
+    value === 'unpaid' ||
+    value === 'incomplete'
     ? value
     : null;
 };
@@ -153,12 +177,12 @@ const normalizeSignalAppPlanState = (value: unknown): OrganizationBillingPlanSta
 const normalizeSignalAppSubscriptionStatus = (
   value: unknown,
 ): OrganizationBillingSubscriptionStatus => {
-  return value === 'trialing'
-    || value === 'active'
-    || value === 'past_due'
-    || value === 'canceled'
-    || value === 'unpaid'
-    || value === 'incomplete'
+  return value === 'trialing' ||
+    value === 'active' ||
+    value === 'past_due' ||
+    value === 'canceled' ||
+    value === 'unpaid' ||
+    value === 'incomplete'
     ? value
     : 'free';
 };
@@ -169,7 +193,9 @@ const normalizeSignalAppPaymentMethodStatus = (
   return value === 'pending' || value === 'registered' ? value : 'not_started';
 };
 
-const normalizeSignalAppEntitlementState = (value: unknown): OrganizationBillingEntitlementState => {
+const normalizeSignalAppEntitlementState = (
+  value: unknown,
+): OrganizationBillingEntitlementState => {
   return value === 'premium_enabled' ? value : 'free_only';
 };
 
@@ -182,8 +208,7 @@ const selectNextBillingAuditSequenceNumber = async ({
 }) => {
   const rows = await database
     .select({
-      maxSequenceNumber:
-        sql<number>`coalesce(max(${dbSchema.organizationBillingAuditEvent.sequenceNumber}), 0)`,
+      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.organizationBillingAuditEvent.sequenceNumber}), 0)`,
     })
     .from(dbSchema.organizationBillingAuditEvent)
     .where(eq(dbSchema.organizationBillingAuditEvent.organizationId, organizationId));
@@ -200,8 +225,7 @@ const selectNextBillingSignalSequenceNumber = async ({
 }) => {
   const rows = await database
     .select({
-      maxSequenceNumber:
-        sql<number>`coalesce(max(${dbSchema.organizationBillingSignal.sequenceNumber}), 0)`,
+      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.organizationBillingSignal.sequenceNumber}), 0)`,
     })
     .from(dbSchema.organizationBillingSignal)
     .where(eq(dbSchema.organizationBillingSignal.organizationId, organizationId));
@@ -214,18 +238,18 @@ const areBillingSnapshotsEqual = (
   nextSnapshot: OrganizationBillingObservationSnapshot,
 ) => {
   return (
-    previousSnapshot.planCode === nextSnapshot.planCode
-    && previousSnapshot.planState === nextSnapshot.planState
-    && previousSnapshot.subscriptionStatus === nextSnapshot.subscriptionStatus
-    && previousSnapshot.paymentMethodStatus === nextSnapshot.paymentMethodStatus
-    && previousSnapshot.entitlementState === nextSnapshot.entitlementState
-    && previousSnapshot.paidTier?.code === nextSnapshot.paidTier?.code
-    && previousSnapshot.paidTier?.resolution === nextSnapshot.paidTier?.resolution
-    && previousSnapshot.paidTier?.diagnosticReason === nextSnapshot.paidTier?.diagnosticReason
-    && previousSnapshot.billingInterval === nextSnapshot.billingInterval
-    && previousSnapshot.stripeCustomerId === nextSnapshot.stripeCustomerId
-    && previousSnapshot.stripeSubscriptionId === nextSnapshot.stripeSubscriptionId
-    && previousSnapshot.stripePriceId === nextSnapshot.stripePriceId
+    previousSnapshot.planCode === nextSnapshot.planCode &&
+    previousSnapshot.planState === nextSnapshot.planState &&
+    previousSnapshot.subscriptionStatus === nextSnapshot.subscriptionStatus &&
+    previousSnapshot.paymentMethodStatus === nextSnapshot.paymentMethodStatus &&
+    previousSnapshot.entitlementState === nextSnapshot.entitlementState &&
+    previousSnapshot.paidTier?.code === nextSnapshot.paidTier?.code &&
+    previousSnapshot.paidTier?.resolution === nextSnapshot.paidTier?.resolution &&
+    previousSnapshot.paidTier?.diagnosticReason === nextSnapshot.paidTier?.diagnosticReason &&
+    previousSnapshot.billingInterval === nextSnapshot.billingInterval &&
+    previousSnapshot.stripeCustomerId === nextSnapshot.stripeCustomerId &&
+    previousSnapshot.stripeSubscriptionId === nextSnapshot.stripeSubscriptionId &&
+    previousSnapshot.stripePriceId === nextSnapshot.stripePriceId
   );
 };
 
@@ -239,17 +263,19 @@ export const readOrganizationBillingObservationSnapshot = async ({
   organizationId: string;
 }) => {
   const billing = await selectOrganizationBillingSummary(database, organizationId);
-  const planCode: OrganizationBillingPlanCode = billing?.planCode === 'premium' ? 'premium' : 'free';
-  const billingInterval = billing?.billingInterval === 'month' || billing?.billingInterval === 'year'
-    ? billing.billingInterval
-    : null;
+  const planCode: OrganizationBillingPlanCode =
+    billing?.planCode === 'premium' ? 'premium' : 'free';
+  const billingInterval =
+    billing?.billingInterval === 'month' || billing?.billingInterval === 'year'
+      ? billing.billingInterval
+      : null;
   const subscriptionStatus: OrganizationBillingSubscriptionStatus =
-    billing?.subscriptionStatus === 'trialing'
-    || billing?.subscriptionStatus === 'active'
-    || billing?.subscriptionStatus === 'past_due'
-    || billing?.subscriptionStatus === 'canceled'
-    || billing?.subscriptionStatus === 'unpaid'
-    || billing?.subscriptionStatus === 'incomplete'
+    billing?.subscriptionStatus === 'trialing' ||
+    billing?.subscriptionStatus === 'active' ||
+    billing?.subscriptionStatus === 'past_due' ||
+    billing?.subscriptionStatus === 'canceled' ||
+    billing?.subscriptionStatus === 'unpaid' ||
+    billing?.subscriptionStatus === 'incomplete'
       ? billing.subscriptionStatus
       : 'free';
   const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
@@ -263,6 +289,9 @@ export const readOrganizationBillingObservationSnapshot = async ({
     paymentMethodStatus,
     currentPeriodEnd:
       billing?.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd.toISOString() : null,
+    pastDueGraceEndsAt:
+      billing?.pastDueGraceEndsAt instanceof Date ? billing.pastDueGraceEndsAt.toISOString() : null,
+    cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
     stripePriceId: billing?.stripePriceId ?? null,
     env,
   });
@@ -422,16 +451,16 @@ export const appendResolvedBillingSignalIfNeeded = async ({
     .limit(20);
 
   const latestSameKind = latestSignal.find(
-    (row: { signalKind: OrganizationBillingSignalKind; signalStatus: OrganizationBillingSignalStatus }) =>
-      row.signalKind === signalKind,
+    (row: {
+      signalKind: OrganizationBillingSignalKind;
+      signalStatus: OrganizationBillingSignalStatus;
+    }) => row.signalKind === signalKind,
   );
   if (
-    !latestSameKind
-    || (
-      latestSameKind.signalStatus !== 'pending'
-      && latestSameKind.signalStatus !== 'mismatch'
-      && latestSameKind.signalStatus !== 'unavailable'
-    )
+    !latestSameKind ||
+    (latestSameKind.signalStatus !== 'pending' &&
+      latestSameKind.signalStatus !== 'mismatch' &&
+      latestSameKind.signalStatus !== 'unavailable')
   ) {
     return false;
   }
@@ -483,9 +512,9 @@ export const evaluateReconciliationMismatchReason = ({
   }
 
   if (
-    providerSubscription.customerId
-    && appSnapshot.stripeCustomerId
-    && providerSubscription.customerId !== appSnapshot.stripeCustomerId
+    providerSubscription.customerId &&
+    appSnapshot.stripeCustomerId &&
+    providerSubscription.customerId !== appSnapshot.stripeCustomerId
   ) {
     return {
       providerPlanState,
@@ -494,8 +523,8 @@ export const evaluateReconciliationMismatchReason = ({
   }
 
   if (
-    providerPlanState !== 'free'
-    && providerSubscription.id !== appSnapshot.stripeSubscriptionId
+    providerPlanState !== 'free' &&
+    providerSubscription.id !== appSnapshot.stripeSubscriptionId
   ) {
     return {
       providerPlanState,
@@ -520,10 +549,7 @@ export const readInternalBillingReconciliationInspection = async ({
   stripeLinked: boolean;
   appSnapshot: Pick<
     OrganizationBillingObservationSnapshot,
-    | 'planState'
-    | 'subscriptionStatus'
-    | 'paymentMethodStatus'
-    | 'entitlementState'
+    'planState' | 'subscriptionStatus' | 'paymentMethodStatus' | 'entitlementState'
   >;
 }) => {
   const [signalRows, webhookEventRows, webhookFailureRows] = await Promise.all([
@@ -557,6 +583,10 @@ export const readInternalBillingReconciliationInspection = async ({
         eventType: dbSchema.stripeWebhookEvent.eventType,
         processingStatus: dbSchema.stripeWebhookEvent.processingStatus,
         failureReason: dbSchema.stripeWebhookEvent.failureReason,
+        signatureVerificationStatus: dbSchema.stripeWebhookEvent.signatureVerificationStatus,
+        duplicateDetected: dbSchema.stripeWebhookEvent.duplicateDetected,
+        duplicateDetectedAt: dbSchema.stripeWebhookEvent.duplicateDetectedAt,
+        receiptStatus: dbSchema.stripeWebhookEvent.receiptStatus,
         createdAt: dbSchema.stripeWebhookEvent.createdAt,
         processedAt: dbSchema.stripeWebhookEvent.processedAt,
       })
@@ -564,7 +594,10 @@ export const readInternalBillingReconciliationInspection = async ({
       .where(
         and(
           eq(dbSchema.stripeWebhookEvent.organizationId, organizationId),
-          eq(dbSchema.stripeWebhookEvent.scope, 'billing'),
+          or(
+            eq(dbSchema.stripeWebhookEvent.scope, 'billing'),
+            eq(dbSchema.stripeWebhookEvent.scope, 'organization_billing'),
+          ),
         ),
       )
       .orderBy(desc(dbSchema.stripeWebhookEvent.createdAt))
@@ -581,16 +614,18 @@ export const readInternalBillingReconciliationInspection = async ({
       .where(
         and(
           eq(dbSchema.stripeWebhookFailure.organizationId, organizationId),
-          eq(dbSchema.stripeWebhookFailure.scope, 'billing'),
+          or(
+            eq(dbSchema.stripeWebhookFailure.scope, 'billing'),
+            eq(dbSchema.stripeWebhookFailure.scope, 'organization_billing'),
+          ),
         ),
       )
       .orderBy(desc(dbSchema.stripeWebhookFailure.createdAt))
       .limit(5),
   ]);
 
-  const recentSignals = signalRows
-    .reverse()
-    .map((row: (typeof signalRows)[number]): InternalBillingReconciliationSignalEntry => ({
+  const recentSignals = signalRows.reverse().map(
+    (row: (typeof signalRows)[number]): InternalBillingReconciliationSignalEntry => ({
       sequenceNumber: row.sequenceNumber,
       signalStatus: row.signalStatus as OrganizationBillingSignalStatus,
       sourceKind: row.sourceKind,
@@ -605,39 +640,44 @@ export const readInternalBillingReconciliationInspection = async ({
       appPaymentMethodStatus: normalizeSignalAppPaymentMethodStatus(row.appPaymentMethodStatus),
       appEntitlementState: normalizeSignalAppEntitlementState(row.appEntitlementState),
       createdAt: toIsoDateString(row.createdAt),
-    }));
+    }),
+  );
 
-  const recentWebhookEvents = webhookEventRows
-    .reverse()
-    .map((row: (typeof webhookEventRows)[number]): InternalBillingReconciliationWebhookEventEntry => ({
+  const recentWebhookEvents = webhookEventRows.reverse().map(
+    (row: (typeof webhookEventRows)[number]): InternalBillingReconciliationWebhookEventEntry => ({
       id: row.id,
       eventType: row.eventType,
       processingStatus: row.processingStatus as 'processing' | 'processed' | 'failed',
       failureReason: row.failureReason ?? null,
+      signatureVerificationStatus: row.signatureVerificationStatus,
+      duplicateDetected: Boolean(row.duplicateDetected),
+      duplicateDetectedAt: toIsoDateString(row.duplicateDetectedAt),
+      receiptStatus: row.receiptStatus,
       createdAt: toIsoDateString(row.createdAt),
       processedAt: toIsoDateString(row.processedAt),
-    }));
+    }),
+  );
 
-  const recentWebhookFailures = webhookFailureRows
-    .reverse()
-    .map((row: (typeof webhookFailureRows)[number]): InternalBillingReconciliationWebhookFailureEntry => ({
+  const recentWebhookFailures = webhookFailureRows.reverse().map(
+    (
+      row: (typeof webhookFailureRows)[number],
+    ): InternalBillingReconciliationWebhookFailureEntry => ({
       eventId: row.eventId ?? null,
       eventType: row.eventType ?? null,
       failureStage: row.failureStage,
       failureReason: row.failureReason,
       createdAt: toIsoDateString(row.createdAt),
-    }));
+    }),
+  );
 
   const latestSignal = recentSignals.at(-1) ?? null;
   const fallbackAppPaymentMethodStatus =
-    stripeLinked
-    && appSnapshot.planState === 'premium_paid'
-    && (
-      appSnapshot.subscriptionStatus === 'active'
-      || appSnapshot.subscriptionStatus === 'past_due'
-      || appSnapshot.subscriptionStatus === 'unpaid'
-      || appSnapshot.subscriptionStatus === 'incomplete'
-    )
+    stripeLinked &&
+    appSnapshot.planState === 'premium_paid' &&
+    (appSnapshot.subscriptionStatus === 'active' ||
+      appSnapshot.subscriptionStatus === 'past_due' ||
+      appSnapshot.subscriptionStatus === 'unpaid' ||
+      appSnapshot.subscriptionStatus === 'incomplete')
       ? 'registered'
       : appSnapshot.paymentMethodStatus;
   const currentComparison = latestSignal
@@ -649,7 +689,7 @@ export const readInternalBillingReconciliationInspection = async ({
         appPaymentMethodStatus: latestSignal.appPaymentMethodStatus,
         appEntitlementState: latestSignal.appEntitlementState,
       }
-      : {
+    : {
         providerPlanState: null,
         providerSubscriptionStatus: null,
         appPlanState: appSnapshot.planState,
@@ -659,8 +699,8 @@ export const readInternalBillingReconciliationInspection = async ({
       };
 
   const comparable =
-    currentComparison.providerPlanState !== null
-    && currentComparison.providerSubscriptionStatus !== null;
+    currentComparison.providerPlanState !== null &&
+    currentComparison.providerSubscriptionStatus !== null;
 
   let status: InternalBillingReconciliationStatus;
   if (!stripeLinked) {
