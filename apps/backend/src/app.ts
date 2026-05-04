@@ -2,7 +2,11 @@ import { swaggerUI } from '@hono/swagger-ui';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { cors } from 'hono/cors';
-import { TICKET_LEDGER_ACTION, TICKET_PACK_STATUS, TICKET_PURCHASE_STATUS } from './booking/constants.js';
+import {
+  TICKET_LEDGER_ACTION,
+  TICKET_PACK_STATUS,
+  TICKET_PURCHASE_STATUS,
+} from './booking/constants.js';
 import {
   handleStripeOrganizationBillingWebhook,
   recordStripeWebhookPayloadFailure,
@@ -14,7 +18,7 @@ import type { OrganizationLogoService } from './organization-logo-service.js';
 import {
   parseStripeWebhookEvent,
   readStripeCheckoutSessionSummary,
-  verifyStripeWebhookSignature,
+  verifyStripeWebhookSignatureDetailed,
 } from './payment/stripe.js';
 import { createAuthRoutes } from './routes/auth-routes.js';
 import { createPublicRoutes } from './routes/public-routes.js';
@@ -111,14 +115,15 @@ export const createApp = ({
   app.post('/api/webhooks/stripe', async (c) => {
     const rawBody = await c.req.text();
     const signatureHeader = c.req.header('stripe-signature') ?? null;
-    const isValidSignature = await verifyStripeWebhookSignature({
+    const signatureStatus = await verifyStripeWebhookSignatureDetailed({
       rawBody,
       signatureHeader,
       webhookSecret: env.STRIPE_WEBHOOK_SECRET,
     });
-    if (!isValidSignature) {
+    if (signatureStatus !== 'verified') {
       await recordStripeWebhookSignatureFailure({
         database,
+        signatureStatus,
       });
       return c.json({ message: 'Invalid Stripe signature.' }, 400);
     }
@@ -148,6 +153,8 @@ export const createApp = ({
       return c.json({ received: true }, 200);
     }
 
+    // Legacy ticket purchase checkout sessions are no longer created by the API.
+    // Keep this branch so already-issued sessions can complete without manual recovery.
     if (event.type === 'checkout.session.completed') {
       const session = readStripeCheckoutSessionSummary(event.data?.object ?? null);
       if (!session) {

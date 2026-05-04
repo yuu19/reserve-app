@@ -5,6 +5,7 @@ import {
   isBillingInterval,
   isBillingSubscriptionStatus,
   resolveOrganizationBillingPaymentMethodStatus,
+  resolveOrganizationBillingProfileReadiness,
   selectOrganizationBillingSummary,
   type OrganizationBillingPlanState,
   type OrganizationBillingSubscriptionStatus,
@@ -13,13 +14,22 @@ import {
   buildBillingDocumentReadiness,
   buildInternalBillingDocumentInspection,
 } from './organization-billing-documents.js';
+import {
+  readOrganizationBillingDocumentReferences,
+  readOrganizationBillingInvoicePaymentEvents,
+} from './organization-billing-invoice-events.js';
+import { readRecentBillingOperationAttempts } from './organization-billing-operations.js';
 import { readTrialReminderDeliveryAuditInspection } from './organization-billing-notifications.js';
 import { readInternalBillingReconciliationInspection } from './organization-billing-observability.js';
 import { resolveOrganizationPremiumEntitlementPolicy } from './organization-billing-policy.js';
 
 const toIsoDateString = (value: unknown): string | null => {
   const candidate =
-    value instanceof Date ? value : typeof value === 'number' || typeof value === 'string' ? new Date(value) : null;
+    value instanceof Date
+      ? value
+      : typeof value === 'number' || typeof value === 'string'
+        ? new Date(value)
+        : null;
 
   if (!candidate || Number.isNaN(candidate.getTime())) {
     return null;
@@ -81,7 +91,7 @@ type InternalBillingTimelineEntry = {
   headline: string;
   summary: string;
   notificationKind: string | null;
-  communicationType: 'trial_will_end' | 'unknown' | null;
+  communicationType: 'trial_will_end' | 'payment_issue' | 'unknown' | null;
   notificationChannel: 'email' | 'in_app' | 'web_push' | 'unknown' | null;
   notificationChannelLabel: string | null;
   sequenceNumber: number | null;
@@ -142,7 +152,7 @@ const buildInternalBillingInvestigationTimeline = ({
       history: Array<{
         sequenceNumber: number;
         notificationKind: string;
-        communicationType: 'trial_will_end' | 'unknown';
+        communicationType: 'trial_will_end' | 'payment_issue' | 'unknown';
         channel: 'email' | 'in_app' | 'web_push' | 'unknown';
         channelLabel: string;
         deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown';
@@ -162,8 +172,8 @@ const buildInternalBillingInvestigationTimeline = ({
     occurredAt: toIsoDateString(row.createdAt),
     headline: 'Billing state changed',
     summary:
-      `${row.previousPlanState}/${row.previousSubscriptionStatus}/${row.previousPaymentMethodStatus}`
-      + ` -> ${row.nextPlanState}/${row.nextSubscriptionStatus}/${row.nextPaymentMethodStatus}`,
+      `${row.previousPlanState}/${row.previousSubscriptionStatus}/${row.previousPaymentMethodStatus}` +
+      ` -> ${row.nextPlanState}/${row.nextSubscriptionStatus}/${row.nextPaymentMethodStatus}`,
     sequenceNumber: row.sequenceNumber,
     stripeEventId: row.stripeEventId ?? null,
     sourceKind: row.sourceKind,
@@ -208,10 +218,9 @@ const buildInternalBillingInvestigationTimeline = ({
       entryType: 'notification',
       occurredAt: row.createdAt,
       headline: `${row.channelLabel} reminder ${row.deliveryState}`,
-      summary:
-        row.failureReason
-          ? `${row.channelLabel}: ${row.recipientEmail ?? 'owner'} (${row.failureReason})`
-          : `${row.channelLabel}: ${row.recipientEmail ?? 'owner'}`,
+      summary: row.failureReason
+        ? `${row.channelLabel}: ${row.recipientEmail ?? 'owner'} (${row.failureReason})`
+        : `${row.channelLabel}: ${row.recipientEmail ?? 'owner'}`,
       sequenceNumber: row.sequenceNumber,
       stripeEventId: row.stripeEventId,
       sourceKind: row.notificationKind,
@@ -234,10 +243,9 @@ const buildInternalBillingInvestigationTimeline = ({
       entryType: 'webhook_event',
       occurredAt: row.createdAt,
       headline: 'Stripe webhook event',
-      summary:
-        row.failureReason
-          ? `${row.eventType} (${row.processingStatus}, ${row.failureReason})`
-          : `${row.eventType} (${row.processingStatus})`,
+      summary: row.failureReason
+        ? `${row.eventType} (${row.processingStatus}, ${row.failureReason})`
+        : `${row.eventType} (${row.processingStatus})`,
       sequenceNumber: null,
       stripeEventId: row.id,
       sourceKind: null,
@@ -276,22 +284,31 @@ const buildInternalBillingInvestigationTimeline = ({
       webhookFailureStage: row.failureStage,
     }));
 
-  return [...auditEntries, ...signalEntries, ...notificationEntries, ...webhookEventEntries, ...webhookFailureEntries]
-    .sort((left, right) => {
-      const leftTime = left.occurredAt ? new Date(left.occurredAt).getTime() : Number.POSITIVE_INFINITY;
-      const rightTime = right.occurredAt ? new Date(right.occurredAt).getTime() : Number.POSITIVE_INFINITY;
-      if (leftTime !== rightTime) {
-        return leftTime - rightTime;
-      }
+  return [
+    ...auditEntries,
+    ...signalEntries,
+    ...notificationEntries,
+    ...webhookEventEntries,
+    ...webhookFailureEntries,
+  ].sort((left, right) => {
+    const leftTime = left.occurredAt
+      ? new Date(left.occurredAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    const rightTime = right.occurredAt
+      ? new Date(right.occurredAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
 
-      const leftSequence = left.sequenceNumber ?? Number.POSITIVE_INFINITY;
-      const rightSequence = right.sequenceNumber ?? Number.POSITIVE_INFINITY;
-      if (leftSequence !== rightSequence) {
-        return leftSequence - rightSequence;
-      }
+    const leftSequence = left.sequenceNumber ?? Number.POSITIVE_INFINITY;
+    const rightSequence = right.sequenceNumber ?? Number.POSITIVE_INFINITY;
+    if (leftSequence !== rightSequence) {
+      return leftSequence - rightSequence;
+    }
 
-      return left.id.localeCompare(right.id);
-    });
+    return left.id.localeCompare(right.id);
+  });
 };
 
 export const readInternalBillingInspection = async ({
@@ -333,6 +350,9 @@ export const readInternalBillingInspection = async ({
     subscriptionStatus,
     paymentMethodStatus,
     currentPeriodEnd,
+    pastDueGraceEndsAt:
+      billing?.pastDueGraceEndsAt instanceof Date ? billing.pastDueGraceEndsAt.toISOString() : null,
+    cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
     stripePriceId: billing?.stripePriceId ?? null,
     env,
   });
@@ -343,13 +363,15 @@ export const readInternalBillingInspection = async ({
   const stripeLinked = Boolean(
     billing?.stripeCustomerId ?? billing?.stripeSubscriptionId ?? billing?.stripePriceId,
   );
-  const paymentDocumentReadiness = buildBillingDocumentReadiness({
-    organizationId,
-    stripeCustomerId: billing?.stripeCustomerId ?? null,
-    stripeSubscriptionId: billing?.stripeSubscriptionId ?? null,
-  });
-
-  const [recentAuditRows, latestSignalRows, notifications, reconciliation] = await Promise.all([
+  const [
+    recentAuditRows,
+    latestSignalRows,
+    notifications,
+    reconciliation,
+    documentReferences,
+    invoicePaymentEvents,
+    operationAttempts,
+  ] = await Promise.all([
     database
       .select({
         sequenceNumber: dbSchema.organizationBillingAuditEvent.sequenceNumber,
@@ -359,9 +381,11 @@ export const readInternalBillingInspection = async ({
         createdAt: dbSchema.organizationBillingAuditEvent.createdAt,
         previousPlanState: dbSchema.organizationBillingAuditEvent.previousPlanState,
         nextPlanState: dbSchema.organizationBillingAuditEvent.nextPlanState,
-        previousSubscriptionStatus: dbSchema.organizationBillingAuditEvent.previousSubscriptionStatus,
+        previousSubscriptionStatus:
+          dbSchema.organizationBillingAuditEvent.previousSubscriptionStatus,
         nextSubscriptionStatus: dbSchema.organizationBillingAuditEvent.nextSubscriptionStatus,
-        previousPaymentMethodStatus: dbSchema.organizationBillingAuditEvent.previousPaymentMethodStatus,
+        previousPaymentMethodStatus:
+          dbSchema.organizationBillingAuditEvent.previousPaymentMethodStatus,
         nextPaymentMethodStatus: dbSchema.organizationBillingAuditEvent.nextPaymentMethodStatus,
         previousEntitlementState: dbSchema.organizationBillingAuditEvent.previousEntitlementState,
         nextEntitlementState: dbSchema.organizationBillingAuditEvent.nextEntitlementState,
@@ -403,7 +427,26 @@ export const readInternalBillingInspection = async ({
         entitlementState: entitlementPolicy.entitlementState,
       },
     }),
+    readOrganizationBillingDocumentReferences({
+      database,
+      organizationId,
+    }),
+    readOrganizationBillingInvoicePaymentEvents({
+      database,
+      organizationId,
+    }),
+    readRecentBillingOperationAttempts({
+      database,
+      organizationId,
+      limit: 10,
+    }),
   ]);
+  const paymentDocumentReadiness = buildBillingDocumentReadiness({
+    organizationId,
+    stripeCustomerId: billing?.stripeCustomerId ?? null,
+    stripeSubscriptionId: billing?.stripeSubscriptionId ?? null,
+    documents: documentReferences,
+  });
 
   const latestSignalRow = latestSignalRows[0] ?? null;
   const latestSignal = latestSignalRow
@@ -438,6 +481,7 @@ export const readInternalBillingInspection = async ({
       trialEndsAt: entitlementPolicy.trialEndsAt,
       cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
       stripeLinked,
+      billingProfileReadiness: resolveOrganizationBillingProfileReadiness(billing),
     },
     provider: stripeLinked
       ? {
@@ -474,6 +518,23 @@ export const readInternalBillingInspection = async ({
     paymentDocuments: buildInternalBillingDocumentInspection({
       readiness: paymentDocumentReadiness,
     }),
+    invoicePaymentEvents,
+    operationAttempts: operationAttempts.map((attempt: (typeof operationAttempts)[number]) => ({
+      id: attempt.id,
+      purpose: attempt.purpose,
+      billingInterval: attempt.billingInterval,
+      state: attempt.state,
+      handoffExpiresAt: toIsoDateString(attempt.handoffExpiresAt),
+      provider: attempt.provider,
+      stripeCustomerId: attempt.stripeCustomerId,
+      stripeSubscriptionId: attempt.stripeSubscriptionId,
+      stripeCheckoutSessionId: attempt.stripeCheckoutSessionId,
+      stripePortalSessionId: attempt.stripePortalSessionId,
+      failureReason: attempt.failureReason,
+      createdByUserId: attempt.createdByUserId,
+      createdAt: toIsoDateString(attempt.createdAt),
+      updatedAt: toIsoDateString(attempt.updatedAt),
+    })),
     timeline: {
       entries: buildInternalBillingInvestigationTimeline({
         auditRows: recentAuditRows,

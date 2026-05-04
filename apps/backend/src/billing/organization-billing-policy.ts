@@ -46,8 +46,15 @@ export type OrganizationPremiumEntitlementReason =
   | 'premium_trial_active_with_payment_method_registered'
   | 'premium_trial_missing_end'
   | 'premium_trial_expired'
+  | 'premium_paid_unknown_price'
   | 'premium_paid_active'
-  | 'premium_paid_grace_state'
+  | 'premium_paid_scheduled_cancellation_active'
+  | 'premium_paid_past_due_grace_active'
+  | 'premium_paid_past_due_grace_missing'
+  | 'premium_paid_past_due_grace_expired'
+  | 'premium_paid_unpaid'
+  | 'premium_paid_incomplete'
+  | 'premium_paid_canceled'
   | 'premium_paid_state_unexpected';
 
 export type OrganizationPremiumEntitlementPolicyInput = {
@@ -55,11 +62,12 @@ export type OrganizationPremiumEntitlementPolicyInput = {
   subscriptionStatus: OrganizationBillingSubscriptionStatus;
   paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
   currentPeriodEnd: string | null;
+  pastDueGraceEndsAt?: string | null;
+  cancelAtPeriodEnd?: boolean;
   stripePriceId?: string | null;
-  env?: Partial<Pick<
-    AuthRuntimeEnv,
-    'STRIPE_PREMIUM_MONTHLY_PRICE_ID' | 'STRIPE_PREMIUM_YEARLY_PRICE_ID'
-  >>;
+  env?: Partial<
+    Pick<AuthRuntimeEnv, 'STRIPE_PREMIUM_MONTHLY_PRICE_ID' | 'STRIPE_PREMIUM_YEARLY_PRICE_ID'>
+  >;
   additionalTierCatalogEntries?: OrganizationBillingPaidTierCatalogEntry[];
   now?: Date;
 };
@@ -100,10 +108,9 @@ export const resolveOrganizationBillingPaidTier = ({
 }: {
   planCode: OrganizationBillingPlanCode;
   stripePriceId?: string | null;
-  env?: Partial<Pick<
-    AuthRuntimeEnv,
-    'STRIPE_PREMIUM_MONTHLY_PRICE_ID' | 'STRIPE_PREMIUM_YEARLY_PRICE_ID'
-  >>;
+  env?: Partial<
+    Pick<AuthRuntimeEnv, 'STRIPE_PREMIUM_MONTHLY_PRICE_ID' | 'STRIPE_PREMIUM_YEARLY_PRICE_ID'>
+  >;
   additionalCatalogEntries?: OrganizationBillingPaidTierCatalogEntry[];
 }): OrganizationBillingPaidTier | null => {
   if (planCode !== 'premium') {
@@ -131,7 +138,8 @@ export const resolveOrganizationBillingPaidTier = ({
   }
 
   const matchedEntry = catalog.find((entry) =>
-    entry.priceIds.some((priceId) => priceId === normalizedPriceId));
+    entry.priceIds.some((priceId) => priceId === normalizedPriceId),
+  );
   if (matchedEntry) {
     return {
       code: matchedEntry.code,
@@ -146,7 +154,7 @@ export const resolveOrganizationBillingPaidTier = ({
     code: 'premium_unknown',
     label: defaultEntry.label,
     resolution: 'unknown_price',
-    capabilities: [...defaultPaidTierCapabilities],
+    capabilities: [],
     diagnosticReason: 'stripe_price_id_not_in_paid_tier_catalog',
   };
 };
@@ -156,17 +164,21 @@ export const hasOrganizationBillingPaidTierCapability = (
   capability: OrganizationBillingPaidTierCapability,
 ): boolean => paidTier?.capabilities.includes(capability) ?? false;
 
-const premiumPaidGraceStatuses = new Set<OrganizationBillingSubscriptionStatus>([
-  'past_due',
-  'unpaid',
-  'incomplete',
-]);
+const isFutureIsoDate = (value: string | null | undefined, now: Date) => {
+  if (!value) {
+    return false;
+  }
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.getTime() > now.getTime();
+};
 
 export const resolveOrganizationPremiumEntitlementPolicy = ({
   planCode,
   subscriptionStatus,
   paymentMethodStatus,
   currentPeriodEnd,
+  pastDueGraceEndsAt,
+  cancelAtPeriodEnd = false,
   stripePriceId,
   env,
   additionalTierCatalogEntries,
@@ -198,6 +210,20 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
       isPremiumEligible: false,
       paidTier: null,
       reason: 'organization_plan_is_free',
+    };
+  }
+
+  if (paidTier?.resolution === 'unknown_price') {
+    return {
+      scope: 'organization',
+      source: 'application_billing_state',
+      planState,
+      paymentMethodStatus,
+      trialEndsAt,
+      entitlementState: 'free_only',
+      isPremiumEligible: false,
+      paidTier,
+      reason: 'premium_paid_unknown_price',
     };
   }
 
@@ -256,11 +282,41 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
       entitlementState: 'premium_enabled',
       isPremiumEligible: true,
       paidTier,
-      reason: 'premium_paid_active',
+      reason: cancelAtPeriodEnd
+        ? 'premium_paid_scheduled_cancellation_active'
+        : 'premium_paid_active',
     };
   }
 
-  if (premiumPaidGraceStatuses.has(subscriptionStatus)) {
+  if (subscriptionStatus === 'past_due') {
+    if (!pastDueGraceEndsAt) {
+      return {
+        scope: 'organization',
+        source: 'application_billing_state',
+        planState,
+        paymentMethodStatus,
+        trialEndsAt,
+        entitlementState: 'free_only',
+        isPremiumEligible: false,
+        paidTier,
+        reason: 'premium_paid_past_due_grace_missing',
+      };
+    }
+
+    if (!isFutureIsoDate(pastDueGraceEndsAt, now)) {
+      return {
+        scope: 'organization',
+        source: 'application_billing_state',
+        planState,
+        paymentMethodStatus,
+        trialEndsAt,
+        entitlementState: 'free_only',
+        isPremiumEligible: false,
+        paidTier,
+        reason: 'premium_paid_past_due_grace_expired',
+      };
+    }
+
     return {
       scope: 'organization',
       source: 'application_billing_state',
@@ -270,7 +326,49 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
       entitlementState: 'premium_enabled',
       isPremiumEligible: true,
       paidTier,
-      reason: 'premium_paid_grace_state',
+      reason: 'premium_paid_past_due_grace_active',
+    };
+  }
+
+  if (subscriptionStatus === 'unpaid') {
+    return {
+      scope: 'organization',
+      source: 'application_billing_state',
+      planState,
+      paymentMethodStatus,
+      trialEndsAt,
+      entitlementState: 'free_only',
+      isPremiumEligible: false,
+      paidTier,
+      reason: 'premium_paid_unpaid',
+    };
+  }
+
+  if (subscriptionStatus === 'incomplete') {
+    return {
+      scope: 'organization',
+      source: 'application_billing_state',
+      planState,
+      paymentMethodStatus,
+      trialEndsAt,
+      entitlementState: 'free_only',
+      isPremiumEligible: false,
+      paidTier,
+      reason: 'premium_paid_incomplete',
+    };
+  }
+
+  if (subscriptionStatus === 'canceled') {
+    return {
+      scope: 'organization',
+      source: 'application_billing_state',
+      planState,
+      paymentMethodStatus,
+      trialEndsAt,
+      entitlementState: 'free_only',
+      isPremiumEligible: false,
+      paidTier,
+      reason: 'premium_paid_canceled',
     };
   }
 
@@ -299,14 +397,15 @@ export const readOrganizationPremiumEntitlementPolicy = async ({
   now?: Date;
 }) => {
   const billing = await selectOrganizationBillingSummary(database, organizationId);
-  const planCode: OrganizationBillingPlanCode = billing?.planCode === 'premium' ? 'premium' : 'free';
+  const planCode: OrganizationBillingPlanCode =
+    billing?.planCode === 'premium' ? 'premium' : 'free';
   const subscriptionStatus: OrganizationBillingSubscriptionStatus =
-    billing?.subscriptionStatus === 'trialing'
-    || billing?.subscriptionStatus === 'active'
-    || billing?.subscriptionStatus === 'past_due'
-    || billing?.subscriptionStatus === 'canceled'
-    || billing?.subscriptionStatus === 'unpaid'
-    || billing?.subscriptionStatus === 'incomplete'
+    billing?.subscriptionStatus === 'trialing' ||
+    billing?.subscriptionStatus === 'active' ||
+    billing?.subscriptionStatus === 'past_due' ||
+    billing?.subscriptionStatus === 'canceled' ||
+    billing?.subscriptionStatus === 'unpaid' ||
+    billing?.subscriptionStatus === 'incomplete'
       ? billing.subscriptionStatus
       : 'free';
   const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
@@ -321,6 +420,9 @@ export const readOrganizationPremiumEntitlementPolicy = async ({
     paymentMethodStatus,
     currentPeriodEnd:
       billing?.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd.toISOString() : null,
+    pastDueGraceEndsAt:
+      billing?.pastDueGraceEndsAt instanceof Date ? billing.pastDueGraceEndsAt.toISOString() : null,
+    cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
     stripePriceId: billing?.stripePriceId ?? null,
     env,
     now,

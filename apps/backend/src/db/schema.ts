@@ -112,9 +112,20 @@ export const organizationBilling = sqliteTable(
     stripePriceId: text('stripe_price_id'),
     billingInterval: text('billing_interval'),
     subscriptionStatus: text('subscription_status').default('free').notNull(),
-    cancelAtPeriodEnd: integer('cancel_at_period_end', { mode: 'boolean' }).default(false).notNull(),
+    cancelAtPeriodEnd: integer('cancel_at_period_end', { mode: 'boolean' })
+      .default(false)
+      .notNull(),
+    trialStartedAt: integer('trial_started_at', { mode: 'timestamp_ms' }),
+    trialEndedAt: integer('trial_ended_at', { mode: 'timestamp_ms' }),
     currentPeriodStart: integer('current_period_start', { mode: 'timestamp_ms' }),
     currentPeriodEnd: integer('current_period_end', { mode: 'timestamp_ms' }),
+    paymentIssueStartedAt: integer('payment_issue_started_at', { mode: 'timestamp_ms' }),
+    pastDueGraceEndsAt: integer('past_due_grace_ends_at', { mode: 'timestamp_ms' }),
+    billingProfileReadiness: text('billing_profile_readiness').default('not_required').notNull(),
+    billingProfileNextAction: text('billing_profile_next_action'),
+    billingProfileCheckedAt: integer('billing_profile_checked_at', { mode: 'timestamp_ms' }),
+    lastReconciledAt: integer('last_reconciled_at', { mode: 'timestamp_ms' }),
+    lastReconciliationReason: text('last_reconciliation_reason'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -143,6 +154,12 @@ export const stripeWebhookEvent = sqliteTable(
     stripeCustomerId: text('stripe_customer_id'),
     stripeSubscriptionId: text('stripe_subscription_id'),
     failureReason: text('failure_reason'),
+    signatureVerificationStatus: text('signature_verification_status')
+      .default('verified')
+      .notNull(),
+    duplicateDetected: integer('duplicate_detected', { mode: 'boolean' }).default(false).notNull(),
+    duplicateDetectedAt: integer('duplicate_detected_at', { mode: 'timestamp_ms' }),
+    receiptStatus: text('receipt_status').default('accepted').notNull(),
     processedAt: integer('processed_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
@@ -181,6 +198,121 @@ export const stripeWebhookFailure = sqliteTable(
     index('stripe_webhook_failure_event_idx').on(table.eventId),
     index('stripe_webhook_failure_scope_idx').on(table.scope),
     index('stripe_webhook_failure_organization_idx').on(table.organizationId),
+  ],
+);
+
+export const organizationBillingOperationAttempt = sqliteTable(
+  'organization_billing_operation_attempt',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    purpose: text('purpose').notNull(),
+    billingInterval: text('billing_interval'),
+    state: text('state').default('processing').notNull(),
+    handoffUrl: text('handoff_url'),
+    handoffExpiresAt: integer('handoff_expires_at', { mode: 'timestamp_ms' }),
+    provider: text('provider').default('stripe').notNull(),
+    stripeCustomerId: text('stripe_customer_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+    stripePortalSessionId: text('stripe_portal_session_id'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    failureReason: text('failure_reason'),
+    createdByUserId: text('created_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('organization_billing_operation_attempt_org_idx').on(
+      table.organizationId,
+      table.purpose,
+      table.billingInterval,
+      table.state,
+    ),
+    index('organization_billing_operation_attempt_handoff_idx').on(
+      table.organizationId,
+      table.purpose,
+      table.handoffExpiresAt,
+    ),
+    uniqueIndex('organization_billing_operation_attempt_idempotency_uidx').on(table.idempotencyKey),
+  ],
+);
+
+export const organizationBillingInvoiceEvent = sqliteTable(
+  'organization_billing_invoice_event',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    stripeEventId: text('stripe_event_id'),
+    eventType: text('event_type').notNull(),
+    stripeCustomerId: text('stripe_customer_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    stripeInvoiceId: text('stripe_invoice_id'),
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    providerStatus: text('provider_status'),
+    ownerFacingStatus: text('owner_facing_status').notNull(),
+    occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index('organization_billing_invoice_event_org_idx').on(table.organizationId, table.createdAt),
+    uniqueIndex('organization_billing_invoice_event_provider_uidx').on(
+      table.stripeEventId,
+      table.eventType,
+    ),
+  ],
+);
+
+export const organizationBillingDocumentReference = sqliteTable(
+  'organization_billing_document_reference',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    invoiceEventId: text('invoice_event_id').references(() => organizationBillingInvoiceEvent.id, {
+      onDelete: 'set null',
+    }),
+    documentKind: text('document_kind').notNull(),
+    providerDocumentId: text('provider_document_id').notNull(),
+    hostedInvoiceUrl: text('hosted_invoice_url'),
+    invoicePdfUrl: text('invoice_pdf_url'),
+    receiptUrl: text('receipt_url'),
+    availability: text('availability').notNull(),
+    ownerFacingStatus: text('owner_facing_status').notNull(),
+    providerDerived: integer('provider_derived', { mode: 'boolean' }).default(true).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('organization_billing_document_reference_org_idx').on(
+      table.organizationId,
+      table.documentKind,
+      table.availability,
+    ),
+    uniqueIndex('organization_billing_document_reference_provider_uidx').on(
+      table.organizationId,
+      table.documentKind,
+      table.providerDocumentId,
+    ),
   ],
 );
 
@@ -252,7 +384,10 @@ export const organizationBillingAuditEvent = sqliteTable(
       .notNull(),
   },
   (table) => [
-    index('organization_billing_audit_event_org_idx').on(table.organizationId, table.sequenceNumber),
+    index('organization_billing_audit_event_org_idx').on(
+      table.organizationId,
+      table.sequenceNumber,
+    ),
     index('organization_billing_audit_event_event_idx').on(table.stripeEventId),
   ],
 );
@@ -403,12 +538,19 @@ export const invitation = sqliteTable(
     principalKind: text('principal_kind').notNull(),
     participantName: text('participant_name'),
     status: text('status').default('pending').notNull(),
-    respondedByUserId: text('responded_by_user_id').references(() => user.id, { onDelete: 'set null' }),
-    respondedAt: integer('responded_at', { mode: 'timestamp_ms' }),
-    acceptedMemberId: text('accepted_member_id').references(() => member.id, { onDelete: 'set null' }),
-    acceptedClassroomMemberId: text('accepted_classroom_member_id').references(() => classroomMember.id, {
+    respondedByUserId: text('responded_by_user_id').references(() => user.id, {
       onDelete: 'set null',
     }),
+    respondedAt: integer('responded_at', { mode: 'timestamp_ms' }),
+    acceptedMemberId: text('accepted_member_id').references(() => member.id, {
+      onDelete: 'set null',
+    }),
+    acceptedClassroomMemberId: text('accepted_classroom_member_id').references(
+      () => classroomMember.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
     acceptedParticipantId: text('accepted_participant_id').references(() => participant.id, {
       onDelete: 'set null',
     }),
@@ -470,7 +612,10 @@ export const invitationAuditLog = sqliteTable(
   },
   (table) => [
     index('invitation_audit_log_invitation_action_idx').on(table.invitationId, table.eventType),
-    index('invitation_audit_log_organization_created_idx').on(table.organizationId, table.createdAt),
+    index('invitation_audit_log_organization_created_idx').on(
+      table.organizationId,
+      table.createdAt,
+    ),
     index('invitation_audit_log_actor_created_idx').on(table.actorUserId, table.createdAt),
   ],
 );
@@ -584,7 +729,10 @@ export const recurringScheduleException = sqliteTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex('recurring_schedule_exception_unique_date_uidx').on(table.recurringScheduleId, table.date),
+    uniqueIndex('recurring_schedule_exception_unique_date_uidx').on(
+      table.recurringScheduleId,
+      table.date,
+    ),
     index('recurring_schedule_exception_org_date_idx').on(table.organizationId, table.date),
   ],
 );
@@ -628,8 +776,16 @@ export const slot = sqliteTable(
       table.recurringScheduleId,
       table.startAt,
     ),
-    index('slot_organization_start_status_idx').on(table.organizationId, table.startAt, table.status),
-    index('slot_organization_service_start_idx').on(table.organizationId, table.serviceId, table.startAt),
+    index('slot_organization_start_status_idx').on(
+      table.organizationId,
+      table.startAt,
+      table.status,
+    ),
+    index('slot_organization_service_start_idx').on(
+      table.organizationId,
+      table.serviceId,
+      table.startAt,
+    ),
   ],
 );
 
@@ -656,7 +812,9 @@ export const booking = sqliteTable(
     status: text('status').default('confirmed').notNull(),
     cancelReason: text('cancel_reason'),
     cancelledAt: integer('cancelled_at', { mode: 'timestamp_ms' }),
-    cancelledByUserId: text('cancelled_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    cancelledByUserId: text('cancelled_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     noShowMarkedAt: integer('no_show_marked_at', { mode: 'timestamp_ms' }),
     ticketPackId: text('ticket_pack_id').references(() => ticketPack.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
@@ -669,8 +827,16 @@ export const booking = sqliteTable(
   },
   (table) => [
     uniqueIndex('booking_slot_participant_uidx').on(table.slotId, table.participantId),
-    index('booking_org_participant_created_idx').on(table.organizationId, table.participantId, table.createdAt),
-    index('booking_org_service_created_idx').on(table.organizationId, table.serviceId, table.createdAt),
+    index('booking_org_participant_created_idx').on(
+      table.organizationId,
+      table.participantId,
+      table.createdAt,
+    ),
+    index('booking_org_service_created_idx').on(
+      table.organizationId,
+      table.serviceId,
+      table.createdAt,
+    ),
     index('booking_org_status_created_idx').on(table.organizationId, table.status, table.createdAt),
   ],
 );
@@ -732,7 +898,11 @@ export const ticketPack = sqliteTable(
       .notNull(),
   },
   (table) => [
-    index('ticket_pack_org_participant_status_idx').on(table.organizationId, table.participantId, table.status),
+    index('ticket_pack_org_participant_status_idx').on(
+      table.organizationId,
+      table.participantId,
+      table.status,
+    ),
     index('ticket_pack_org_expires_idx').on(table.organizationId, table.expiresAt),
   ],
 );
@@ -757,9 +927,13 @@ export const ticketPurchase = sqliteTable(
     status: text('status').notNull(),
     ticketPackId: text('ticket_pack_id').references(() => ticketPack.id, { onDelete: 'set null' }),
     stripeCheckoutSessionId: text('stripe_checkout_session_id'),
-    approvedByUserId: text('approved_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    approvedByUserId: text('approved_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     approvedAt: integer('approved_at', { mode: 'timestamp_ms' }),
-    rejectedByUserId: text('rejected_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    rejectedByUserId: text('rejected_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     rejectedAt: integer('rejected_at', { mode: 'timestamp_ms' }),
     rejectReason: text('reject_reason'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
@@ -896,6 +1070,9 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   bookingAuditLogs: many(bookingAuditLog),
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
+  billingOperationAttempts: many(organizationBillingOperationAttempt),
+  billingInvoiceEvents: many(organizationBillingInvoiceEvent),
+  billingDocumentReferences: many(organizationBillingDocumentReference),
 }));
 
 export const organizationBillingRelations = relations(organizationBilling, ({ one }) => ({
@@ -904,6 +1081,45 @@ export const organizationBillingRelations = relations(organizationBilling, ({ on
     references: [organization.id],
   }),
 }));
+
+export const organizationBillingOperationAttemptRelations = relations(
+  organizationBillingOperationAttempt,
+  ({ one }) => ({
+    organization: one(organization, {
+      fields: [organizationBillingOperationAttempt.organizationId],
+      references: [organization.id],
+    }),
+    createdByUser: one(user, {
+      fields: [organizationBillingOperationAttempt.createdByUserId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export const organizationBillingInvoiceEventRelations = relations(
+  organizationBillingInvoiceEvent,
+  ({ one, many }) => ({
+    organization: one(organization, {
+      fields: [organizationBillingInvoiceEvent.organizationId],
+      references: [organization.id],
+    }),
+    documentReferences: many(organizationBillingDocumentReference),
+  }),
+);
+
+export const organizationBillingDocumentReferenceRelations = relations(
+  organizationBillingDocumentReference,
+  ({ one }) => ({
+    organization: one(organization, {
+      fields: [organizationBillingDocumentReference.organizationId],
+      references: [organization.id],
+    }),
+    invoiceEvent: one(organizationBillingInvoiceEvent, {
+      fields: [organizationBillingDocumentReference.invoiceEventId],
+      references: [organizationBillingInvoiceEvent.id],
+    }),
+  }),
+);
 
 export const classroomRelations = relations(classroom, ({ one, many }) => ({
   organization: one(organization, {
@@ -997,20 +1213,23 @@ export const recurringScheduleRelations = relations(recurringSchedule, ({ one, m
   slots: many(slot),
 }));
 
-export const recurringScheduleExceptionRelations = relations(recurringScheduleException, ({ one }) => ({
-  organization: one(organization, {
-    fields: [recurringScheduleException.organizationId],
-    references: [organization.id],
+export const recurringScheduleExceptionRelations = relations(
+  recurringScheduleException,
+  ({ one }) => ({
+    organization: one(organization, {
+      fields: [recurringScheduleException.organizationId],
+      references: [organization.id],
+    }),
+    classroom: one(classroom, {
+      fields: [recurringScheduleException.classroomId],
+      references: [classroom.id],
+    }),
+    recurringSchedule: one(recurringSchedule, {
+      fields: [recurringScheduleException.recurringScheduleId],
+      references: [recurringSchedule.id],
+    }),
   }),
-  classroom: one(classroom, {
-    fields: [recurringScheduleException.classroomId],
-    references: [classroom.id],
-  }),
-  recurringSchedule: one(recurringSchedule, {
-    fields: [recurringScheduleException.recurringScheduleId],
-    references: [recurringSchedule.id],
-  }),
-}));
+);
 
 export const slotRelations = relations(slot, ({ one, many }) => ({
   organization: one(organization, {

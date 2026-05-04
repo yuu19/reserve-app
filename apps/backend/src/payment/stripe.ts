@@ -6,6 +6,7 @@ type StripeCheckoutSessionCreateInput = {
   successUrl: string;
   cancelUrl: string;
   clientReferenceId?: string;
+  idempotencyKey?: string;
   metadata?: Record<string, string>;
 };
 
@@ -16,6 +17,16 @@ type StripeSubscriptionCheckoutSessionCreateInput = {
   cancelUrl: string;
   customerId?: string | null;
   clientReferenceId?: string;
+  idempotencyKey?: string;
+  metadata?: Record<string, string>;
+};
+
+type StripeTrialSubscriptionCreateInput = {
+  env: AuthRuntimeEnv;
+  customerId: string;
+  priceId: string;
+  trialPeriodDays: number;
+  idempotencyKey?: string;
   metadata?: Record<string, string>;
 };
 
@@ -25,6 +36,7 @@ type StripeSetupCheckoutSessionCreateInput = {
   cancelUrl: string;
   customerId: string;
   clientReferenceId?: string;
+  idempotencyKey?: string;
   metadata?: Record<string, string>;
 };
 
@@ -32,6 +44,7 @@ type StripeBillingPortalSessionCreateInput = {
   env: AuthRuntimeEnv;
   customerId: string;
   returnUrl: string;
+  idempotencyKey?: string;
   subscriptionUpdate?: {
     subscriptionId: string;
     afterCompletionReturnUrl: string;
@@ -53,6 +66,13 @@ export type StripeWebhookEvent = {
   };
 };
 
+export type StripeWebhookSignatureVerificationStatus =
+  | 'verified'
+  | 'missing'
+  | 'expired'
+  | 'mismatched'
+  | 'invalid';
+
 export type StripeCustomerSummary = {
   id: string;
   defaultPaymentMethodId: string | null;
@@ -63,6 +83,11 @@ export type StripeBillingCheckoutMetadata = {
   organizationId: string;
   planCode: 'premium';
   billingInterval: 'month' | 'year';
+};
+
+export type StripePaymentMethodCheckoutMetadata = {
+  billingPurpose: 'organization_payment_method';
+  organizationId: string;
 };
 
 export type StripeSubscriptionSummary = {
@@ -87,6 +112,18 @@ export type StripeChargeReceiptDocumentSummary = {
   id: string;
   customerId: string | null;
   receiptUrl: string | null;
+};
+
+export type StripeInvoicePaymentEventSummary = {
+  invoiceId: string | null;
+  customerId: string | null;
+  subscriptionId: string | null;
+  paymentIntentId: string | null;
+  providerStatus: string | null;
+  createdAt: Date | null;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+  latestCharge: Record<string, unknown> | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -180,17 +217,24 @@ const postStripeForm = async ({
   env,
   path,
   params,
+  idempotencyKey,
 }: {
   env: AuthRuntimeEnv;
   path: string;
   params: URLSearchParams;
+  idempotencyKey?: string;
 }) => {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${requireStripeSecretKey(env)}`,
+    'content-type': 'application/x-www-form-urlencoded',
+  };
+  if (idempotencyKey?.trim()) {
+    headers['idempotency-key'] = idempotencyKey.trim();
+  }
+
   const response = await fetch(`https://api.stripe.com/v1/${path.replace(/^\/+/, '')}`, {
     method: 'POST',
-    headers: {
-      authorization: `Bearer ${requireStripeSecretKey(env)}`,
-      'content-type': 'application/x-www-form-urlencoded',
-    },
+    headers,
     body: params.toString(),
   });
 
@@ -235,10 +279,12 @@ const getStripeJson = async ({
 export const createCustomer = async ({
   env,
   name,
+  idempotencyKey,
   metadata,
 }: {
   env: AuthRuntimeEnv;
   name?: string;
+  idempotencyKey?: string;
   metadata?: Record<string, string>;
 }): Promise<{ id: string }> => {
   const params = new URLSearchParams();
@@ -257,6 +303,7 @@ export const createCustomer = async ({
     env,
     path: 'customers',
     params,
+    idempotencyKey,
   });
 
   if (!isRecord(payload) || typeof payload.id !== 'string') {
@@ -274,6 +321,7 @@ export const createCheckoutSession = async ({
   successUrl,
   cancelUrl,
   clientReferenceId,
+  idempotencyKey,
   metadata,
 }: StripeCheckoutSessionCreateInput): Promise<StripeCheckoutSession> => {
   const params = new URLSearchParams();
@@ -297,6 +345,7 @@ export const createCheckoutSession = async ({
     env,
     path: 'checkout/sessions',
     params,
+    idempotencyKey,
   });
 
   if (!isRecord(payload) || typeof payload.id !== 'string' || typeof payload.url !== 'string') {
@@ -318,6 +367,7 @@ export const createSubscriptionCheckoutSession = async ({
   cancelUrl,
   customerId,
   clientReferenceId,
+  idempotencyKey,
   metadata,
 }: StripeSubscriptionCheckoutSessionCreateInput): Promise<StripeCheckoutSession> => {
   const params = new URLSearchParams();
@@ -345,6 +395,7 @@ export const createSubscriptionCheckoutSession = async ({
     env,
     path: 'checkout/sessions',
     params,
+    idempotencyKey,
   });
 
   if (!isRecord(payload) || typeof payload.id !== 'string' || typeof payload.url !== 'string') {
@@ -359,12 +410,47 @@ export const createSubscriptionCheckoutSession = async ({
   };
 };
 
+export const createTrialSubscription = async ({
+  env,
+  customerId,
+  priceId,
+  trialPeriodDays,
+  idempotencyKey,
+  metadata,
+}: StripeTrialSubscriptionCreateInput): Promise<StripeSubscriptionSummary> => {
+  const params = new URLSearchParams();
+  params.set('customer', customerId);
+  params.set('items[0][price]', priceId);
+  params.set('trial_period_days', String(trialPeriodDays));
+  params.set('trial_settings[end_behavior][missing_payment_method]', 'cancel');
+
+  if (metadata) {
+    for (const [key, value] of Object.entries(metadata)) {
+      params.set(`metadata[${key}]`, value);
+    }
+  }
+
+  const payload = await postStripeForm({
+    env,
+    path: 'subscriptions',
+    params,
+    idempotencyKey,
+  });
+  const summary = readStripeSubscriptionSummary(payload);
+  if (!summary) {
+    throw new Error('Invalid Stripe trial subscription response.');
+  }
+
+  return summary;
+};
+
 export const createSetupCheckoutSession = async ({
   env,
   successUrl,
   cancelUrl,
   customerId,
   clientReferenceId,
+  idempotencyKey,
   metadata,
 }: StripeSetupCheckoutSessionCreateInput): Promise<StripeCheckoutSession> => {
   const params = new URLSearchParams();
@@ -387,6 +473,7 @@ export const createSetupCheckoutSession = async ({
     env,
     path: 'checkout/sessions',
     params,
+    idempotencyKey,
   });
 
   if (!isRecord(payload) || typeof payload.id !== 'string' || typeof payload.url !== 'string') {
@@ -401,12 +488,51 @@ export const createSetupCheckoutSession = async ({
   };
 };
 
+export const updateCustomerDefaultPaymentMethod = async ({
+  env,
+  customerId,
+  paymentMethodId,
+}: {
+  env: AuthRuntimeEnv;
+  customerId: string;
+  paymentMethodId: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('invoice_settings[default_payment_method]', paymentMethodId);
+
+  await postStripeForm({
+    env,
+    path: `customers/${encodeURIComponent(customerId)}`,
+    params,
+  });
+};
+
+export const updateSubscriptionDefaultPaymentMethod = async ({
+  env,
+  subscriptionId,
+  paymentMethodId,
+}: {
+  env: AuthRuntimeEnv;
+  subscriptionId: string;
+  paymentMethodId: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('default_payment_method', paymentMethodId);
+
+  await postStripeForm({
+    env,
+    path: `subscriptions/${encodeURIComponent(subscriptionId)}`,
+    params,
+  });
+};
+
 export const createBillingPortalSession = async ({
   env,
   customerId,
   returnUrl,
+  idempotencyKey,
   subscriptionUpdate,
-}: StripeBillingPortalSessionCreateInput): Promise<{ url: string }> => {
+}: StripeBillingPortalSessionCreateInput): Promise<{ id: string | null; url: string }> => {
   const params = new URLSearchParams();
   params.set('customer', customerId);
   params.set('return_url', returnUrl);
@@ -424,6 +550,7 @@ export const createBillingPortalSession = async ({
     env,
     path: 'billing_portal/sessions',
     params,
+    idempotencyKey,
   });
 
   if (!isRecord(payload) || typeof payload.url !== 'string') {
@@ -431,6 +558,7 @@ export const createBillingPortalSession = async ({
   }
 
   return {
+    id: typeof payload.id === 'string' ? payload.id : null,
     url: payload.url,
   };
 };
@@ -493,7 +621,30 @@ export const readStripeSubscriptionSummaryById = async ({
   return summary;
 };
 
-export const verifyStripeWebhookSignature = async ({
+export const readStripeSetupCheckoutSessionSummaryById = async ({
+  env,
+  sessionId,
+}: {
+  env: AuthRuntimeEnv;
+  sessionId: string;
+}) => {
+  const query = new URLSearchParams();
+  query.append('expand[]', 'setup_intent');
+
+  const payload = await getStripeJson({
+    env,
+    path: `checkout/sessions/${encodeURIComponent(sessionId)}`,
+    query,
+  });
+  const summary = readStripeCheckoutSessionSummary(payload);
+  if (!summary) {
+    throw new Error('Invalid Stripe setup checkout session response.');
+  }
+
+  return summary;
+};
+
+export const verifyStripeWebhookSignatureDetailed = async ({
   rawBody,
   signatureHeader,
   webhookSecret,
@@ -503,31 +654,39 @@ export const verifyStripeWebhookSignature = async ({
   signatureHeader: string | null;
   webhookSecret?: string;
   toleranceSeconds?: number;
-}): Promise<boolean> => {
+}): Promise<StripeWebhookSignatureVerificationStatus> => {
   const secret = webhookSecret?.trim();
   if (!secret || !signatureHeader) {
-    return false;
+    return 'missing';
   }
 
   const parsed = parseStripeSignatureHeader(signatureHeader);
   if (!parsed.timestamp || parsed.v1Signatures.length === 0) {
-    return false;
+    return 'invalid';
   }
 
   const timestampSeconds = Number(parsed.timestamp);
   if (!Number.isFinite(timestampSeconds)) {
-    return false;
+    return 'invalid';
   }
 
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (Math.abs(nowSeconds - timestampSeconds) > toleranceSeconds) {
-    return false;
+    return 'expired';
   }
 
   const signedPayload = `${parsed.timestamp}.${rawBody}`;
   const expected = await hmacSha256Hex(secret, signedPayload);
 
-  return parsed.v1Signatures.some((candidate) => timingSafeEqual(candidate, expected));
+  return parsed.v1Signatures.some((candidate) => timingSafeEqual(candidate, expected))
+    ? 'verified'
+    : 'mismatched';
+};
+
+export const verifyStripeWebhookSignature = async (
+  input: Parameters<typeof verifyStripeWebhookSignatureDetailed>[0],
+): Promise<boolean> => {
+  return (await verifyStripeWebhookSignatureDetailed(input)) === 'verified';
 };
 
 export const parseStripeWebhookEvent = (rawBody: string): StripeWebhookEvent | null => {
@@ -627,6 +786,25 @@ export const readStripeBillingCheckoutMetadata = (
   };
 };
 
+export const readStripePaymentMethodCheckoutMetadata = (
+  value: unknown,
+): StripePaymentMethodCheckoutMetadata | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const billingPurpose = readString(value.billingPurpose);
+  const organizationId = readString(value.organizationId);
+  if (billingPurpose !== 'organization_payment_method' || !organizationId) {
+    return null;
+  }
+
+  return {
+    billingPurpose,
+    organizationId,
+  };
+};
+
 export const readStripeInvoiceDocumentSummary = (
   value: unknown,
 ): StripeInvoiceDocumentSummary | null => {
@@ -667,6 +845,34 @@ export const readStripeChargeReceiptDocumentSummary = (
   };
 };
 
+export const readStripeInvoicePaymentEventSummary = (
+  value: unknown,
+): StripeInvoicePaymentEventSummary | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const invoiceId = readString(value.id);
+  const paymentIntent = isRecord(value.payment_intent) ? value.payment_intent : null;
+  const latestCharge = isRecord(paymentIntent?.latest_charge)
+    ? paymentIntent.latest_charge
+    : isRecord(value.charge)
+      ? value.charge
+      : null;
+
+  return {
+    invoiceId,
+    customerId: readStripeObjectId(value.customer),
+    subscriptionId: readStripeObjectId(value.subscription),
+    paymentIntentId: readStripeObjectId(value.payment_intent),
+    providerStatus: readString(value.status),
+    createdAt: readUnixSecondsDate(value.created),
+    hostedInvoiceUrl: readString(value.hosted_invoice_url),
+    invoicePdfUrl: readString(value.invoice_pdf),
+    latestCharge: latestCharge as Record<string, unknown> | null,
+  };
+};
+
 export const readStripeSubscriptionInvoiceDocumentSummaries = async ({
   env,
   customerId,
@@ -704,6 +910,8 @@ export const readStripeCheckoutSessionSummary = (
   id: string;
   customerId: string | null;
   subscriptionId: string | null;
+  setupIntentId: string | null;
+  setupIntentPaymentMethodId: string | null;
   metadata: Record<string, unknown>;
 } | null => {
   if (!isRecord(value)) {
@@ -715,10 +923,14 @@ export const readStripeCheckoutSessionSummary = (
     return null;
   }
 
+  const setupIntent = isRecord(value.setup_intent) ? value.setup_intent : null;
+
   return {
     id,
     customerId: readString(value.customer),
     subscriptionId: readString(value.subscription),
+    setupIntentId: readStripeObjectId(value.setup_intent),
+    setupIntentPaymentMethodId: setupIntent ? readStripeObjectId(setupIntent.payment_method) : null,
     metadata: isRecord(value.metadata) ? value.metadata : {},
   };
 };
@@ -736,16 +948,28 @@ export const readStripeSubscriptionSummary = (value: unknown): StripeSubscriptio
   const items = isRecord(value.items) && Array.isArray(value.items.data) ? value.items.data : [];
   const firstItem = items[0];
   const price =
-    isRecord(firstItem) && isRecord(firstItem.price) ? firstItem.price : isRecord(value.plan) ? value.plan : null;
+    isRecord(firstItem) && isRecord(firstItem.price)
+      ? firstItem.price
+      : isRecord(value.plan)
+        ? value.plan
+        : null;
   const itemPeriodBounds = resolveSubscriptionPeriodBounds(items);
+  const trialStart = readUnixSecondsDate(value.trial_start);
+  const trialEnd = readUnixSecondsDate(value.trial_end);
 
   return {
     id,
     customerId: readString(value.customer),
     status: readString(value.status),
     cancelAtPeriodEnd: readBoolean(value.cancel_at_period_end),
-    currentPeriodStart: readUnixSecondsDate(value.current_period_start) ?? itemPeriodBounds.currentPeriodStart,
-    currentPeriodEnd: readUnixSecondsDate(value.current_period_end) ?? itemPeriodBounds.currentPeriodEnd,
+    currentPeriodStart:
+      readUnixSecondsDate(value.current_period_start) ??
+      itemPeriodBounds.currentPeriodStart ??
+      trialStart,
+    currentPeriodEnd:
+      readUnixSecondsDate(value.current_period_end) ??
+      itemPeriodBounds.currentPeriodEnd ??
+      trialEnd,
     priceId: price ? readString(price.id) : null,
   };
 };

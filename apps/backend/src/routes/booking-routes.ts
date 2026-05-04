@@ -28,11 +28,7 @@ import {
   syncRecurringScheduleSlots,
 } from '../booking/recurring.js';
 import * as dbSchema from '../db/schema.js';
-import {
-  sendBookingNotificationEmail,
-  type BookingNotificationEvent,
-} from '../email/resend.js';
-import { createCheckoutSession } from '../payment/stripe.js';
+import { sendBookingNotificationEmail, type BookingNotificationEvent } from '../email/resend.js';
 import {
   ServiceImageUploadError,
   type ServiceImageUploadService,
@@ -50,11 +46,11 @@ const isoDateTimeSchema = z
   .min(1)
   .refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid ISO datetime');
 
-const dateOnlySchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)');
+const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)');
 
-const localTimeSchema = z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid local time (HH:mm)');
+const localTimeSchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid local time (HH:mm)');
 
 const serviceKindSchema = z.enum(['single', 'recurring']);
 const bookingPolicySchema = z.enum(['instant', 'approval']);
@@ -84,11 +80,26 @@ const serviceCreateBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema,
-  durationMinutes: z.int().min(1).max(24 * 60),
+  durationMinutes: z
+    .int()
+    .min(1)
+    .max(24 * 60),
   capacity: z.int().min(1).max(500),
-  bookingOpenMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
-  bookingCloseMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
-  cancellationDeadlineMinutes: z.int().min(0).max(365 * 24 * 60).optional(),
+  bookingOpenMinutesBefore: z
+    .int()
+    .min(0)
+    .max(365 * 24 * 60)
+    .optional(),
+  bookingCloseMinutesBefore: z
+    .int()
+    .min(0)
+    .max(365 * 24 * 60)
+    .optional(),
+  cancellationDeadlineMinutes: z
+    .int()
+    .min(0)
+    .max(365 * 24 * 60)
+    .optional(),
   timezone: z.string().optional(),
   bookingPolicy: bookingPolicySchema.optional(),
   requiresTicket: z.boolean().optional(),
@@ -108,11 +119,27 @@ const serviceUpdateBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema.optional(),
-  durationMinutes: z.int().min(1).max(24 * 60).optional(),
+  durationMinutes: z
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
   capacity: z.int().min(1).max(500).optional(),
-  bookingOpenMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
-  bookingCloseMinutesBefore: z.int().min(0).max(365 * 24 * 60).optional(),
-  cancellationDeadlineMinutes: z.int().min(0).max(365 * 24 * 60).optional(),
+  bookingOpenMinutesBefore: z
+    .int()
+    .min(0)
+    .max(365 * 24 * 60)
+    .optional(),
+  bookingCloseMinutesBefore: z
+    .int()
+    .min(0)
+    .max(365 * 24 * 60)
+    .optional(),
+  cancellationDeadlineMinutes: z
+    .int()
+    .min(0)
+    .max(365 * 24 * 60)
+    .optional(),
   timezone: z.string().optional(),
   bookingPolicy: bookingPolicySchema.optional(),
   requiresTicket: z.boolean().optional(),
@@ -193,7 +220,11 @@ const recurringCreateBodySchema = z.object({
   startDate: dateOnlySchema,
   endDate: dateOnlySchema.optional(),
   startTimeLocal: localTimeSchema,
-  durationMinutes: z.int().min(1).max(24 * 60).optional(),
+  durationMinutes: z
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
   capacityOverride: z.int().min(1).max(500).optional(),
 });
 
@@ -215,7 +246,11 @@ const recurringUpdateBodySchema = z.object({
   startDate: dateOnlySchema.optional(),
   endDate: dateOnlySchema.optional(),
   startTimeLocal: localTimeSchema.optional(),
-  durationMinutes: z.int().min(1).max(24 * 60).optional(),
+  durationMinutes: z
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
   capacityOverride: z.int().min(1).max(500).optional(),
   isActive: z.boolean().optional(),
 });
@@ -226,7 +261,11 @@ const recurringExceptionBodySchema = z.object({
   date: dateOnlySchema,
   action: z.enum(['skip', 'override']),
   overrideStartTimeLocal: localTimeSchema.optional(),
-  overrideDurationMinutes: z.int().min(1).max(24 * 60).optional(),
+  overrideDurationMinutes: z
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
   overrideCapacity: z.int().min(1).max(500).optional(),
 });
 
@@ -330,6 +369,9 @@ const ticketPurchaseCreateBodySchema = z.object({
   paymentMethod: ticketPurchaseMethodSchema,
 });
 
+const TICKET_STRIPE_PURCHASE_UNAVAILABLE_MESSAGE =
+  'Ticket purchase Stripe payment is currently unavailable.';
+
 const ticketPurchaseMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -399,7 +441,12 @@ const listServicesRoute = createRoute({
 });
 
 const serviceImageKeyParamSchema = z.object({
-  key: z.string().trim().regex(/^[a-zA-Z0-9._-]+$/).min(1).max(255),
+  key: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9._-]+$/)
+    .min(1)
+    .max(255),
 });
 
 const createServiceImageUploadUrlRoute = createRoute({
@@ -1175,7 +1222,10 @@ const parseDateParts = (value: string): { year: number; month: number; day: numb
   return { year, month, day };
 };
 
-const resolveEndDate = (ticketTypeExpiresInDays: number | null, explicitExpiresAt?: string): Date | null => {
+const resolveEndDate = (
+  ticketTypeExpiresInDays: number | null,
+  explicitExpiresAt?: string,
+): Date | null => {
   if (explicitExpiresAt) {
     const parsed = parseIsoDateOrNull(explicitExpiresAt);
     return parsed;
@@ -1298,8 +1348,16 @@ export const registerBookingRoutes = ({
         classroomName: dbSchema.classroom.name,
       })
       .from(dbSchema.classroom)
-      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.classroom.organizationId))
-      .where(and(eq(dbSchema.classroom.organizationId, organizationId), eq(dbSchema.classroom.id, classroomId)))
+      .innerJoin(
+        dbSchema.organization,
+        eq(dbSchema.organization.id, dbSchema.classroom.organizationId),
+      )
+      .where(
+        and(
+          eq(dbSchema.classroom.organizationId, organizationId),
+          eq(dbSchema.classroom.id, classroomId),
+        ),
+      )
       .limit(1);
 
     return rows[0] ?? null;
@@ -1434,9 +1492,7 @@ export const registerBookingRoutes = ({
       return false;
     }
 
-    return (
-      scoped.access.effective.canManageClassroom || scoped.access.effective.canManageBookings
-    );
+    return scoped.access.effective.canManageClassroom || scoped.access.effective.canManageBookings;
   };
 
   const canReadTicketTypesScope = async ({
@@ -1540,7 +1596,10 @@ export const registerBookingRoutes = ({
         slotEndAt: dbSchema.slot.endAt,
       })
       .from(dbSchema.booking)
-      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.booking.organizationId))
+      .innerJoin(
+        dbSchema.organization,
+        eq(dbSchema.organization.id, dbSchema.booking.organizationId),
+      )
       .innerJoin(dbSchema.participant, eq(dbSchema.participant.id, dbSchema.booking.participantId))
       .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.booking.serviceId))
       .innerJoin(dbSchema.slot, eq(dbSchema.slot.id, dbSchema.booking.slotId))
@@ -1568,7 +1627,8 @@ export const registerBookingRoutes = ({
         return;
       }
 
-      const timezone = assertSupportedTimezone(context.serviceTimezone ?? undefined) ?? DEFAULT_TIMEZONE;
+      const timezone =
+        assertSupportedTimezone(context.serviceTimezone ?? undefined) ?? DEFAULT_TIMEZONE;
       await sendBookingNotificationEmail({
         env,
         inviteeEmail: context.participantEmail,
@@ -1877,8 +1937,12 @@ export const registerBookingRoutes = ({
       });
 
     if (!updatedRows[0]) {
-      await database.delete(dbSchema.ticketLedger).where(eq(dbSchema.ticketLedger.ticketPackId, issued.ticketPackId));
-      await database.delete(dbSchema.ticketPack).where(eq(dbSchema.ticketPack.id, issued.ticketPackId));
+      await database
+        .delete(dbSchema.ticketLedger)
+        .where(eq(dbSchema.ticketLedger.ticketPackId, issued.ticketPackId));
+      await database
+        .delete(dbSchema.ticketPack)
+        .where(eq(dbSchema.ticketPack.id, issued.ticketPackId));
       return { kind: 'invalid_status' as const };
     }
 
@@ -1904,7 +1968,9 @@ export const registerBookingRoutes = ({
   }) => {
     const identity = await requireIdentity(headers);
     if (!identity) {
-      return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+      return {
+        response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }),
+      };
     }
 
     const hasAccess = await hasAdminOrOwnerAccess({
@@ -1930,7 +1996,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      body.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -2018,7 +2087,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      body.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -2101,7 +2173,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -2308,7 +2383,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Service not found.' }, 404);
     }
 
-    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      body.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId || organizationId !== service.organizationId) {
       return c.json({ message: 'Forbidden' }, 403);
     }
@@ -2438,7 +2516,11 @@ export const registerBookingRoutes = ({
       .where(eq(dbSchema.service.id, slot.serviceId))
       .limit(1);
     const service = serviceRows[0];
-    if (!service || service.organizationId !== slot.organizationId || service.classroomId !== slot.classroomId) {
+    if (
+      !service ||
+      service.organizationId !== slot.organizationId ||
+      service.classroomId !== slot.classroomId
+    ) {
       return c.json({ message: 'Service not found.' }, 404);
     }
 
@@ -2489,7 +2571,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -2551,7 +2636,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -2715,7 +2803,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Service not found.' }, 404);
     }
 
-    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      body.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId || organizationId !== service.organizationId) {
       return c.json({ message: 'Forbidden' }, 403);
     }
@@ -2811,7 +2902,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -3416,7 +3510,10 @@ export const registerBookingRoutes = ({
       if (error instanceof Error && error.message === 'CAPACITY_OR_TIME_CONFLICT') {
         return c.json({ message: 'Slot is full or not bookable.' }, 409);
       }
-      if (error instanceof Error && (error.message === 'TICKET_REQUIRED' || error.message === 'TICKET_CONFLICT')) {
+      if (
+        error instanceof Error &&
+        (error.message === 'TICKET_REQUIRED' || error.message === 'TICKET_CONFLICT')
+      ) {
         await restoreConsumedTicket();
         await releaseReservedCapacity();
         return c.json({ message: 'No available ticket pack for booking.' }, 409);
@@ -3436,7 +3533,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -3653,7 +3753,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -3995,7 +4098,10 @@ export const registerBookingRoutes = ({
       if (error instanceof Error && error.message === 'CAPACITY_OR_SLOT_CONFLICT') {
         return c.json({ message: 'Slot is full or not bookable.' }, 409);
       }
-      if (error instanceof Error && (error.message === 'TICKET_REQUIRED' || error.message === 'TICKET_CONFLICT')) {
+      if (
+        error instanceof Error &&
+        (error.message === 'TICKET_REQUIRED' || error.message === 'TICKET_CONFLICT')
+      ) {
         await releaseReservedCapacity();
         await restoreConsumedTicket();
         return c.json({ message: 'No available ticket pack for booking.' }, 409);
@@ -4170,7 +4276,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      body.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -4219,10 +4328,6 @@ export const registerBookingRoutes = ({
       }
     }
 
-    if (body.isForSale && !body.stripePriceId) {
-      return c.json({ message: 'stripePriceId is required when isForSale is true.' }, 422);
-    }
-
     const ticketTypeId = crypto.randomUUID();
     await database.insert(dbSchema.ticketType).values({
       id: ticketTypeId,
@@ -4254,7 +4359,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -4282,7 +4390,10 @@ export const registerBookingRoutes = ({
       .where(and(...filters))
       .orderBy(desc(dbSchema.ticketType.createdAt));
 
-    return c.json(rows.map((row: any) => serializeTicketType(row)), 200);
+    return c.json(
+      rows.map((row: any) => serializeTicketType(row)),
+      200,
+    );
   });
 
   authRoutes.openapi(listPurchasableTicketTypesRoute, async (c) => {
@@ -4293,7 +4404,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -4336,7 +4450,10 @@ export const registerBookingRoutes = ({
       )
       .orderBy(desc(dbSchema.ticketType.createdAt));
 
-    return c.json(rows.map((row: any) => serializeTicketType(row)), 200);
+    return c.json(
+      rows.map((row: any) => serializeTicketType(row)),
+      200,
+    );
   });
 
   authRoutes.openapi(createTicketPurchaseRoute, async (c) => {
@@ -4347,7 +4464,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      body.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -4363,6 +4483,10 @@ export const registerBookingRoutes = ({
       }
     }
 
+    if (body.paymentMethod === TICKET_PURCHASE_METHOD.STRIPE) {
+      return c.json({ message: TICKET_STRIPE_PURCHASE_UNAVAILABLE_MESSAGE }, 422);
+    }
+
     const ticketTypeRows = await database
       .select({
         id: dbSchema.ticketType.id,
@@ -4371,7 +4495,6 @@ export const registerBookingRoutes = ({
         totalCount: dbSchema.ticketType.totalCount,
         isActive: dbSchema.ticketType.isActive,
         isForSale: dbSchema.ticketType.isForSale,
-        stripePriceId: dbSchema.ticketType.stripePriceId,
       })
       .from(dbSchema.ticketType)
       .where(
@@ -4403,10 +4526,7 @@ export const registerBookingRoutes = ({
     }
 
     const purchaseId = crypto.randomUUID();
-    const baseStatus =
-      body.paymentMethod === TICKET_PURCHASE_METHOD.STRIPE
-        ? TICKET_PURCHASE_STATUS.PENDING_PAYMENT
-        : TICKET_PURCHASE_STATUS.PENDING_APPROVAL;
+    const baseStatus = TICKET_PURCHASE_STATUS.PENDING_APPROVAL;
 
     await database.insert(dbSchema.ticketPurchase).values({
       id: purchaseId,
@@ -4418,61 +4538,6 @@ export const registerBookingRoutes = ({
       status: baseStatus,
     });
 
-    let checkoutUrl: string | null = null;
-    if (body.paymentMethod === TICKET_PURCHASE_METHOD.STRIPE) {
-      if (!ticketType.stripePriceId) {
-        await database.delete(dbSchema.ticketPurchase).where(eq(dbSchema.ticketPurchase.id, purchaseId));
-        return c.json({ message: 'stripePriceId is not configured for ticket type.' }, 422);
-      }
-
-      const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
-      const successUrl = `${webBaseUrl}/bookings?ticketPurchase=success&purchaseId=${encodeURIComponent(
-        purchaseId,
-      )}`;
-      const cancelUrl = `${webBaseUrl}/bookings?ticketPurchase=cancel&purchaseId=${encodeURIComponent(
-        purchaseId,
-      )}`;
-
-      try {
-        const session = await createCheckoutSession({
-          env,
-          priceId: ticketType.stripePriceId,
-          successUrl,
-          cancelUrl,
-          clientReferenceId: purchaseId,
-          metadata: {
-            purchaseId,
-            organizationId,
-            participantId: participant.id,
-            ticketTypeId: ticketType.id,
-          },
-        });
-        checkoutUrl = session.url;
-
-        await database
-          .update(dbSchema.ticketPurchase)
-          .set({
-            stripeCheckoutSessionId: session.id,
-          })
-          .where(
-            and(
-              eq(dbSchema.ticketPurchase.id, purchaseId),
-              eq(dbSchema.ticketPurchase.status, TICKET_PURCHASE_STATUS.PENDING_PAYMENT),
-            ),
-          );
-      } catch (error) {
-        await database.delete(dbSchema.ticketPurchase).where(eq(dbSchema.ticketPurchase.id, purchaseId));
-        if (error instanceof Error && error.message === 'STRIPE_NOT_CONFIGURED') {
-          return c.json({ message: 'Stripe is not configured.' }, 422);
-        }
-        const message =
-          error instanceof Error && error.message.length > 0
-            ? error.message
-            : 'Failed to create Stripe checkout session.';
-        return c.json({ message }, 422);
-      }
-    }
-
     const rows = await database
       .select()
       .from(dbSchema.ticketPurchase)
@@ -4483,7 +4548,7 @@ export const registerBookingRoutes = ({
     return c.json(
       {
         ...serializeTicketPurchase(purchase as Record<string, unknown> | undefined),
-        checkoutUrl,
+        checkoutUrl: null,
       },
       200,
     );
@@ -4497,7 +4562,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -4529,7 +4597,10 @@ export const registerBookingRoutes = ({
       .where(and(...filters))
       .orderBy(desc(dbSchema.ticketPurchase.createdAt));
 
-    return c.json(rows.map((row: any) => serializeTicketPurchase(row)), 200);
+    return c.json(
+      rows.map((row: any) => serializeTicketPurchase(row)),
+      200,
+    );
   });
 
   authRoutes.openapi(listTicketPurchasesRoute, async (c) => {
@@ -4540,7 +4611,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -4574,7 +4648,10 @@ export const registerBookingRoutes = ({
       .where(and(...filters))
       .orderBy(desc(dbSchema.ticketPurchase.createdAt));
 
-    return c.json(rows.map((row: any) => serializeTicketPurchase(row)), 200);
+    return c.json(
+      rows.map((row: any) => serializeTicketPurchase(row)),
+      200,
+    );
   });
 
   authRoutes.openapi(approveTicketPurchaseRoute, async (c) => {
@@ -4783,7 +4860,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      body.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -4842,7 +4922,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Ticket type not found.' }, 404);
     }
     if (participant.classroomId !== ticketType.classroomId) {
-      return c.json({ message: 'Participant and ticket type must belong to the same classroom.' }, 422);
+      return c.json(
+        { message: 'Participant and ticket type must belong to the same classroom.' },
+        422,
+      );
     }
 
     const count = body.count ?? ticketType.totalCount;
@@ -4871,7 +4954,10 @@ export const registerBookingRoutes = ({
       return c.json({ message: 'Unauthorized' }, 401);
     }
 
-    const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+    const organizationId = resolveOrganizationId(
+      query.organizationId,
+      identity.activeOrganizationId,
+    );
     if (!organizationId) {
       return c.json({ message: 'organizationId is required.' }, 422);
     }
@@ -4914,6 +5000,9 @@ export const registerBookingRoutes = ({
       )
       .orderBy(asc(dbSchema.ticketPack.createdAt));
 
-    return c.json(rows.map((row: any) => serializeTicketPack(row)), 200);
+    return c.json(
+      rows.map((row: any) => serializeTicketPack(row)),
+      200,
+    );
   });
 };

@@ -13,16 +13,23 @@ import {
   applyOrganizationPremiumTrialCompletion,
   ensureOrganizationBillingRow,
   hasActivePremiumSubscription,
+  hasOrganizationStartedPremiumTrial,
   isBillingInterval,
   isBillingSubscriptionStatus,
   ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
   ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
+  resolveOrganizationBillingActionAvailability,
   resolveOrganizationBillingPaymentMethodStatus,
+  resolveOrganizationBillingProfileReadiness,
   selectOrganizationBillingSummary,
   startOrganizationPremiumTrial,
   updateOrganizationBillingStripeCustomerId,
 } from '../billing/organization-billing.js';
 import { buildBillingDocumentReadiness } from '../billing/organization-billing-documents.js';
+import {
+  readOrganizationBillingDocumentReferences,
+  readOrganizationBillingInvoicePaymentEvents,
+} from '../billing/organization-billing-invoice-events.js';
 import { readOrganizationOwnerBillingHistory } from '../billing/organization-billing-history.js';
 import { readInternalBillingInspection } from '../billing/internal-billing-inspection.js';
 import {
@@ -36,14 +43,26 @@ import {
   appendResolvedBillingSignalIfNeeded,
   readOrganizationBillingObservationSnapshot,
 } from '../billing/organization-billing-observability.js';
+import {
+  BILLING_HANDOFF_REUSE_WINDOW_MS,
+  createBillingOperationAttempt,
+  markBillingOperationAttemptFailed,
+  markBillingOperationAttemptSucceeded,
+  type OrganizationBillingOperationAttempt,
+  type OrganizationBillingOperationPurpose,
+} from '../billing/organization-billing-operations.js';
 import * as dbSchema from '../db/schema.js';
-import { sendOrganizationInvitationEmail, sendParticipantInvitationEmail } from '../email/resend.js';
+import {
+  sendOrganizationInvitationEmail,
+  sendParticipantInvitationEmail,
+} from '../email/resend.js';
 import type { OrganizationLogoService } from '../organization-logo-service.js';
 import {
   createBillingPortalSession,
   createCustomer,
   createSetupCheckoutSession,
   createSubscriptionCheckoutSession,
+  createTrialSubscription,
 } from '../payment/stripe.js';
 import type { ServiceImageUploadService } from '../service-image-upload-service.js';
 import { registerBookingRoutes } from './booking-routes.js';
@@ -380,11 +399,60 @@ const organizationBillingPaidTierSchema = z.object({
   code: z.enum(['premium_default', 'premium_growth', 'premium_scale', 'premium_unknown']),
   label: z.string().min(1),
   resolution: z.enum(['not_paid', 'legacy_default', 'known_price', 'unknown_price']),
-  capabilities: z.array(z.enum(['organization_premium_features', 'advanced_billing_communications'])),
+  capabilities: z.array(
+    z.enum(['organization_premium_features', 'advanced_billing_communications']),
+  ),
   diagnosticReason: z.string().nullable(),
 });
 
+const organizationBillingActionAvailabilitySchema = z.object({
+  canStartTrial: z.boolean(),
+  canStartPaidCheckout: z.boolean(),
+  canRegisterPaymentMethod: z.boolean(),
+  canOpenBillingPortal: z.boolean(),
+  trialUsed: z.boolean(),
+  availableIntervals: z.array(z.enum(['month', 'year'])),
+  nextOwnerAction: z.string().nullable(),
+  readOnlyReason: z.string().nullable(),
+});
+
+const organizationBillingProfileReadinessSchema = z.object({
+  state: z.enum(['complete', 'incomplete', 'unavailable', 'not_required']),
+  nextAction: z.string().nullable(),
+  checkedAt: z.string().nullable(),
+  gatesCheckout: z.literal(false),
+  gatesPremiumEligibility: z.literal(false),
+});
+
+const organizationBillingInvoicePaymentEventSchema = z.object({
+  id: z.string().min(1),
+  organizationId: z.string().min(1),
+  stripeEventId: z.string().nullable(),
+  eventType: z.enum([
+    'invoice_available',
+    'payment_succeeded',
+    'payment_failed',
+    'payment_action_required',
+  ]),
+  stripeCustomerId: z.string().nullable(),
+  stripeSubscriptionId: z.string().nullable(),
+  stripeInvoiceId: z.string().nullable(),
+  stripePaymentIntentId: z.string().nullable(),
+  providerStatus: z.string().nullable(),
+  ownerFacingStatus: z.enum([
+    'available',
+    'checking',
+    'missing',
+    'action_required',
+    'failed',
+    'succeeded',
+  ]),
+  occurredAt: z.string().nullable(),
+  createdAt: z.string().nullable(),
+});
+
 const organizationBillingSummarySchema = z.object({
+  organizationId: z.string().min(1),
   planCode: z.enum(['free', 'premium']),
   planState: z.enum(['free', 'premium_trial', 'premium_paid']),
   billingInterval: z.enum(['month', 'year']).nullable(),
@@ -392,48 +460,82 @@ const organizationBillingSummarySchema = z.object({
     .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
     .nullable(),
   cancelAtPeriodEnd: z.boolean(),
+  trialStartedAt: z.string().nullable(),
   currentPeriodEnd: z.string().nullable(),
+  paymentIssueStartedAt: z.string().nullable(),
+  pastDueGraceEndsAt: z.string().nullable(),
+  lastReconciledAt: z.string().nullable(),
+  lastReconciliationReason: z.string().nullable(),
   trialEndsAt: z.string().nullable(),
+  premiumEligible: z.boolean(),
+  entitlementState: z.enum(['free_only', 'premium_enabled']),
+  entitlementReason: z.string().min(1),
+  capabilities: z.array(z.string().min(1)),
   paymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
   paidTier: organizationBillingPaidTierSchema.nullable(),
   canViewBilling: z.boolean(),
   canManageBilling: z.boolean(),
-  history: z.array(z.object({
-    id: z.string().min(1),
-    eventType: z.enum(['plan_transition', 'notification', 'reconciliation']),
-    occurredAt: z.string().nullable(),
-    title: z.string().min(1),
-    summary: z.string().min(1),
-    billingContext: z.string().nullable(),
-    tone: z.enum(['neutral', 'positive', 'attention']),
-  })).nullable(),
-  paymentDocuments: z.object({
-    aggregateRoot: z.literal('organization_billing'),
-    organizationId: z.string().min(1),
-    provider: z.literal('stripe'),
-    stripeCustomerId: z.string().nullable(),
-    stripeSubscriptionId: z.string().nullable(),
-    ownerAccess: z.literal('owner_only'),
-    persistenceStrategy: z.literal('provider_reference_only'),
-    documents: z.array(z.object({
-      documentKind: z.enum(['invoice', 'receipt']),
-      providerDocumentId: z.string().min(1),
-      hostedInvoiceUrl: z.string().url().nullable(),
-      invoicePdfUrl: z.string().url().nullable(),
-      receiptUrl: z.string().url().nullable(),
-      availability: z.enum(['available', 'unavailable', 'missing']),
-      ownerFacingStatus: z.enum(['available', 'unavailable']),
-    })),
-  }).nullable(),
+  actionAvailability: organizationBillingActionAvailabilitySchema,
+  billingProfileReadiness: organizationBillingProfileReadinessSchema,
+  history: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        eventType: z.enum(['plan_transition', 'notification', 'reconciliation', 'payment_event']),
+        occurredAt: z.string().nullable(),
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        billingContext: z.string().nullable(),
+        tone: z.enum(['neutral', 'positive', 'attention']),
+      }),
+    )
+    .nullable(),
+  paymentDocuments: z
+    .object({
+      aggregateRoot: z.literal('organization_billing'),
+      organizationId: z.string().min(1),
+      provider: z.literal('stripe'),
+      stripeCustomerId: z.string().nullable(),
+      stripeSubscriptionId: z.string().nullable(),
+      ownerAccess: z.literal('owner_only'),
+      persistenceStrategy: z.literal('provider_reference_only'),
+      documents: z.array(
+        z.object({
+          documentKind: z.enum(['invoice', 'receipt']),
+          providerDocumentId: z.string().min(1),
+          hostedInvoiceUrl: z.string().url().nullable(),
+          invoicePdfUrl: z.string().url().nullable(),
+          receiptUrl: z.string().url().nullable(),
+          availability: z.enum(['available', 'unavailable', 'missing', 'checking']),
+          ownerFacingStatus: z.enum(['available', 'unavailable', 'checking']),
+          providerDerived: z.boolean().optional(),
+        }),
+      ),
+    })
+    .nullable(),
+  invoicePaymentEvents: z.array(organizationBillingInvoicePaymentEventSchema),
+});
+
+const organizationBillingHandoffSchema = z.object({
+  provider: z.literal('stripe'),
+  purpose: z.enum(['trial_start', 'paid_checkout', 'payment_method_setup', 'billing_portal']),
+  url: z.string().url(),
+  expiresAt: z.string(),
+  reused: z.boolean(),
+  operationAttemptId: z.string().min(1).optional(),
 });
 
 const organizationBillingActionResponseSchema = z.object({
-  url: z.string().url(),
+  status: z.enum(['succeeded', 'processing', 'conflict', 'failed']),
+  message: z.string().nullable(),
+  billing: organizationBillingSummarySchema.nullable(),
+  handoff: organizationBillingHandoffSchema.nullable(),
+  url: z.string().url().nullable().optional(),
 });
-
-const organizationBillingTrialResponseSchema = z.object({
-  message: z.string().min(1),
-});
+const organizationBillingActionOrMessageResponseSchema = z.union([
+  organizationBillingActionResponseSchema,
+  z.object({ message: z.string().min(1) }),
+]);
 
 const internalBillingInspectionSummarySchema = z.object({
   planCode: z.enum(['free', 'premium']),
@@ -442,13 +544,22 @@ const internalBillingInspectionSummarySchema = z.object({
   lifecycleReason: z.string().min(1),
   entitlementState: z.enum(['free_only', 'premium_enabled']),
   billingInterval: z.enum(['month', 'year']).nullable(),
-  subscriptionStatus: z.enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete']),
+  subscriptionStatus: z.enum([
+    'free',
+    'trialing',
+    'active',
+    'past_due',
+    'canceled',
+    'unpaid',
+    'incomplete',
+  ]),
   paymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
   currentPeriodEnd: z.string().nullable(),
   trialEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   stripeLinked: z.boolean(),
   paidTier: organizationBillingPaidTierSchema.nullable(),
+  billingProfileReadiness: organizationBillingProfileReadinessSchema,
 });
 
 const internalBillingInspectionProviderSchema = z.object({
@@ -499,8 +610,15 @@ const internalBillingInspectionReconciliationCurrentComparisonSchema = z.object(
     .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
     .nullable(),
   appPlanState: z.enum(['free', 'premium_trial', 'premium_paid']),
-  appSubscriptionStatus: z
-    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete']),
+  appSubscriptionStatus: z.enum([
+    'free',
+    'trialing',
+    'active',
+    'past_due',
+    'canceled',
+    'unpaid',
+    'incomplete',
+  ]),
   appPaymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
   appEntitlementState: z.enum(['free_only', 'premium_enabled']),
 });
@@ -516,8 +634,15 @@ const internalBillingInspectionReconciliationSignalSchema = z.object({
     .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
     .nullable(),
   appPlanState: z.enum(['free', 'premium_trial', 'premium_paid']),
-  appSubscriptionStatus: z
-    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete']),
+  appSubscriptionStatus: z.enum([
+    'free',
+    'trialing',
+    'active',
+    'past_due',
+    'canceled',
+    'unpaid',
+    'incomplete',
+  ]),
   appPaymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
   appEntitlementState: z.enum(['free_only', 'premium_enabled']),
   createdAt: z.string().nullable(),
@@ -528,6 +653,10 @@ const internalBillingInspectionReconciliationWebhookEventSchema = z.object({
   eventType: z.string().min(1),
   processingStatus: z.enum(['processing', 'processed', 'failed']),
   failureReason: z.string().min(1).nullable(),
+  signatureVerificationStatus: z.string().min(1),
+  duplicateDetected: z.boolean(),
+  duplicateDetectedAt: z.string().nullable(),
+  receiptStatus: z.string().min(1),
   createdAt: z.string().nullable(),
   processedAt: z.string().nullable(),
 });
@@ -541,14 +670,7 @@ const internalBillingInspectionReconciliationWebhookFailureSchema = z.object({
 });
 
 const internalBillingInspectionReconciliationSchema = z.object({
-  status: z.enum([
-    'not_applicable',
-    'aligned',
-    'mismatch',
-    'pending',
-    'unavailable',
-    'incomplete',
-  ]),
+  status: z.enum(['not_applicable', 'aligned', 'mismatch', 'pending', 'unavailable', 'incomplete']),
   comparable: z.boolean(),
   latestSignalStatus: z.enum(['pending', 'mismatch', 'unavailable', 'resolved']).nullable(),
   latestSignalReason: z.string().min(1).nullable(),
@@ -561,7 +683,7 @@ const internalBillingInspectionReconciliationSchema = z.object({
 const internalBillingInspectionNotificationHistoryEntrySchema = z.object({
   sequenceNumber: z.number().int().nonnegative(),
   notificationKind: z.enum(['trial_will_end_email', 'trial_will_end', 'unknown']),
-  communicationType: z.enum(['trial_will_end', 'unknown']),
+  communicationType: z.enum(['trial_will_end', 'payment_issue', 'unknown']),
   channel: z.enum(['email', 'in_app', 'web_push', 'unknown']),
   channelLabel: z.string().min(1),
   deliveryState: z.enum(['requested', 'retried', 'sent', 'failed', 'unknown']),
@@ -570,8 +692,15 @@ const internalBillingInspectionNotificationHistoryEntrySchema = z.object({
   stripeEventId: z.string().min(1).nullable(),
   recipientEmail: z.string().min(1).nullable(),
   planState: z.enum(['free', 'premium_trial', 'premium_paid']),
-  subscriptionStatus: z
-    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete']),
+  subscriptionStatus: z.enum([
+    'free',
+    'trialing',
+    'active',
+    'past_due',
+    'canceled',
+    'unpaid',
+    'incomplete',
+  ]),
   paymentMethodStatus: z.enum(['not_started', 'pending', 'registered']),
   trialEndsAt: z.string().nullable(),
   failureReason: z.string().min(1).nullable(),
@@ -604,16 +733,35 @@ const internalBillingInspectionPaymentDocumentsSchema = z.object({
   stripeCustomerId: z.string().nullable(),
   stripeSubscriptionId: z.string().nullable(),
   diagnosticReason: z.string().min(1).nullable(),
-  documents: z.array(z.object({
-    documentKind: z.enum(['invoice', 'receipt']),
-    providerDocumentId: z.string().min(1),
-    hostedInvoiceUrl: z.string().url().nullable(),
-    invoicePdfUrl: z.string().url().nullable(),
-    receiptUrl: z.string().url().nullable(),
-    availability: z.enum(['available', 'unavailable', 'missing']),
-    ownerFacingStatus: z.enum(['available', 'unavailable']),
-    providerDerived: z.boolean(),
-  })),
+  documents: z.array(
+    z.object({
+      documentKind: z.enum(['invoice', 'receipt']),
+      providerDocumentId: z.string().min(1),
+      hostedInvoiceUrl: z.string().url().nullable(),
+      invoicePdfUrl: z.string().url().nullable(),
+      receiptUrl: z.string().url().nullable(),
+      availability: z.enum(['available', 'unavailable', 'missing', 'checking']),
+      ownerFacingStatus: z.enum(['available', 'unavailable', 'checking']),
+      providerDerived: z.boolean(),
+    }),
+  ),
+});
+
+const internalBillingInspectionOperationAttemptSchema = z.object({
+  id: z.string().min(1),
+  purpose: z.enum(['trial_start', 'paid_checkout', 'payment_method_setup', 'billing_portal']),
+  billingInterval: z.enum(['month', 'year']).nullable(),
+  state: z.enum(['processing', 'succeeded', 'conflict', 'expired', 'failed']),
+  handoffExpiresAt: z.string().nullable(),
+  provider: z.literal('stripe'),
+  stripeCustomerId: z.string().nullable(),
+  stripeSubscriptionId: z.string().nullable(),
+  stripeCheckoutSessionId: z.string().nullable(),
+  stripePortalSessionId: z.string().nullable(),
+  failureReason: z.string().nullable(),
+  createdByUserId: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
 });
 
 const internalBillingInspectionTimelineEntrySchema = z.object({
@@ -624,13 +772,15 @@ const internalBillingInspectionTimelineEntrySchema = z.object({
   headline: z.string().min(1),
   summary: z.string().min(1),
   notificationKind: z.string().min(1).nullable(),
-  communicationType: z.enum(['trial_will_end', 'unknown']).nullable(),
+  communicationType: z.enum(['trial_will_end', 'payment_issue', 'unknown']).nullable(),
   notificationChannel: z.enum(['email', 'in_app', 'web_push', 'unknown']).nullable(),
   notificationChannelLabel: z.string().min(1).nullable(),
   sequenceNumber: z.number().int().nonnegative().nullable(),
   stripeEventId: z.string().min(1).nullable(),
   sourceKind: z.string().min(1).nullable(),
-  signalKind: z.enum(['reconciliation', 'notification_delivery']).nullable(),
+  signalKind: z
+    .enum(['reconciliation', 'notification_delivery', 'billing_profile', 'security_audit'])
+    .nullable(),
   signalStatus: z.enum(['pending', 'mismatch', 'unavailable', 'resolved']).nullable(),
   deliveryState: z.enum(['requested', 'retried', 'sent', 'failed', 'unknown']).nullable(),
   webhookEventType: z.string().min(1).nullable(),
@@ -655,6 +805,8 @@ const internalBillingInspectionResponseSchema = z.object({
   reconciliation: internalBillingInspectionReconciliationSchema,
   notifications: internalBillingInspectionNotificationsSchema,
   paymentDocuments: internalBillingInspectionPaymentDocumentsSchema,
+  invoicePaymentEvents: z.array(organizationBillingInvoicePaymentEventSchema),
+  operationAttempts: z.array(internalBillingInspectionOperationAttemptSchema),
   timeline: internalBillingInspectionTimelineSchema,
 });
 
@@ -724,11 +876,15 @@ const createOrganizationBillingCheckoutRoute = createRoute({
     },
     409: {
       description: 'Organization already has an active premium subscription',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
     422: {
       description: 'Stripe billing is not configured',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
+    500: {
+      description: 'Stripe checkout creation failed',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
   },
 });
@@ -767,11 +923,11 @@ const createOrganizationBillingPortalRoute = createRoute({
     },
     409: {
       description: 'Organization does not have a premium subscription',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
     422: {
       description: 'Stripe billing is not configured',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
   },
 });
@@ -796,7 +952,7 @@ const createOrganizationBillingTrialRoute = createRoute({
       description: 'Premium trial started',
       content: {
         'application/json': {
-          schema: organizationBillingTrialResponseSchema,
+          schema: organizationBillingActionResponseSchema,
         },
       },
     },
@@ -810,7 +966,7 @@ const createOrganizationBillingTrialRoute = createRoute({
     },
     409: {
       description: 'Organization already has an active premium lifecycle',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
     422: {
       description: 'organizationId is required',
@@ -853,11 +1009,11 @@ const createOrganizationBillingPaymentMethodRoute = createRoute({
     },
     409: {
       description: 'Organization does not have an active premium trial',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
     422: {
       description: 'Stripe billing is not configured',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
   },
 });
@@ -882,7 +1038,7 @@ const createOrganizationBillingTrialCompletionRoute = createRoute({
       description: 'Trial lifecycle transition applied',
       content: {
         'application/json': {
-          schema: organizationBillingTrialResponseSchema,
+          schema: organizationBillingActionResponseSchema,
         },
       },
     },
@@ -896,15 +1052,15 @@ const createOrganizationBillingTrialCompletionRoute = createRoute({
     },
     409: {
       description: 'Organization does not have a completeable premium trial',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
     422: {
       description: 'Stripe billing is not configured',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
     503: {
       description: 'Stripe payment method reflection is still syncing',
-      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
   },
 });
@@ -1514,7 +1670,6 @@ const selfEnrollParticipantRoute = createRoute({
   },
 });
 
-
 export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOptions) => {
   const database = options.database;
   const env = options.env;
@@ -1550,7 +1705,13 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   type InvitationSubjectKind = z.infer<typeof invitationSubjectKindSchema>;
   type UnifiedInvitationRole = z.infer<typeof unifiedInvitationRoleSchema>;
   type InvitationStatus = z.infer<typeof invitationStatusSchema>;
-  type InvitationEventType = 'created' | 'resent' | 'accepted' | 'rejected' | 'cancelled' | 'expired';
+  type InvitationEventType =
+    | 'created'
+    | 'resent'
+    | 'accepted'
+    | 'rejected'
+    | 'cancelled'
+    | 'expired';
   type InvitationRecord = {
     id: string;
     subjectKind: string;
@@ -1630,7 +1791,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     );
   };
 
-  const isOrganizationMembershipRole = (value: string | null): 'owner' | 'admin' | 'member' | null => {
+  const isOrganizationMembershipRole = (
+    value: string | null,
+  ): 'owner' | 'admin' | 'member' | null => {
     if (value === 'owner' || value === 'admin' || value === 'member') {
       return value;
     }
@@ -1673,42 +1836,40 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       return true;
     }
 
-    const [memberRows, classroomMemberRows, participantRows, pendingInvitationRows] = await Promise.all([
-      database
-        .select({ id: dbSchema.member.id })
-        .from(dbSchema.member)
-        .where(eq(dbSchema.member.userId, userId))
-        .limit(1),
-      database
-        .select({ id: dbSchema.classroomMember.id })
-        .from(dbSchema.classroomMember)
-        .where(eq(dbSchema.classroomMember.userId, userId))
-        .limit(1),
-      database
-        .select({ id: dbSchema.participant.id })
-        .from(dbSchema.participant)
-        .where(eq(dbSchema.participant.userId, userId))
-        .limit(1),
-      email
-        ? database
-            .select({ id: dbSchema.invitation.id })
-            .from(dbSchema.invitation)
-            .where(
-              and(
-                eq(dbSchema.invitation.status, 'pending'),
-                sql`lower(${dbSchema.invitation.email}) = ${email}`,
-                sql`${dbSchema.invitation.expiresAt} > ${Date.now()}`,
-              ),
-            )
-            .limit(1)
-        : Promise.resolve([] as { id: string }[]),
-    ]);
+    const [memberRows, classroomMemberRows, participantRows, pendingInvitationRows] =
+      await Promise.all([
+        database
+          .select({ id: dbSchema.member.id })
+          .from(dbSchema.member)
+          .where(eq(dbSchema.member.userId, userId))
+          .limit(1),
+        database
+          .select({ id: dbSchema.classroomMember.id })
+          .from(dbSchema.classroomMember)
+          .where(eq(dbSchema.classroomMember.userId, userId))
+          .limit(1),
+        database
+          .select({ id: dbSchema.participant.id })
+          .from(dbSchema.participant)
+          .where(eq(dbSchema.participant.userId, userId))
+          .limit(1),
+        email
+          ? database
+              .select({ id: dbSchema.invitation.id })
+              .from(dbSchema.invitation)
+              .where(
+                and(
+                  eq(dbSchema.invitation.status, 'pending'),
+                  sql`lower(${dbSchema.invitation.email}) = ${email}`,
+                  sql`${dbSchema.invitation.expiresAt} > ${Date.now()}`,
+                ),
+              )
+              .limit(1)
+          : Promise.resolve([] as { id: string }[]),
+      ]);
 
     return (
-      !memberRows[0]
-      && !classroomMemberRows[0]
-      && !participantRows[0]
-      && !pendingInvitationRows[0]
+      !memberRows[0] && !classroomMemberRows[0] && !participantRows[0] && !pendingInvitationRows[0]
     );
   };
 
@@ -1728,6 +1889,200 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return null;
   };
 
+  const resolveDefaultPremiumTrialPriceConfig = (): {
+    priceId: string;
+    billingInterval: 'month' | 'year';
+  } | null => {
+    if (env.STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED !== 'true') {
+      return null;
+    }
+
+    const monthlyPriceId = env.STRIPE_PREMIUM_MONTHLY_PRICE_ID?.trim();
+    if (monthlyPriceId) {
+      return {
+        priceId: monthlyPriceId,
+        billingInterval: 'month',
+      };
+    }
+
+    const yearlyPriceId = env.STRIPE_PREMIUM_YEARLY_PRICE_ID?.trim();
+    if (yearlyPriceId) {
+      return {
+        priceId: yearlyPriceId,
+        billingInterval: 'year',
+      };
+    }
+
+    return null;
+  };
+
+  const resolveBillingAvailableIntervals = (): Array<'month' | 'year'> => {
+    const intervals: Array<'month' | 'year'> = [];
+    if (env.STRIPE_PREMIUM_MONTHLY_PRICE_ID?.trim()) {
+      intervals.push('month');
+    }
+    if (env.STRIPE_PREMIUM_YEARLY_PRICE_ID?.trim()) {
+      intervals.push('year');
+    }
+    return intervals;
+  };
+
+  const readOrganizationBillingSummaryPayload = async ({
+    organizationId,
+    role,
+  }: {
+    organizationId: string;
+    role: 'owner' | 'admin' | 'member' | null;
+  }) => {
+    const billing = await selectOrganizationBillingSummary(database, organizationId);
+    const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
+    const billingInterval = isBillingInterval(billing?.billingInterval ?? null);
+    const subscriptionStatus =
+      isBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
+    const trialStartedAt = toIsoDateString(billing?.trialStartedAt);
+    const currentPeriodEnd = toIsoDateString(billing?.currentPeriodEnd);
+    const pastDueGraceEndsAt = toIsoDateString(billing?.pastDueGraceEndsAt);
+    const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+      env,
+      planCode,
+      stripeCustomerId: billing?.stripeCustomerId ?? null,
+    });
+    const entitlementPolicy = resolveOrganizationPremiumEntitlementPolicy({
+      planCode,
+      subscriptionStatus,
+      paymentMethodStatus,
+      currentPeriodEnd,
+      pastDueGraceEndsAt,
+      cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
+      stripePriceId: billing?.stripePriceId ?? null,
+      env,
+    });
+    const canManageBilling = role === 'owner';
+    const trialUsed = await hasOrganizationStartedPremiumTrial({
+      database,
+      organizationId,
+    });
+    const actionAvailability = resolveOrganizationBillingActionAvailability({
+      billing,
+      canManageBilling,
+      trialUsed,
+      stripeBillingConfigured: Boolean(env.STRIPE_SECRET_KEY?.trim()),
+      availableIntervals: resolveBillingAvailableIntervals(),
+    });
+    const [history, documentReferences, invoicePaymentEvents] =
+      role === 'owner'
+        ? await Promise.all([
+            readOrganizationOwnerBillingHistory({
+              database,
+              organizationId,
+            }).then((result) => result.entries),
+            readOrganizationBillingDocumentReferences({
+              database,
+              organizationId,
+            }),
+            readOrganizationBillingInvoicePaymentEvents({
+              database,
+              organizationId,
+            }),
+          ])
+        : [null, [], []];
+    const paymentDocuments =
+      role === 'owner'
+        ? buildBillingDocumentReadiness({
+            organizationId,
+            stripeCustomerId: billing?.stripeCustomerId ?? null,
+            stripeSubscriptionId: billing?.stripeSubscriptionId ?? null,
+            documents: documentReferences,
+          })
+        : null;
+
+    return {
+      organizationId,
+      planCode,
+      planState: entitlementPolicy.planState,
+      paidTier: entitlementPolicy.paidTier,
+      billingInterval,
+      subscriptionStatus,
+      cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
+      trialStartedAt,
+      currentPeriodEnd,
+      paymentIssueStartedAt: toIsoDateString(billing?.paymentIssueStartedAt),
+      pastDueGraceEndsAt,
+      lastReconciledAt: toIsoDateString(billing?.lastReconciledAt),
+      lastReconciliationReason: billing?.lastReconciliationReason ?? null,
+      trialEndsAt: entitlementPolicy.trialEndsAt,
+      premiumEligible: entitlementPolicy.isPremiumEligible,
+      entitlementState: entitlementPolicy.entitlementState,
+      entitlementReason: entitlementPolicy.reason,
+      capabilities: entitlementPolicy.paidTier?.capabilities ?? [],
+      paymentMethodStatus,
+      canViewBilling: true,
+      canManageBilling,
+      actionAvailability,
+      billingProfileReadiness: resolveOrganizationBillingProfileReadiness(billing),
+      history,
+      paymentDocuments,
+      invoicePaymentEvents,
+    };
+  };
+
+  const buildBillingHandoff = ({
+    attempt,
+    purpose,
+    reused,
+  }: {
+    attempt: OrganizationBillingOperationAttempt | null;
+    purpose: OrganizationBillingOperationPurpose;
+    reused: boolean;
+  }) => {
+    if (!attempt?.handoffUrl || !attempt.handoffExpiresAt) {
+      return null;
+    }
+    return {
+      provider: 'stripe' as const,
+      purpose,
+      url: attempt.handoffUrl,
+      expiresAt: attempt.handoffExpiresAt.toISOString(),
+      reused,
+      operationAttemptId: attempt.id,
+    };
+  };
+
+  const buildBillingActionEnvelope = async ({
+    organizationId,
+    role,
+    status,
+    message,
+    handoffAttempt = null,
+    handoffPurpose,
+    handoffReused = false,
+  }: {
+    organizationId: string;
+    role: 'owner' | 'admin' | 'member' | null;
+    status: 'succeeded' | 'processing' | 'conflict' | 'failed';
+    message?: string | null;
+    handoffAttempt?: OrganizationBillingOperationAttempt | null;
+    handoffPurpose?: OrganizationBillingOperationPurpose;
+    handoffReused?: boolean;
+  }) => {
+    const handoff = handoffPurpose
+      ? buildBillingHandoff({
+          attempt: handoffAttempt,
+          purpose: handoffPurpose,
+          reused: handoffReused,
+        })
+      : null;
+    return {
+      status,
+      message: message ?? null,
+      billing: await readOrganizationBillingSummaryPayload({
+        organizationId,
+        role,
+      }),
+      handoff,
+      url: handoff?.url ?? null,
+    };
+  };
 
   const toTimestamp = (value: unknown): number | null => {
     if (value instanceof Date) {
@@ -1747,20 +2102,18 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   };
 
   const serializeParticipant = (
-    participant:
-      | {
-          id: string;
-          organizationId: string;
-          classroomId?: string;
-          classroomSlug?: string | null;
-          classroomName?: string | null;
-          userId: string;
-          email: string;
-          name: string;
-          createdAt: unknown;
-          updatedAt: unknown;
-        }
-      | null,
+    participant: {
+      id: string;
+      organizationId: string;
+      classroomId?: string;
+      classroomSlug?: string | null;
+      classroomName?: string | null;
+      userId: string;
+      email: string;
+      name: string;
+      createdAt: unknown;
+      updatedAt: unknown;
+    } | null,
   ) => {
     if (!participant) {
       return null;
@@ -1790,11 +2143,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
   const normalizeUnifiedInvitationRole = (value: string | null): UnifiedInvitationRole | null => {
     if (
-      value === 'admin'
-      || value === 'member'
-      || value === 'manager'
-      || value === 'staff'
-      || value === 'participant'
+      value === 'admin' ||
+      value === 'member' ||
+      value === 'manager' ||
+      value === 'staff' ||
+      value === 'participant'
     ) {
       return value;
     }
@@ -1808,11 +2161,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   ): InvitationStatus | null => {
     const normalized = value === 'canceled' ? 'cancelled' : value;
     if (
-      normalized !== 'pending'
-      && normalized !== 'accepted'
-      && normalized !== 'rejected'
-      && normalized !== 'cancelled'
-      && normalized !== 'expired'
+      normalized !== 'pending' &&
+      normalized !== 'accepted' &&
+      normalized !== 'rejected' &&
+      normalized !== 'cancelled' &&
+      normalized !== 'expired'
     ) {
       return null;
     }
@@ -1855,12 +2208,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     const query = database
       .select(invitationRecordSelection)
       .from(dbSchema.invitation)
-      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.invitation.organizationId))
+      .innerJoin(
+        dbSchema.organization,
+        eq(dbSchema.organization.id, dbSchema.invitation.organizationId),
+      )
       .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId));
 
-    return (
-      whereClause ? query.where(whereClause) : query
-    ).orderBy(desc(dbSchema.invitation.createdAt));
+    return (whereClause ? query.where(whereClause) : query).orderBy(
+      desc(dbSchema.invitation.createdAt),
+    );
   };
 
   const serializeInvitation = (invitation: InvitationRecord | null) => {
@@ -1917,7 +2273,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     const rows = await database
       .select(invitationRecordSelection)
       .from(dbSchema.invitation)
-      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.invitation.organizationId))
+      .innerJoin(
+        dbSchema.organization,
+        eq(dbSchema.organization.id, dbSchema.invitation.organizationId),
+      )
       .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId))
       .where(
         and(
@@ -2094,7 +2453,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           status: 'expired',
           updatedAt: new Date(),
         })
-        .where(and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')));
+        .where(
+          and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')),
+        );
       return findInvitationRecordById(invitation.id);
     }
 
@@ -2378,7 +2739,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         acceptedClassroomMemberId,
         acceptedParticipantId,
       })
-      .where(and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')));
+      .where(
+        and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')),
+      );
 
     const updatedCount = Number(
       (
@@ -2444,8 +2807,16 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         classroomName: dbSchema.classroom.name,
       })
       .from(dbSchema.classroom)
-      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.classroom.organizationId))
-      .where(and(eq(dbSchema.classroom.organizationId, organizationId), eq(dbSchema.classroom.id, classroomId)))
+      .innerJoin(
+        dbSchema.organization,
+        eq(dbSchema.organization.id, dbSchema.classroom.organizationId),
+      )
+      .where(
+        and(
+          eq(dbSchema.classroom.organizationId, organizationId),
+          eq(dbSchema.classroom.id, classroomId),
+        ),
+      )
       .limit(1);
 
     return rows[0] ?? null;
@@ -2511,7 +2882,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   }) => {
     const organization = await resolveOrganizationBySlug(organizationSlug);
     if (!organization) {
-      return { organization: null, classrooms: [] as Array<z.infer<typeof classroomManagementSchema>> };
+      return {
+        organization: null,
+        classrooms: [] as Array<z.infer<typeof classroomManagementSchema>>,
+      };
     }
 
     const [memberRows, classroomMemberRows, participantRows] = await Promise.all([
@@ -2521,7 +2895,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         })
         .from(dbSchema.member)
         .where(
-          and(eq(dbSchema.member.organizationId, organization.id), eq(dbSchema.member.userId, userId)),
+          and(
+            eq(dbSchema.member.organizationId, organization.id),
+            eq(dbSchema.member.userId, userId),
+          ),
         )
         .limit(1),
       database
@@ -2529,7 +2906,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           classroomId: dbSchema.classroomMember.classroomId,
         })
         .from(dbSchema.classroomMember)
-        .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.classroomMember.classroomId))
+        .innerJoin(
+          dbSchema.classroom,
+          eq(dbSchema.classroom.id, dbSchema.classroomMember.classroomId),
+        )
         .where(
           and(
             eq(dbSchema.classroom.organizationId, organization.id),
@@ -2574,7 +2954,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
                   ...classroomMemberRows.map(
                     (row: (typeof classroomMemberRows)[number]) => row.classroomId,
                   ),
-                  ...participantRows.map((row: (typeof participantRows)[number]) => row.classroomId),
+                  ...participantRows.map(
+                    (row: (typeof participantRows)[number]) => row.classroomId,
+                  ),
                 ]),
               ).map((classroomId) =>
                 resolveClassroomContextByIds({
@@ -2602,7 +2984,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   };
 
   const hydrateInvitationRecord = async (invitationId: string) => {
-    const invitation = await markInvitationExpiredIfNeeded(await findInvitationRecordById(invitationId));
+    const invitation = await markInvitationExpiredIfNeeded(
+      await findInvitationRecordById(invitationId),
+    );
     return invitation;
   };
 
@@ -2866,7 +3250,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       if (!canCreateOrganization) {
         return c.json(
           {
-            message: '招待参加ユーザーは組織を作成できません。招待先の組織に参加してください。'
+            message: '招待参加ユーザーは組織を作成できません。招待先の組織に参加してください。',
           },
           403,
         );
@@ -2883,8 +3267,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return response;
       }
 
-      const payload = (await response.clone().json().catch(() => null)) as Record<string, unknown> | null;
-      const organizationId = typeof payload?.id === 'string' && payload.id.length > 0 ? payload.id : null;
+      const payload = (await response
+        .clone()
+        .json()
+        .catch(() => null)) as Record<string, unknown> | null;
+      const organizationId =
+        typeof payload?.id === 'string' && payload.id.length > 0 ? payload.id : null;
       const organizationName =
         typeof payload?.name === 'string' && payload.name.length > 0 ? payload.name : body.name;
 
@@ -2921,7 +3309,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+      const organizationId = resolveOrganizationId(
+        query.organizationId,
+        identity.activeOrganizationId,
+      );
       if (!organizationId) {
         return c.json({ message: 'organizationId is required.' }, 422);
       }
@@ -2934,56 +3325,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const billing = await selectOrganizationBillingSummary(database, organizationId);
-      const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
-      const billingInterval = isBillingInterval(billing?.billingInterval ?? null);
-      const subscriptionStatus =
-        isBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
-      const currentPeriodEnd = toIsoDateString(billing?.currentPeriodEnd);
-      const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
-        env,
-        planCode,
-        stripeCustomerId: billing?.stripeCustomerId ?? null,
-      });
-      const entitlementPolicy = resolveOrganizationPremiumEntitlementPolicy({
-        planCode,
-        subscriptionStatus,
-        paymentMethodStatus,
-        currentPeriodEnd,
-        stripePriceId: billing?.stripePriceId ?? null,
-        env,
-      });
-      const history =
-        role === 'owner'
-          ? (await readOrganizationOwnerBillingHistory({
-              database,
-              organizationId,
-            })).entries
-          : null;
-      const paymentDocuments =
-        role === 'owner'
-          ? buildBillingDocumentReadiness({
-              organizationId,
-              stripeCustomerId: billing?.stripeCustomerId ?? null,
-              stripeSubscriptionId: billing?.stripeSubscriptionId ?? null,
-            })
-          : null;
       return c.json(
-        {
-          planCode,
-          planState: entitlementPolicy.planState,
-          paidTier: entitlementPolicy.paidTier,
-          billingInterval,
-          subscriptionStatus,
-          cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
-          currentPeriodEnd,
-          trialEndsAt: entitlementPolicy.trialEndsAt,
-          paymentMethodStatus,
-          canViewBilling: true,
-          canManageBilling: role === 'owner',
-          history,
-          paymentDocuments,
-        },
+        await readOrganizationBillingSummaryPayload({
+          organizationId,
+          role,
+        }),
         200,
       );
     })();
@@ -2997,7 +3343,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      const organizationId = resolveOrganizationId(
+        body.organizationId,
+        identity.activeOrganizationId,
+      );
       if (!organizationId) {
         return c.json({ message: 'organizationId is required.' }, 422);
       }
@@ -3015,32 +3364,131 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           ? env.STRIPE_PREMIUM_MONTHLY_PRICE_ID?.trim()
           : env.STRIPE_PREMIUM_YEARLY_PRICE_ID?.trim();
       if (!env.STRIPE_SECRET_KEY?.trim() || !priceId) {
-        return c.json({ message: 'Stripe billing is not configured.' }, 422);
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'failed',
+            message: 'Stripe billing is not configured.',
+          }),
+          422,
+        );
       }
 
       const billing = await selectOrganizationBillingSummary(database, organizationId);
-      if (billing && hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))) {
-        return c.json({ message: 'Organization already has an active premium subscription.' }, 409);
+      if (
+        billing &&
+        hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))
+      ) {
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'conflict',
+            message: 'Organization already has an active premium subscription.',
+          }),
+          409,
+        );
+      }
+
+      const now = new Date();
+      const operation = await createBillingOperationAttempt({
+        database,
+        organizationId,
+        purpose: 'paid_checkout',
+        billingInterval: body.billingInterval,
+        createdByUserId: identity.userId,
+        now,
+      });
+      if (operation.reused && operation.attempt.handoffUrl) {
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: operation.attempt.state === 'succeeded' ? 'succeeded' : 'processing',
+            message: 'Reusing the active Stripe Checkout handoff.',
+            handoffAttempt: operation.attempt,
+            handoffPurpose: 'paid_checkout',
+            handoffReused: true,
+          }),
+          200,
+        );
       }
 
       const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
       const contractsUrl = `${webBaseUrl}/admin/contracts`;
-      const session = await createSubscriptionCheckoutSession({
-        env,
-        priceId,
-        successUrl: `${contractsUrl}?subscription=success`,
-        cancelUrl: `${contractsUrl}?subscription=cancel`,
-        customerId: billing?.stripeCustomerId ?? null,
-        clientReferenceId: organizationId,
-        metadata: {
-          billingPurpose: 'organization_plan',
-          organizationId,
-          planCode: 'premium',
-          billingInterval: body.billingInterval,
-        },
-      });
+      try {
+        const session = await createSubscriptionCheckoutSession({
+          env,
+          priceId,
+          successUrl: `${contractsUrl}?subscription=success`,
+          cancelUrl: `${contractsUrl}?subscription=cancel`,
+          customerId: billing?.stripeCustomerId ?? null,
+          clientReferenceId: organizationId,
+          idempotencyKey: operation.attempt.idempotencyKey,
+          metadata: {
+            billingPurpose: 'organization_plan',
+            organizationId,
+            planCode: 'premium',
+            billingInterval: body.billingInterval,
+            billingOperationAttemptId: operation.attempt.id,
+          },
+        });
+        const succeededAttempt = await markBillingOperationAttemptSucceeded({
+          database,
+          attemptId: operation.attempt.id,
+          handoffUrl: session.url,
+          handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
+          stripeCustomerId: billing?.stripeCustomerId ?? null,
+          stripeCheckoutSessionId: session.id,
+        });
 
-      return c.json({ url: session.url }, 200);
+        await appendOrganizationBillingAuditEvent({
+          database,
+          organizationId,
+          sourceKind: 'paid_checkout_started',
+          previousSnapshot: await readOrganizationBillingObservationSnapshot({
+            database,
+            env,
+            organizationId,
+          }),
+          nextSnapshot: await readOrganizationBillingObservationSnapshot({
+            database,
+            env,
+            organizationId,
+          }),
+          sourceContext: 'owner_started_paid_checkout_handoff',
+        });
+
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'processing',
+            message: 'Stripe Checkout handoff is ready.',
+            handoffAttempt: succeededAttempt,
+            handoffPurpose: 'paid_checkout',
+            handoffReused: false,
+          }),
+          200,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Stripe Checkout creation failed.';
+        await markBillingOperationAttemptFailed({
+          database,
+          attemptId: operation.attempt.id,
+          failureReason: message,
+        });
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'failed',
+            message,
+          }),
+          500,
+        );
+      }
     })();
   });
 
@@ -3052,7 +3500,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      const organizationId = resolveOrganizationId(
+        body.organizationId,
+        identity.activeOrganizationId,
+      );
       if (!organizationId) {
         return c.json({ message: 'organizationId is required.' }, 422);
       }
@@ -3066,16 +3517,101 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
 
       const billing = await selectOrganizationBillingSummary(database, organizationId);
-      if (billing && hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))) {
-        return c.json({ message: ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE }, 409);
+      if (
+        billing &&
+        hasActivePremiumSubscription(isBillingSubscriptionStatus(billing.subscriptionStatus))
+      ) {
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'conflict',
+            message: ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
+          }),
+          409,
+        );
+      }
+      if (
+        await hasOrganizationStartedPremiumTrial({
+          database,
+          organizationId,
+        })
+      ) {
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'conflict',
+            message: ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
+          }),
+          409,
+        );
       }
 
+      const operation = await createBillingOperationAttempt({
+        database,
+        organizationId,
+        purpose: 'trial_start',
+        createdByUserId: identity.userId,
+      });
       const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
         database,
         env,
         organizationId,
       });
-      await startOrganizationPremiumTrial({ database, organizationId });
+      const defaultTrialPrice = resolveDefaultPremiumTrialPriceConfig();
+      let stripeCustomerId = billing?.stripeCustomerId ?? null;
+      let stripeSubscriptionId: string | null = null;
+      let stripePriceId: string | null = null;
+      let billingInterval: 'month' | 'year' | null = null;
+      let trialStartedAt: Date | undefined;
+      let trialEndsAt: Date | undefined;
+
+      if (env.STRIPE_SECRET_KEY?.trim() && defaultTrialPrice) {
+        if (!stripeCustomerId) {
+          const customer = await createCustomer({
+            env,
+            idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
+            metadata: {
+              billingPurpose: 'organization_trial',
+              organizationId,
+              billingOperationAttemptId: operation.attempt.id,
+            },
+          });
+          stripeCustomerId = customer.id;
+        }
+
+        const subscription = await createTrialSubscription({
+          env,
+          customerId: stripeCustomerId,
+          priceId: defaultTrialPrice.priceId,
+          trialPeriodDays: ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
+          idempotencyKey: operation.attempt.idempotencyKey,
+          metadata: {
+            billingPurpose: 'organization_plan',
+            organizationId,
+            planCode: 'premium',
+            billingInterval: defaultTrialPrice.billingInterval,
+            billingOperationAttemptId: operation.attempt.id,
+          },
+        });
+        stripeSubscriptionId = subscription.id;
+        stripePriceId = subscription.priceId ?? defaultTrialPrice.priceId;
+        billingInterval = defaultTrialPrice.billingInterval;
+        trialStartedAt = subscription.currentPeriodStart ?? undefined;
+        trialEndsAt = subscription.currentPeriodEnd ?? undefined;
+      }
+
+      await startOrganizationPremiumTrial({
+        database,
+        organizationId,
+        trialStartedAt,
+        trialEndsAt,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        stripePriceId,
+        billingInterval,
+      });
       const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
         database,
         env,
@@ -3089,11 +3625,20 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         nextSnapshot: nextBillingSnapshot,
         sourceContext: 'owner_started_premium_trial',
       });
+      await markBillingOperationAttemptSucceeded({
+        database,
+        attemptId: operation.attempt.id,
+        stripeCustomerId,
+        stripeSubscriptionId,
+      });
 
       return c.json(
-        {
+        await buildBillingActionEnvelope({
+          organizationId,
+          role,
+          status: 'succeeded',
           message: `Started a ${ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS}-day premium trial.`,
-        },
+        }),
         200,
       );
     })();
@@ -3107,7 +3652,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      const organizationId = resolveOrganizationId(
+        body.organizationId,
+        identity.activeOrganizationId,
+      );
       if (!organizationId) {
         return c.json({ message: 'organizationId is required.' }, 422);
       }
@@ -3121,12 +3669,51 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
 
       if (!env.STRIPE_SECRET_KEY?.trim()) {
-        return c.json({ message: 'Stripe billing is not configured.' }, 422);
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'failed',
+            message: 'Stripe billing is not configured.',
+          }),
+          422,
+        );
       }
 
       const billing = await selectOrganizationBillingSummary(database, organizationId);
       if (billing?.planCode !== 'premium' || billing.subscriptionStatus !== 'trialing') {
-        return c.json({ message: 'Organization does not have an active premium trial.' }, 409);
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'conflict',
+            message: 'Organization does not have an active premium trial.',
+          }),
+          409,
+        );
+      }
+
+      const now = new Date();
+      const operation = await createBillingOperationAttempt({
+        database,
+        organizationId,
+        purpose: 'payment_method_setup',
+        createdByUserId: identity.userId,
+        now,
+      });
+      if (operation.reused && operation.attempt.handoffUrl) {
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: operation.attempt.state === 'succeeded' ? 'succeeded' : 'processing',
+            message: 'Reusing the active payment method setup handoff.',
+            handoffAttempt: operation.attempt,
+            handoffPurpose: 'payment_method_setup',
+            handoffReused: true,
+          }),
+          200,
+        );
       }
 
       let customerId = billing.stripeCustomerId;
@@ -3138,9 +3725,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         });
         const customer = await createCustomer({
           env,
+          idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
           metadata: {
             billingPurpose: 'organization_payment_method',
             organizationId,
+            billingOperationAttemptId: operation.attempt.id,
           },
         });
         customerId = customer.id;
@@ -3172,13 +3761,35 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         successUrl: `${contractsUrl}?paymentMethod=success`,
         cancelUrl: `${contractsUrl}?paymentMethod=cancel`,
         clientReferenceId: organizationId,
+        idempotencyKey: operation.attempt.idempotencyKey,
         metadata: {
           billingPurpose: 'organization_payment_method',
           organizationId,
+          billingOperationAttemptId: operation.attempt.id,
         },
       });
+      const succeededAttempt = await markBillingOperationAttemptSucceeded({
+        database,
+        attemptId: operation.attempt.id,
+        handoffUrl: session.url,
+        handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: billing.stripeSubscriptionId ?? null,
+        stripeCheckoutSessionId: session.id,
+      });
 
-      return c.json({ url: session.url }, 200);
+      return c.json(
+        await buildBillingActionEnvelope({
+          organizationId,
+          role,
+          status: 'processing',
+          message: 'Payment method setup handoff is ready.',
+          handoffAttempt: succeededAttempt,
+          handoffPurpose: 'payment_method_setup',
+          handoffReused: false,
+        }),
+        200,
+      );
     })();
   });
 
@@ -3190,7 +3801,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      const organizationId = resolveOrganizationId(
+        body.organizationId,
+        identity.activeOrganizationId,
+      );
       if (!organizationId) {
         return c.json({ message: 'organizationId is required.' }, 422);
       }
@@ -3231,7 +3845,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
               : 'trial_completion_not_ready_or_unavailable',
           appSnapshot: currentBillingSnapshot,
         });
-        return c.json({ message: completion.message }, completion.status);
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: completion.status === 409 ? 'conflict' : 'failed',
+            message: completion.message,
+          }),
+          completion.status,
+        );
       }
 
       const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
@@ -3256,7 +3878,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         appSnapshot: nextBillingSnapshot,
       });
 
-      return c.json({ message: completion.message }, 200);
+      return c.json(
+        await buildBillingActionEnvelope({
+          organizationId,
+          role,
+          status: 'succeeded',
+          message: completion.message,
+        }),
+        200,
+      );
     })();
   });
 
@@ -3268,7 +3898,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+      const organizationId = resolveOrganizationId(
+        body.organizationId,
+        identity.activeOrganizationId,
+      );
       if (!organizationId) {
         return c.json({ message: 'organizationId is required.' }, 422);
       }
@@ -3282,17 +3915,66 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
 
       if (!env.STRIPE_SECRET_KEY?.trim()) {
-        return c.json({ message: 'Stripe billing is not configured.' }, 422);
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'failed',
+            message: 'Stripe billing is not configured.',
+          }),
+          422,
+        );
       }
 
       const billing = await selectOrganizationBillingSummary(database, organizationId);
+      const portalSubscriptionStatus = isBillingSubscriptionStatus(
+        billing?.subscriptionStatus ?? null,
+      );
       if (
-        !billing?.stripeCustomerId
-        || !billing.stripeSubscriptionId
-        || billing.planCode !== 'premium'
-        || billing.subscriptionStatus !== 'active'
+        !billing?.stripeCustomerId ||
+        !billing.stripeSubscriptionId ||
+        billing.planCode !== 'premium' ||
+        !(
+          portalSubscriptionStatus === 'active' ||
+          portalSubscriptionStatus === 'trialing' ||
+          portalSubscriptionStatus === 'past_due' ||
+          portalSubscriptionStatus === 'unpaid' ||
+          portalSubscriptionStatus === 'incomplete'
+        )
       ) {
-        return c.json({ message: 'Organization does not have a premium subscription.' }, 409);
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'conflict',
+            message:
+              'Billing portal is unavailable for free, canceled, or no-provider-subscription state.',
+          }),
+          409,
+        );
+      }
+
+      const now = new Date();
+      const operation = await createBillingOperationAttempt({
+        database,
+        organizationId,
+        purpose: 'billing_portal',
+        createdByUserId: identity.userId,
+        now,
+      });
+      if (operation.reused && operation.attempt.handoffUrl) {
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: operation.attempt.state === 'succeeded' ? 'succeeded' : 'processing',
+            message: 'Reusing the active billing portal handoff.',
+            handoffAttempt: operation.attempt,
+            handoffPurpose: 'billing_portal',
+            handoffReused: true,
+          }),
+          200,
+        );
       }
 
       const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
@@ -3301,13 +3983,34 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         env,
         customerId: billing.stripeCustomerId,
         returnUrl: contractsUrl,
+        idempotencyKey: operation.attempt.idempotencyKey,
         subscriptionUpdate: {
           subscriptionId: billing.stripeSubscriptionId,
           afterCompletionReturnUrl: `${contractsUrl}?subscription=success`,
         },
       });
+      const succeededAttempt = await markBillingOperationAttemptSucceeded({
+        database,
+        attemptId: operation.attempt.id,
+        handoffUrl: portalSession.url,
+        handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
+        stripeCustomerId: billing.stripeCustomerId,
+        stripeSubscriptionId: billing.stripeSubscriptionId,
+        stripePortalSessionId: portalSession.id,
+      });
 
-      return c.json({ url: portalSession.url }, 200);
+      return c.json(
+        await buildBillingActionEnvelope({
+          organizationId,
+          role,
+          status: 'processing',
+          message: 'Billing portal handoff is ready.',
+          handoffAttempt: succeededAttempt,
+          handoffPurpose: 'billing_portal',
+          handoffReused: false,
+        }),
+        200,
+      );
     })();
   });
 
@@ -3407,7 +4110,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       const duplicateRows = await database
         .select({ id: dbSchema.classroom.id })
         .from(dbSchema.classroom)
-        .where(and(eq(dbSchema.classroom.organizationId, organization.id), eq(dbSchema.classroom.slug, slug)))
+        .where(
+          and(
+            eq(dbSchema.classroom.organizationId, organization.id),
+            eq(dbSchema.classroom.slug, slug),
+          ),
+        )
         .limit(1);
       if (duplicateRows[0]) {
         return c.json({ message: 'Classroom slug already exists.' }, 409);
@@ -3546,7 +4254,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             role: dbSchema.member.role,
           })
           .from(dbSchema.member)
-          .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.member.organizationId))
+          .innerJoin(
+            dbSchema.organization,
+            eq(dbSchema.organization.id, dbSchema.member.organizationId),
+          )
           .where(eq(dbSchema.member.userId, identity.userId)),
         database
           .select({
@@ -3557,7 +4268,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             organizationLogo: dbSchema.organization.logo,
           })
           .from(dbSchema.participant)
-          .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.participant.organizationId))
+          .innerJoin(
+            dbSchema.organization,
+            eq(dbSchema.organization.id, dbSchema.participant.organizationId),
+          )
           .where(eq(dbSchema.participant.userId, identity.userId)),
       ]);
 
@@ -3571,8 +4285,14 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           role: dbSchema.classroomMember.role,
         })
         .from(dbSchema.classroomMember)
-        .innerJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.classroomMember.classroomId))
-        .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.classroom.organizationId))
+        .innerJoin(
+          dbSchema.classroom,
+          eq(dbSchema.classroom.id, dbSchema.classroomMember.classroomId),
+        )
+        .innerJoin(
+          dbSchema.organization,
+          eq(dbSchema.organization.id, dbSchema.classroom.organizationId),
+        )
         .where(eq(dbSchema.classroomMember.userId, identity.userId));
 
       const organizationsById = new Map<
@@ -3656,7 +4376,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
                           name: dbSchema.classroom.name,
                         })
                         .from(dbSchema.classroom)
-                        .where(and(eq(dbSchema.classroom.organizationId, row.organizationId), eq(dbSchema.classroom.id, classroomId)))
+                        .where(
+                          and(
+                            eq(dbSchema.classroom.organizationId, row.organizationId),
+                            eq(dbSchema.classroom.id, classroomId),
+                          ),
+                        )
                         .limit(1);
                       const classroom = classroomRows[0];
                       return classroom
@@ -3672,9 +4397,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
                     }),
                   ),
                 )
-              ).filter(
-                (context): context is NonNullable<typeof context> => Boolean(context),
-              );
+              ).filter((context): context is NonNullable<typeof context> => Boolean(context));
 
         const classrooms = [];
         for (const context of classroomContexts) {
@@ -3933,7 +4656,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           return c.json({ message: 'Forbidden' }, 403);
         }
         if (!body.participantName || body.participantName.trim().length === 0) {
-          return c.json({ message: 'participantName is required for participant invitations.' }, 400);
+          return c.json(
+            { message: 'participantName is required for participant invitations.' },
+            400,
+          );
         }
       } else if (!access.effective.canManageClassroom) {
         return c.json({ message: 'Forbidden' }, 403);
@@ -4004,7 +4730,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         organizationId: classroomContext.organizationId,
         classroomId: classroomContext.classroomId,
         email: normalizedEmail,
-        participantName: body.role === 'participant' ? body.participantName?.trim() ?? null : null,
+        participantName:
+          body.role === 'participant' ? (body.participantName?.trim() ?? null) : null,
         invitedByUserId: identity.userId,
       });
       if (!createdInvitation) {
@@ -4031,7 +4758,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           subjectKind,
           role: body.role,
           classroomSlug: classroomContext.classroomSlug,
-          participantName: body.role === 'participant' ? body.participantName?.trim() ?? null : null,
+          participantName:
+            body.role === 'participant' ? (body.participantName?.trim() ?? null) : null,
         },
         headers,
       });
@@ -4155,8 +4883,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
 
       if (
-        invitation.subjectKind === 'org_operator'
-        || invitation.subjectKind === 'classroom_operator'
+        invitation.subjectKind === 'org_operator' ||
+        invitation.subjectKind === 'classroom_operator'
       ) {
         const premiumGate = await readOrganizationPremiumFeatureGate({
           database,
@@ -4239,7 +4967,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           respondedByUserId: identity.userId,
           respondedAt: new Date(),
         })
-        .where(and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')));
+        .where(
+          and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')),
+        );
 
       const updatedInvitation = await hydrateInvitationRecord(invitation.id);
       const nextInvitation = serializeInvitation(updatedInvitation);
@@ -4295,7 +5025,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           respondedByUserId: identity.userId,
           respondedAt: new Date(),
         })
-        .where(and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')));
+        .where(
+          and(eq(dbSchema.invitation.id, invitation.id), eq(dbSchema.invitation.status, 'pending')),
+        );
 
       const updatedInvitation = await hydrateInvitationRecord(invitation.id);
       const nextInvitation = serializeInvitation(updatedInvitation);
@@ -4327,7 +5059,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+      const organizationId = resolveOrganizationId(
+        query.organizationId,
+        identity.activeOrganizationId,
+      );
       if (!organizationId) {
         return c.json({ message: 'organizationId is required.' }, 400);
       }
@@ -4429,7 +5164,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Public events organization was not found.' }, 503);
       }
 
-      const publicClassroomSlug = env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() || publicOrganizationSlug;
+      const publicClassroomSlug =
+        env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() || publicOrganizationSlug;
       if (publicClassroomSlug.length === 0) {
         return c.json({ message: 'PUBLIC_EVENTS_CLASSROOM_SLUG is invalid.' }, 503);
       }
@@ -4462,7 +5198,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           .select({
             id: dbSchema.participant.id,
             organizationId: dbSchema.participant.organizationId,
-          classroomId: dbSchema.participant.classroomId,
+            classroomId: dbSchema.participant.classroomId,
             userId: dbSchema.participant.userId,
             email: dbSchema.participant.email,
             name: dbSchema.participant.name,
@@ -4470,13 +5206,13 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             updatedAt: dbSchema.participant.updatedAt,
           })
           .from(dbSchema.participant)
-              .where(
-                and(
-                  eq(dbSchema.participant.organizationId, body.organizationId),
-                  eq(dbSchema.participant.classroomId, classroomContext.classroomId),
-                  or(
-                    eq(dbSchema.participant.userId, identity.userId),
-                    eq(dbSchema.participant.email, participantEmail),
+          .where(
+            and(
+              eq(dbSchema.participant.organizationId, body.organizationId),
+              eq(dbSchema.participant.classroomId, classroomContext.classroomId),
+              or(
+                eq(dbSchema.participant.userId, identity.userId),
+                eq(dbSchema.participant.email, participantEmail),
               ),
             ),
           )
@@ -4587,8 +5323,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
     const suffix = c.req.path.slice(prefixIndex + scopedPrefix.length);
     if (
-      suffix.length === 0
-      || !scopedOrganizationApiPrefixes.some((candidatePrefix) => suffix.startsWith(candidatePrefix))
+      suffix.length === 0 ||
+      !scopedOrganizationApiPrefixes.some((candidatePrefix) => suffix.startsWith(candidatePrefix))
     ) {
       return c.json({ message: 'Not found.' }, 404);
     }
@@ -4605,7 +5341,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
       const contentType = c.req.raw.headers.get('content-type') ?? '';
       if (contentType.includes('application/json')) {
-        const payload = await c.req.raw.clone().json().catch(() => ({}));
+        const payload = await c.req.raw
+          .clone()
+          .json()
+          .catch(() => ({}));
         const nextPayload =
           typeof payload === 'object' && payload !== null
             ? {

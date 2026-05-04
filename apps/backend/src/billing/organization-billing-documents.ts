@@ -4,8 +4,12 @@ export type OrganizationBillingDocumentConcept =
   | 'receipt'
   | 'payment_document'
   | 'provider_document';
-export type OrganizationBillingDocumentAvailability = 'available' | 'unavailable' | 'missing';
-export type OrganizationBillingDocumentOwnerFacingStatus = 'available' | 'unavailable';
+export type OrganizationBillingDocumentAvailability =
+  | 'available'
+  | 'unavailable'
+  | 'missing'
+  | 'checking';
+export type OrganizationBillingDocumentOwnerFacingStatus = 'available' | 'unavailable' | 'checking';
 
 export type OrganizationBillingProviderDocumentReference = {
   aggregateRoot: 'organization_billing';
@@ -70,7 +74,11 @@ const readStripeId = (value: unknown): string | null => {
 const resolveOwnerFacingStatus = (
   availability: OrganizationBillingDocumentAvailability,
 ): OrganizationBillingDocumentOwnerFacingStatus =>
-  availability === 'available' ? 'available' : 'unavailable';
+  availability === 'available'
+    ? 'available'
+    : availability === 'checking'
+      ? 'checking'
+      : 'unavailable';
 
 const resolveInvoiceAvailability = ({
   providerDocumentId,
@@ -209,7 +217,9 @@ export const buildOwnerSafeBillingDocumentHistoryEntry = (
       `アクセス: organization owner のみ`,
       `保存方針: provider reference only`,
       readiness.stripeCustomerId ? `Stripe customer: ${readiness.stripeCustomerId}` : null,
-      readiness.stripeSubscriptionId ? `Stripe subscription: ${readiness.stripeSubscriptionId}` : null,
+      readiness.stripeSubscriptionId
+        ? `Stripe subscription: ${readiness.stripeSubscriptionId}`
+        : null,
     ]
       .filter((value): value is string => Boolean(value))
       .join(' / '),
