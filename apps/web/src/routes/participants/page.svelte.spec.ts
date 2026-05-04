@@ -88,6 +88,16 @@ describe('/participants/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
+	it('shows offline ticket purchase guidance and hides Stripe setup fields', async () => {
+		render(ParticipantsPage);
+
+		await expect
+			.element(page.getByText(/参加者の購入申請は、現地決済または銀行振込の承認フロー/))
+			.toBeInTheDocument();
+		await expect.element(page.getByText('Stripe 価格ID（販売時必須）')).not.toBeInTheDocument();
+		await expect.element(page.getByRole('option', { name: 'stripe' })).not.toBeInTheDocument();
+	});
+
 	it('should show loading message and hide organization-required message during initial load', async () => {
 		mocks.loadParticipantsPageData.mockImplementation(() => new Promise(() => {}));
 
@@ -220,7 +230,12 @@ describe('/participants/+page.svelte', () => {
 		render(ParticipantsPage);
 
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '参加者・回数券管理には Premiumプランが必要です' }))
+			.element(
+				page.getByRole('heading', {
+					level: 2,
+					name: '参加者・回数券管理には Premiumプランが必要です'
+				})
+			)
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByText(/契約変更と支払い設定は organization owner のみです/))

@@ -2,12 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import {
+		createOrganizationBillingCheckout,
 		createOrganizationBillingPaymentMethod,
 		createOrganizationBillingTrial,
 		createOrganizationBillingPortal,
@@ -36,6 +37,13 @@
 	let localStatusNotice = $state<{ tone: 'info' | 'success' | 'error'; message: string } | null>(
 		null
 	);
+	let paymentMethodSyncPolling = $state(false);
+	let paymentMethodSyncTimedOut = $state(false);
+	let paymentMethodSyncPollTimer: ReturnType<typeof setTimeout> | null = null;
+	let paymentMethodSyncPollAttempts = 0;
+
+	const paymentMethodSyncPollIntervalMs = 3_000;
+	const paymentMethodSyncMaxAttempts = 10;
 
 	const freePlanFeatures = [
 		'1組織・1教室での基本運用',
@@ -92,9 +100,7 @@
 		}
 		return billing?.planCode === 'premium' ? 'Premium' : 'Free';
 	});
-	const showUnknownPaidTierNotice = $derived(
-		billing?.paidTier?.resolution === 'unknown_price'
-	);
+	const showUnknownPaidTierNotice = $derived(billing?.paidTier?.resolution === 'unknown_price');
 	const billingIntervalLabel = $derived(
 		billing?.billingInterval === 'month'
 			? '月額'
@@ -104,6 +110,43 @@
 	);
 	const trialEndsAtLabel = $derived(formatJaDate(billing?.trialEndsAt));
 	const currentPeriodEndLabel = $derived(formatJaDate(billing?.currentPeriodEnd));
+	const pastDueGraceEndsAtLabel = $derived(formatJaDate(billing?.pastDueGraceEndsAt));
+	const paymentIssueNotice = $derived.by(() => {
+		if (!billing) {
+			return null;
+		}
+		if (billing.subscriptionStatus === 'past_due') {
+			return billing.pastDueGraceEndsAt
+				? `支払い遅延の猶予期間中です。猶予期限は ${pastDueGraceEndsAtLabel} です。`
+				: '支払い遅延を確認しています。Premiumの利用可否は最新の契約状態に基づいて判定されます。';
+		}
+		if (billing.subscriptionStatus === 'unpaid') {
+			return '未払い状態のため Premium 機能は停止されています。owner は契約管理画面で支払い状況を確認してください。';
+		}
+		if (billing.subscriptionStatus === 'incomplete') {
+			return '契約処理が未完了のため Premium 機能はまだ有効化されていません。owner は checkout または契約管理画面の状態を確認してください。';
+		}
+		if (billing.subscriptionStatus === 'canceled') {
+			return '契約は解約済みです。必要な場合は owner が新しい有料契約を開始できます。';
+		}
+		if (billing.paidTier?.resolution === 'unknown_price') {
+			return '未登録の Stripe price id を検出したため Premium 機能を停止しています。サポート確認が必要です。';
+		}
+		return null;
+	});
+	const billingProfileNotice = $derived.by(() => {
+		switch (billing?.billingProfileReadiness?.state) {
+			case 'incomplete':
+				return (
+					billing.billingProfileReadiness.nextAction ??
+					'請求先情報の確認が未完了です。checkout と Premium 利用はブロックされません。'
+				);
+			case 'unavailable':
+				return '請求先情報の確認を一時的に取得できません。checkout と Premium 利用はブロックされません。';
+			default:
+				return null;
+		}
+	});
 	const paymentMethodStatusLabel = $derived.by(() => {
 		switch (billing?.paymentMethodStatus) {
 			case 'registered':
@@ -119,7 +162,9 @@
 			case 'registered':
 				return '支払い方法の登録を確認しました。トライアル終了後の継続準備が完了しています。';
 			case 'pending':
-				return 'Stripe 側の更新を確認中です。反映まで数秒かかる場合があります。';
+				return paymentMethodSyncTimedOut
+					? 'Stripe 側の登録完了をまだ確認できません。登録を完了済みの場合は、数分後に最新状態を確認してください。'
+					: 'Stripe 側の更新を確認中です。反映まで数秒かかる場合があります。';
 			default:
 				return 'トライアル期間中に支払い方法を登録すると、継続判断をスムーズに進められます。';
 		}
@@ -143,6 +188,17 @@
 		}
 	});
 	const showOwnerActions = $derived(Boolean(billing?.canManageBilling));
+	const canStartTrialAction = $derived(
+		billing?.actionAvailability?.canStartTrial ??
+			(Boolean(billing?.canManageBilling) && billing?.planState === 'free')
+	);
+	const trialAlreadyUsed = $derived(Boolean(billing?.actionAvailability?.trialUsed));
+	const canStartPaidCheckoutAction = $derived(
+		Boolean(billing?.actionAvailability?.canStartPaidCheckout)
+	);
+	const canOpenBillingPortalAction = $derived(
+		billing?.actionAvailability?.canOpenBillingPortal ?? billing?.planState === 'premium_paid'
+	);
 	const billingHistoryEntries = $derived.by(() => {
 		if (!billing) {
 			return null;
@@ -240,13 +296,13 @@
 				return '契約変更';
 			case 'notification':
 				return '通知';
+			case 'payment_event':
+				return '請求・支払い';
 			default:
 				return '状態確認';
 		}
 	};
-	const resolveHistoryToneClassName = (
-		tone: OrganizationBillingHistoryEntry['tone']
-	): string => {
+	const resolveHistoryToneClassName = (tone: OrganizationBillingHistoryEntry['tone']): string => {
 		switch (tone) {
 			case 'positive':
 				return 'border-success/30 bg-success/10';
@@ -291,6 +347,99 @@
 			return;
 		}
 		billing = billingResult.billing;
+	};
+
+	const clearPaymentMethodSyncPoll = () => {
+		if (paymentMethodSyncPollTimer !== null) {
+			clearTimeout(paymentMethodSyncPollTimer);
+			paymentMethodSyncPollTimer = null;
+		}
+		paymentMethodSyncPolling = false;
+	};
+
+	const refreshBillingStatus = async ({ manual = false }: { manual?: boolean } = {}) => {
+		if (!activeOrganization?.id) {
+			return null;
+		}
+
+		if (manual) {
+			busy = true;
+			localStatusNotice = {
+				tone: 'info',
+				message: '支払い方法の登録状況を確認しています。'
+			};
+		}
+
+		try {
+			const billingResult = await loadOrganizationBilling(activeOrganization.id);
+			if (!billingResult.ok) {
+				if (manual) {
+					localStatusNotice = { tone: 'error', message: billingResult.message };
+					toast.error(billingResult.message);
+				}
+				return null;
+			}
+
+			billing = billingResult.billing;
+			if (billingResult.billing?.paymentMethodStatus === 'registered') {
+				paymentMethodSyncTimedOut = false;
+				clearPaymentMethodSyncPoll();
+				localStatusNotice = {
+					tone: 'success',
+					message: '支払い方法の登録を確認しました。トライアル終了後の継続準備が完了しています。'
+				};
+			} else if (manual) {
+				localStatusNotice = {
+					tone: 'info',
+					message:
+						'支払い方法の登録完了をまだ確認できません。Stripeで登録を完了済みの場合は、数分後にもう一度確認してください。'
+				};
+			}
+
+			return billingResult.billing;
+		} finally {
+			if (manual) {
+				busy = false;
+			}
+		}
+	};
+
+	const schedulePaymentMethodSyncPoll = () => {
+		if (!activeOrganization?.id || billing?.paymentMethodStatus !== 'pending') {
+			clearPaymentMethodSyncPoll();
+			return;
+		}
+
+		if (paymentMethodSyncPollAttempts >= paymentMethodSyncMaxAttempts) {
+			clearPaymentMethodSyncPoll();
+			paymentMethodSyncTimedOut = true;
+			localStatusNotice = {
+				tone: 'info',
+				message:
+					'支払い方法の登録完了をまだ確認できません。Stripeで登録を完了済みの場合は、数分後に最新状態を確認してください。変わらない場合は、支払い方法の登録を再開してください。'
+			};
+			return;
+		}
+
+		paymentMethodSyncPolling = true;
+		paymentMethodSyncPollTimer = setTimeout(() => {
+			paymentMethodSyncPollTimer = null;
+			void (async () => {
+				paymentMethodSyncPollAttempts += 1;
+				const nextBilling = await refreshBillingStatus();
+				if (nextBilling?.paymentMethodStatus === 'registered') {
+					return;
+				}
+				schedulePaymentMethodSyncPoll();
+			})();
+		}, paymentMethodSyncPollIntervalMs);
+	};
+
+	const startPaymentMethodSyncPoll = () => {
+		clearPaymentMethodSyncPoll();
+		paymentMethodSyncTimedOut = false;
+		paymentMethodSyncPollAttempts = 0;
+		schedulePaymentMethodSyncPoll();
 	};
 
 	const startPremiumTrial = async () => {
@@ -363,6 +512,32 @@
 		}
 	};
 
+	const startPaidCheckout = async (billingInterval: 'month' | 'year') => {
+		if (!activeOrganization?.id) {
+			return;
+		}
+
+		busy = true;
+		localStatusNotice = {
+			tone: 'info',
+			message: `${billingInterval === 'month' ? '月額' : '年額'}Premiumの申込画面へ移動しています。`
+		};
+		try {
+			const result = await createOrganizationBillingCheckout({
+				organizationId: activeOrganization.id,
+				billingInterval
+			});
+			if (!result.ok || !result.url) {
+				localStatusNotice = { tone: 'error', message: result.message };
+				toast.error(result.message);
+				return;
+			}
+			window.location.href = result.url;
+		} finally {
+			busy = false;
+		}
+	};
+
 	const redirectToBillingPortal = async () => {
 		if (!activeOrganization?.id) {
 			return;
@@ -382,6 +557,13 @@
 		}
 	};
 
+	const openProviderDocument = (url: string | null) => {
+		if (!url) {
+			return;
+		}
+		window.open(url, '_blank', 'noopener,noreferrer');
+	};
+
 	onMount(() => {
 		void (async () => {
 			loading = true;
@@ -397,6 +579,9 @@
 				const paymentMethodResult = page.url.searchParams.get('paymentMethod');
 				if (paymentMethodResult === 'success') {
 					toast.message('支払い方法の更新状況を確認しています。');
+					if (billing?.paymentMethodStatus === 'pending') {
+						startPaymentMethodSyncPoll();
+					}
 				}
 				if (paymentMethodResult === 'cancel') {
 					toast.message('支払い方法の登録をキャンセルしました。');
@@ -405,6 +590,10 @@
 				loading = false;
 			}
 		})();
+	});
+
+	onDestroy(() => {
+		clearPaymentMethodSyncPoll();
 	});
 </script>
 
@@ -465,8 +654,17 @@
 					<p class="text-sm text-secondary-foreground">契約ティア: {paidTierLabel}</p>
 					{#if showUnknownPaidTierNotice}
 						<p class="text-sm text-muted-foreground">
-							契約ティアの詳細を確認中です。Premiumの基本機能は現在の契約状態に基づいて表示しています。
+							未登録の Stripe price id
+							を検出したため、Premium機能は停止されています。サポート確認が必要です。
 						</p>
+					{/if}
+					{#if paymentIssueNotice}
+						<div class="rounded-lg border border-warning/45 bg-warning/10 p-3">
+							<p class="text-sm font-medium text-foreground">{paymentIssueNotice}</p>
+						</div>
+					{/if}
+					{#if billingProfileNotice}
+						<p class="text-sm text-muted-foreground">{billingProfileNotice}</p>
 					{/if}
 					{#if billing?.planState === 'premium_trial'}
 						<p class="text-sm text-secondary-foreground">トライアル終了日: {trialEndsAtLabel}</p>
@@ -525,14 +723,42 @@
 							<li>{ownerAuthorityNote}</li>
 							<li>トライアル開始後は、この画面で終了日と現在の契約状態を確認できます。</li>
 						</ul>
-						<Button
-							type="button"
-							aria-describedby="trial-entry-description"
-							disabled={busy}
-							onclick={startPremiumTrial}
-						>
-							7日間のPremiumトライアルを開始
-						</Button>
+						<div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+							{#if canStartTrialAction}
+								<Button
+									type="button"
+									aria-describedby="trial-entry-description"
+									disabled={busy}
+									onclick={startPremiumTrial}
+								>
+									7日間のPremiumトライアルを開始
+								</Button>
+							{:else if trialAlreadyUsed}
+								<p class="text-sm text-muted-foreground">
+									この組織ではトライアルを利用済みです。必要に応じて有料契約へ進めます。
+								</p>
+							{/if}
+							{#if canStartPaidCheckoutAction && billing.actionAvailability?.availableIntervals.includes('month')}
+								<Button
+									type="button"
+									variant="secondary"
+									disabled={busy}
+									onclick={() => startPaidCheckout('month')}
+								>
+									月額Premiumを開始
+								</Button>
+							{/if}
+							{#if canStartPaidCheckoutAction && billing.actionAvailability?.availableIntervals.includes('year')}
+								<Button
+									type="button"
+									variant="secondary"
+									disabled={busy}
+									onclick={() => startPaidCheckout('year')}
+								>
+									年額Premiumを開始
+								</Button>
+							{/if}
+						</div>
 					</div>
 				{:else if billing.planState === 'premium_trial'}
 					<div class="space-y-3">
@@ -546,10 +772,25 @@
 							</p>
 							<p class="text-sm font-medium text-foreground">{paymentMethodStatusLabel}</p>
 							<p class="text-sm text-muted-foreground">{paymentMethodStatusDescription}</p>
+							{#if paymentMethodSyncPolling}
+								<p class="text-sm text-muted-foreground" aria-live="polite">
+									登録完了を自動確認しています。
+								</p>
+							{/if}
 						</div>
 						<p class="text-sm text-muted-foreground">{ownerAuthorityNote}</p>
 						{#if billing.paymentMethodStatus !== 'registered'}
 							<div class="flex flex-col gap-3 sm:flex-row">
+								{#if billing.paymentMethodStatus === 'pending'}
+									<Button
+										type="button"
+										variant="secondary"
+										disabled={busy}
+										onclick={() => refreshBillingStatus({ manual: true })}
+									>
+										最新状態を確認
+									</Button>
+								{/if}
 								<Button type="button" disabled={busy} onclick={startPaymentMethodRegistration}>
 									支払い方法を登録
 								</Button>
@@ -564,10 +805,19 @@
 						</p>
 						<p class="text-sm text-muted-foreground">{ownerAuthorityNote}</p>
 						<div class="flex flex-col gap-3 sm:flex-row">
-							<Button type="button" disabled={busy} onclick={redirectToBillingPortal}>
+							<Button
+								type="button"
+								disabled={busy || !canOpenBillingPortalAction}
+								onclick={redirectToBillingPortal}
+							>
 								プランを変更
 							</Button>
 						</div>
+						{#if !canOpenBillingPortalAction}
+							<p class="text-sm text-muted-foreground">
+								契約管理画面は provider-linked の有効・トライアル・支払い問題状態で利用できます。
+							</p>
+						{/if}
 					</div>
 				{/if}
 			</CardContent>
@@ -619,6 +869,77 @@
 			</CardContent>
 		</Card>
 	</section>
+
+	{#if billing?.canManageBilling}
+		<section>
+			<Card class="surface-panel border-border/80 shadow-md">
+				<CardHeader>
+					<h2 class="text-xl font-semibold text-foreground">請求書・支払いイベント</h2>
+					<CardDescription>
+						請求書と領収書は Stripe の参照リンクのみを表示し、支払い詳細は保存しません。
+					</CardDescription>
+				</CardHeader>
+				<CardContent class="space-y-4">
+					{#if billing.paymentDocuments?.documents.length}
+						<ul class="space-y-2 text-sm text-secondary-foreground">
+							{#each billing.paymentDocuments.documents as document (document.documentKind + document.providerDocumentId)}
+								<li class="rounded-lg border border-border/80 bg-secondary/40 p-3">
+									<p class="font-medium text-foreground">
+										{document.documentKind === 'invoice' ? '請求書' : '領収書'}: {document.ownerFacingStatus}
+									</p>
+									<div class="mt-2 flex flex-wrap gap-3">
+										{#if document.hostedInvoiceUrl}
+											<button
+												type="button"
+												class="text-primary underline"
+												onclick={() => openProviderDocument(document.hostedInvoiceUrl)}
+											>
+												請求書を開く
+											</button>
+										{/if}
+										{#if document.invoicePdfUrl}
+											<button
+												type="button"
+												class="text-primary underline"
+												onclick={() => openProviderDocument(document.invoicePdfUrl)}
+											>
+												PDFを開く
+											</button>
+										{/if}
+										{#if document.receiptUrl}
+											<button
+												type="button"
+												class="text-primary underline"
+												onclick={() => openProviderDocument(document.receiptUrl)}
+											>
+												領収書を開く
+											</button>
+										{/if}
+									</div>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="text-sm text-muted-foreground">
+							表示できる請求書・領収書参照はまだありません。
+						</p>
+					{/if}
+					{#if billing.invoicePaymentEvents?.length}
+						<ul class="space-y-2 text-sm text-secondary-foreground">
+							{#each billing.invoicePaymentEvents as event (event.id)}
+								<li class="rounded-lg border border-border/80 bg-secondary/40 p-3">
+									<p class="font-medium text-foreground">{event.eventType}</p>
+									<p class="text-xs text-muted-foreground">
+										{formatJaDateTime(event.occurredAt ?? event.createdAt)} / {event.ownerFacingStatus}
+									</p>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</CardContent>
+			</Card>
+		</section>
+	{/if}
 
 	<section class="grid gap-4 lg:grid-cols-2">
 		<Card class="surface-panel border-border/80 shadow-md">

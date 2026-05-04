@@ -148,7 +148,8 @@ pnpm --filter @apps/web run cf:dev
 ## GitHub Actions deploy
 
 `.github/workflows/deploy-workers.yml` で web Worker をデプロイします。  
-`PUBLIC_BACKEND_URL` と `PUBLIC_SENTRY_*` は GitHub Variables から `wrangler deploy --var ...` で注入されます。
+`PUBLIC_BACKEND_URL` は `apps/web/wrangler.jsonc` を正とします。
+`PUBLIC_SENTRY_DSN_WEB` / `PUBLIC_SENTRY_ENVIRONMENT` / `PUBLIC_SENTRY_RELEASE` は workflow がデプロイ時に `wrangler deploy --var ...` で注入します。
 
 Google OIDC callback は API 側に固定します:
 
@@ -160,5 +161,7 @@ Sentry sourcemap upload のために以下が必要です:
 - Secret: `SENTRY_AUTH_TOKEN`
 - Variable: `SENTRY_ORG`
 - Variable: `SENTRY_PROJECT_WEB`
+- Variable: `PUBLIC_SENTRY_DSN_WEB`
+- Variable: `PUBLIC_SENTRY_ENVIRONMENT`
 
 release は workflow で `github.sha` が設定されます。

@@ -124,14 +124,11 @@ export const toTicketErrorMessage = (
 		}
 	}
 	if (status === 422) {
+		if (message === 'Ticket purchase Stripe payment is currently unavailable.') {
+			return '回数券のアプリ内決済は現在利用できません。現地決済または銀行振込を選択してください。';
+		}
 		if (message === 'Stripe is not configured.') {
 			return 'Stripe 設定が未完了のため決済を開始できません。';
-		}
-		if (message === 'stripePriceId is not configured for ticket type.') {
-			return 'この券種には Stripe 価格IDが設定されていません。';
-		}
-		if (message === 'stripePriceId is required when isForSale is true.') {
-			return '販売対象にする場合は Stripe 価格IDが必要です。';
 		}
 	}
 	const validationError = extractValidationErrorMessage(payload);
@@ -228,7 +225,6 @@ export const createTicketType = async (input: {
 	expiresInDays?: number;
 	serviceIds?: string[];
 	isForSale?: boolean;
-	stripePriceId?: string;
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
@@ -244,8 +240,7 @@ export const createTicketType = async (input: {
 		totalCount: input.totalCount,
 		expiresInDays: input.expiresInDays,
 		serviceIds: input.serviceIds && input.serviceIds.length > 0 ? input.serviceIds : undefined,
-		isForSale: input.isForSale,
-		stripePriceId: input.stripePriceId
+		isForSale: input.isForSale
 	});
 	const payload = await parseResponseBody(response);
 	const premiumRestriction = readOrganizationPremiumRestriction(payload);
@@ -373,9 +368,7 @@ export const createTicketPurchase = async (input: {
 		purchase,
 		checkoutUrl,
 		message: response.ok
-			? input.paymentMethod === 'stripe'
-				? 'Stripe決済画面へ移動します。'
-				: '回数券購入申請を受け付けました。'
+			? '回数券購入申請を受け付けました。'
 			: toTicketErrorMessage(response.status, payload, '回数券購入申請に失敗しました。')
 	};
 };
@@ -407,7 +400,12 @@ export const loadTicketPurchases = async (input: {
 	organizationId?: string;
 	participantId?: string;
 	paymentMethod?: 'stripe' | 'cash_on_site' | 'bank_transfer';
-	status?: 'pending_payment' | 'pending_approval' | 'approved' | 'rejected' | 'cancelled_by_participant';
+	status?:
+		| 'pending_payment'
+		| 'pending_approval'
+		| 'approved'
+		| 'rejected'
+		| 'cancelled_by_participant';
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {

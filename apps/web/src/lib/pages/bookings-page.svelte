@@ -257,7 +257,7 @@
 	});
 	let ticketPurchaseForm = $state({
 		ticketTypeId: '',
-		paymentMethod: 'stripe' as 'stripe' | 'cash_on_site' | 'bank_transfer'
+		paymentMethod: 'cash_on_site' as 'stripe' | 'cash_on_site' | 'bank_transfer'
 	});
 	let ticketPurchaseAction = $state<{ kind: 'create' | 'cancel'; id: string } | null>(null);
 	let slotSearchForm = $state({ serviceId: '', fromDate: '', toDate: '' });
@@ -696,7 +696,7 @@
 		cancelled_by_participant: '取り下げ'
 	};
 	const ticketPurchaseMethodLabelMap: Record<TicketPurchasePayload['paymentMethod'], string> = {
-		stripe: 'Stripe',
+		stripe: 'Stripe（保留）',
 		cash_on_site: '現地決済',
 		bank_transfer: '銀行振込'
 	};
@@ -1825,11 +1825,6 @@
 			});
 			if (!result.ok) {
 				toast.error(result.message);
-				return;
-			}
-
-			if (ticketPurchaseForm.paymentMethod === 'stripe' && result.checkoutUrl) {
-				window.location.href = result.checkoutUrl;
 				return;
 			}
 
@@ -3433,6 +3428,9 @@
 									<h3 class="text-sm font-semibold text-foreground">回数券購入</h3>
 									<Badge variant="outline">{myTicketPurchaseRows.length}件</Badge>
 								</div>
+								<p class="mb-3 text-sm text-muted-foreground">
+									現在の支払方法は現地決済・銀行振込です。申請後、運営の承認後に回数券が付与されます。
+								</p>
 								{#if !canUseParticipantBooking}
 									<p class="text-sm text-muted-foreground">
 										回数券購入には参加者としての所属が必要です。
@@ -3467,7 +3465,6 @@
 												class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 												bind:value={ticketPurchaseForm.paymentMethod}
 											>
-												<option value="stripe">Stripe</option>
 												<option value="cash_on_site">現地決済</option>
 												<option value="bank_transfer">銀行振込</option>
 											</select>

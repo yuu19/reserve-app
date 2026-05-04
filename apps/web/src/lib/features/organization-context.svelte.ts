@@ -5,6 +5,7 @@ import type {
 	AccessSourcesPayload,
 	ClassroomPayload,
 	OrganizationBillingPayload,
+	OrganizationBillingActionEnvelope,
 	OrganizationPayload,
 	ScopedApiContext
 } from '$lib/rpc-client';
@@ -27,8 +28,11 @@ const isOrganizationBillingHistoryEntry = (value: unknown): boolean =>
 	typeof value.id === 'string' &&
 	(value.eventType === 'plan_transition' ||
 		value.eventType === 'notification' ||
-		value.eventType === 'reconciliation') &&
-	(typeof value.occurredAt === 'string' || value.occurredAt === null || value.occurredAt === undefined) &&
+		value.eventType === 'reconciliation' ||
+		value.eventType === 'payment_event') &&
+	(typeof value.occurredAt === 'string' ||
+		value.occurredAt === null ||
+		value.occurredAt === undefined) &&
 	typeof value.title === 'string' &&
 	typeof value.summary === 'string' &&
 	(typeof value.billingContext === 'string' ||
@@ -45,8 +49,11 @@ const isOrganizationBillingDocument = (value: unknown): boolean =>
 	(typeof value.receiptUrl === 'string' || value.receiptUrl === null) &&
 	(value.availability === 'available' ||
 		value.availability === 'unavailable' ||
-		value.availability === 'missing') &&
-	(value.ownerFacingStatus === 'available' || value.ownerFacingStatus === 'unavailable');
+		value.availability === 'missing' ||
+		value.availability === 'checking') &&
+	(value.ownerFacingStatus === 'available' ||
+		value.ownerFacingStatus === 'unavailable' ||
+		value.ownerFacingStatus === 'checking');
 
 const isOrganizationBillingPaymentDocuments = (
 	value: unknown
@@ -77,7 +84,8 @@ const isOrganizationBillingPaidTier = (
 		value.code === 'premium_scale' ||
 		value.code === 'premium_unknown') &&
 	typeof value.label === 'string' &&
-	(value.resolution === 'legacy_default' ||
+	(value.resolution === 'not_paid' ||
+		value.resolution === 'legacy_default' ||
 		value.resolution === 'known_price' ||
 		value.resolution === 'unknown_price') &&
 	Array.isArray(value.capabilities) &&
@@ -119,6 +127,47 @@ const isOrganizationBillingPayload = (value: unknown): value is OrganizationBill
 	(value.paymentDocuments === undefined ||
 		value.paymentDocuments === null ||
 		isOrganizationBillingPaymentDocuments(value.paymentDocuments));
+
+const isOrganizationBillingActionEnvelope = (
+	value: unknown
+): value is OrganizationBillingActionEnvelope =>
+	isRecord(value) &&
+	(value.status === 'succeeded' ||
+		value.status === 'processing' ||
+		value.status === 'conflict' ||
+		value.status === 'failed') &&
+	(typeof value.message === 'string' || value.message === null || value.message === undefined) &&
+	(value.billing === null ||
+		value.billing === undefined ||
+		isOrganizationBillingPayload(value.billing)) &&
+	(value.handoff === null ||
+		value.handoff === undefined ||
+		(isRecord(value.handoff) &&
+			value.handoff.provider === 'stripe' &&
+			(value.handoff.purpose === 'trial_start' ||
+				value.handoff.purpose === 'paid_checkout' ||
+				value.handoff.purpose === 'payment_method_setup' ||
+				value.handoff.purpose === 'billing_portal') &&
+			typeof value.handoff.url === 'string' &&
+			typeof value.handoff.expiresAt === 'string' &&
+			typeof value.handoff.reused === 'boolean'));
+
+const readBillingPayloadFromAction = (value: unknown): OrganizationBillingPayload | null => {
+	if (isOrganizationBillingPayload(value)) {
+		return value;
+	}
+	if (isOrganizationBillingActionEnvelope(value)) {
+		return value.billing;
+	}
+	return null;
+};
+
+const readBillingHandoffUrl = (value: unknown): string | null => {
+	if (isOrganizationBillingActionEnvelope(value)) {
+		return value.handoff?.url ?? value.url ?? null;
+	}
+	return isRecord(value) && typeof value.url === 'string' ? value.url : null;
+};
 
 export type ClassroomContextPayload = {
 	id: string;
@@ -237,7 +286,7 @@ export const createOrganization = async (input: { name: string; slug: string; lo
 export const loadOrganizationBilling = async (organizationId?: string) => {
 	const response = await authRpc.getOrganizationBilling(organizationId);
 	const payload = await parseResponseBody(response);
-	const billing = response.ok && isOrganizationBillingPayload(payload) ? payload : null;
+	const billing = response.ok ? readBillingPayloadFromAction(payload) : null;
 	return {
 		ok: response.ok,
 		status: response.status,
@@ -252,7 +301,7 @@ export const createOrganizationBillingCheckout = async (input: {
 }) => {
 	const response = await authRpc.createOrganizationBillingCheckout(input);
 	const payload = await parseResponseBody(response);
-	const url = isRecord(payload) && typeof payload.url === 'string' ? payload.url : null;
+	const url = readBillingHandoffUrl(payload);
 	return {
 		ok: response.ok && Boolean(url),
 		status: response.status,
@@ -264,7 +313,7 @@ export const createOrganizationBillingCheckout = async (input: {
 export const createOrganizationBillingPortal = async (input: { organizationId?: string }) => {
 	const response = await authRpc.createOrganizationBillingPortal(input);
 	const payload = await parseResponseBody(response);
-	const url = isRecord(payload) && typeof payload.url === 'string' ? payload.url : null;
+	const url = readBillingHandoffUrl(payload);
 	return {
 		ok: response.ok && Boolean(url),
 		status: response.status,
@@ -276,21 +325,25 @@ export const createOrganizationBillingPortal = async (input: { organizationId?: 
 export const createOrganizationBillingTrial = async (input: { organizationId?: string }) => {
 	const response = await authRpc.createOrganizationBillingTrial(input);
 	const payload = await parseResponseBody(response);
+	const envelopeMessage =
+		isOrganizationBillingActionEnvelope(payload) && payload.message ? payload.message : null;
 	return {
 		ok: response.ok,
 		status: response.status,
 		message: response.ok
-			? '7日間のPremiumトライアルを開始しました。'
+			? (envelopeMessage ?? '7日間のPremiumトライアルを開始しました。')
 			: response.status === 409
 				? 'すでに有効なPremiumトライアルまたは有料契約があるため、新しいトライアルは開始できません。'
 				: toErrorMessage(payload, '7日間のPremiumトライアルを開始できませんでした。')
 	};
 };
 
-export const createOrganizationBillingPaymentMethod = async (input: { organizationId?: string }) => {
+export const createOrganizationBillingPaymentMethod = async (input: {
+	organizationId?: string;
+}) => {
 	const response = await authRpc.createOrganizationBillingPaymentMethod(input);
 	const payload = await parseResponseBody(response);
-	const url = isRecord(payload) && typeof payload.url === 'string' ? payload.url : null;
+	const url = readBillingHandoffUrl(payload);
 	return {
 		ok: response.ok && Boolean(url),
 		status: response.status,
@@ -443,7 +496,7 @@ export const createClassroom = async (orgSlug: string, input: { name: string; sl
 			? '教室を作成しました。'
 			: premiumRestriction
 				? 'この機能は組織のPremiumプランで利用できます。'
-			: toErrorMessage(payload, '教室の作成に失敗しました。'),
+				: toErrorMessage(payload, '教室の作成に失敗しました。'),
 		classroom
 	};
 };
@@ -465,7 +518,7 @@ export const updateClassroom = async (
 			? '教室を更新しました。'
 			: premiumRestriction
 				? 'この機能は組織のPremiumプランで利用できます。'
-			: toErrorMessage(payload, '教室の更新に失敗しました。'),
+				: toErrorMessage(payload, '教室の更新に失敗しました。'),
 		classroom
 	};
 };
