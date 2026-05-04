@@ -48,6 +48,14 @@ export const manualCategories: ManualCategory[] = [
 				updatedAt: '2026-04-23',
 				audience: '管理者',
 				featured: true
+			},
+			{
+				href: '/manuals/admin/contracts-and-premium',
+				title: '契約と Premium',
+				summary:
+					'現在プラン、Premium トライアル、支払い方法、請求書・領収書の確認方法を画像付きで案内します。',
+				updatedAt: '2026-05-04',
+				audience: 'organization owner'
 			}
 		]
 	},
