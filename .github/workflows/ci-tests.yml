@@ -266,13 +266,21 @@ jobs:
           HTML
 
       - name: Configure GitHub Pages
+        id: configure_pages
         uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - name: Skip Pages deployment notice
+        if: ${{ steps.configure_pages.outcome != 'success' }}
+        run: echo "::warning::GitHub Pages is not enabled or is not configured for GitHub Actions. E2E reports remain available as workflow artifacts."
 
       - name: Upload GitHub Pages artifact
+        if: ${{ steps.configure_pages.outcome == 'success' }}
         uses: actions/upload-pages-artifact@v4
         with:
           path: .pages
 
       - name: Deploy GitHub Pages
+        if: ${{ steps.configure_pages.outcome == 'success' }}
         id: deployment
         uses: actions/deploy-pages@v4
