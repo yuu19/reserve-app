@@ -213,6 +213,20 @@ testing of each story.
 
 ---
 
+## Phase 9: Post-Review Billing Correctness Additions
+
+**Purpose**: Close production billing gaps found after comparing the implementation with the
+organization billing specification and Stripe-hosted subscription behavior.
+
+- [X] T089 [US1] Add persistent trial usage tracking to prevent repeated trials after free fallback in `apps/backend/src/db/schema.ts` and `apps/backend/drizzle/0016_organization_billing_trial_tracking.sql`
+- [X] T090 [US1] Create a Stripe trial subscription during owner trial start when Premium price configuration is available in `apps/backend/src/routes/auth-routes.ts` and `apps/backend/src/payment/stripe.ts`
+- [X] T091 [US2] Process setup-mode Checkout completion by setting Customer and Subscription default payment methods in `apps/backend/src/billing/stripe-webhook-sync.ts`
+- [X] T092 [US2] Complete expired local premium trials from scheduled Worker maintenance in `apps/backend/src/billing/organization-billing-maintenance.ts` and `apps/backend/src/worker.ts`
+- [X] T093 [US2] Add backend regression coverage for Stripe-backed trial creation, setup completion webhook synchronization, scheduled trial completion, and trial reuse denial in `apps/backend/src/app.test.ts`
+- [X] T094 [US5] Update Premium Stripe environment documentation and examples in `apps/backend/.env.example`, `apps/backend/.dev.vars.example`, `apps/backend/README.md`, `docs/README.md`, and `docs/billing.md`
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
