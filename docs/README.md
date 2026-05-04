@@ -22,7 +22,7 @@
 - `apps/backend`: Hono（Cloudflare Workers + D1 / ローカル Miniflare）
 - `apps/web`: SvelteKit（Cloudflare Workers）
   - 参加者管理画面で回数券種別作成・回数券付与に対応
-  - 予約画面でマイ回数券表示（active/exhausted/expired）に対応
+  - 予約画面でマイ回数券表示（active/exhausted/expired）と現地決済・銀行振込の購入申請に対応
   - サービス作成時の `requiresTicket` UI 設定に対応
   - 管理側 3 作成フォーム（サービス/単発/定期）で必須表示・sticky 主要アクション・送信不可理由表示を統一
   - 単発作成で `日付1つ + 終了日トグル` と時刻整合性チェック（終了<=開始の送信防止）に対応
@@ -131,11 +131,11 @@ pnpm test:watch
 # backend
 pnpm deploy:backend
 
-# docs
-pnpm deploy:docs
-
 # web
 pnpm deploy:web
+
+# docs
+pnpm deploy:docs
 
 # backend -> web -> docs を順番に実行
 pnpm deploy:workers
@@ -143,44 +143,74 @@ pnpm deploy:workers
 
 ## GitHub Actions による自動デプロイ
 
-`main` ブランチへの push（または手動実行）で、`backend` / `web` / `docs` の各 Worker を変更内容に応じてデプロイします。  
+`main` ブランチへの push（または手動実行）で、本番の `backend` / `web` / `docs` を毎回まとめてデプロイします。
 ワークフロー: `.github/workflows/deploy-workers.yml`
+
+デプロイ前に次の検証を必ず実行します。
+
+- backend 統合テスト
+- web server test
+- backend / web / docs の production build
+
+通常の Worker 環境変数は各 app の `wrangler.jsonc` を正とします。
+GitHub Actions は Cloudflare secrets の同期、D1 migration、Sentry release 注入、Worker デプロイを担当します。
 
 GitHub シークレット:
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 - `BETTER_AUTH_SECRET`
-- `SENTRY_AUTH_TOKEN`（Web sourcemap upload 用）
+- `RESEND_FROM_EMAIL`
+- `RESEND_API_KEY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
 - `SENTRY_DSN_BACKEND`
-- `STRIPE_SECRET_KEY`（回数券 Stripe 決済を使う場合）
-- `STRIPE_WEBHOOK_SECRET`（回数券 Stripe 決済を使う場合）
+- `SENTRY_AUTH_TOKEN`（web sourcemap upload 用）
+
+任意の GitHub シークレット:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `SERVICE_IMAGE_UPLOAD_SIGNING_SECRET`
 
 GitHub 変数:
 
-- `BETTER_AUTH_URL`
-- `INTERNAL_OPERATOR_EMAILS`（internal billing inspection を許可するカンマ区切りメールアドレス）
-- `BETTER_AUTH_TRUSTED_ORIGINS`
-- `BETTER_AUTH_COOKIE_DOMAIN`
-- `PUBLIC_BACKEND_URL`
 - `SENTRY_ORG`
 - `SENTRY_PROJECT_WEB`
 - `PUBLIC_SENTRY_DSN_WEB`
 - `PUBLIC_SENTRY_ENVIRONMENT`
-- `SENTRY_ENVIRONMENT`
 
 補足:
 
-- backend デプロイ時に `wrangler d1 migrations apply --remote` を実行します。
-- web デプロイ前ビルドで Sentry sourcemap upload を実行します（`SENTRY_RELEASE=${{ github.sha }}`）。
-- docs デプロイは Cloudflare 認証情報のみで実行します。
+- backend デプロイ前に `wrangler d1 migrations apply --remote` を実行します。
+- deploy job では `backend -> web -> docs` の順に反映します。
+- backend の `SENTRY_RELEASE` と web の `PUBLIC_SENTRY_RELEASE` は commit SHA を使います。
+- web デプロイ前ビルドで Sentry sourcemap upload を実行します。
 - Stripe webhook は `POST /api/webhooks/stripe` で受け付けます（`STRIPE_WEBHOOK_SECRET` 必須）。
+- 回数券購入のアプリ内 Stripe 決済は、将来の Stripe Connect 対応まで保留です。現在は現地決済・銀行振込の承認フローのみ利用できます。
 - カスタムドメイン運用時は以下の値を推奨します。
   - Prod: `BETTER_AUTH_URL=https://api.wakureserve.com`, `PUBLIC_BACKEND_URL=https://api.wakureserve.com`, `BETTER_AUTH_COOKIE_DOMAIN=.wakureserve.com`
   - Staging: `BETTER_AUTH_URL=https://api.stg.wakureserve.com`, `PUBLIC_BACKEND_URL=https://api.stg.wakureserve.com`, `BETTER_AUTH_COOKIE_DOMAIN=.stg.wakureserve.com`
   - 現在の実運用は prod のみ適用済みで、staging は将来別 Worker で構築予定です。
 - docs の本番公開 URL は `https://docs.wakureserve.com` を想定しています。
 - backend の `database_id` は、事前に `apps/backend/wrangler.jsonc` に設定してください。
+
+### Premium 課金を含むデプロイ順
+
+Premium 課金の変更を含む場合は、先に D1 migration を適用してから backend をデプロイします。
+今回の課金強化では、既存の組織契約行を保持したまま、支払い問題、請求書参照、操作履歴、照合結果を保存する列と append-only table を追加します。
+
+backend の後に web をデプロイします。
+web は課金操作の共通レスポンス、支払い問題の状態、請求書・領収書の参照状態を利用します。
+
+本番反映前に、Stripe Dashboard で次の状態を確認します。
+
+- 月額と年額の Premium Price が環境変数と一致していること
+- Customer Portal が契約管理と支払い方法更新に使えること
+- Webhook endpoint が `checkout.session.completed`、`customer.subscription.*`、`invoice.*` の必要イベントを受け取れること
+- `STRIPE_WEBHOOK_SECRET` が対象 endpoint の signing secret と一致していること
+- owner 向け課金通知メールを検証する環境では Resend の送信元が有効であること
+- Cloudflare scheduled trigger が対象限定照合と日次全体照合を実行できること
 
 詳細な設定手順:
 

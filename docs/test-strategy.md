@@ -125,11 +125,13 @@ GitHub Actions `.github/workflows/ci-tests.yml` では次を実行する。
 
 - `pnpm --filter @apps/backend test`
 - `pnpm --filter @apps/web test`
+- `pnpm --filter @apps/docs build`
 
 これは次を意味する。
 
 - backend 統合テストは PR / `main` push ごとに必須
 - web server test は PR / `main` push ごとに必須
+- docs の production build は PR / `main` push ごとに必須
 - web browser test は手動実行
 - mobile は自動テスト未導入
 

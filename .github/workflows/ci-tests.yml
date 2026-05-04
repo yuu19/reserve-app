@@ -4,23 +4,27 @@ on:
   pull_request:
     paths:
       - 'apps/backend/**'
+      - 'apps/docs/**'
       - 'apps/web/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'turbo.json'
       - '.github/workflows/ci-tests.yml'
+      - '.github/workflows/deploy-workers.yml'
   push:
     branches:
       - main
     paths:
       - 'apps/backend/**'
+      - 'apps/docs/**'
       - 'apps/web/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'turbo.json'
       - '.github/workflows/ci-tests.yml'
+      - '.github/workflows/deploy-workers.yml'
 
 permissions:
   contents: read
@@ -57,3 +61,6 @@ jobs:
 
       - name: Run web server tests
         run: pnpm --filter @apps/web test
+
+      - name: Build docs worker
+        run: pnpm --filter @apps/docs build

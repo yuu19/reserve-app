@@ -4,82 +4,23 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'apps/backend/**'
-      - 'apps/docs/**'
-      - 'apps/web/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'turbo.json'
-      - '.github/workflows/deploy-workers.yml'
   workflow_dispatch:
-    inputs:
-      target:
-        description: Deploy target
-        type: choice
-        options:
-          - all
-          - backend
-          - docs
-          - web
-        default: all
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-workers-${{ github.ref }}
+  group: deploy-workers-production
   cancel-in-progress: false
 
+env:
+  NODE_VERSION: 20
+  PNPM_VERSION: 10.28.2
+
 jobs:
-  changes:
-    name: Detect deploy targets
+  preflight:
+    name: Preflight checks
     runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      docs: ${{ steps.filter.outputs.docs }}
-      web: ${{ steps.filter.outputs.web }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Filter changed paths
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            backend:
-              - 'apps/backend/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - '.github/workflows/deploy-workers.yml'
-            docs:
-              - 'apps/docs/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - '.github/workflows/deploy-workers.yml'
-            web:
-              - 'apps/web/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - '.github/workflows/deploy-workers.yml'
-
-  deploy-backend:
-    name: Deploy backend worker
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'backend')) || (github.event_name == 'push' && needs.changes.outputs.backend == 'true') }}
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,35 +28,128 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.28.2
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate backend deploy inputs
-        run: |
-          test -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" || (echo "Missing secret: CLOUDFLARE_ACCOUNT_ID" && exit 1)
-          test -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" || (echo "Missing secret: CLOUDFLARE_API_TOKEN" && exit 1)
-          test -n "${{ secrets.BETTER_AUTH_SECRET }}" || (echo "Missing secret: BETTER_AUTH_SECRET" && exit 1)
-          test -n "${{ secrets.SENTRY_DSN_BACKEND }}" || (echo "Missing secret: SENTRY_DSN_BACKEND" && exit 1)
-          test -n "${{ vars.BETTER_AUTH_URL }}" || (echo "Missing variable: BETTER_AUTH_URL" && exit 1)
-          test -n "${{ vars.BETTER_AUTH_TRUSTED_ORIGINS }}" || (echo "Missing variable: BETTER_AUTH_TRUSTED_ORIGINS" && exit 1)
-          test -n "${{ vars.BETTER_AUTH_COOKIE_DOMAIN }}" || (echo "Missing variable: BETTER_AUTH_COOKIE_DOMAIN" && exit 1)
-          test -n "${{ vars.SENTRY_ENVIRONMENT }}" || (echo "Missing variable: SENTRY_ENVIRONMENT" && exit 1)
+      - name: Run backend tests
+        run: pnpm --filter @apps/backend test
 
-      - name: Sync BETTER_AUTH_SECRET
-        run: |
-          printf '%s' "${{ secrets.BETTER_AUTH_SECRET }}" | pnpm --filter @apps/backend exec wrangler secret put BETTER_AUTH_SECRET
+      - name: Run web server tests
+        run: pnpm --filter @apps/web test
 
-      - name: Sync SENTRY_DSN_BACKEND
+      - name: Build backend worker
+        run: pnpm --filter @apps/backend build
+
+      - name: Build web worker
+        run: pnpm --filter @apps/web build
+
+      - name: Build docs worker
+        run: pnpm --filter @apps/docs build
+
+  deploy:
+    name: Deploy production workers
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+    environment: production
+    env:
+      BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      PUBLIC_SENTRY_DSN_WEB: ${{ vars.PUBLIC_SENTRY_DSN_WEB }}
+      PUBLIC_SENTRY_ENVIRONMENT: ${{ vars.PUBLIC_SENTRY_ENVIRONMENT }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_DSN_BACKEND: ${{ secrets.SENTRY_DSN_BACKEND }}
+      SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+      SENTRY_PROJECT_WEB: ${{ vars.SENTRY_PROJECT_WEB }}
+      SERVICE_IMAGE_UPLOAD_SIGNING_SECRET: ${{ secrets.SERVICE_IMAGE_UPLOAD_SIGNING_SECRET }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate production deploy inputs
         run: |
-          printf '%s' "${{ secrets.SENTRY_DSN_BACKEND }}" | pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
+          required_names=(
+            BETTER_AUTH_SECRET
+            CLOUDFLARE_ACCOUNT_ID
+            CLOUDFLARE_API_TOKEN
+            PUBLIC_SENTRY_DSN_WEB
+            PUBLIC_SENTRY_ENVIRONMENT
+            RESEND_API_KEY
+            RESEND_FROM_EMAIL
+            SENTRY_AUTH_TOKEN
+            SENTRY_DSN_BACKEND
+            SENTRY_ORG
+            SENTRY_PROJECT_WEB
+            STRIPE_SECRET_KEY
+            STRIPE_WEBHOOK_SECRET
+          )
+
+          for name in "${required_names[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required deploy secret or variable: ${name}"
+              exit 1
+            fi
+          done
+
+          if [ -n "${GOOGLE_CLIENT_ID}" ] && [ -z "${GOOGLE_CLIENT_SECRET}" ]; then
+            echo "GOOGLE_CLIENT_SECRET is required when GOOGLE_CLIENT_ID is set."
+            exit 1
+          fi
+
+          if [ -z "${GOOGLE_CLIENT_ID}" ] && [ -n "${GOOGLE_CLIENT_SECRET}" ]; then
+            echo "GOOGLE_CLIENT_ID is required when GOOGLE_CLIENT_SECRET is set."
+            exit 1
+          fi
+
+      - name: Verify Cloudflare authentication
+        run: pnpm --filter @apps/backend exec wrangler whoami
+
+      - name: Sync backend secrets
+        run: |
+          printf '%s' "${BETTER_AUTH_SECRET}" | pnpm --filter @apps/backend exec wrangler secret put BETTER_AUTH_SECRET
+          printf '%s' "${RESEND_API_KEY}" | pnpm --filter @apps/backend exec wrangler secret put RESEND_API_KEY
+          printf '%s' "${RESEND_FROM_EMAIL}" | pnpm --filter @apps/backend exec wrangler secret put RESEND_FROM_EMAIL
+          printf '%s' "${STRIPE_SECRET_KEY}" | pnpm --filter @apps/backend exec wrangler secret put STRIPE_SECRET_KEY
+          printf '%s' "${STRIPE_WEBHOOK_SECRET}" | pnpm --filter @apps/backend exec wrangler secret put STRIPE_WEBHOOK_SECRET
+          printf '%s' "${SENTRY_DSN_BACKEND}" | pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
+
+          if [ -n "${GOOGLE_CLIENT_ID}" ]; then
+            printf '%s' "${GOOGLE_CLIENT_ID}" | pnpm --filter @apps/backend exec wrangler secret put GOOGLE_CLIENT_ID
+            printf '%s' "${GOOGLE_CLIENT_SECRET}" | pnpm --filter @apps/backend exec wrangler secret put GOOGLE_CLIENT_SECRET
+          fi
+
+          if [ -n "${SERVICE_IMAGE_UPLOAD_SIGNING_SECRET}" ]; then
+            printf '%s' "${SERVICE_IMAGE_UPLOAD_SIGNING_SECRET}" | pnpm --filter @apps/backend exec wrangler secret put SERVICE_IMAGE_UPLOAD_SIGNING_SECRET
+          fi
 
       - name: Run D1 migrations (remote)
         run: pnpm --filter @apps/backend run d1:migrate:remote
@@ -123,103 +157,23 @@ jobs:
       - name: Deploy backend worker
         run: |
           pnpm --filter @apps/backend exec wrangler deploy \
-            --keep-vars \
-            --var "BETTER_AUTH_URL:${{ vars.BETTER_AUTH_URL }}" \
-            --var "BETTER_AUTH_TRUSTED_ORIGINS:${{ vars.BETTER_AUTH_TRUSTED_ORIGINS }}" \
-            --var "BETTER_AUTH_COOKIE_DOMAIN:${{ vars.BETTER_AUTH_COOKIE_DOMAIN }}" \
-            --var "SENTRY_ENVIRONMENT:${{ vars.SENTRY_ENVIRONMENT }}" \
-            --var "SENTRY_RELEASE:${{ github.sha }}"
+            --var "SENTRY_RELEASE:${GITHUB_SHA}"
 
-  deploy-web:
-    name: Deploy web worker
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-      - deploy-backend
-    if: ${{ ((github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'web')) || (github.event_name == 'push' && needs.changes.outputs.web == 'true')) && (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped') }}
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.28.2
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate web deploy inputs
-        run: |
-          test -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" || (echo "Missing secret: CLOUDFLARE_ACCOUNT_ID" && exit 1)
-          test -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" || (echo "Missing secret: CLOUDFLARE_API_TOKEN" && exit 1)
-          test -n "${{ secrets.SENTRY_AUTH_TOKEN }}" || (echo "Missing secret: SENTRY_AUTH_TOKEN" && exit 1)
-          test -n "${{ vars.SENTRY_ORG }}" || (echo "Missing variable: SENTRY_ORG" && exit 1)
-          test -n "${{ vars.SENTRY_PROJECT_WEB }}" || (echo "Missing variable: SENTRY_PROJECT_WEB" && exit 1)
-          test -n "${{ vars.PUBLIC_BACKEND_URL }}" || (echo "Missing variable: PUBLIC_BACKEND_URL" && exit 1)
-          test -n "${{ vars.PUBLIC_SENTRY_DSN_WEB }}" || (echo "Missing variable: PUBLIC_SENTRY_DSN_WEB" && exit 1)
-          test -n "${{ vars.PUBLIC_SENTRY_ENVIRONMENT }}" || (echo "Missing variable: PUBLIC_SENTRY_ENVIRONMENT" && exit 1)
-
-      - name: Build web worker
+      - name: Build web worker with Sentry release
         env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT_WEB }}
+          SENTRY_PROJECT: ${{ env.SENTRY_PROJECT_WEB }}
           SENTRY_RELEASE: ${{ github.sha }}
         run: pnpm --filter @apps/web build
 
       - name: Deploy web worker
         run: |
           pnpm --filter @apps/web exec wrangler deploy \
-            --keep-vars \
-            --var "PUBLIC_BACKEND_URL:${{ vars.PUBLIC_BACKEND_URL }}" \
-            --var "PUBLIC_SENTRY_DSN_WEB:${{ vars.PUBLIC_SENTRY_DSN_WEB }}" \
-            --var "PUBLIC_SENTRY_ENVIRONMENT:${{ vars.PUBLIC_SENTRY_ENVIRONMENT }}" \
-            --var "PUBLIC_SENTRY_RELEASE:${{ github.sha }}"
-
-  deploy-docs:
-    name: Deploy docs worker
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'docs')) || (github.event_name == 'push' && needs.changes.outputs.docs == 'true') }}
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.27.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate docs deploy inputs
-        run: |
-          test -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" || (echo "Missing secret: CLOUDFLARE_ACCOUNT_ID" && exit 1)
-          test -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" || (echo "Missing secret: CLOUDFLARE_API_TOKEN" && exit 1)
+            --var "PUBLIC_SENTRY_DSN_WEB:${PUBLIC_SENTRY_DSN_WEB}" \
+            --var "PUBLIC_SENTRY_ENVIRONMENT:${PUBLIC_SENTRY_ENVIRONMENT}" \
+            --var "PUBLIC_SENTRY_RELEASE:${GITHUB_SHA}"
 
       - name: Build docs worker
         run: pnpm --filter @apps/docs build
 
       - name: Deploy docs worker
-        run: pnpm --filter @apps/docs exec wrangler deploy --keep-vars
+        run: pnpm --filter @apps/docs exec wrangler deploy
