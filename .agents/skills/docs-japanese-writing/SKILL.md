@@ -1,34 +1,34 @@
 ---
 name: docs-japanese-writing
-description: Write, edit, or review Japanese documentation under /docs with business-domain wording first and implementation identifiers second. Use when the user asks to create, revise, proofread, or standardize docs/README-style documentation, operational guides, deployment notes, or product behavior documents in this repository.
+description: /docs 配下の日本語ドキュメント、README 系文書、運用ガイド、デプロイメモ、プロダクト挙動説明を作成・改訂・校正・表記統一する。業務ドメインの言葉で対象・状態・操作・結果を先に説明し、実装識別子を補足として後置する必要があるときに使用する。
 ---
 
-# Docs Japanese Writing
+# docs 日本語ライティング
 
-## Core Rule
+## 基本方針
 
-Write `/docs` documentation around business targets, states, and operations in Japanese. Explain behavior first. Put implementation identifiers only where they help the reader connect the behavior to code or operations.
+`/docs` のドキュメントは、業務上の対象、状態、操作、結果を軸に日本語で書く。まず読者に見える挙動を説明する。実装識別子は、その挙動とコードや運用を結びつける助けになる場合にだけ補足として置く。
 
-## Writing Guidelines
+## 執筆ルール
 
-- Center the main text on業務上の対象, 状態, 操作, and結果.
-- Prefer Japanese when the business meaning is clear in Japanese.
-- Do not make English concept words the center of the prose, except for required proper nouns such as external service names, public API names, and event names.
-- Keep DB table names, column names, event names, and API parameter names out of the main sentence when possible.
-- Explain behavior first, then add implementation identifiers as supporting notes.
-- Use English alongside Japanese, or keep original English, for industry-standard terms or concepts where translation may cause confusion.
-- Keep sentences short. Do not pack target, condition, result, and exception into one sentence.
+- 本文の中心は、業務上の対象、状態、操作、結果にする。
+- 業務上の意味が日本語で明確に伝わる場合は、日本語を優先する。
+- 外部サービス名、公開 API 名、イベント名など必要な固有名詞を除き、英語の概念語を文章の中心にしない。
+- DB テーブル名、カラム名、イベント名、API パラメータ名は、可能な限り本文の主文から外す。
+- まず挙動を説明し、その後に実装識別子を補足情報として加える。
+- 業界標準の用語や、訳すと誤解が生じやすい概念は、日本語に英語を併記するか原語のまま残す。
+- 文は短くする。対象、条件、結果、例外を 1 文に詰め込まない。
 
-## Structure Pattern
+## 構成パターン
 
-Use this order when it fits the document:
+文書に合う場合は、次の順序で書く。
 
-1. State what happens in business terms.
-2. State who or what is affected.
-3. State conditions and exceptions in separate short sentences.
-4. Add implementation notes only after the behavior is clear.
+1. 業務上の言葉で何が起きるかを書く。
+2. 誰、または何に影響するかを書く。
+3. 条件と例外を短い文で分けて書く。
+4. 挙動が明確になった後にだけ実装メモを加える。
 
-Example:
+例:
 
 ```markdown
 契約状態が有効な組織では、予約運用の拡張機能を利用できます。
@@ -39,19 +39,19 @@ Example:
 - API は `organizationId` を受け取り、対象組織の権限を確認します。
 ```
 
-## Avoid
+## 避ける書き方
 
-- Avoid starting a section with table names, column names, or API parameters before explaining the behavior.
-- Avoid prose that reads as translated English when a natural Japanese business phrase exists.
-- Avoid long sentences that combine normal behavior, failure behavior, storage location, and identifiers.
-- Avoid using implementation identifiers as the only explanation of business meaning.
+- 挙動を説明する前に、テーブル名、カラム名、API パラメータ名から節を始めない。
+- 自然な日本語の業務表現がある場合は、翻訳調の文章にしない。
+- 通常時の挙動、失敗時の挙動、保存先、識別子を 1 つの長い文にまとめない。
+- 実装識別子だけで業務上の意味を説明したことにしない。
 
-## Review Checklist
+## レビューチェックリスト
 
-Before finishing, check:
+完了前に次を確認する。
 
-- The first explanation says what happens, not where a value is stored.
-- Business readers can understand the state or operation without knowing DB/API names.
-- Necessary identifiers are present only as supplements or implementation notes.
-- Exceptions are separated into short sentences.
-- Proper nouns and industry-standard terms are left in English only when that improves accuracy.
+- 最初の説明が、値の保存場所ではなく「何が起きるか」を述べている。
+- 業務読者が DB 名や API 名を知らなくても、状態や操作を理解できる。
+- 必要な識別子は、補足または実装メモとしてのみ登場している。
+- 例外が短い文で分離されている。
+- 固有名詞や業界標準用語は、正確性が上がる場合にだけ英語のまま残している。
