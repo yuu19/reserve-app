@@ -64,6 +64,8 @@ export type BackendWorkerEnv = AuthRuntimeEnv & {
   STRIPE_PREMIUM_MONTHLY_PRICE_ID?: string;
   STRIPE_PREMIUM_YEARLY_PRICE_ID?: string;
   STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED?: string;
+  E2E_TESTING_ENABLED?: string;
+  E2E_TEST_SECRET?: string;
   ORG_LOGO_BUCKET?: R2BucketBinding;
   SERVICE_IMAGE_BUCKET?: R2BucketBinding;
   IMAGES?: ImagesBinding;

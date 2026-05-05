@@ -279,11 +279,13 @@ const getStripeJson = async ({
 export const createCustomer = async ({
   env,
   name,
+  testClockId,
   idempotencyKey,
   metadata,
 }: {
   env: AuthRuntimeEnv;
   name?: string;
+  testClockId?: string | null;
   idempotencyKey?: string;
   metadata?: Record<string, string>;
 }): Promise<{ id: string }> => {
@@ -291,6 +293,10 @@ export const createCustomer = async ({
 
   if (name) {
     params.set('name', name);
+  }
+
+  if (testClockId?.trim()) {
+    params.set('test_clock', testClockId.trim());
   }
 
   if (metadata) {

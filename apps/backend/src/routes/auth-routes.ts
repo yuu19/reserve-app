@@ -102,6 +102,31 @@ const getIpAddress = (headers: Headers): string | null => {
   return first?.trim() ?? null;
 };
 
+export const resolveE2eStripeTestClockId = ({
+  env,
+  headers,
+}: {
+  env: { E2E_TESTING_ENABLED?: string; E2E_TEST_SECRET?: string };
+  headers: Headers;
+}): string | null => {
+  if (env.E2E_TESTING_ENABLED !== 'true') {
+    return null;
+  }
+
+  const expectedSecret = env.E2E_TEST_SECRET?.trim();
+  if (!expectedSecret) {
+    return null;
+  }
+
+  const receivedSecret = headers.get('x-e2e-test-secret')?.trim();
+  if (receivedSecret !== expectedSecret) {
+    return null;
+  }
+
+  const testClockId = headers.get('x-e2e-stripe-test-clock-id')?.trim();
+  return testClockId?.startsWith('clock_') ? testClockId : null;
+};
+
 const getActiveOrganizationId = (session: unknown): string | null => {
   if (typeof session !== 'object' || session === null) {
     return null;
@@ -3560,6 +3585,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         organizationId,
       });
       const defaultTrialPrice = resolveDefaultPremiumTrialPriceConfig();
+      const e2eStripeTestClockId = resolveE2eStripeTestClockId({
+        env,
+        headers: c.req.raw.headers,
+      });
       let stripeCustomerId = billing?.stripeCustomerId ?? null;
       let stripeSubscriptionId: string | null = null;
       let stripePriceId: string | null = null;
@@ -3571,6 +3600,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         if (!stripeCustomerId) {
           const customer = await createCustomer({
             env,
+            testClockId: e2eStripeTestClockId,
             idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
             metadata: {
               billingPurpose: 'organization_trial',

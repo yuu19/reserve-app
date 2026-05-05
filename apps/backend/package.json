@@ -22,7 +22,8 @@
     "db:generate": "drizzle-kit generate",
     "clean": "rm -rf dist .turbo",
     "start": "wrangler dev --local --port 3000",
-    "dev:e2e": "pnpm run d1:migrate:e2e && XDG_CONFIG_HOME=../../.wrangler/e2e/config wrangler dev --local --port 3000 --persist-to ../../.wrangler/e2e --env-file .dev.vars.example --show-interactive-dev-session=false"
+    "dev:e2e": "pnpm run d1:migrate:e2e && XDG_CONFIG_HOME=../../.wrangler/e2e/config wrangler dev --local --port 3000 --persist-to ../../.wrangler/e2e --env-file .dev.vars.example --show-interactive-dev-session=false",
+    "dev:e2e:stripe": "pnpm run d1:migrate:e2e && XDG_CONFIG_HOME=../../.wrangler/e2e/config wrangler dev --local --port 3000 --persist-to ../../.wrangler/e2e --env-file ${E2E_BACKEND_ENV_FILE:-.dev.vars.e2e} --show-interactive-dev-session=false"
   },
   "dependencies": {
     "@better-auth/expo": "^1.4.18",

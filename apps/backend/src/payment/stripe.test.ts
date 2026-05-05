@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createBillingPortalSession,
+  createCustomer,
   createSubscriptionCheckoutSession,
   readStripeSubscriptionSummary,
 } from './stripe.js';
@@ -117,6 +118,44 @@ describe('Stripe billing adapter', () => {
     expect(params.get('flow_data[after_completion][redirect][return_url]')).toBe(
       'https://example.com/contracts?subscription=success',
     );
+  });
+
+  it('can attach an E2E-only test clock when creating Stripe customers', async () => {
+    let capturedBody = '';
+    let capturedHeaders: HeadersInit | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      capturedBody = typeof init?.body === 'string' ? init.body : '';
+      capturedHeaders = init?.headers;
+      return new Response(
+        JSON.stringify({
+          id: 'cus_test_clock',
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    });
+
+    await expect(
+      createCustomer({
+        env,
+        testClockId: 'clock_e2e',
+        idempotencyKey: 'billing-operation-123:customer',
+        metadata: {
+          organizationId: 'org_123',
+        },
+      }),
+    ).resolves.toEqual({
+      id: 'cus_test_clock',
+    });
+
+    const params = new URLSearchParams(capturedBody);
+    expect(readHeader(capturedHeaders, 'idempotency-key')).toBe(
+      'billing-operation-123:customer',
+    );
+    expect(params.get('test_clock')).toBe('clock_e2e');
+    expect(params.get('metadata[organizationId]')).toBe('org_123');
   });
 
   it('normalizes provider subscription summaries without exposing raw Stripe payloads', () => {
