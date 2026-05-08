@@ -46,6 +46,22 @@ export type OrganizationBillingPayload = {
 	currentPeriodEnd: string | null;
 	paymentIssueStartedAt?: string | null;
 	pastDueGraceEndsAt?: string | null;
+	paymentIssueState?:
+		| 'none'
+		| 'payment_failed'
+		| 'payment_action_required'
+		| 'past_due_grace_active'
+		| 'past_due_grace_expired'
+		| 'unpaid'
+		| 'incomplete'
+		| 'recovered'
+		| 'stale_failure_history_only';
+	paymentIssueTiming?: {
+		issueStartedAt: string | null;
+		issueStartedAtSource: 'provider_issue_time' | 'application_receipt_time' | 'none';
+		graceEndsAt: string | null;
+	};
+	nextOwnerAction?: string | null;
 	lastReconciledAt?: string | null;
 	lastReconciliationReason?: string | null;
 	trialEndsAt: string | null;

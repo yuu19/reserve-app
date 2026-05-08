@@ -58,7 +58,15 @@ const createBillingFixture = (overrides: Record<string, unknown> = {}) => ({
 	cancelAtPeriodEnd: false,
 	currentPeriodEnd: null,
 	trialEndsAt: null,
+	paymentIssueStartedAt: null,
 	pastDueGraceEndsAt: null,
+	paymentIssueState: 'none',
+	paymentIssueTiming: {
+		issueStartedAt: null,
+		issueStartedAtSource: 'none',
+		graceEndsAt: null
+	},
+	nextOwnerAction: 'start_trial',
 	paymentMethodStatus: 'not_started',
 	paidTier: null,
 	canViewBilling: true,
@@ -94,6 +102,62 @@ const createBillingFixture = (overrides: Record<string, unknown> = {}) => ({
 	invoicePaymentEvents: [],
 	...overrides
 });
+
+const createPaymentIssueBillingFixture = (overrides: Record<string, unknown> = {}) =>
+	createBillingFixture({
+		planCode: 'premium',
+		planState: 'premium_paid',
+		paidTier: {
+			code: 'premium_default',
+			label: 'Premium',
+			resolution: 'legacy_default',
+			capabilities: ['organization_premium_features']
+		},
+		billingInterval: 'month',
+		subscriptionStatus: 'past_due',
+		currentPeriodEnd: '2026-06-01T00:00:00.000Z',
+		paymentIssueStartedAt: '2026-05-01T00:00:00.000Z',
+		pastDueGraceEndsAt: '2026-05-08T00:00:00.000Z',
+		paymentIssueState: 'past_due_grace_active',
+		paymentIssueTiming: {
+			issueStartedAt: '2026-05-01T00:00:00.000Z',
+			issueStartedAtSource: 'provider_issue_time',
+			graceEndsAt: '2026-05-08T00:00:00.000Z'
+		},
+		nextOwnerAction: 'update_payment_method',
+		paymentMethodStatus: 'registered',
+		actionAvailability: {
+			canStartTrial: false,
+			canStartPaidCheckout: false,
+			canRegisterPaymentMethod: true,
+			canOpenBillingPortal: true,
+			trialUsed: true,
+			availableIntervals: ['month', 'year'],
+			nextOwnerAction: 'update_payment_method',
+			readOnlyReason: null
+		},
+		invoicePaymentEvents: [
+			{
+				id: 'invoice-event-payment-failed',
+				eventType: 'payment_failed',
+				stripeEventId: 'evt_payment_failed',
+				ownerFacingStatus: 'failed',
+				occurredAt: '2026-05-01T00:00:00.000Z'
+			}
+		],
+		history: [
+			{
+				id: 'history-payment-failed',
+				eventType: 'payment_issue',
+				occurredAt: '2026-05-01T00:00:00.000Z',
+				title: '支払いを完了できませんでした',
+				summary: '契約ページから支払い方法または請求状況を確認してください。',
+				billingContext: '契約状態: Premiumプラン / ステータス: 支払い遅延 / 支払い方法: 登録済み',
+				tone: 'warning'
+			}
+		],
+		...overrides
+	});
 
 describe('/contracts/+page.svelte', () => {
 	beforeEach(() => {
@@ -594,6 +658,127 @@ describe('/contracts/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
+	it('renders owner payment issue guidance for failed state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture({
+				subscriptionStatus: 'active',
+				paymentIssueState: 'payment_failed',
+				pastDueGraceEndsAt: null,
+				paymentIssueTiming: {
+					issueStartedAt: '2026-05-01T00:00:00.000Z',
+					issueStartedAtSource: 'provider_issue_time',
+					graceEndsAt: null
+				},
+				history: []
+			})
+		});
+
+		render(ContractsPage);
+
+		await expect.element(page.getByText('支払いを完了できませんでした')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('契約ページから支払い方法または請求状況を確認してください。'))
+			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'プランを変更' })).toBeInTheDocument();
+	});
+
+	it('renders owner payment issue guidance for action-required state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture({
+				subscriptionStatus: 'active',
+				paymentIssueState: 'payment_action_required',
+				history: []
+			})
+		});
+
+		render(ContractsPage);
+
+		await expect.element(page.getByText('支払い方法の認証が必要です')).toBeInTheDocument();
+	});
+
+	it('renders past-due grace payment issue state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture()
+		});
+
+		render(ContractsPage);
+
+		await expect.element(page.getByText(/支払い遅延の猶予期間中です/)).toBeInTheDocument();
+		await expect.element(page.getByText(/猶予期限/)).toBeInTheDocument();
+	});
+
+	it('renders expired past-due grace payment issue state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture({
+				paymentIssueState: 'past_due_grace_expired',
+				pastDueGraceEndsAt: '2026-05-01T00:00:00.000Z',
+				paymentIssueTiming: {
+					issueStartedAt: '2026-04-24T00:00:00.000Z',
+					issueStartedAtSource: 'provider_issue_time',
+					graceEndsAt: '2026-05-01T00:00:00.000Z'
+				}
+			})
+		});
+		render(ContractsPage);
+		await expect.element(page.getByText('支払い遅延の猶予期限を過ぎています')).toBeInTheDocument();
+	});
+
+	it('renders unpaid payment issue state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture({
+				subscriptionStatus: 'unpaid',
+				paymentIssueState: 'unpaid'
+			})
+		});
+		render(ContractsPage);
+		await expect.element(page.getByText(/未払い状態のため Premium 機能は停止/)).toBeInTheDocument();
+	});
+
+	it('renders incomplete payment issue state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture({
+				subscriptionStatus: 'incomplete',
+				paymentIssueState: 'incomplete'
+			})
+		});
+		render(ContractsPage);
+		await expect.element(page.getByText(/契約処理が未完了/)).toBeInTheDocument();
+	});
+
+	it('renders recovered payment issue state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture({
+				subscriptionStatus: 'active',
+				paymentIssueState: 'recovered',
+				history: []
+			})
+		});
+		render(ContractsPage);
+		await expect.element(page.getByText('支払い問題は解消済みです')).toBeInTheDocument();
+	});
+
+	it('renders stale-history-only payment issue state', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture({
+				subscriptionStatus: 'active',
+				paymentIssueState: 'stale_failure_history_only'
+			})
+		});
+		render(ContractsPage);
+		await expect
+			.element(page.getByText('古い支払い失敗通知を履歴として保持しています'))
+			.toBeInTheDocument();
+		await expect.element(page.getByText('支払いを完了できませんでした')).toBeInTheDocument();
+	});
+
 	it('should show payment method status to read-only admins without exposing owner action', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
@@ -693,6 +878,30 @@ describe('/contracts/+page.svelte', () => {
 		await expect
 			.element(page.getByRole('button', { name: 'プランを変更' }))
 			.not.toBeInTheDocument();
+	});
+
+	it('does not expose payment issue notification recipient details on the contract page', async () => {
+		mocks.loadOrganizationBilling.mockResolvedValue({
+			ok: true,
+			billing: createPaymentIssueBillingFixture({
+				canManageBilling: false,
+				notificationRecipients: [
+					{
+						recipientUserId: 'owner-1',
+						recipientEmail: 'billing-owner@example.com',
+						deliveryState: 'failed',
+						retryEligible: true,
+						failureReason: 'resend_delivery_failed'
+					}
+				]
+			})
+		});
+
+		render(ContractsPage);
+
+		await expect.element(page.getByText(/支払い遅延の猶予期間中です/)).toBeInTheDocument();
+		await expect.element(page.getByText('billing-owner@example.com')).not.toBeInTheDocument();
+		await expect.element(page.getByText('resend_delivery_failed')).not.toBeInTheDocument();
 	});
 
 	it('renders trial-used free checkout choices and hides duplicate trial entry', async () => {

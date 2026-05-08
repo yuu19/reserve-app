@@ -101,6 +101,22 @@ const resolveRestrictionDescription = (
 	billing: OrganizationBillingPayload | null,
 	restriction: OrganizationPremiumRestrictionPayload
 ) => {
+	if (billing?.paymentIssueState === 'payment_failed') {
+		return `${featureLabel}は Premium対象機能ですが、支払いを完了できなかったため現在は利用できません。契約画面で支払い方法または請求状況を確認してください。`;
+	}
+	if (billing?.paymentIssueState === 'payment_action_required') {
+		return `${featureLabel}は Premium対象機能ですが、支払い方法の認証が必要なため現在は利用できません。契約画面から認証を完了してください。`;
+	}
+	if (billing?.paymentIssueState === 'past_due_grace_expired') {
+		return `${featureLabel}は Premium対象機能ですが、支払い遅延の猶予期限を過ぎたため現在は利用できません。契約画面で支払い方法または請求状況を確認してください。`;
+	}
+	if (billing?.paymentIssueState === 'unpaid') {
+		return `${featureLabel}は Premium対象機能ですが、未払い状態のため現在は利用できません。契約画面で支払い状況を確認してください。`;
+	}
+	if (billing?.paymentIssueState === 'incomplete') {
+		return `${featureLabel}は Premium対象機能ですが、契約処理が未完了のため現在は利用できません。契約画面で checkout または契約管理画面の状態を確認してください。`;
+	}
+
 	switch (restriction.reason) {
 		case 'premium_trial_expired': {
 			const trialEndsAt = formatJaDate(billing?.trialEndsAt ?? restriction.trialEndsAt);
@@ -134,8 +150,15 @@ export const buildPremiumRestrictionNoticeModel = ({
 	restriction: OrganizationPremiumRestrictionPayload;
 }): PremiumRestrictionNoticeModel => {
 	const showContractsAction = Boolean(billing?.canManageBilling);
-	const ownerGuidance =
-		billing?.planState === 'premium_trial'
+	const hasPaymentIssue = Boolean(
+		billing?.paymentIssueState &&
+		billing.paymentIssueState !== 'none' &&
+		billing.paymentIssueState !== 'recovered' &&
+		billing.paymentIssueState !== 'stale_failure_history_only'
+	);
+	const ownerGuidance = hasPaymentIssue
+		? 'organization owner は契約画面で支払い方法、認証、請求状況を確認できます。'
+		: billing?.planState === 'premium_trial'
 			? 'organization owner は契約画面で支払い方法登録状況と契約状態を確認できます。'
 			: 'organization owner は契約画面から 7日間のPremiumトライアル開始や契約状態の確認に進めます。';
 	const readOnlyGuidance =
