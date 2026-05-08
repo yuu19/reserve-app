@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
 	advanceStripeTestClock,
+	createDeclinedStripePaymentMethod,
 	createOwnerOrganization,
 	createStripePaymentMethod,
 	createStripeTestClock,
@@ -10,7 +11,9 @@ import {
 	readBillingSummary,
 	readClockCustomer,
 	readCustomerSubscription,
+	recoverSubscriptionPaymentMethod,
 	replayStripeEvents,
+	replayStripeEventsRepeatedly,
 	setDefaultPaymentMethod,
 	startPremiumTrial
 } from './stripe-test-clock-helpers';
@@ -31,7 +34,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 
 	test('converges from trial to paid after a successful Test Clock renewal', async ({
 		page,
-		request,
+		request
 	}) => {
 		const slug = `billing-e2e-paid-${Date.now()}`;
 		const createdGte = Math.floor(Date.now() / 1000) - 60;
@@ -72,8 +75,11 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			subscriptionId: subscription.id,
 			createdGte
 		});
-		await replayStripeEvents(request, events);
-		await replayStripeEvents(request, events);
+		await replayStripeEventsRepeatedly({
+			request,
+			events,
+			repeatCount: 5
+		});
 
 		await expect
 			.poll(async () => readBillingSummary({ request, organizationId }), {
@@ -93,7 +99,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 
 	test('surfaces payment issue state after a failed Test Clock renewal', async ({
 		page,
-		request,
+		request
 	}) => {
 		const slug = `billing-e2e-failed-${Date.now()}`;
 		const createdGte = Math.floor(Date.now() / 1000) - 60;
@@ -136,7 +142,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 		);
 
 		const activeSubscription = await readCustomerSubscription(customer.id);
-		const declinedPaymentMethodId = await createStripePaymentMethod('tok_chargeDeclined');
+		const declinedPaymentMethodId = await createDeclinedStripePaymentMethod();
 		await setDefaultPaymentMethod({
 			customerId: customer.id,
 			subscriptionId: activeSubscription.id,
@@ -169,6 +175,33 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 
 		await openContractsPage(page);
 		await expect(page.getByText(/支払い|未払い|Premium 機能/)).toBeVisible();
+
+		await recoverSubscriptionPaymentMethod({
+			customerId: customer.id,
+			subscriptionId: activeSubscription.id
+		});
+		await replayStripeEventsRepeatedly({
+			request,
+			events: await listBillingEvents({
+				clockId: clock.id,
+				customerId: customer.id,
+				subscriptionId: activeSubscription.id,
+				createdGte
+			}),
+			repeatCount: 5
+		});
+
+		await expect
+			.poll(async () => readBillingSummary({ request, organizationId }), {
+				timeout: 30_000,
+				intervals: [1_000, 2_000, 5_000]
+			})
+			.toMatchObject({
+				planCode: 'premium',
+				planState: 'premium_paid',
+				subscriptionStatus: 'active',
+				paymentIssueState: 'recovered'
+			});
 	});
 
 	test('returns to free when a trial ends without a payment method', async ({ page, request }) => {
