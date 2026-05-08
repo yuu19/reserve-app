@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  resolveOrganizationBillingPaymentIssueState,
+  resolveOrganizationBillingPaymentIssueTiming,
+} from './organization-billing.js';
+import {
   resolveOrganizationBillingPaidTier,
   resolveOrganizationPremiumEntitlementPolicy,
 } from './organization-billing-policy.js';
@@ -179,6 +183,72 @@ describe('organization billing premium entitlement policy', () => {
         reason,
       });
     }
+  });
+
+  it('classifies payment issue timing from provider timestamps and application receipt fallback', () => {
+    expect(
+      resolveOrganizationBillingPaymentIssueTiming({
+        paymentIssueStartedAt: '2026-05-01T09:00:00.000Z',
+        providerIssueStartedAt: '2026-05-01T09:00:00.000Z',
+        pastDueGraceEndsAt: '2026-05-08T09:00:00.000Z',
+      }),
+    ).toEqual({
+      issueStartedAt: '2026-05-01T09:00:00.000Z',
+      issueStartedAtSource: 'provider_issue_time',
+      graceEndsAt: '2026-05-08T09:00:00.000Z',
+    });
+
+    expect(
+      resolveOrganizationBillingPaymentIssueTiming({
+        paymentIssueStartedAt: '2026-05-01T09:05:00.000Z',
+        providerIssueStartedAt: null,
+        pastDueGraceEndsAt: '2026-05-08T09:05:00.000Z',
+      }),
+    ).toEqual({
+      issueStartedAt: '2026-05-01T09:05:00.000Z',
+      issueStartedAtSource: 'application_receipt_time',
+      graceEndsAt: '2026-05-08T09:05:00.000Z',
+    });
+  });
+
+  it('classifies unresolved, recovered, and stale payment issue states', () => {
+    expect(
+      resolveOrganizationBillingPaymentIssueState({
+        subscriptionStatus: 'past_due',
+        entitlementReason: 'premium_paid_past_due_grace_active',
+        latestPaymentIssueEventType: 'payment_failed',
+      }),
+    ).toBe('past_due_grace_active');
+    expect(
+      resolveOrganizationBillingPaymentIssueState({
+        subscriptionStatus: 'past_due',
+        entitlementReason: 'premium_paid_past_due_grace_expired',
+        latestPaymentIssueEventType: 'payment_failed',
+      }),
+    ).toBe('past_due_grace_expired');
+    expect(
+      resolveOrganizationBillingPaymentIssueState({
+        subscriptionStatus: 'unpaid',
+      }),
+    ).toBe('unpaid');
+    expect(
+      resolveOrganizationBillingPaymentIssueState({
+        subscriptionStatus: 'incomplete',
+      }),
+    ).toBe('incomplete');
+    expect(
+      resolveOrganizationBillingPaymentIssueState({
+        subscriptionStatus: 'active',
+        latestPaymentIssueEventType: 'payment_succeeded',
+        hasRecoveredPaymentIssueHistory: true,
+      }),
+    ).toBe('recovered');
+    expect(
+      resolveOrganizationBillingPaymentIssueState({
+        subscriptionStatus: 'active',
+        hasStaleFailureHistory: true,
+      }),
+    ).toBe('stale_failure_history_only');
   });
 
   it('keeps scheduled period-end cancellation eligible until provider state changes', () => {

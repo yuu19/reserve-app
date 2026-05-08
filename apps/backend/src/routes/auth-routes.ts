@@ -20,11 +20,15 @@ import {
   ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
   resolveOrganizationBillingActionAvailability,
   resolveOrganizationBillingPaymentMethodStatus,
+  resolveOrganizationBillingPaymentIssueState,
+  resolveOrganizationBillingPaymentIssueTiming,
   resolveOrganizationBillingProfileReadiness,
   selectOrganizationBillingSummary,
   startOrganizationPremiumTrial,
   updateOrganizationBillingStripeCustomerId,
+  type OrganizationBillingSubscriptionStatus,
 } from '../billing/organization-billing.js';
+import type { OrganizationBillingInvoicePaymentEvent } from '../billing/organization-billing-invoice-events.js';
 import { buildBillingDocumentReadiness } from '../billing/organization-billing-documents.js';
 import {
   readOrganizationBillingDocumentReferences,
@@ -476,6 +480,24 @@ const organizationBillingInvoicePaymentEventSchema = z.object({
   createdAt: z.string().nullable(),
 });
 
+const organizationBillingPaymentIssueStateSchema = z.enum([
+  'none',
+  'payment_failed',
+  'payment_action_required',
+  'past_due_grace_active',
+  'past_due_grace_expired',
+  'unpaid',
+  'incomplete',
+  'recovered',
+  'stale_failure_history_only',
+]);
+
+const organizationBillingPaymentIssueTimingSchema = z.object({
+  issueStartedAt: z.string().nullable(),
+  issueStartedAtSource: z.enum(['provider_issue_time', 'application_receipt_time', 'none']),
+  graceEndsAt: z.string().nullable(),
+});
+
 const organizationBillingSummarySchema = z.object({
   organizationId: z.string().min(1),
   planCode: z.enum(['free', 'premium']),
@@ -489,6 +511,9 @@ const organizationBillingSummarySchema = z.object({
   currentPeriodEnd: z.string().nullable(),
   paymentIssueStartedAt: z.string().nullable(),
   pastDueGraceEndsAt: z.string().nullable(),
+  paymentIssueState: organizationBillingPaymentIssueStateSchema,
+  paymentIssueTiming: organizationBillingPaymentIssueTimingSchema,
+  nextOwnerAction: z.string().nullable(),
   lastReconciledAt: z.string().nullable(),
   lastReconciliationReason: z.string().nullable(),
   trialEndsAt: z.string().nullable(),
@@ -707,11 +732,18 @@ const internalBillingInspectionReconciliationSchema = z.object({
 
 const internalBillingInspectionNotificationHistoryEntrySchema = z.object({
   sequenceNumber: z.number().int().nonnegative(),
-  notificationKind: z.enum(['trial_will_end_email', 'trial_will_end', 'unknown']),
+  notificationKind: z.enum([
+    'trial_will_end_email',
+    'trial_will_end',
+    'payment_failed_email',
+    'payment_action_required_email',
+    'past_due_grace_reminder_email',
+    'unknown',
+  ]),
   communicationType: z.enum(['trial_will_end', 'payment_issue', 'unknown']),
   channel: z.enum(['email', 'in_app', 'web_push', 'unknown']),
   channelLabel: z.string().min(1),
-  deliveryState: z.enum(['requested', 'retried', 'sent', 'failed', 'unknown']),
+  deliveryState: z.enum(['requested', 'retried', 'sent', 'failed', 'skipped', 'unknown']),
   deliveryOutcome: z.enum(['pending', 'delivered', 'failed', 'unknown']),
   attemptNumber: z.number().int().positive(),
   stripeEventId: z.string().min(1).nullable(),
@@ -748,6 +780,26 @@ const internalBillingInspectionReminderDeliverySchema = z.object({
 
 const internalBillingInspectionNotificationsSchema = z.object({
   reminderDelivery: internalBillingInspectionReminderDeliverySchema,
+});
+
+const internalPaymentIssueNotificationRecipientSchema = z.object({
+  recipientUserId: z.string().min(1).nullable(),
+  recipientEmail: z.string().min(1).nullable(),
+  deliveryState: z.enum(['requested', 'retried', 'sent', 'failed', 'skipped']),
+  retryEligible: z.boolean(),
+  failureReason: z.string().min(1).nullable(),
+});
+
+const internalPaymentIssueSupportSignalSchema = z.object({
+  reason: z.string().min(1),
+  status: z.string().min(1),
+});
+
+const internalPaymentIssueInspectionSchema = z.object({
+  paymentIssueState: organizationBillingPaymentIssueStateSchema,
+  notificationRecipients: z.array(internalPaymentIssueNotificationRecipientSchema),
+  staleFailureEvents: z.array(organizationBillingInvoicePaymentEventSchema),
+  supportSignals: z.array(internalPaymentIssueSupportSignalSchema),
 });
 
 const internalBillingInspectionPaymentDocumentsSchema = z.object({
@@ -807,7 +859,9 @@ const internalBillingInspectionTimelineEntrySchema = z.object({
     .enum(['reconciliation', 'notification_delivery', 'billing_profile', 'security_audit'])
     .nullable(),
   signalStatus: z.enum(['pending', 'mismatch', 'unavailable', 'resolved']).nullable(),
-  deliveryState: z.enum(['requested', 'retried', 'sent', 'failed', 'unknown']).nullable(),
+  deliveryState: z
+    .enum(['requested', 'retried', 'sent', 'failed', 'skipped', 'unknown'])
+    .nullable(),
   webhookEventType: z.string().min(1).nullable(),
   webhookProcessingStatus: z.enum(['processing', 'processed', 'failed']).nullable(),
   webhookFailureStage: z.string().min(1).nullable(),
@@ -829,6 +883,7 @@ const internalBillingInspectionResponseSchema = z.object({
   }),
   reconciliation: internalBillingInspectionReconciliationSchema,
   notifications: internalBillingInspectionNotificationsSchema,
+  paymentIssue: internalPaymentIssueInspectionSchema,
   paymentDocuments: internalBillingInspectionPaymentDocumentsSchema,
   invoicePaymentEvents: z.array(organizationBillingInvoicePaymentEventSchema),
   operationAttempts: z.array(internalBillingInspectionOperationAttemptSchema),
@@ -1952,6 +2007,80 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return intervals;
   };
 
+  const getPaymentEventTime = (event: OrganizationBillingInvoicePaymentEvent) =>
+    toTimestamp(event.occurredAt) ?? toTimestamp(event.createdAt);
+
+  const resolvePaymentIssueContext = ({
+    subscriptionStatus,
+    entitlementReason,
+    paymentIssueStartedAt,
+    pastDueGraceEndsAt,
+    invoicePaymentEvents,
+  }: {
+    subscriptionStatus: OrganizationBillingSubscriptionStatus;
+    entitlementReason: string;
+    paymentIssueStartedAt: unknown;
+    pastDueGraceEndsAt: unknown;
+    invoicePaymentEvents: OrganizationBillingInvoicePaymentEvent[];
+  }) => {
+    const latestIssueEvent = invoicePaymentEvents.find(
+      (
+        event,
+      ): event is OrganizationBillingInvoicePaymentEvent & {
+        eventType: 'payment_failed' | 'payment_action_required';
+      } => event.eventType === 'payment_failed' || event.eventType === 'payment_action_required',
+    );
+    const latestSucceededEvent = invoicePaymentEvents.find(
+      (event) => event.eventType === 'payment_succeeded',
+    );
+    const issueEventTime = latestIssueEvent ? getPaymentEventTime(latestIssueEvent) : null;
+    const latestSucceededTime = latestSucceededEvent
+      ? getPaymentEventTime(latestSucceededEvent)
+      : null;
+    const hasRecoveredPaymentIssueHistory = Boolean(
+      latestSucceededEvent &&
+      invoicePaymentEvents.some(
+        (event) =>
+          event.eventType === 'payment_failed' || event.eventType === 'payment_action_required',
+      ),
+    );
+    const hasStaleFailureHistory = Boolean(
+      latestIssueEvent &&
+      latestSucceededTime !== null &&
+      issueEventTime !== null &&
+      issueEventTime > latestSucceededTime &&
+      (subscriptionStatus === 'active' ||
+        subscriptionStatus === 'trialing' ||
+        subscriptionStatus === 'free' ||
+        subscriptionStatus === 'canceled'),
+    );
+    const latestPaymentIssueEventType:
+      | 'payment_failed'
+      | 'payment_action_required'
+      | 'payment_succeeded'
+      | null =
+      latestSucceededEvent &&
+      latestSucceededTime !== null &&
+      (issueEventTime === null || latestSucceededTime >= issueEventTime)
+        ? 'payment_succeeded'
+        : (latestIssueEvent?.eventType ?? null);
+
+    return {
+      paymentIssueState: resolveOrganizationBillingPaymentIssueState({
+        subscriptionStatus,
+        entitlementReason,
+        latestPaymentIssueEventType,
+        hasRecoveredPaymentIssueHistory,
+        hasStaleFailureHistory,
+      }),
+      paymentIssueTiming: resolveOrganizationBillingPaymentIssueTiming({
+        paymentIssueStartedAt: toIsoDateString(paymentIssueStartedAt),
+        pastDueGraceEndsAt: toIsoDateString(pastDueGraceEndsAt),
+        providerIssueStartedAt: latestIssueEvent?.occurredAt ?? null,
+      }),
+    };
+  };
+
   const readOrganizationBillingSummaryPayload = async ({
     organizationId,
     role,
@@ -1994,7 +2123,18 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       stripeBillingConfigured: Boolean(env.STRIPE_SECRET_KEY?.trim()),
       availableIntervals: resolveBillingAvailableIntervals(),
     });
-    const [history, documentReferences, invoicePaymentEvents] =
+    const invoicePaymentEventsForContext = await readOrganizationBillingInvoicePaymentEvents({
+      database,
+      organizationId,
+    });
+    const paymentIssueContext = resolvePaymentIssueContext({
+      subscriptionStatus,
+      entitlementReason: entitlementPolicy.reason,
+      paymentIssueStartedAt: billing?.paymentIssueStartedAt ?? null,
+      pastDueGraceEndsAt: billing?.pastDueGraceEndsAt ?? null,
+      invoicePaymentEvents: invoicePaymentEventsForContext,
+    });
+    const [history, documentReferences] =
       role === 'owner'
         ? await Promise.all([
             readOrganizationOwnerBillingHistory({
@@ -2005,12 +2145,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
               database,
               organizationId,
             }),
-            readOrganizationBillingInvoicePaymentEvents({
-              database,
-              organizationId,
-            }),
           ])
-        : [null, [], []];
+        : [null, []];
+    const invoicePaymentEvents = role === 'owner' ? invoicePaymentEventsForContext : [];
     const paymentDocuments =
       role === 'owner'
         ? buildBillingDocumentReadiness({
@@ -2033,6 +2170,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       currentPeriodEnd,
       paymentIssueStartedAt: toIsoDateString(billing?.paymentIssueStartedAt),
       pastDueGraceEndsAt,
+      paymentIssueState: paymentIssueContext.paymentIssueState,
+      paymentIssueTiming: paymentIssueContext.paymentIssueTiming,
+      nextOwnerAction: actionAvailability.nextOwnerAction,
       lastReconciledAt: toIsoDateString(billing?.lastReconciledAt),
       lastReconciliationReason: billing?.lastReconciliationReason ?? null,
       trialEndsAt: entitlementPolicy.trialEndsAt,

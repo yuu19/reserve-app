@@ -29,6 +29,25 @@ export type OrganizationBillingSubscriptionStatus =
   | 'incomplete';
 export type OrganizationBillingPlanState = 'free' | 'premium_trial' | 'premium_paid';
 export type OrganizationBillingPaymentMethodStatus = 'not_started' | 'pending' | 'registered';
+export type OrganizationBillingPaymentIssueState =
+  | 'none'
+  | 'payment_failed'
+  | 'payment_action_required'
+  | 'past_due_grace_active'
+  | 'past_due_grace_expired'
+  | 'unpaid'
+  | 'incomplete'
+  | 'recovered'
+  | 'stale_failure_history_only';
+export type OrganizationBillingPaymentIssueStartedAtSource =
+  | 'provider_issue_time'
+  | 'application_receipt_time'
+  | 'none';
+export type OrganizationBillingPaymentIssueTiming = {
+  issueStartedAt: string | null;
+  issueStartedAtSource: OrganizationBillingPaymentIssueStartedAtSource;
+  graceEndsAt: string | null;
+};
 export type OrganizationBillingPaymentMethodReason =
   | 'plan_is_free'
   | 'missing_customer'
@@ -51,6 +70,107 @@ export type OrganizationBillingActionAvailability = {
   availableIntervals: Array<'month' | 'year'>;
   nextOwnerAction: string | null;
   readOnlyReason: string | null;
+};
+
+type OrganizationBillingPaymentIssueEventType =
+  | 'payment_failed'
+  | 'payment_action_required'
+  | 'payment_succeeded'
+  | null;
+
+const toIsoDateString = (value: unknown): string | null => {
+  const candidate =
+    value instanceof Date
+      ? value
+      : typeof value === 'number' || typeof value === 'string'
+        ? new Date(value)
+        : null;
+
+  if (!candidate || Number.isNaN(candidate.getTime())) {
+    return null;
+  }
+
+  return candidate.toISOString();
+};
+
+const toTime = (value: string | Date | null | undefined): number | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+};
+
+export const resolveOrganizationBillingPaymentIssueTiming = ({
+  paymentIssueStartedAt,
+  pastDueGraceEndsAt,
+  providerIssueStartedAt,
+}: {
+  paymentIssueStartedAt?: Date | string | null;
+  pastDueGraceEndsAt?: Date | string | null;
+  providerIssueStartedAt?: Date | string | null;
+}): OrganizationBillingPaymentIssueTiming => {
+  const issueStartedAt = toIsoDateString(paymentIssueStartedAt);
+  const graceEndsAt = toIsoDateString(pastDueGraceEndsAt);
+  const issueTime = toTime(issueStartedAt);
+  const providerTime = toTime(providerIssueStartedAt ?? null);
+  const issueStartedAtSource: OrganizationBillingPaymentIssueStartedAtSource = !issueStartedAt
+    ? 'none'
+    : providerTime !== null && issueTime === providerTime
+      ? 'provider_issue_time'
+      : 'application_receipt_time';
+
+  return {
+    issueStartedAt,
+    issueStartedAtSource,
+    graceEndsAt,
+  };
+};
+
+export const resolveOrganizationBillingPaymentIssueState = ({
+  subscriptionStatus,
+  entitlementReason,
+  latestPaymentIssueEventType = null,
+  hasRecoveredPaymentIssueHistory = false,
+  hasStaleFailureHistory = false,
+}: {
+  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  entitlementReason?: string | null;
+  latestPaymentIssueEventType?: OrganizationBillingPaymentIssueEventType;
+  hasRecoveredPaymentIssueHistory?: boolean;
+  hasStaleFailureHistory?: boolean;
+}): OrganizationBillingPaymentIssueState => {
+  if (subscriptionStatus === 'past_due') {
+    return entitlementReason === 'premium_paid_past_due_grace_active'
+      ? 'past_due_grace_active'
+      : 'past_due_grace_expired';
+  }
+
+  if (subscriptionStatus === 'unpaid') {
+    return 'unpaid';
+  }
+
+  if (subscriptionStatus === 'incomplete') {
+    return 'incomplete';
+  }
+
+  if (hasStaleFailureHistory) {
+    return 'stale_failure_history_only';
+  }
+
+  if (latestPaymentIssueEventType === 'payment_succeeded' && hasRecoveredPaymentIssueHistory) {
+    return 'recovered';
+  }
+
+  if (latestPaymentIssueEventType === 'payment_action_required') {
+    return 'payment_action_required';
+  }
+
+  if (latestPaymentIssueEventType === 'payment_failed') {
+    return 'payment_failed';
+  }
+
+  return 'none';
 };
 
 export const isBillingInterval = (value: string | null): 'month' | 'year' | null => {
@@ -594,19 +714,33 @@ const resolvePaymentIssueFields = ({
   subscriptionStatus,
   existingPaymentIssueStartedAt,
   existingPastDueGraceEndsAt,
+  providerPaymentIssueStartedAt,
   now,
 }: {
   subscriptionStatus: OrganizationBillingSubscriptionStatus;
   existingPaymentIssueStartedAt?: Date | null;
   existingPastDueGraceEndsAt?: Date | null;
+  providerPaymentIssueStartedAt?: Date | null;
   now: Date;
 }) => {
+  const providerIssueTime = providerPaymentIssueStartedAt?.getTime() ?? null;
+  const existingIssueTime = existingPaymentIssueStartedAt?.getTime() ?? null;
+  const paymentIssueStartedAt =
+    providerPaymentIssueStartedAt &&
+    (existingIssueTime === null || providerIssueTime! <= existingIssueTime)
+      ? providerPaymentIssueStartedAt
+      : (existingPaymentIssueStartedAt ?? providerPaymentIssueStartedAt ?? now);
+
   if (subscriptionStatus === 'past_due') {
-    const paymentIssueStartedAt = existingPaymentIssueStartedAt ?? now;
+    const canKeepExistingGrace =
+      existingPastDueGraceEndsAt &&
+      existingIssueTime !== null &&
+      paymentIssueStartedAt.getTime() === existingIssueTime;
+
     return {
       paymentIssueStartedAt,
       pastDueGraceEndsAt:
-        existingPastDueGraceEndsAt ??
+        (canKeepExistingGrace ? existingPastDueGraceEndsAt : null) ??
         new Date(
           paymentIssueStartedAt.getTime() +
             ORGANIZATION_BILLING_PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
@@ -616,7 +750,7 @@ const resolvePaymentIssueFields = ({
 
   if (subscriptionStatus === 'incomplete' || subscriptionStatus === 'unpaid') {
     return {
-      paymentIssueStartedAt: existingPaymentIssueStartedAt ?? now,
+      paymentIssueStartedAt,
       pastDueGraceEndsAt: null,
     };
   }
@@ -639,6 +773,7 @@ export const upsertOrganizationBillingByOrganizationId = async ({
   cancelAtPeriodEnd,
   currentPeriodStart,
   currentPeriodEnd,
+  paymentIssueOccurredAt,
   now = new Date(),
 }: {
   database: AuthRuntimeDatabase;
@@ -652,6 +787,7 @@ export const upsertOrganizationBillingByOrganizationId = async ({
   cancelAtPeriodEnd?: boolean;
   currentPeriodStart?: Date | null;
   currentPeriodEnd?: Date | null;
+  paymentIssueOccurredAt?: Date | null;
   now?: Date;
 }) => {
   await ensureOrganizationBillingRow(database, organizationId);
@@ -667,6 +803,7 @@ export const upsertOrganizationBillingByOrganizationId = async ({
     subscriptionStatus,
     existingPaymentIssueStartedAt: existingRows[0]?.paymentIssueStartedAt ?? null,
     existingPastDueGraceEndsAt: existingRows[0]?.pastDueGraceEndsAt ?? null,
+    providerPaymentIssueStartedAt: paymentIssueOccurredAt ?? null,
     now,
   });
   await database

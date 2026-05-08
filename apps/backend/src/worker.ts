@@ -5,6 +5,7 @@ import {
   completeExpiredOrganizationPremiumTrials,
   reconcileProviderLinkedOrganizationBillingStates,
   reconcileRiskyOrganizationBillingStates,
+  sendPastDueGraceExpiryReminders,
 } from './billing/organization-billing-maintenance.js';
 import { createApp } from './app.js';
 import { createOrganizationLogoService } from './organization-logo-service.js';
@@ -52,6 +53,10 @@ const handler = {
           database: runtime.database,
         }),
         completeExpiredOrganizationPremiumTrials({
+          database: runtime.database,
+          env: runtime.env,
+        }),
+        sendPastDueGraceExpiryReminders({
           database: runtime.database,
           env: runtime.env,
         }),
