@@ -949,7 +949,7 @@ const selectOrganizationBillingOperationAttemptRows = async (organizationId: str
 const selectOrganizationBillingInvoiceEventRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT id, stripe_event_id as stripeEventId, event_type as eventType, stripe_invoice_id as stripeInvoiceId, stripe_payment_intent_id as stripePaymentIntentId, provider_status as providerStatus, owner_facing_status as ownerFacingStatus FROM organization_billing_invoice_event WHERE organization_id = ? ORDER BY created_at ASC',
+      'SELECT id, stripe_event_id as stripeEventId, event_type as eventType, stripe_invoice_id as stripeInvoiceId, stripe_payment_intent_id as stripePaymentIntentId, provider_status as providerStatus, owner_facing_status as ownerFacingStatus, occurred_at as occurredAt, created_at as createdAt FROM organization_billing_invoice_event WHERE organization_id = ? ORDER BY created_at ASC',
     )
     .bind(organizationId)
     .all<{
@@ -960,9 +960,67 @@ const selectOrganizationBillingInvoiceEventRows = async (organizationId: string)
       stripePaymentIntentId: string | null;
       providerStatus: string | null;
       ownerFacingStatus: string;
+      occurredAt: number | null;
+      createdAt: number;
     }>();
 
   return result.results;
+};
+
+const insertOrganizationBillingInvoiceEventRow = async ({
+  organizationId,
+  stripeEventId,
+  eventType,
+  ownerFacingStatus,
+  stripeCustomerId = null,
+  stripeSubscriptionId = null,
+  stripeInvoiceId = null,
+  stripePaymentIntentId = null,
+  providerStatus = null,
+  occurredAt = null,
+  createdAt,
+}: {
+  organizationId: string;
+  stripeEventId?: string | null;
+  eventType:
+    | 'invoice_available'
+    | 'payment_succeeded'
+    | 'payment_failed'
+    | 'payment_action_required';
+  ownerFacingStatus:
+    | 'available'
+    | 'checking'
+    | 'missing'
+    | 'action_required'
+    | 'failed'
+    | 'succeeded';
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeInvoiceId?: string | null;
+  stripePaymentIntentId?: string | null;
+  providerStatus?: string | null;
+  occurredAt?: Date | null;
+  createdAt?: Date;
+}) => {
+  await d1
+    .prepare(
+      'INSERT INTO organization_billing_invoice_event (id, organization_id, stripe_event_id, event_type, stripe_customer_id, stripe_subscription_id, stripe_invoice_id, stripe_payment_intent_id, provider_status, owner_facing_status, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      crypto.randomUUID(),
+      organizationId,
+      stripeEventId ?? null,
+      eventType,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      stripeInvoiceId,
+      stripePaymentIntentId,
+      providerStatus,
+      ownerFacingStatus,
+      occurredAt ? occurredAt.getTime() : null,
+      (createdAt ?? new Date()).getTime(),
+    )
+    .run();
 };
 
 const selectOrganizationBillingDocumentReferenceRows = async (organizationId: string) => {
@@ -1023,6 +1081,72 @@ const insertStripeWebhookFailureRow = async ({
       (createdAt ?? new Date()).getTime(),
     )
     .run();
+};
+
+const createPaymentIssueBillingFixture = async ({
+  application = app,
+  name,
+  email,
+  organizationName,
+  slug,
+  subscriptionStatus = 'past_due',
+  paymentIssueStartedAt = new Date('2026-05-01T00:00:00.000Z'),
+  pastDueGraceEndsAt = new Date('2026-05-08T00:00:00.000Z'),
+  stripeCustomerId,
+  stripeSubscriptionId,
+  stripePriceId = null,
+  emailVerified = true,
+}: {
+  application?: ReturnType<typeof createApp>;
+  name: string;
+  email: string;
+  organizationName: string;
+  slug: string;
+  subscriptionStatus?: 'past_due' | 'unpaid' | 'incomplete' | 'active';
+  paymentIssueStartedAt?: Date | null;
+  pastDueGraceEndsAt?: Date | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  emailVerified?: boolean;
+}) => {
+  const fixture = await createBillingFixtureOwner({
+    application,
+    name,
+    email,
+    organizationName,
+    slug,
+    emailVerified,
+  });
+  const resolvedStripeCustomerId =
+    stripeCustomerId === undefined
+      ? `cus_payment_issue_${fixture.organizationId}`
+      : stripeCustomerId;
+  const resolvedStripeSubscriptionId =
+    stripeSubscriptionId === undefined
+      ? `sub_payment_issue_${fixture.organizationId}`
+      : stripeSubscriptionId;
+
+  await setOrganizationBillingState({
+    organizationId: fixture.organizationId,
+    planCode: 'premium',
+    subscriptionStatus,
+    billingInterval: 'month',
+    currentPeriodStart: new Date('2026-04-01T00:00:00.000Z'),
+    currentPeriodEnd: new Date('2026-06-01T00:00:00.000Z'),
+    stripeCustomerId: resolvedStripeCustomerId,
+    stripeSubscriptionId: resolvedStripeSubscriptionId,
+    stripePriceId,
+    paymentIssueStartedAt,
+    pastDueGraceEndsAt,
+  });
+
+  return {
+    ...fixture,
+    stripeCustomerId: resolvedStripeCustomerId,
+    stripeSubscriptionId: resolvedStripeSubscriptionId,
+    stripePriceId,
+  };
 };
 
 const enablePremiumForOrganization = async (organizationId: string) => {
@@ -2252,6 +2376,97 @@ describe('backend app', () => {
     }
   });
 
+  it('returns payment issue summary fields and gates Premium by grace and terminal states', async () => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const issueStartedAt = new Date(Date.now() - 4 * dayMs);
+    const activeGraceEndsAt = new Date(issueStartedAt.getTime() + 7 * dayMs);
+    const {
+      agent: owner,
+      organizationId,
+      stripeCustomerId,
+      stripeSubscriptionId,
+    } = await createPaymentIssueBillingFixture({
+      name: 'Payment Issue Summary Owner',
+      email: 'payment-issue-summary-owner@example.com',
+      organizationName: 'Payment Issue Summary Org',
+      slug: `payment-issue-summary-${crypto.randomUUID().slice(0, 8)}`,
+      paymentIssueStartedAt: issueStartedAt,
+      pastDueGraceEndsAt: activeGraceEndsAt,
+    });
+    await insertOrganizationBillingInvoiceEventRow({
+      organizationId,
+      stripeEventId: 'evt_payment_issue_summary_failed',
+      eventType: 'payment_failed',
+      ownerFacingStatus: 'failed',
+      stripeCustomerId,
+      stripeSubscriptionId,
+      stripeInvoiceId: 'in_payment_issue_summary',
+      stripePaymentIntentId: 'pi_payment_issue_summary',
+      providerStatus: 'open',
+      occurredAt: issueStartedAt,
+    });
+
+    const activeGraceSummaryResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(activeGraceSummaryResponse.status).toBe(200);
+    expect(await toJson(activeGraceSummaryResponse)).toMatchObject({
+      subscriptionStatus: 'past_due',
+      paymentIssueState: 'past_due_grace_active',
+      paymentIssueTiming: {
+        issueStartedAt: issueStartedAt.toISOString(),
+        issueStartedAtSource: 'provider_issue_time',
+        graceEndsAt: activeGraceEndsAt.toISOString(),
+      },
+      premiumEligible: true,
+      entitlementReason: 'premium_paid_past_due_grace_active',
+      nextOwnerAction: null,
+    });
+
+    const activeGracePremiumResponse = await createPremiumGatedApprovalService({
+      agent: owner,
+      organizationId,
+      name: `Payment issue grace ${crypto.randomUUID().slice(0, 6)}`,
+    });
+    expect(activeGracePremiumResponse.status).toBe(200);
+
+    const expiredGraceEndsAt = new Date(Date.now() - 60_000);
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'past_due',
+      billingInterval: 'month',
+      currentPeriodStart: new Date(Date.now() - dayMs),
+      currentPeriodEnd: new Date(Date.now() + 29 * dayMs),
+      stripeCustomerId,
+      stripeSubscriptionId,
+      stripePriceId: null,
+      paymentIssueStartedAt: issueStartedAt,
+      pastDueGraceEndsAt: expiredGraceEndsAt,
+    });
+
+    const expiredSummaryResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(expiredSummaryResponse.status).toBe(200);
+    expect(await toJson(expiredSummaryResponse)).toMatchObject({
+      paymentIssueState: 'past_due_grace_expired',
+      premiumEligible: false,
+      entitlementReason: 'premium_paid_past_due_grace_expired',
+    });
+
+    const expiredPremiumResponse = await createPremiumGatedApprovalService({
+      agent: owner,
+      organizationId,
+      name: `Payment issue expired ${crypto.randomUUID().slice(0, 6)}`,
+    });
+    expect(expiredPremiumResponse.status).toBe(403);
+    expect(await toJson(expiredPremiumResponse)).toMatchObject({
+      code: 'organization_premium_required',
+      reason: 'premium_paid_past_due_grace_expired',
+    });
+  });
+
   it('returns common billing action envelopes and reuses owner handoffs within 30 minutes', async () => {
     const stripeMonthlyPriceId = 'price_handoff_monthly';
     const stripeYearlyPriceId = 'price_handoff_yearly';
@@ -2821,16 +3036,18 @@ describe('backend app', () => {
         expect(response.status).toBe(200);
       }
 
-      const duplicateFailedResponse = await sendInvoiceWebhook({
-        eventId: 'evt_payment_failed_verified',
-        eventType: 'invoice.payment_failed',
-        invoiceId: 'in_payment_failed_verified',
-        customerId: 'cus_invoice_payment',
-        subscriptionId: 'sub_invoice_payment',
-        paymentIntentId: 'pi_payment_failed_verified',
-        created: 1775000000,
-      });
-      expect(duplicateFailedResponse.status).toBe(200);
+      for (let replayIndex = 0; replayIndex < 5; replayIndex += 1) {
+        const duplicateFailedResponse = await sendInvoiceWebhook({
+          eventId: 'evt_payment_failed_verified',
+          eventType: 'invoice.payment_failed',
+          invoiceId: 'in_payment_failed_verified',
+          customerId: 'cus_invoice_payment',
+          subscriptionId: 'sub_invoice_payment',
+          paymentIntentId: 'pi_payment_failed_verified',
+          created: 1775000000,
+        });
+        expect(duplicateFailedResponse.status).toBe(200);
+      }
 
       expect(await selectOrganizationBillingInvoiceEventRows(organizationId)).toEqual(
         expect.arrayContaining([
@@ -2993,6 +3210,140 @@ describe('backend app', () => {
         }),
       ]);
       expect(resendRequests).toHaveLength(4);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('keeps delayed stale payment failures as history and support context after provider recovery', async () => {
+    const stripeWebhookSecret = 'whsec_test_stale_payment_issue';
+    const stripeMonthlyPriceId = 'price_stale_payment_issue_monthly';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_stale_payment_issue',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+    const resendRequests: Array<unknown> = [];
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url === 'https://api.resend.com/emails') {
+        resendRequests.push(init?.body ?? null);
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.startsWith('https://api.stripe.com/v1/subscriptions/sub_stale_payment_issue')) {
+        return new Response(
+          JSON.stringify({
+            id: 'sub_stale_payment_issue',
+            customer: 'cus_stale_payment_issue',
+            status: 'active',
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  current_period_start: 1775000000,
+                  current_period_end: 1777688400,
+                  price: { id: stripeMonthlyPriceId },
+                },
+              ],
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+      if (url.startsWith('https://api.stripe.com/v1/customers/')) {
+        return new Response(
+          JSON.stringify({
+            id: 'cus_stale_payment_issue',
+            invoice_settings: { default_payment_method: 'pm_card_visa' },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+      return originalFetch(input, init);
+    });
+
+    try {
+      const { organizationId } = await createPaymentIssueBillingFixture({
+        application: appWithStripe,
+        name: 'Stale Payment Issue Owner',
+        email: 'stale-payment-issue-owner@example.com',
+        organizationName: 'Stale Payment Issue Org',
+        slug: `stale-payment-issue-${crypto.randomUUID().slice(0, 8)}`,
+        subscriptionStatus: 'active',
+        stripeCustomerId: 'cus_stale_payment_issue',
+        stripeSubscriptionId: 'sub_stale_payment_issue',
+        stripePriceId: stripeMonthlyPriceId,
+        paymentIssueStartedAt: null,
+        pastDueGraceEndsAt: null,
+      });
+      const payload = JSON.stringify({
+        id: 'evt_stale_payment_failed_after_recovery',
+        type: 'invoice.payment_failed',
+        data: {
+          object: {
+            id: 'in_stale_payment_failed_after_recovery',
+            customer: 'cus_stale_payment_issue',
+            subscription: 'sub_stale_payment_issue',
+            payment_intent: 'pi_stale_payment_failed_after_recovery',
+            status: 'open',
+            created: 1774990000,
+          },
+        },
+      });
+      const signature = await createStripeSignatureHeader(payload, stripeWebhookSecret);
+      const response = await appWithStripe.request('/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': signature,
+        },
+        body: payload,
+      });
+
+      expect(response.status).toBe(200);
+      expect(await selectOrganizationBillingInvoiceEventRows(organizationId)).toEqual([
+        expect.objectContaining({
+          stripeEventId: 'evt_stale_payment_failed_after_recovery',
+          eventType: 'payment_failed',
+        }),
+      ]);
+      expect(await selectOrganizationBillingNotificationRows(organizationId)).toEqual([]);
+      expect(resendRequests).toHaveLength(0);
+      expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([
+        expect.objectContaining({
+          signalKind: 'reconciliation',
+          signalStatus: 'resolved',
+          sourceKind: 'webhook_payment_failed',
+          reason: 'stale_payment_issue_after_recovery',
+          stripeEventId: 'evt_stale_payment_failed_after_recovery',
+        }),
+      ]);
+      expect(await selectOrganizationBillingRow(organizationId)).toMatchObject({
+        subscriptionStatus: 'active',
+        paymentIssueStartedAt: null,
+        pastDueGraceEndsAt: null,
+      });
     } finally {
       fetchSpy.mockRestore();
     }
@@ -3296,6 +3647,70 @@ describe('backend app', () => {
     const adminPayload = (await toJson(adminResponse)) as Record<string, unknown>;
     expect(adminPayload.canManageBilling).toBe(false);
     expect(adminPayload.history).toBeNull();
+  });
+
+  it('returns owner-safe payment issue and recovery history without payment details or raw provider payloads', async () => {
+    const issueOccurredAt = new Date('2026-05-01T00:00:00.000Z');
+    const recoveredAt = new Date('2026-05-02T00:00:00.000Z');
+    const { agent: owner, organizationId } = await createPaymentIssueBillingFixture({
+      name: 'Payment Issue History Owner',
+      email: 'payment-issue-history-owner@example.com',
+      organizationName: 'Payment Issue History Org',
+      slug: `payment-issue-history-${crypto.randomUUID().slice(0, 8)}`,
+      subscriptionStatus: 'active',
+      paymentIssueStartedAt: null,
+      pastDueGraceEndsAt: null,
+    });
+    await insertOrganizationBillingInvoiceEventRow({
+      organizationId,
+      stripeEventId: 'evt_history_payment_failed',
+      eventType: 'payment_failed',
+      ownerFacingStatus: 'failed',
+      stripeInvoiceId: 'in_history_payment_failed',
+      stripePaymentIntentId: 'pi_history_payment_failed',
+      providerStatus: 'open',
+      occurredAt: issueOccurredAt,
+    });
+    await insertOrganizationBillingInvoiceEventRow({
+      organizationId,
+      stripeEventId: 'evt_history_action_required',
+      eventType: 'payment_action_required',
+      ownerFacingStatus: 'action_required',
+      stripeInvoiceId: 'in_history_action_required',
+      stripePaymentIntentId: 'pi_history_action_required',
+      providerStatus: 'requires_action',
+      occurredAt: new Date('2026-05-01T01:00:00.000Z'),
+    });
+    await insertOrganizationBillingInvoiceEventRow({
+      organizationId,
+      stripeEventId: 'evt_history_payment_succeeded',
+      eventType: 'payment_succeeded',
+      ownerFacingStatus: 'succeeded',
+      stripeInvoiceId: 'in_history_payment_succeeded',
+      stripePaymentIntentId: 'pi_history_payment_succeeded',
+      providerStatus: 'paid',
+      occurredAt: recoveredAt,
+    });
+
+    const response = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(response.status).toBe(200);
+    const payload = (await toJson(response)) as Record<string, unknown>;
+
+    expect(payload).toMatchObject({
+      paymentIssueState: 'recovered',
+      premiumEligible: true,
+    });
+    const serialized = JSON.stringify(payload);
+    expect(serialized).toContain('支払い問題が解消されました');
+    expect(serialized).toContain('解消済みの支払い失敗を履歴として保持しています');
+    expect(serialized).toContain('解消済みの支払い認証依頼を履歴として保持しています');
+    expect(serialized).not.toContain('4242');
+    expect(serialized).not.toContain('payment_method_details');
+    expect(serialized).not.toContain('tax_details');
+    expect(serialized).not.toContain('data.object');
+    expect(serialized).not.toContain('rawPayload');
   });
 
   it('retries unmatched billing subscription webhooks until organization linkage is ready', async () => {
@@ -9996,6 +10411,135 @@ describe('backend app', () => {
       `/api/v1/auth/internal/organizations/${encodeURIComponent(organizationId)}/billing-inspection`,
     );
     expect(allowedResponse.status).toBe(200);
+  });
+
+  it('returns internal payment issue inspection with recipient outcomes, stale failures, and support signals', async () => {
+    const authRuntimeWithInternalInspection = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        INTERNAL_OPERATOR_EMAILS: 'internal-payment-issue@example.com',
+      },
+    });
+    const appWithInternalInspection = createApp(authRuntimeWithInternalInspection);
+    const internalOperator = createAuthAgent(appWithInternalInspection);
+    await signUpUser({
+      agent: internalOperator,
+      name: 'Internal Payment Issue Operator',
+      email: 'internal-payment-issue@example.com',
+    });
+    await setUserEmailVerified({ email: 'internal-payment-issue@example.com' });
+
+    const issueOccurredAt = new Date('2026-05-01T00:00:00.000Z');
+    const recoveredAt = new Date('2026-05-02T00:00:00.000Z');
+    const { organizationId, userId } = await createPaymentIssueBillingFixture({
+      application: appWithInternalInspection,
+      name: 'Internal Payment Issue Owner',
+      email: 'internal-payment-issue-owner@example.com',
+      organizationName: 'Internal Payment Issue Org',
+      slug: `internal-payment-issue-${crypto.randomUUID().slice(0, 8)}`,
+      subscriptionStatus: 'active',
+      paymentIssueStartedAt: null,
+      pastDueGraceEndsAt: null,
+    });
+    await insertOrganizationBillingInvoiceEventRow({
+      organizationId,
+      stripeEventId: 'evt_internal_payment_failed',
+      eventType: 'payment_failed',
+      ownerFacingStatus: 'failed',
+      stripeInvoiceId: 'in_internal_payment_failed',
+      stripePaymentIntentId: 'pi_internal_payment_failed',
+      providerStatus: 'open',
+      occurredAt: issueOccurredAt,
+    });
+    await insertOrganizationBillingInvoiceEventRow({
+      organizationId,
+      stripeEventId: 'evt_internal_payment_succeeded',
+      eventType: 'payment_succeeded',
+      ownerFacingStatus: 'succeeded',
+      stripeInvoiceId: 'in_internal_payment_succeeded',
+      stripePaymentIntentId: 'pi_internal_payment_succeeded',
+      providerStatus: 'paid',
+      occurredAt: recoveredAt,
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId,
+      sequenceNumber: 1,
+      notificationKind: 'payment_failed_email',
+      deliveryState: 'sent',
+      attemptNumber: 1,
+      stripeEventId: 'evt_internal_payment_failed',
+      recipientUserId: userId,
+      recipientEmail: 'internal-payment-issue-owner@example.com',
+      planState: 'premium_paid',
+      subscriptionStatus: 'past_due',
+      paymentMethodStatus: 'registered',
+    });
+    await insertOrganizationBillingNotificationRow({
+      organizationId,
+      sequenceNumber: 2,
+      notificationKind: 'payment_failed_email',
+      deliveryState: 'skipped',
+      attemptNumber: 2,
+      stripeEventId: 'evt_internal_payment_failed',
+      recipientUserId: userId,
+      recipientEmail: 'internal-payment-issue-owner@example.com',
+      planState: 'premium_paid',
+      subscriptionStatus: 'past_due',
+      paymentMethodStatus: 'registered',
+    });
+    await insertOrganizationBillingSignalRow({
+      organizationId,
+      sequenceNumber: 1,
+      signalKind: 'reconciliation',
+      signalStatus: 'resolved',
+      sourceKind: 'webhook_payment_failed',
+      reason: 'stale_payment_issue_after_recovery',
+      stripeEventId: 'evt_internal_payment_failed',
+      appPlanState: 'premium_paid',
+      appSubscriptionStatus: 'active',
+      appPaymentMethodStatus: 'registered',
+      appEntitlementState: 'premium_enabled',
+    });
+
+    const response = await internalOperator.request(
+      `/api/v1/auth/internal/organizations/${encodeURIComponent(organizationId)}/billing-inspection`,
+    );
+    expect(response.status).toBe(200);
+    const payload = (await toJson(response)) as Record<string, unknown>;
+
+    expect(payload).toMatchObject({
+      paymentIssue: {
+        paymentIssueState: 'recovered',
+        notificationRecipients: [
+          expect.objectContaining({
+            recipientEmail: 'internal-payment-issue-owner@example.com',
+            deliveryState: 'skipped',
+            retryEligible: false,
+          }),
+        ],
+        staleFailureEvents: [
+          expect.objectContaining({
+            eventType: 'payment_failed',
+            stripeEventId: 'evt_internal_payment_failed',
+          }),
+        ],
+        supportSignals: [
+          expect.objectContaining({
+            reason: 'stale_payment_issue_after_recovery',
+            status: 'resolved',
+          }),
+        ],
+      },
+    });
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain('4242');
+    expect(serialized).not.toContain('payment_method_details');
+    expect(serialized).not.toContain('tax_details');
+    expect(serialized).not.toContain('data.object');
+    expect(serialized).not.toContain('rawPayload');
   });
 
   it('returns a read-only internal billing inspection view with normalized auth and billing edge cases', async () => {

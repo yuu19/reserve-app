@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../db/schema.js';
 import {
@@ -15,6 +15,35 @@ import {
   readOrganizationBillingObservationSnapshot,
 } from './organization-billing-observability.js';
 import { readStripeSubscriptionSummaryById } from '../payment/stripe.js';
+import { sendOrganizationPaymentIssueNotification } from './organization-billing-notifications.js';
+
+const PAST_DUE_GRACE_REMINDER_OFFSET_MS = 3 * 24 * 60 * 60 * 1000;
+const PAST_DUE_GRACE_REMINDER_WINDOW_MS = 60 * 60 * 1000;
+
+export const resolvePastDueGraceReminderStripeEventId = ({
+  organizationId,
+  pastDueGraceEndsAt,
+}: {
+  organizationId: string;
+  pastDueGraceEndsAt: Date;
+}) => `scheduled_past_due_grace_reminder:${organizationId}:${pastDueGraceEndsAt.getTime()}`;
+
+export const isPastDueGraceReminderDue = ({
+  pastDueGraceEndsAt,
+  now = new Date(),
+  windowMs = PAST_DUE_GRACE_REMINDER_WINDOW_MS,
+}: {
+  pastDueGraceEndsAt: Date | null;
+  now?: Date;
+  windowMs?: number;
+}) => {
+  if (!pastDueGraceEndsAt || Number.isNaN(pastDueGraceEndsAt.getTime())) {
+    return false;
+  }
+
+  const reminderAt = pastDueGraceEndsAt.getTime() - PAST_DUE_GRACE_REMINDER_OFFSET_MS;
+  return reminderAt >= now.getTime() && reminderAt < now.getTime() + windowMs;
+};
 
 export const completeExpiredOrganizationPremiumTrials = async ({
   database,
@@ -106,6 +135,81 @@ export const completeExpiredOrganizationPremiumTrials = async ({
   return {
     scanned: rows.length,
     completed,
+    failed,
+  };
+};
+
+export const sendPastDueGraceExpiryReminders = async ({
+  database,
+  env,
+  now = new Date(),
+  limit = 50,
+}: {
+  database: AuthRuntimeDatabase;
+  env: AuthRuntimeEnv;
+  now?: Date;
+  limit?: number;
+}) => {
+  const reminderWindowStart = new Date(now.getTime() + PAST_DUE_GRACE_REMINDER_OFFSET_MS);
+  const reminderWindowEnd = new Date(
+    reminderWindowStart.getTime() + PAST_DUE_GRACE_REMINDER_WINDOW_MS,
+  );
+  const rows = await database
+    .select({
+      organizationId: dbSchema.organizationBilling.organizationId,
+      stripeCustomerId: dbSchema.organizationBilling.stripeCustomerId,
+      stripeSubscriptionId: dbSchema.organizationBilling.stripeSubscriptionId,
+      pastDueGraceEndsAt: dbSchema.organizationBilling.pastDueGraceEndsAt,
+    })
+    .from(dbSchema.organizationBilling)
+    .where(
+      and(
+        eq(dbSchema.organizationBilling.planCode, 'premium'),
+        eq(dbSchema.organizationBilling.subscriptionStatus, 'past_due'),
+        gte(dbSchema.organizationBilling.pastDueGraceEndsAt, reminderWindowStart),
+        lte(dbSchema.organizationBilling.pastDueGraceEndsAt, reminderWindowEnd),
+      ),
+    )
+    .limit(limit);
+
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    if (!row.pastDueGraceEndsAt) {
+      skipped += 1;
+      continue;
+    }
+
+    const notification = await sendOrganizationPaymentIssueNotification({
+      database,
+      env,
+      organizationId: row.organizationId,
+      notificationKind: 'past_due_grace_reminder_email',
+      stripeEventId: resolvePastDueGraceReminderStripeEventId({
+        organizationId: row.organizationId,
+        pastDueGraceEndsAt: row.pastDueGraceEndsAt,
+      }),
+      stripeCustomerId: row.stripeCustomerId,
+      stripeSubscriptionId: row.stripeSubscriptionId,
+    });
+
+    if (!notification.ok) {
+      failed += 1;
+      continue;
+    }
+    if (notification.notificationSent) {
+      sent += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+
+  return {
+    scanned: rows.length,
+    sent,
+    skipped,
     failed,
   };
 };

@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 392.11250000000007 1431.6000000000001" width="392.11250000000007" height="1431.6000000000001" style="--bg:#ffffff;--fg:#23221e;--line:#d6d3d0;--accent:#0077c7;--muted:#706d65;--surface:#f8f7f6;--border:#d6d3d0;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=system-ui:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'system-ui', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 30%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="4.8" refX="8" refY="2.4" orient="auto">
+    <polygon points="0 0, 8 2.4, 0 4.8" fill="var(--_arrow)" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="4.8" refX="0" refY="2.4" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.4, 8 4.8" fill="var(--_arrow)" />
+  </marker>
+</defs>
+<polyline points="154.35000000000002,76 154.35000000000002,116" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="126.01355126075799,229.46355126075798 126.01355126075799,286.3 88.17500000000001,286.3 88.17500000000001,356.975" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="182.68644873924205,229.46355126075798 182.68644873924205,286.3 220.52500000000003,286.3 220.52500000000003,314.8" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="194.16774934643115,408.79274934643115 194.16774934643115,463.65000000000003 151.41250000000005,463.65000000000003 151.41250000000005,492.15000000000003" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="246.88225065356892,408.79274934643115 246.88225065356892,463.65000000000003 289.63750000000005,463.65000000000003 289.63750000000005,492.15000000000003" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="151.41250000000005,528.1500000000001 151.41250000000005,586.1500000000001 175.92500000000004,586.1500000000001" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="289.63750000000005,528.1500000000001 289.63750000000005,586.1500000000001 265.12500000000006,586.1500000000001" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="220.52500000000003,604.1500000000001 220.52500000000003,624.1500000000001 135.98750000000004,624.1500000000001 135.98750000000004,918.95" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="220.52500000000003,604.1500000000001 220.52500000000003,624.1500000000001 273.55000000000007,624.1500000000001 273.55000000000007,644.1500000000001" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="273.55000000000007,680.1500000000001 273.55000000000007,720.1500000000001" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="256.48336197842076,844.8833619784208 256.48336197842076,890.45 242.03750000000008,890.45 242.03750000000008,918.95" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="290.6166380215794,844.8833619784208 290.6166380215794,890.45 305.06250000000006,890.45 305.06250000000006,1105.95 254.40000000000003,1105.95" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="135.98750000000004,954.95 135.98750000000004,1029.95 155.13750000000005,1029.95" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="242.03750000000008,954.95 242.03750000000008,1029.95 222.88750000000005,1029.95" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="189.01250000000005,1047.95 189.01250000000005,1105.95 186.65000000000003,1105.95" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="220.52500000000003,1123.95 220.52500000000003,1163.95" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="193.62875215415954,1271.7037521541597 193.62875215415954,1327.1000000000001 156.77500000000003,1327.1000000000001 156.77500000000003,1355.6000000000001" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="247.42124784584053,1271.7037521541597 247.42124784584053,1327.1000000000001 284.27500000000003,1327.1000000000001 284.27500000000003,1355.6000000000001" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<rect x="71.59500000000001" y="272.8" width="33.16" height="27" rx="4" ry="4" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />
+<text x="88.17500000000001" y="286.3" text-anchor="middle" dy="0.35em" font-size="11" font-weight="400" fill="var(--_text-muted)">いいえ</text>
+<rect x="206.80500000000004" y="272.8" width="27.44" height="27" rx="4" ry="4" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />
+<text x="220.52500000000003" y="286.3" text-anchor="middle" dy="0.35em" font-size="11" font-weight="400" fill="var(--_text-muted)">はい</text>
+<rect x="137.69250000000005" y="450.15000000000003" width="27.44" height="27" rx="4" ry="4" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />
+<text x="151.41250000000005" y="463.65000000000003" text-anchor="middle" dy="0.35em" font-size="11" font-weight="400" fill="var(--_text-muted)">ある</text>
+<rect x="275.9175" y="450.15000000000003" width="27.44" height="27" rx="4" ry="4" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />
+<text x="289.63750000000005" y="463.65000000000003" text-anchor="middle" dy="0.35em" font-size="11" font-weight="400" fill="var(--_text-muted)">ない</text>
+<rect x="225.4575000000001" y="876.95" width="33.16" height="27" rx="4" ry="4" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />
+<text x="242.03750000000008" y="890.45" text-anchor="middle" dy="0.35em" font-size="11" font-weight="400" fill="var(--_text-muted)">いいえ</text>
+<rect x="291.34250000000003" y="969.95" width="27.44" height="27" rx="4" ry="4" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />
+<text x="305.06250000000006" y="983.45" text-anchor="middle" dy="0.35em" font-size="11" font-weight="400" fill="var(--_text-muted)">はい</text>
+<rect x="143.05500000000004" y="1313.6000000000001" width="27.44" height="27" rx="4" ry="4" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />
+<text x="156.77500000000003" y="1327.1000000000001" text-anchor="middle" dy="0.35em" font-size="11" font-weight="400" fill="var(--_text-muted)">はい</text>
+<rect x="253.39500000000004" y="1313.6000000000001" width="61.760000000000005" height="27" rx="4" ry="4" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />
+<text x="284.27500000000003" y="1327.1000000000001" text-anchor="middle" dy="0.35em" font-size="11" font-weight="400" fill="var(--_text-muted)">未完了または失敗</text>
+<rect x="109.75000000000003" y="40" width="89.2" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<polygon points="154.35000000000002,116 225.25000000000003,186.9 154.35000000000002,257.8 83.45000000000002,186.9" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="40.00000000000001" y="356.975" width="96.35000000000001" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<polygon points="220.52500000000003,314.8 280.70000000000005,374.975 220.52500000000003,435.15000000000003 160.35000000000002,374.975" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="99.66250000000005" y="492.15000000000003" width="103.5" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="227.16250000000005" y="492.15000000000003" width="124.95" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="175.92500000000004" y="568.1500000000001" width="89.2" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="94.96250000000003" y="918.95" width="82.05000000000001" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="225.37500000000006" y="644.1500000000001" width="96.35000000000001" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<polygon points="273.55000000000007,720.1500000000001 344.45000000000005,791.0500000000001 273.55000000000007,861.95 202.65000000000006,791.0500000000001" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="201.01250000000007" y="918.95" width="82.05000000000001" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="186.65000000000003" y="1087.95" width="67.75" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="155.13750000000005" y="1011.95" width="67.75" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<polygon points="220.52500000000003,1163.95 287.85,1231.275 220.52500000000003,1298.6000000000001 153.20000000000005,1231.275" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="97.87500000000003" y="1355.6000000000001" width="117.80000000000001" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="239.67500000000004" y="1355.6000000000001" width="89.2" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<text x="154.35000000000002" y="58" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">契約手続きを開始</text>
+<text x="154.35000000000002" y="186.9" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">組織と権限を確認できるか</text>
+<text x="88.17500000000001" y="374.975" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">理由を表示して停止</text>
+<text x="220.52500000000003" y="374.975" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">同じ手続きがあるか</text>
+<text x="151.41250000000005" y="510.15000000000003" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">既存 URL を返す</text>
+<text x="289.63750000000005" y="510.15000000000003" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">Stripe 手続きを用意</text>
+<text x="220.52500000000003" y="586.1500000000001" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">支払い情報を入力</text>
+<text x="135.98750000000004" y="936.95" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">契約画面へ戻る</text>
+<text x="273.55000000000007" y="662.1500000000001" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">状態変更通知が届く</text>
+<text x="273.55000000000007" y="791.0500000000001" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">署名と重複を確認できるか</text>
+<text x="242.03750000000008" y="936.95" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">失敗理由を残す</text>
+<text x="220.52500000000003" y="1105.95" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">状態を反映</text>
+<text x="189.01250000000005" y="1029.95" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">後から補正</text>
+<text x="220.52500000000003" y="1231.275" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">支払いが完了しているか</text>
+<text x="156.77500000000003" y="1373.6000000000001" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">Premium を有効化</text>
+<text x="284.27500000000003" y="1373.6000000000001" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">支払い対応を案内</text>
+</svg>

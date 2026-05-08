@@ -102,6 +102,7 @@ type NormalizedStripeOrganizationBillingWebhookEvent =
       kind: 'subscription_lifecycle';
       eventId: string;
       eventType: string;
+      occurredAt: Date | null;
       stripeCustomerId: string | null;
       stripeSubscriptionId: string;
       subscription: StripeSubscriptionSummary;
@@ -110,6 +111,7 @@ type NormalizedStripeOrganizationBillingWebhookEvent =
       kind: 'trial_will_end';
       eventId: string;
       eventType: string;
+      occurredAt: Date | null;
       stripeCustomerId: string | null;
       stripeSubscriptionId: string;
       subscription: StripeSubscriptionSummary;
@@ -374,6 +376,7 @@ const normalizeSubscriptionStatus = (
   value: string | null,
 ): OrganizationBillingSubscriptionStatus | null => {
   switch (value) {
+    case 'free':
     case 'trialing':
     case 'active':
     case 'past_due':
@@ -417,6 +420,23 @@ const resolveInvoicePaymentEventMapping = (
     default:
       return null;
   }
+};
+
+const readStripeEventCreatedAt = (event: StripeWebhookEvent): Date | null => {
+  const rawCreated = event.created;
+  const unixSeconds =
+    typeof rawCreated === 'number'
+      ? rawCreated
+      : typeof rawCreated === 'string' && rawCreated.trim().length > 0
+        ? Number(rawCreated)
+        : null;
+
+  if (unixSeconds === null || !Number.isFinite(unixSeconds)) {
+    return null;
+  }
+
+  const createdAt = new Date(unixSeconds * 1000);
+  return Number.isNaN(createdAt.getTime()) ? null : createdAt;
 };
 
 const normalizeStripeOrganizationBillingWebhookEvent = ({
@@ -527,6 +547,7 @@ const normalizeStripeOrganizationBillingWebhookEvent = ({
           kind: 'trial_will_end',
           eventId: event.id,
           eventType: event.type,
+          occurredAt: readStripeEventCreatedAt(event),
           stripeCustomerId: subscription.customerId,
           stripeSubscriptionId: subscription.id,
           subscription,
@@ -535,6 +556,7 @@ const normalizeStripeOrganizationBillingWebhookEvent = ({
           kind: 'subscription_lifecycle',
           eventId: event.id,
           eventType: event.type,
+          occurredAt: readStripeEventCreatedAt(event),
           stripeCustomerId: subscription.customerId,
           stripeSubscriptionId: subscription.id,
           subscription,
@@ -564,6 +586,38 @@ const resolveLatestSubscriptionSummary = async ({
     }
     return null;
   }
+};
+
+const resolveLatestSubscriptionSummaryForInvoiceEvent = async ({
+  env,
+  stripeSubscriptionId,
+}: {
+  env: AuthRuntimeEnv;
+  stripeSubscriptionId?: string | null;
+}) => {
+  if (!env.STRIPE_SECRET_KEY?.trim() || !stripeSubscriptionId) {
+    return null;
+  }
+
+  try {
+    return await readStripeSubscriptionSummaryById({
+      env,
+      subscriptionId: stripeSubscriptionId,
+    });
+  } catch {
+    return null;
+  }
+};
+
+const isProviderRecoveredSubscriptionStatus = (
+  subscriptionStatus: OrganizationBillingSubscriptionStatus,
+) => {
+  return (
+    subscriptionStatus === 'active' ||
+    subscriptionStatus === 'trialing' ||
+    subscriptionStatus === 'canceled' ||
+    subscriptionStatus === 'free'
+  );
 };
 
 export const handleStripeOrganizationBillingWebhook = async ({
@@ -814,10 +868,93 @@ export const handleStripeOrganizationBillingWebhook = async ({
         documentReferences,
       });
 
-      if (
+      const sourceKind =
+        normalized.invoiceEventType === 'invoice_available'
+          ? 'webhook_invoice_available'
+          : normalized.invoiceEventType === 'payment_succeeded'
+            ? 'webhook_payment_succeeded'
+            : normalized.invoiceEventType === 'payment_action_required'
+              ? 'webhook_payment_action_required'
+              : 'webhook_payment_failed';
+      const isPaymentIssueEvent =
         normalized.invoiceEventType === 'payment_failed' ||
-        normalized.invoiceEventType === 'payment_action_required'
-      ) {
+        normalized.invoiceEventType === 'payment_action_required';
+      const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId: matchedBilling.organizationId,
+      });
+      let nextBillingSnapshot = previousBillingSnapshot;
+      let stalePaymentIssueAfterRecovery = false;
+
+      const latestSubscription = await resolveLatestSubscriptionSummaryForInvoiceEvent({
+        env,
+        stripeSubscriptionId: normalized.stripeSubscriptionId,
+      });
+      if (latestSubscription) {
+        const latestSubscriptionStatus = normalizeSubscriptionStatus(latestSubscription.status);
+        if (latestSubscriptionStatus) {
+          const isCanceled = latestSubscriptionStatus === 'canceled';
+          const isFreeOrCanceled = latestSubscriptionStatus === 'free' || isCanceled;
+          stalePaymentIssueAfterRecovery =
+            isPaymentIssueEvent && isProviderRecoveredSubscriptionStatus(latestSubscriptionStatus);
+
+          await upsertOrganizationBillingByOrganizationId({
+            database,
+            organizationId: matchedBilling.organizationId,
+            planCode: isFreeOrCanceled ? 'free' : 'premium',
+            stripeCustomerId: latestSubscription.customerId,
+            stripeSubscriptionId: isFreeOrCanceled ? null : latestSubscription.id,
+            stripePriceId: isFreeOrCanceled ? null : latestSubscription.priceId,
+            billingInterval: isFreeOrCanceled
+              ? null
+              : resolveBillingIntervalFromPriceId(env, latestSubscription.priceId),
+            subscriptionStatus: latestSubscriptionStatus,
+            cancelAtPeriodEnd: isFreeOrCanceled ? false : latestSubscription.cancelAtPeriodEnd,
+            currentPeriodStart: isFreeOrCanceled ? null : latestSubscription.currentPeriodStart,
+            currentPeriodEnd: isFreeOrCanceled ? null : latestSubscription.currentPeriodEnd,
+            paymentIssueOccurredAt: isPaymentIssueEvent ? normalized.occurredAt : null,
+          });
+          nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+            database,
+            env,
+            organizationId: matchedBilling.organizationId,
+          });
+
+          if (stalePaymentIssueAfterRecovery) {
+            await appendOrganizationBillingSignal({
+              database,
+              organizationId: matchedBilling.organizationId,
+              signalKind: 'reconciliation',
+              signalStatus: 'resolved',
+              sourceKind,
+              reason: 'stale_payment_issue_after_recovery',
+              appSnapshot: nextBillingSnapshot,
+              stripeEventId: normalized.eventId,
+              stripeCustomerId: latestSubscription.customerId,
+              stripeSubscriptionId: latestSubscription.id,
+              providerPlanState: isFreeOrCanceled ? 'free' : 'premium_paid',
+              providerSubscriptionStatus: latestSubscription.status,
+            });
+          }
+        } else {
+          await appendOrganizationBillingSignal({
+            database,
+            organizationId: matchedBilling.organizationId,
+            signalKind: 'reconciliation',
+            signalStatus: 'unavailable',
+            sourceKind,
+            reason: 'provider_subscription_status_unknown',
+            appSnapshot: previousBillingSnapshot,
+            stripeEventId: normalized.eventId,
+            stripeCustomerId: latestSubscription.customerId,
+            stripeSubscriptionId: latestSubscription.id,
+            providerSubscriptionStatus: latestSubscription.status,
+          });
+        }
+      }
+
+      if (isPaymentIssueEvent && !stalePaymentIssueAfterRecovery) {
         const notification = await sendOrganizationPaymentIssueNotification({
           database,
           env,
@@ -847,27 +984,16 @@ export const handleStripeOrganizationBillingWebhook = async ({
         }
       }
 
-      const sourceKind =
-        normalized.invoiceEventType === 'invoice_available'
-          ? 'webhook_invoice_available'
-          : normalized.invoiceEventType === 'payment_succeeded'
-            ? 'webhook_payment_succeeded'
-            : normalized.invoiceEventType === 'payment_action_required'
-              ? 'webhook_payment_action_required'
-              : 'webhook_payment_failed';
-      const snapshot = await readOrganizationBillingObservationSnapshot({
-        database,
-        env,
-        organizationId: matchedBilling.organizationId,
-      });
       await appendOrganizationBillingAuditEvent({
         database,
         organizationId: matchedBilling.organizationId,
         sourceKind,
-        previousSnapshot: snapshot,
-        nextSnapshot: snapshot,
+        previousSnapshot: previousBillingSnapshot,
+        nextSnapshot: nextBillingSnapshot,
         stripeEventId: normalized.eventId,
-        sourceContext: normalized.eventType,
+        sourceContext: stalePaymentIssueAfterRecovery
+          ? `${normalized.eventType}:stale_after_recovery`
+          : normalized.eventType,
       });
       await markStripeWebhookEventProcessed({
         database,
@@ -989,6 +1115,12 @@ export const handleStripeOrganizationBillingWebhook = async ({
       cancelAtPeriodEnd: isCanceled ? false : latestSubscription.cancelAtPeriodEnd,
       currentPeriodStart: isCanceled ? null : latestSubscription.currentPeriodStart,
       currentPeriodEnd: isCanceled ? null : latestSubscription.currentPeriodEnd,
+      paymentIssueOccurredAt:
+        subscriptionStatus === 'past_due' ||
+        subscriptionStatus === 'unpaid' ||
+        subscriptionStatus === 'incomplete'
+          ? normalized.occurredAt
+          : null,
     });
     const syncedBillingSnapshot = await readOrganizationBillingObservationSnapshot({
       database,

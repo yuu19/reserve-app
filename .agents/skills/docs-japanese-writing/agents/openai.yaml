@@ -1,4 +1,4 @@
 interface:
   display_name: "docs 日本語ライティング"
-  short_description: "docs配下の日本語文書を業務中心に整える"
-  default_prompt: "$docs-japanese-writing を使って /docs 配下の日本語ドキュメントを作成またはレビューしてください。"
+  short_description: "docs配下の日本語文書とSVG図を業務中心に整える"
+  default_prompt: "$docs-japanese-writing を使って /docs 配下の日本語ドキュメントや SVG 図を作成またはレビューしてください。"

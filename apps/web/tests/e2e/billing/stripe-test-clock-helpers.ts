@@ -40,11 +40,42 @@ type StripeEvent = {
 	};
 };
 
+type StripeInvoice = {
+	id: string;
+	status: string;
+	subscription?: string | null;
+	customer?: string | null;
+};
+
 type BillingPayload = {
 	planCode: 'free' | 'premium';
 	planState: 'free' | 'premium_trial' | 'premium_paid';
-	subscriptionStatus: 'free' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | null;
+	subscriptionStatus:
+		| 'free'
+		| 'trialing'
+		| 'active'
+		| 'past_due'
+		| 'canceled'
+		| 'unpaid'
+		| 'incomplete'
+		| null;
 	paymentMethodStatus: 'not_started' | 'pending' | 'registered';
+	paymentIssueState?:
+		| 'none'
+		| 'payment_failed'
+		| 'payment_action_required'
+		| 'past_due_grace_active'
+		| 'past_due_grace_expired'
+		| 'unpaid'
+		| 'incomplete'
+		| 'recovered'
+		| 'stale_failure_history_only';
+	paymentIssueTiming?: {
+		issueStartedAt: string | null;
+		issueStartedAtSource: 'provider_issue_time' | 'application_receipt_time' | 'none';
+		graceEndsAt: string | null;
+	};
+	nextOwnerAction?: string | null;
 };
 
 type BillingActionEnvelope = {
@@ -64,7 +95,7 @@ const stripeSecretKey = (): string => {
 const stripeRequest = async <T>({
 	path,
 	method = 'GET',
-	body,
+	body
 }: {
 	path: string;
 	method?: 'GET' | 'POST' | 'DELETE';
@@ -82,8 +113,7 @@ const stripeRequest = async <T>({
 	if (!response.ok) {
 		const errorPayload = payload as { error?: { message?: unknown } } | null;
 		const message =
-			errorPayload &&
-			typeof errorPayload.error?.message === 'string'
+			errorPayload && typeof errorPayload.error?.message === 'string'
 				? errorPayload.error.message
 				: 'Stripe API request failed.';
 		throw new Error(message);
@@ -120,7 +150,7 @@ export const deleteStripeTestClock = async (clockId: string) => {
 
 export const advanceStripeTestClock = async ({
 	clockId,
-	frozenTime,
+	frozenTime
 }: {
 	clockId: string;
 	frozenTime: number;
@@ -161,10 +191,14 @@ export const createStripePaymentMethod = async (token: string): Promise<string> 
 	return paymentMethod.id;
 };
 
+export const createDeclinedStripePaymentMethod = async (
+	token = 'tok_chargeDeclined'
+): Promise<string> => createStripePaymentMethod(token);
+
 export const setDefaultPaymentMethod = async ({
 	customerId,
 	subscriptionId,
-	paymentMethodId,
+	paymentMethodId
 }: {
 	customerId: string;
 	subscriptionId: string;
@@ -185,6 +219,41 @@ export const setDefaultPaymentMethod = async ({
 		method: 'POST',
 		body: stripeForm({ default_payment_method: paymentMethodId })
 	});
+};
+
+export const recoverSubscriptionPaymentMethod = async ({
+	customerId,
+	subscriptionId,
+	token = 'tok_visa'
+}: {
+	customerId: string;
+	subscriptionId: string;
+	token?: string;
+}) => {
+	const paymentMethodId = await createStripePaymentMethod(token);
+	await setDefaultPaymentMethod({
+		customerId,
+		subscriptionId,
+		paymentMethodId
+	});
+
+	const invoicePayload = await stripeRequest<{ data: StripeInvoice[] }>({
+		path: `invoices?${stripeForm({
+			customer: customerId,
+			subscription: subscriptionId,
+			status: 'open',
+			limit: 1
+		}).toString()}`
+	});
+	const openInvoice = invoicePayload.data[0];
+	if (openInvoice) {
+		await stripeRequest<JsonRecord>({
+			path: `invoices/${encodeURIComponent(openInvoice.id)}/pay`,
+			method: 'POST'
+		});
+	}
+
+	return paymentMethodId;
 };
 
 export const readClockCustomer = async (clockId: string): Promise<StripeCustomer> => {
@@ -213,7 +282,7 @@ const eventMatchesBillingObject = ({
 	event,
 	clockId,
 	customerId,
-	subscriptionId,
+	subscriptionId
 }: {
 	event: StripeEvent;
 	clockId: string;
@@ -243,7 +312,7 @@ export const listBillingEvents = async ({
 	clockId,
 	customerId,
 	subscriptionId,
-	createdGte,
+	createdGte
 }: {
 	clockId: string;
 	customerId: string;
@@ -294,7 +363,7 @@ const signStripeWebhookPayload = (payload: string) => {
 
 export const replayStripeEvents = async (
 	request: APIRequestContext,
-	events: StripeEvent[],
+	events: StripeEvent[]
 ): Promise<void> => {
 	const seen = new Set<string>();
 	for (const event of events) {
@@ -314,10 +383,24 @@ export const replayStripeEvents = async (
 	}
 };
 
+export const replayStripeEventsRepeatedly = async ({
+	request,
+	events,
+	repeatCount = 5
+}: {
+	request: APIRequestContext;
+	events: StripeEvent[];
+	repeatCount?: number;
+}) => {
+	for (let index = 0; index < repeatCount; index += 1) {
+		await replayStripeEvents(request, events);
+	}
+};
+
 export const createOwnerOrganization = async ({
 	request,
 	context,
-	slug,
+	slug
 }: {
 	request: APIRequestContext;
 	context: BrowserContext;
@@ -355,7 +438,7 @@ export const createOwnerOrganization = async ({
 export const startPremiumTrial = async ({
 	request,
 	organizationId,
-	clockId,
+	clockId
 }: {
 	request: APIRequestContext;
 	organizationId: string;
@@ -376,7 +459,7 @@ export const startPremiumTrial = async ({
 
 export const readBillingSummary = async ({
 	request,
-	organizationId,
+	organizationId
 }: {
 	request: APIRequestContext;
 	organizationId: string;

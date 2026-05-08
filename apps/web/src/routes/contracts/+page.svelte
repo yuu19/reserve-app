@@ -111,9 +111,30 @@
 	const trialEndsAtLabel = $derived(formatJaDate(billing?.trialEndsAt));
 	const currentPeriodEndLabel = $derived(formatJaDate(billing?.currentPeriodEnd));
 	const pastDueGraceEndsAtLabel = $derived(formatJaDate(billing?.pastDueGraceEndsAt));
+	const paymentIssueGraceEndsAtLabel = $derived(
+		formatJaDate(billing?.paymentIssueTiming?.graceEndsAt ?? billing?.pastDueGraceEndsAt)
+	);
 	const paymentIssueNotice = $derived.by(() => {
 		if (!billing) {
 			return null;
+		}
+		switch (billing.paymentIssueState) {
+			case 'payment_failed':
+				return '支払いを完了できませんでした。契約ページから支払い方法または請求状況を確認してください。';
+			case 'payment_action_required':
+				return '支払い方法の認証が必要です。契約ページから Stripe の契約管理画面を開き、認証を完了してください。';
+			case 'past_due_grace_active':
+				return `支払い遅延の猶予期間中です。猶予期限は ${paymentIssueGraceEndsAtLabel} です。`;
+			case 'past_due_grace_expired':
+				return '支払い遅延の猶予期限を過ぎています。Premium 機能は停止されています。owner は契約管理画面で支払い方法または請求状況を確認してください。';
+			case 'unpaid':
+				return '未払い状態のため Premium 機能は停止されています。owner は契約管理画面で支払い状況を確認してください。';
+			case 'incomplete':
+				return '契約処理が未完了のため Premium 機能はまだ有効化されていません。owner は checkout または契約管理画面の状態を確認してください。';
+			case 'recovered':
+				return '支払い問題は解消済みです。Premium の利用状態は最新の契約状態に基づいて復旧しています。';
+			case 'stale_failure_history_only':
+				return '古い支払い失敗通知を履歴として保持しています。最新の契約状態では支払い問題は再オープンされていません。';
 		}
 		if (billing.subscriptionStatus === 'past_due') {
 			return billing.pastDueGraceEndsAt

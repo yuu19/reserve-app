@@ -30,6 +30,7 @@ export type OrganizationBillingNotificationDeliveryState =
   | 'retried'
   | 'sent'
   | 'failed'
+  | 'skipped'
   | 'unknown';
 export type OrganizationBillingNotificationDeliveryOutcome =
   | 'pending'
@@ -44,10 +45,25 @@ export type InternalTrialReminderDeliveryStatus =
   | 'failed'
   | 'unknown';
 
-type OrganizationBillingOwnerContact = {
+export type OrganizationBillingOwnerContact = {
   userId: string;
   email: string;
   name: string;
+};
+
+export type OrganizationBillingPaymentIssueNotificationRecipientAttempt = {
+  sequenceNumber?: number | null;
+  recipientUserId?: string | null;
+  recipientEmail?: string | null;
+  deliveryState: OrganizationBillingNotificationDeliveryState | string;
+  attemptNumber: number;
+};
+
+export type OrganizationBillingPaymentIssueNotificationRecipientPlan = {
+  owner: OrganizationBillingOwnerContact;
+  action: 'send' | 'skip';
+  deliveryState: 'requested' | 'retried' | 'skipped';
+  attemptNumber: number;
 };
 
 type OrganizationBillingReminderContext = {
@@ -182,7 +198,11 @@ export const normalizeOrganizationBillingNotificationChannel = (
 export const normalizeOrganizationBillingNotificationDeliveryState = (
   value: unknown,
 ): OrganizationBillingNotificationDeliveryState => {
-  return value === 'requested' || value === 'retried' || value === 'sent' || value === 'failed'
+  return value === 'requested' ||
+    value === 'retried' ||
+    value === 'sent' ||
+    value === 'failed' ||
+    value === 'skipped'
     ? value
     : 'unknown';
 };
@@ -195,6 +215,8 @@ export const resolveOrganizationBillingNotificationDeliveryOutcome = (
       return 'delivered';
     case 'failed':
       return 'failed';
+    case 'skipped':
+      return 'delivered';
     case 'requested':
     case 'retried':
       return 'pending';
@@ -363,6 +385,54 @@ const selectOrganizationBillingVerifiedOwnerContacts = async ({
     );
 };
 
+const matchesNotificationRecipient = (
+  attempt: OrganizationBillingPaymentIssueNotificationRecipientAttempt,
+  owner: Pick<OrganizationBillingOwnerContact, 'userId' | 'email'>,
+) => {
+  return attempt.recipientUserId === owner.userId || attempt.recipientEmail === owner.email;
+};
+
+export const resolveOrganizationBillingPaymentIssueNotificationRecipientPlans = ({
+  owners,
+  attempts,
+}: {
+  owners: OrganizationBillingOwnerContact[];
+  attempts: OrganizationBillingPaymentIssueNotificationRecipientAttempt[];
+}): OrganizationBillingPaymentIssueNotificationRecipientPlan[] => {
+  return owners.map((owner) => {
+    const ownerAttempts = attempts
+      .filter((attempt) => matchesNotificationRecipient(attempt, owner))
+      .sort((first, second) => {
+        const sequenceDelta = (second.sequenceNumber ?? 0) - (first.sequenceNumber ?? 0);
+        return sequenceDelta !== 0 ? sequenceDelta : second.attemptNumber - first.attemptNumber;
+      });
+    const latestDeliveryState = ownerAttempts[0]
+      ? normalizeOrganizationBillingNotificationDeliveryState(ownerAttempts[0].deliveryState)
+      : null;
+    const maxAttemptNumber = ownerAttempts.reduce(
+      (maxAttempt, attempt) => Math.max(maxAttempt, attempt.attemptNumber),
+      0,
+    );
+    const attemptNumber = maxAttemptNumber + 1;
+
+    if (latestDeliveryState === 'sent' || latestDeliveryState === 'skipped') {
+      return {
+        owner,
+        action: 'skip',
+        deliveryState: 'skipped',
+        attemptNumber,
+      };
+    }
+
+    return {
+      owner,
+      action: 'send',
+      deliveryState: maxAttemptNumber === 0 ? 'requested' : 'retried',
+      attemptNumber,
+    };
+  });
+};
+
 const selectNextOrganizationBillingNotificationAttempt = async ({
   database,
   organizationId,
@@ -392,6 +462,36 @@ const selectNextOrganizationBillingNotificationAttempt = async ({
     );
 
   return Number(rows[0]?.count ?? 0) + 1;
+};
+
+const selectPaymentIssueNotificationRecipientAttempts = async ({
+  database,
+  organizationId,
+  stripeEventId,
+  notificationKind,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  stripeEventId: string;
+  notificationKind: OrganizationBillingNotificationKind;
+}) => {
+  return database
+    .select({
+      sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
+      recipientUserId: dbSchema.organizationBillingNotification.recipientUserId,
+      recipientEmail: dbSchema.organizationBillingNotification.recipientEmail,
+      deliveryState: dbSchema.organizationBillingNotification.deliveryState,
+      attemptNumber: dbSchema.organizationBillingNotification.attemptNumber,
+    })
+    .from(dbSchema.organizationBillingNotification)
+    .where(
+      and(
+        eq(dbSchema.organizationBillingNotification.organizationId, organizationId),
+        eq(dbSchema.organizationBillingNotification.notificationKind, notificationKind),
+        eq(dbSchema.organizationBillingNotification.stripeEventId, stripeEventId),
+      ),
+    )
+    .orderBy(desc(dbSchema.organizationBillingNotification.sequenceNumber));
 };
 
 const selectNextOrganizationBillingNotificationSequence = async ({
@@ -956,17 +1056,9 @@ export const sendOrganizationPaymentIssueNotification = async ({
     database,
     organizationId,
   });
-  const attemptNumber = await selectNextOrganizationBillingNotificationAttempt({
-    database,
-    organizationId,
-    stripeEventId,
-    notificationKind,
-  });
   const commonNotificationInput = {
     database,
     organizationId,
-    deliveryState: attemptNumber === 1 ? ('requested' as const) : ('retried' as const),
-    attemptNumber,
     notificationKind,
     stripeEventId,
     stripeCustomerId: stripeCustomerId ?? billing.stripeCustomerId,
@@ -978,12 +1070,21 @@ export const sendOrganizationPaymentIssueNotification = async ({
   };
 
   if (owners.length === 0) {
+    const attemptNumber = await selectNextOrganizationBillingNotificationAttempt({
+      database,
+      organizationId,
+      stripeEventId,
+      notificationKind,
+    });
     await insertOrganizationBillingNotification({
       ...commonNotificationInput,
+      deliveryState: attemptNumber === 1 ? 'requested' : 'retried',
+      attemptNumber,
       failureReason: 'verified_owner_not_found',
     });
     await insertOrganizationBillingNotification({
       ...commonNotificationInput,
+      attemptNumber,
       deliveryState: 'failed',
       failureReason: 'verified_owner_not_found',
     });
@@ -1042,12 +1143,37 @@ export const sendOrganizationPaymentIssueNotification = async ({
 
   let retryableFailureReason: string | null = null;
   let terminalFailureReason: string | null = null;
+  let sentCount = 0;
+  const previousAttempts = await selectPaymentIssueNotificationRecipientAttempts({
+    database,
+    organizationId,
+    stripeEventId,
+    notificationKind,
+  });
+  const recipientPlans = resolveOrganizationBillingPaymentIssueNotificationRecipientPlans({
+    owners,
+    attempts: previousAttempts,
+  });
 
-  for (const owner of owners) {
+  for (const plan of recipientPlans) {
+    const owner = plan.owner;
+    if (plan.action === 'skip') {
+      await insertOrganizationBillingNotification({
+        ...commonNotificationInput,
+        recipientUserId: owner.userId,
+        recipientEmail: owner.email,
+        deliveryState: 'skipped',
+        attemptNumber: plan.attemptNumber,
+      });
+      continue;
+    }
+
     await insertOrganizationBillingNotification({
       ...commonNotificationInput,
       recipientUserId: owner.userId,
       recipientEmail: owner.email,
+      deliveryState: plan.deliveryState,
+      attemptNumber: plan.attemptNumber,
     });
 
     try {
@@ -1067,14 +1193,17 @@ export const sendOrganizationPaymentIssueNotification = async ({
         ...commonNotificationInput,
         recipientUserId: owner.userId,
         recipientEmail: owner.email,
+        attemptNumber: plan.attemptNumber,
         deliveryState: 'sent',
       });
+      sentCount += 1;
     } catch (error) {
       const failureReason = trialReminderFailureReasonFromError(error);
       await insertOrganizationBillingNotification({
         ...commonNotificationInput,
         recipientUserId: owner.userId,
         recipientEmail: owner.email,
+        attemptNumber: plan.attemptNumber,
         deliveryState: 'failed',
         failureReason,
       });
@@ -1113,20 +1242,22 @@ export const sendOrganizationPaymentIssueNotification = async ({
     };
   }
 
-  await appendResolvedBillingSignalIfNeeded({
-    database,
-    organizationId,
-    signalKind: 'notification_delivery',
-    sourceKind: notificationKind,
-    reason: 'payment_issue_notification_delivery_succeeded',
-    appSnapshot: await readOrganizationBillingObservationSnapshot({
+  if (sentCount > 0) {
+    await appendResolvedBillingSignalIfNeeded({
       database,
-      env,
       organizationId,
-    }),
-    stripeEventId,
-    stripeCustomerId: stripeCustomerId ?? billing.stripeCustomerId,
-    stripeSubscriptionId: stripeSubscriptionId ?? billing.stripeSubscriptionId,
-  });
-  return { ok: true, notificationSent: true };
+      signalKind: 'notification_delivery',
+      sourceKind: notificationKind,
+      reason: 'payment_issue_notification_delivery_succeeded',
+      appSnapshot: await readOrganizationBillingObservationSnapshot({
+        database,
+        env,
+        organizationId,
+      }),
+      stripeEventId,
+      stripeCustomerId: stripeCustomerId ?? billing.stripeCustomerId,
+      stripeSubscriptionId: stripeSubscriptionId ?? billing.stripeSubscriptionId,
+    });
+  }
+  return { ok: true, notificationSent: sentCount > 0 };
 };

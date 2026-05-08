@@ -1,9 +1,10 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, or } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../db/schema.js';
 import {
   isBillingInterval,
   isBillingSubscriptionStatus,
+  resolveOrganizationBillingPaymentIssueState,
   resolveOrganizationBillingPaymentMethodStatus,
   resolveOrganizationBillingProfileReadiness,
   selectOrganizationBillingSummary,
@@ -17,9 +18,13 @@ import {
 import {
   readOrganizationBillingDocumentReferences,
   readOrganizationBillingInvoicePaymentEvents,
+  type OrganizationBillingInvoicePaymentEvent,
 } from './organization-billing-invoice-events.js';
 import { readRecentBillingOperationAttempts } from './organization-billing-operations.js';
-import { readTrialReminderDeliveryAuditInspection } from './organization-billing-notifications.js';
+import {
+  normalizeOrganizationBillingNotificationDeliveryState,
+  readTrialReminderDeliveryAuditInspection,
+} from './organization-billing-notifications.js';
 import { readInternalBillingReconciliationInspection } from './organization-billing-observability.js';
 import { resolveOrganizationPremiumEntitlementPolicy } from './organization-billing-policy.js';
 
@@ -58,6 +63,77 @@ const normalizeProviderSubscriptionStatus = (
   value: unknown,
 ): OrganizationBillingSubscriptionStatus | null => {
   return typeof value === 'string' ? isBillingSubscriptionStatus(value) : null;
+};
+
+const toTimestamp = (value: string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+};
+
+const getPaymentEventTime = (event: OrganizationBillingInvoicePaymentEvent) =>
+  toTimestamp(event.occurredAt) ?? toTimestamp(event.createdAt);
+
+const resolveInspectionPaymentIssueState = ({
+  subscriptionStatus,
+  entitlementReason,
+  invoicePaymentEvents,
+}: {
+  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  entitlementReason: string;
+  invoicePaymentEvents: OrganizationBillingInvoicePaymentEvent[];
+}) => {
+  const latestIssueEvent = invoicePaymentEvents.find(
+    (
+      event,
+    ): event is OrganizationBillingInvoicePaymentEvent & {
+      eventType: 'payment_failed' | 'payment_action_required';
+    } => event.eventType === 'payment_failed' || event.eventType === 'payment_action_required',
+  );
+  const latestSucceededEvent = invoicePaymentEvents.find(
+    (event) => event.eventType === 'payment_succeeded',
+  );
+  const issueEventTime = latestIssueEvent ? getPaymentEventTime(latestIssueEvent) : null;
+  const latestSucceededTime = latestSucceededEvent
+    ? getPaymentEventTime(latestSucceededEvent)
+    : null;
+  const hasRecoveredPaymentIssueHistory = Boolean(
+    latestSucceededEvent &&
+    invoicePaymentEvents.some(
+      (event) =>
+        event.eventType === 'payment_failed' || event.eventType === 'payment_action_required',
+    ),
+  );
+  const hasStaleFailureHistory = Boolean(
+    latestIssueEvent &&
+    latestSucceededTime !== null &&
+    issueEventTime !== null &&
+    issueEventTime > latestSucceededTime &&
+    (subscriptionStatus === 'active' ||
+      subscriptionStatus === 'trialing' ||
+      subscriptionStatus === 'free' ||
+      subscriptionStatus === 'canceled'),
+  );
+  const latestPaymentIssueEventType:
+    | 'payment_failed'
+    | 'payment_action_required'
+    | 'payment_succeeded'
+    | null =
+    latestSucceededEvent &&
+    latestSucceededTime !== null &&
+    (issueEventTime === null || latestSucceededTime >= issueEventTime)
+      ? 'payment_succeeded'
+      : (latestIssueEvent?.eventType ?? null);
+
+  return resolveOrganizationBillingPaymentIssueState({
+    subscriptionStatus,
+    entitlementReason,
+    latestPaymentIssueEventType,
+    hasRecoveredPaymentIssueHistory,
+    hasStaleFailureHistory,
+  });
 };
 
 const resolveInspectionSummaryPlanState = ({
@@ -99,7 +175,7 @@ type InternalBillingTimelineEntry = {
   sourceKind: string | null;
   signalKind: 'reconciliation' | 'notification_delivery' | null;
   signalStatus: 'pending' | 'mismatch' | 'unavailable' | 'resolved' | null;
-  deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown' | null;
+  deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'skipped' | 'unknown' | null;
   webhookEventType: string | null;
   webhookProcessingStatus: 'processing' | 'processed' | 'failed' | null;
   webhookFailureStage: string | null;
@@ -155,7 +231,7 @@ const buildInternalBillingInvestigationTimeline = ({
         communicationType: 'trial_will_end' | 'payment_issue' | 'unknown';
         channel: 'email' | 'in_app' | 'web_push' | 'unknown';
         channelLabel: string;
-        deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown';
+        deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'skipped' | 'unknown';
         deliveryOutcome: 'pending' | 'delivered' | 'failed' | 'unknown';
         stripeEventId: string | null;
         recipientEmail: string | null;
@@ -371,6 +447,8 @@ export const readInternalBillingInspection = async ({
     documentReferences,
     invoicePaymentEvents,
     operationAttempts,
+    paymentIssueNotificationRows,
+    paymentIssueSignalRows,
   ] = await Promise.all([
     database
       .select({
@@ -440,6 +518,54 @@ export const readInternalBillingInspection = async ({
       organizationId,
       limit: 10,
     }),
+    database
+      .select({
+        sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
+        recipientUserId: dbSchema.organizationBillingNotification.recipientUserId,
+        recipientEmail: dbSchema.organizationBillingNotification.recipientEmail,
+        deliveryState: dbSchema.organizationBillingNotification.deliveryState,
+        failureReason: dbSchema.organizationBillingNotification.failureReason,
+        notificationKind: dbSchema.organizationBillingNotification.notificationKind,
+        stripeEventId: dbSchema.organizationBillingNotification.stripeEventId,
+      })
+      .from(dbSchema.organizationBillingNotification)
+      .where(
+        and(
+          eq(dbSchema.organizationBillingNotification.organizationId, organizationId),
+          or(
+            eq(dbSchema.organizationBillingNotification.notificationKind, 'payment_failed_email'),
+            eq(
+              dbSchema.organizationBillingNotification.notificationKind,
+              'payment_action_required_email',
+            ),
+            eq(
+              dbSchema.organizationBillingNotification.notificationKind,
+              'past_due_grace_reminder_email',
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(dbSchema.organizationBillingNotification.sequenceNumber))
+      .limit(50),
+    database
+      .select({
+        reason: dbSchema.organizationBillingSignal.reason,
+        status: dbSchema.organizationBillingSignal.signalStatus,
+      })
+      .from(dbSchema.organizationBillingSignal)
+      .where(
+        and(
+          eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
+          or(
+            eq(dbSchema.organizationBillingSignal.sourceKind, 'payment_failed_email'),
+            eq(dbSchema.organizationBillingSignal.sourceKind, 'payment_action_required_email'),
+            eq(dbSchema.organizationBillingSignal.sourceKind, 'past_due_grace_reminder_email'),
+            eq(dbSchema.organizationBillingSignal.reason, 'stale_payment_issue_after_recovery'),
+          ),
+        ),
+      )
+      .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+      .limit(10),
   ]);
   const paymentDocumentReadiness = buildBillingDocumentReadiness({
     organizationId,
@@ -463,6 +589,61 @@ export const readInternalBillingInspection = async ({
         createdAt: toIsoDateString(latestSignalRow.createdAt),
       }
     : null;
+  const paymentIssueState = resolveInspectionPaymentIssueState({
+    subscriptionStatus,
+    entitlementReason: entitlementPolicy.reason,
+    invoicePaymentEvents,
+  });
+  const latestSucceededEvent = invoicePaymentEvents.find(
+    (event: OrganizationBillingInvoicePaymentEvent) => event.eventType === 'payment_succeeded',
+  );
+  const latestSucceededTime = latestSucceededEvent
+    ? getPaymentEventTime(latestSucceededEvent)
+    : null;
+  const staleFailureEvents =
+    latestSucceededTime !== null &&
+    (subscriptionStatus === 'active' ||
+      subscriptionStatus === 'trialing' ||
+      subscriptionStatus === 'free' ||
+      subscriptionStatus === 'canceled')
+      ? invoicePaymentEvents.filter((event: OrganizationBillingInvoicePaymentEvent) => {
+          if (
+            event.eventType !== 'payment_failed' &&
+            event.eventType !== 'payment_action_required'
+          ) {
+            return false;
+          }
+          const eventTime = getPaymentEventTime(event);
+          return eventTime !== null && eventTime < latestSucceededTime;
+        })
+      : [];
+  const latestRecipientNotifications = new Map<
+    string,
+    (typeof paymentIssueNotificationRows)[number]
+  >();
+  for (const row of paymentIssueNotificationRows) {
+    const recipientKey = row.recipientUserId ?? row.recipientEmail ?? 'unassigned';
+    const key = `${recipientKey}:${row.stripeEventId ?? 'no-event'}:${row.notificationKind}`;
+    if (!latestRecipientNotifications.has(key)) {
+      latestRecipientNotifications.set(key, row);
+    }
+  }
+  const notificationRecipients = [...latestRecipientNotifications.values()].map((row) => {
+    const normalizedDeliveryState = normalizeOrganizationBillingNotificationDeliveryState(
+      row.deliveryState,
+    );
+    const deliveryState =
+      normalizedDeliveryState === 'unknown' ? ('failed' as const) : normalizedDeliveryState;
+
+    return {
+      recipientUserId: row.recipientUserId ?? null,
+      recipientEmail: row.recipientEmail ?? null,
+      deliveryState,
+      retryEligible: Boolean(row.recipientUserId && deliveryState === 'failed'),
+      failureReason: row.failureReason ?? null,
+    };
+  });
+
   return {
     organizationId: organization.id,
     organizationName: organization.name,
@@ -515,6 +696,17 @@ export const readInternalBillingInspection = async ({
     },
     reconciliation,
     notifications,
+    paymentIssue: {
+      paymentIssueState,
+      notificationRecipients,
+      staleFailureEvents,
+      supportSignals: paymentIssueSignalRows.map(
+        (row: (typeof paymentIssueSignalRows)[number]) => ({
+          reason: row.reason,
+          status: row.status,
+        }),
+      ),
+    },
     paymentDocuments: buildInternalBillingDocumentInspection({
       readiness: paymentDocumentReadiness,
     }),

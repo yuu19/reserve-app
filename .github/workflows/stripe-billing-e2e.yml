@@ -1,0 +1,61 @@
+name: Stripe Billing E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs at 03:30 JST.
+    - cron: '30 18 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stripe-billing-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stripe-billing-e2e:
+    name: stripe-billing-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @apps/web exec playwright install --with-deps chromium
+
+      - name: Run Stripe Billing Playwright E2E
+        env:
+          BILLING_E2E_ENABLED: 'true'
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_E2E_SECRET_KEY }}
+          STRIPE_PREMIUM_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_E2E_PREMIUM_MONTHLY_PRICE_ID }}
+          STRIPE_PREMIUM_YEARLY_PRICE_ID: ${{ secrets.STRIPE_E2E_PREMIUM_YEARLY_PRICE_ID }}
+          E2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_E2E_WEBHOOK_SECRET }}
+        run: pnpm --filter @apps/web test:e2e:billing
+
+      - name: Upload Stripe Billing Playwright artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-stripe-billing
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          if-no-files-found: ignore
+          retention-days: 30

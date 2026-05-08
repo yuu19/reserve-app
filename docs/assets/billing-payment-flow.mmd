@@ -1,0 +1,36 @@
+flowchart TD
+  start[契約手続きを開始]
+  auth{組織と権限を確認できるか}
+  deny[理由を表示して停止]
+  reuse{同じ手続きがあるか}
+  existing[既存 URL を返す]
+  create[Stripe 手続きを用意]
+  input[支払い情報を入力]
+  return[契約画面へ戻る]
+  notice[状態変更通知が届く]
+  verify{署名と重複を確認できるか}
+  ignore[失敗理由を残す]
+  apply[状態を反映]
+  reconcile[後から補正]
+  paid{支払いが完了しているか}
+  premium[Premium を有効化]
+  action[支払い対応を案内]
+
+  start --> auth
+  auth -->|いいえ| deny
+  auth -->|はい| reuse
+  reuse -->|ある| existing
+  reuse -->|ない| create
+  existing --> input
+  create --> input
+  input --> return
+  input --> notice
+  notice --> verify
+  verify -->|いいえ| ignore
+  verify -->|はい| apply
+  return --> reconcile
+  ignore --> reconcile
+  reconcile --> apply
+  apply --> paid
+  paid -->|はい| premium
+  paid -->|未完了または失敗| action

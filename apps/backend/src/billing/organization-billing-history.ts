@@ -12,6 +12,7 @@ import {
   normalizeOrganizationBillingNotificationKind,
   resolveOrganizationBillingCommunicationType,
   resolveOrganizationBillingNotificationChannelLabel,
+  type OrganizationBillingNotificationDeliveryState,
 } from './organization-billing-notifications.js';
 import {
   readOrganizationBillingInvoicePaymentEvents,
@@ -225,7 +226,7 @@ const resolveNotificationTitle = ({
   deliveryState,
   channelLabel,
 }: {
-  deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown';
+  deliveryState: OrganizationBillingNotificationDeliveryState;
   channelLabel: string;
 }) => {
   switch (deliveryState) {
@@ -233,6 +234,8 @@ const resolveNotificationTitle = ({
       return `トライアル終了前のお知らせを${channelLabel}で送信しました`;
     case 'failed':
       return `トライアル終了前のお知らせを${channelLabel}で送信できませんでした`;
+    case 'skipped':
+      return `トライアル終了前のお知らせの重複送信を省略しました`;
     case 'retried':
       return `トライアル終了前のお知らせを${channelLabel}で再送しています`;
     case 'unknown':
@@ -247,7 +250,7 @@ const resolveNotificationSummary = ({
   trialEndsAt,
   channelLabel,
 }: {
-  deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown';
+  deliveryState: OrganizationBillingNotificationDeliveryState;
   trialEndsAt: string | null;
   channelLabel: string;
 }) => {
@@ -261,6 +264,10 @@ const resolveNotificationSummary = ({
 
   if (deliveryState === 'failed') {
     return `${channelLabel}で契約内容の確認案内を送信できませんでした。時間をおいて再度履歴をご確認ください。`;
+  }
+
+  if (deliveryState === 'skipped') {
+    return '同じ通知がすでに送信済みのため、重複送信を省略しました。';
   }
 
   if (deliveryState === 'retried') {
@@ -280,7 +287,7 @@ const resolvePaymentIssueNotificationTitle = ({
   channelLabel,
 }: {
   notificationKind: string;
-  deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown';
+  deliveryState: OrganizationBillingNotificationDeliveryState;
   channelLabel: string;
 }) => {
   const issueLabel =
@@ -295,6 +302,8 @@ const resolvePaymentIssueNotificationTitle = ({
       return `${issueLabel}を${channelLabel}で送信しました`;
     case 'failed':
       return `${issueLabel}を${channelLabel}で送信できませんでした`;
+    case 'skipped':
+      return `${issueLabel}の重複送信を省略しました`;
     case 'retried':
       return `${issueLabel}を${channelLabel}で再送しています`;
     case 'unknown':
@@ -308,7 +317,7 @@ const resolvePaymentIssueNotificationSummary = ({
   deliveryState,
   channelLabel,
 }: {
-  deliveryState: 'requested' | 'retried' | 'sent' | 'failed' | 'unknown';
+  deliveryState: OrganizationBillingNotificationDeliveryState;
   channelLabel: string;
 }) => {
   if (deliveryState === 'sent') {
@@ -316,6 +325,9 @@ const resolvePaymentIssueNotificationSummary = ({
   }
   if (deliveryState === 'failed') {
     return `${channelLabel}で支払い状況の確認案内を送信できませんでした。契約ページでも状態を確認できます。`;
+  }
+  if (deliveryState === 'skipped') {
+    return '同じ支払い状況の確認案内が送信済みのため、重複送信を省略しました。';
   }
   if (deliveryState === 'retried') {
     return `${channelLabel}で支払い状況の確認案内を再送しています。`;
@@ -514,23 +526,60 @@ type OwnerBillingReconciliationHistoryRow = Parameters<typeof buildReconciliatio
 const buildInvoicePaymentHistoryEntry = (
   event: OrganizationBillingInvoicePaymentEvent,
   index: number,
+  events: OrganizationBillingInvoicePaymentEvent[],
 ) => {
+  const eventTime = event.occurredAt ? Date.parse(event.occurredAt) : null;
+  const hasPaymentIssueBeforeSuccess =
+    event.eventType === 'payment_succeeded' &&
+    events.some((candidate) => {
+      const candidateTime = candidate.occurredAt ? Date.parse(candidate.occurredAt) : null;
+      return (
+        (candidate.eventType === 'payment_failed' ||
+          candidate.eventType === 'payment_action_required') &&
+        candidateTime !== null &&
+        eventTime !== null &&
+        candidateTime < eventTime
+      );
+    });
+  const stalePaymentIssueAfterRecovery =
+    (event.eventType === 'payment_failed' || event.eventType === 'payment_action_required') &&
+    eventTime !== null &&
+    events.some((candidate) => {
+      const candidateTime = candidate.occurredAt ? Date.parse(candidate.occurredAt) : null;
+      return (
+        candidate.eventType === 'payment_succeeded' &&
+        candidateTime !== null &&
+        candidateTime > eventTime
+      );
+    });
   const title =
     event.eventType === 'invoice_available'
       ? '請求書の参照を確認しました'
       : event.eventType === 'payment_succeeded'
-        ? '支払いが完了しました'
+        ? hasPaymentIssueBeforeSuccess
+          ? '支払い問題が解消されました'
+          : '支払いが完了しました'
         : event.eventType === 'payment_action_required'
-          ? '支払い方法の認証が必要です'
-          : '支払いを完了できませんでした';
+          ? stalePaymentIssueAfterRecovery
+            ? '解消済みの支払い認証依頼を履歴として保持しています'
+            : '支払い方法の認証が必要です'
+          : stalePaymentIssueAfterRecovery
+            ? '解消済みの支払い失敗を履歴として保持しています'
+            : '支払いを完了できませんでした';
   const summary =
     event.eventType === 'invoice_available'
       ? 'Stripe 上の請求書参照を契約ページで確認できます。'
       : event.eventType === 'payment_succeeded'
-        ? 'Stripe から支払い成功イベントを受信しました。'
+        ? hasPaymentIssueBeforeSuccess
+          ? '支払い成功イベントを受信し、支払い問題が解消済みとして扱われます。'
+          : 'Stripe から支払い成功イベントを受信しました。'
         : event.eventType === 'payment_action_required'
-          ? '支払い方法の認証が必要な状態です。契約ページから対応状況を確認できます。'
-          : 'Stripe から支払い失敗イベントを受信しました。契約ページから対応状況を確認できます。';
+          ? stalePaymentIssueAfterRecovery
+            ? '支払い復旧後の古い認証依頼として、対応中の問題には戻さず履歴に残しています。'
+            : '支払い方法の認証が必要な状態です。契約ページから対応状況を確認できます。'
+          : stalePaymentIssueAfterRecovery
+            ? '支払い復旧後の古い失敗通知として、対応中の問題には戻さず履歴に残しています。'
+            : 'Stripe から支払い失敗イベントを受信しました。契約ページから対応状況を確認できます。';
 
   return {
     id: `invoice-payment-event:${event.id}`,
@@ -542,9 +591,6 @@ const buildInvoicePaymentHistoryEntry = (
       [
         event.providerStatus ? `provider status: ${event.providerStatus}` : null,
         event.stripeInvoiceId ? `Stripe invoice: ${event.stripeInvoiceId}` : null,
-        event.stripePaymentIntentId
-          ? `Stripe payment intent: ${event.stripePaymentIntentId}`
-          : null,
       ]
         .filter((value): value is string => Boolean(value))
         .join(' / ') || null,
@@ -686,7 +732,9 @@ export const readOrganizationOwnerBillingHistory = async ({
           createdAt: row.createdAt,
         }),
       ),
-    ...invoicePaymentEvents.map(buildInvoicePaymentHistoryEntry),
+    ...invoicePaymentEvents.map((event: OrganizationBillingInvoicePaymentEvent, index: number) =>
+      buildInvoicePaymentHistoryEntry(event, index, invoicePaymentEvents),
+    ),
   ]
     .sort(compareHistoryEntries)
     .slice(0, OWNER_BILLING_HISTORY_ENTRY_LIMIT)
