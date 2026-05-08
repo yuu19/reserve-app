@@ -1,6 +1,6 @@
 # テスト戦略
 
-最終更新: 2026-03-11
+最終更新: 2026-05-07
 
 ## 1. 目的
 
@@ -112,6 +112,25 @@ pnpm --filter @apps/web test:unit -- --project client
 
 browser test は現状 CI の必須対象ではない。UI を大きく触った PR ではローカルで実行する。
 
+### Stripe 課金 E2E
+
+```bash
+pnpm --filter @apps/web test:e2e:billing
+```
+
+Stripe 課金 E2E は、実際の Stripe test mode と Test Clock を使って契約状態の遷移を確認する。
+通常の PR ごとの web E2E には含めない。
+
+実行には Stripe test mode のキーと Premium 価格 ID が必要。  
+支払い失敗対応では、成功更新、支払い失敗、支払い方法の復旧、同じ Stripe event の複数回再送をまとめて確認する。
+
+実装メモ:
+
+- 秘密情報は GitHub Secrets の `STRIPE_E2E_SECRET_KEY`、`STRIPE_E2E_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_E2E_PREMIUM_YEARLY_PRICE_ID` に置く。
+- webhook 署名の検証値を明示したい場合は `STRIPE_E2E_WEBHOOK_SECRET` を置く。
+- CI では既存の `STRIPE_SECRET_KEY`、`STRIPE_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_YEARLY_PRICE_ID`、`E2E_STRIPE_WEBHOOK_SECRET` へ割り当てて実行する。
+- 実行時は `BILLING_E2E_ENABLED=true` を明示する。秘密情報がない環境ではこの E2E を必須 CI にしない。
+
 ### Mobile
 
 ```bash
@@ -134,6 +153,13 @@ GitHub Actions `.github/workflows/ci-tests.yml` では次を実行する。
 - docs の production build は PR / `main` push ごとに必須
 - web browser test は手動実行
 - mobile は自動テスト未導入
+
+Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行する。
+手動実行と毎日 03:30 JST の定期実行を行う。
+実 Stripe API に依存するため、通常の PR 必須 CI には含めない。
+この workflow は Stripe 側のテスト環境、価格、Test Clock の状態に依存する。  
+失敗した場合は、まず GitHub Actions の artifact、Stripe Dashboard の Test Clock、対象 Customer / Subscription / Invoice を確認する。
+アプリの unit / integration test が通っていて Stripe 課金 E2E だけが失敗する場合は、外部依存の一時不調か、Stripe 設定の差分として切り分ける。
 
 ## 5. 変更種別ごとの期待値
 
@@ -228,7 +254,7 @@ GitHub Actions `.github/workflows/ci-tests.yml` では次を実行する。
 ## 8. 現時点のギャップ
 
 - mobile の自動テストがない
-- web browser test が CI の必須ではない
+- 通常の web browser test が CI の必須ではない
 - coverage の閾値は未設定
 
 このため、認可・招待・予約のような高リスク変更は、backend 統合テストを最優先に厚くする。

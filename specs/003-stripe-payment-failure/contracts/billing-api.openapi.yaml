@@ -1,0 +1,221 @@
+openapi: 3.1.0
+info:
+  title: Stripe Payment Failure Handling Contracts
+  version: 1.0.0
+  description: >
+    Focused contract for organization-scoped Stripe payment failure handling:
+    billing summary payment issue fields, safe payment history, owner-only
+    recovery actions, provider webhook intake, and internal inspection signals.
+servers:
+  - url: https://api.example.com
+    description: Production API origin
+security:
+  - sessionAuth: []
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+    stripeWebhookSignature:
+      type: apiKey
+      in: header
+      name: stripe-signature
+  schemas:
+    ProviderSubscriptionStatus:
+      type: string
+      enum: [free, trialing, active, past_due, unpaid, incomplete, canceled]
+    PaymentIssueState:
+      type: string
+      enum:
+        - none
+        - payment_failed
+        - payment_action_required
+        - past_due_grace_active
+        - past_due_grace_expired
+        - unpaid
+        - incomplete
+        - recovered
+        - stale_failure_history_only
+    PaymentIssueTiming:
+      type: object
+      required:
+        - issueStartedAt
+        - issueStartedAtSource
+        - graceEndsAt
+      properties:
+        issueStartedAt:
+          type: [string, 'null']
+          format: date-time
+        issueStartedAtSource:
+          type: string
+          enum: [provider_issue_time, application_receipt_time, none]
+        graceEndsAt:
+          type: [string, 'null']
+          format: date-time
+    PaymentIssueNotificationRecipient:
+      type: object
+      required:
+        - recipientUserId
+        - recipientEmail
+        - deliveryState
+        - retryEligible
+      properties:
+        recipientUserId:
+          type: [string, 'null']
+        recipientEmail:
+          type: [string, 'null']
+        deliveryState:
+          type: string
+          enum: [requested, retried, sent, failed, skipped]
+        retryEligible:
+          type: boolean
+        failureReason:
+          type: [string, 'null']
+    InvoicePaymentEvent:
+      type: object
+      required:
+        - id
+        - eventType
+        - ownerFacingStatus
+        - occurredAt
+      properties:
+        id:
+          type: string
+        eventType:
+          type: string
+          enum: [invoice_available, payment_succeeded, payment_failed, payment_action_required]
+        stripeEventId:
+          type: [string, 'null']
+        ownerFacingStatus:
+          type: string
+          enum: [available, checking, missing, action_required, failed, succeeded]
+        occurredAt:
+          type: [string, 'null']
+          format: date-time
+    BillingSummaryPaymentIssueExtension:
+      type: object
+      required:
+        - subscriptionStatus
+        - paymentIssueState
+        - paymentIssueTiming
+        - premiumEligible
+        - entitlementReason
+        - nextOwnerAction
+      properties:
+        subscriptionStatus:
+          anyOf:
+            - $ref: '#/components/schemas/ProviderSubscriptionStatus'
+            - type: 'null'
+        paymentIssueState:
+          $ref: '#/components/schemas/PaymentIssueState'
+        paymentIssueTiming:
+          $ref: '#/components/schemas/PaymentIssueTiming'
+        premiumEligible:
+          type: boolean
+        entitlementReason:
+          type: string
+        nextOwnerAction:
+          type: [string, 'null']
+        invoicePaymentEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoicePaymentEvent'
+    InternalPaymentIssueInspection:
+      type: object
+      required:
+        - paymentIssueState
+        - notificationRecipients
+        - staleFailureEvents
+        - supportSignals
+      properties:
+        paymentIssueState:
+          $ref: '#/components/schemas/PaymentIssueState'
+        notificationRecipients:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentIssueNotificationRecipient'
+        staleFailureEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoicePaymentEvent'
+        supportSignals:
+          type: array
+          items:
+            type: object
+            required: [reason, status]
+            properties:
+              reason:
+                type: string
+              status:
+                type: string
+  responses:
+    Unauthorized:
+      description: Not authenticated or not allowed to view this billing scope.
+paths:
+  /api/v1/auth/organizations/billing:
+    get:
+      summary: Read active organization billing summary with payment issue state.
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: query
+          name: organizationId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Billing summary includes payment issue timing, eligibility, history, and owner action guidance.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    description: Existing billing summary shape from 002 billing hardening.
+                  - $ref: '#/components/schemas/BillingSummaryPaymentIssueExtension'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/auth/organizations/billing/portal:
+    post:
+      summary: Start owner-only provider-hosted payment recovery or billing management handoff.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Existing billing action envelope with handoff details when available.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/webhooks/stripe:
+    post:
+      summary: Receive trusted Stripe payment issue, payment success, and subscription lifecycle events.
+      security:
+        - stripeWebhookSignature: []
+      responses:
+        '200':
+          description: Event accepted, duplicate no-op handled, or non-retryable sanitized failure recorded.
+        '500':
+          description: Retryable processing failure, such as retryable payment issue notification delivery failure.
+  /api/v1/internal/billing/organizations/{organizationId}:
+    get:
+      summary: Internal inspection includes recipient-level payment issue notification and stale failure context.
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: organizationId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Internal payment issue inspection without payment details or raw provider payloads.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    description: Existing internal billing inspection shape from 002 billing hardening.
+                  - $ref: '#/components/schemas/InternalPaymentIssueInspection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
