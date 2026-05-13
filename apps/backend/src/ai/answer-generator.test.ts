@@ -62,20 +62,23 @@ describe('AI answer generation', () => {
   });
 
   it('parses provider JSON, preserves sources, and uses AI Gateway cache for docs-only answers', async () => {
-    const run = vi.fn(async () => ({
-      response: JSON.stringify({
-        answer: '予約運用から予約枠を作成できます。',
-        confidence: 82,
-        needsHumanSupport: false,
-        suggestedActions: [
-          { label: '予約運用を開く', href: '/admin/bookings', actionKind: 'open_page' },
-        ],
-      }),
-    }));
+    const ai = {
+      aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
+      run: vi.fn(async () => ({
+        response: JSON.stringify({
+          answer: '予約運用から予約枠を作成できます。',
+          confidence: 82,
+          needsHumanSupport: false,
+          suggestedActions: [
+            { label: '予約運用を開く', href: '/admin/bookings', actionKind: 'open_page' },
+          ],
+        }),
+      })),
+    };
 
     const result = await generateAnswer({
       env: {
-        AI: { run },
+        AI: ai,
         AI_ANSWER_MODEL: '@cf/test/chat',
         AI_GATEWAY_ID: 'reserve-app-ai',
       },
@@ -100,10 +103,15 @@ describe('AI answer generation', () => {
       answer: '予約運用から予約枠を作成できます。',
       confidence: 82,
       needsHumanSupport: false,
+      model: '@cf/test/chat',
+      generationStatus: 'generated',
+      errorSummary: null,
+      aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
       sources: [{ title: '予約運用', chunkId: 'chunk-a' }],
       suggestedActions: [{ label: '予約運用を開く', href: '/admin/bookings' }],
     });
-    expect(run).toHaveBeenCalledWith(
+    expect(result.latencyMs).toEqual(expect.any(Number));
+    expect(ai.run).toHaveBeenCalledWith(
       '@cf/test/chat',
       expect.objectContaining({ messages: expect.any(Array) }),
       expect.objectContaining({
@@ -147,6 +155,34 @@ describe('AI answer generation', () => {
       needsHumanSupport: true,
       suggestedActions: [{ actionKind: 'contact_owner' }],
     });
+  });
+
+  it('returns a clear fallback when retrieval failed before answer generation', async () => {
+    const run = vi.fn();
+
+    await expect(
+      generateAnswer({
+        env: { AI: { run }, AI_ANSWER_MODEL: '@cf/test/chat' },
+        userId: 'user-a',
+        access: buildAccess({ role: 'admin', canManageBookings: true }),
+        message: '予約枠を作るには？',
+        retrievedContexts: [],
+        businessFacts: {
+          factKeys: ['serviceCount'],
+          lines: ['serviceCount: 1'],
+          sensitive: false,
+        },
+        retrievalErrorSummary: 'vectorize unavailable',
+      }),
+    ).resolves.toMatchObject({
+      confidence: 30,
+      needsHumanSupport: true,
+      model: '@cf/test/chat',
+      latencyMs: 0,
+      generationStatus: 'fallback_retrieval_failed',
+      errorSummary: 'vectorize unavailable',
+    });
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('drops AI-generated action hrefs that are not internal paths', async () => {
@@ -205,6 +241,7 @@ describe('AI answer generation', () => {
       }),
     ).resolves.toMatchObject({
       confidence: 45,
+      generationStatus: 'fallback_ai_unavailable',
       sources: [
         {
           sourceKind: 'db_summary',

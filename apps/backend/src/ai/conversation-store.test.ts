@@ -107,6 +107,11 @@ describe('AI conversation store', () => {
       retrievedContext: { chunks: [{ id: 'chunk-a' }], businessFactKeys: ['service_count'] },
       confidence: 82,
       needsHumanSupport: false,
+      aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
+      aiModel: '@cf/test/chat',
+      aiLatencyMs: 1234,
+      aiGenerationStatus: 'generated',
+      aiErrorSummary: null,
     });
 
     expect(result).toMatchObject({ conversationId: 'conversation-a' });
@@ -116,6 +121,11 @@ describe('AI conversation store', () => {
       content: '回答',
       confidence: 82,
       needsHumanSupport: false,
+      aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
+      aiModel: '@cf/test/chat',
+      aiLatencyMs: 1234,
+      aiGenerationStatus: 'generated',
+      aiErrorSummary: null,
       createdAt: now,
     });
     expect(inserts[0]).toMatchObject({

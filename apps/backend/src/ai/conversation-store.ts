@@ -94,6 +94,10 @@ export const insertAiMessage = async ({
   confidence,
   needsHumanSupport = false,
   aiGatewayLogId,
+  aiModel,
+  aiLatencyMs,
+  aiGenerationStatus,
+  aiErrorSummary,
   now = new Date(),
 }: {
   database: AuthRuntimeDatabase;
@@ -105,6 +109,10 @@ export const insertAiMessage = async ({
   confidence?: number | null;
   needsHumanSupport?: boolean;
   aiGatewayLogId?: string | null;
+  aiModel?: string | null;
+  aiLatencyMs?: number | null;
+  aiGenerationStatus?: string | null;
+  aiErrorSummary?: string | null;
   now?: Date;
 }): Promise<StoredAssistantMessage> => {
   const id = crypto.randomUUID();
@@ -118,6 +126,10 @@ export const insertAiMessage = async ({
     confidence: confidence ?? null,
     needsHumanSupport,
     aiGatewayLogId: aiGatewayLogId ?? null,
+    aiModel: aiModel ?? null,
+    aiLatencyMs: aiLatencyMs ?? null,
+    aiGenerationStatus: aiGenerationStatus ?? null,
+    aiErrorSummary: aiErrorSummary ?? null,
     createdAt: now,
     retentionExpiresAt: retentionExpiresAt(now),
   });
@@ -320,9 +332,11 @@ export const cleanupExpiredAiConversationContent = async ({
 export const readRetrievedContextSummary = ({
   chunks,
   businessFactKeys,
+  retrievalErrorSummary,
 }: {
   chunks: Array<{ id: string; score?: number; visibility?: string | null }>;
   businessFactKeys: string[];
+  retrievalErrorSummary?: string | null;
 }) => ({
   chunks: chunks.map((chunk) => ({
     id: chunk.id,
@@ -330,6 +344,7 @@ export const readRetrievedContextSummary = ({
     visibility: chunk.visibility ?? null,
   })),
   businessFactKeys,
+  retrievalErrorSummary: retrievalErrorSummary ?? null,
 });
 
 export const countAiMessagesForConversation = async ({

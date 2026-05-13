@@ -15,6 +15,7 @@ export type AiAnswerEnv = {
       inputs: Record<string, unknown>,
       options?: Record<string, unknown>,
     ) => Promise<unknown>;
+    aiGatewayLogId?: string | null;
   };
   AI_ANSWER_MODEL?: string;
   AI_GATEWAY_ID?: string;
@@ -32,6 +33,15 @@ export type GeneratedAiAnswer = {
   suggestedActions: AiSuggestedAction[];
   confidence: number;
   needsHumanSupport: boolean;
+  model: string;
+  latencyMs: number;
+  generationStatus:
+    | 'generated'
+    | 'fallback_no_grounding'
+    | 'fallback_ai_unavailable'
+    | 'fallback_retrieval_failed'
+    | 'generation_failed';
+  errorSummary?: string | null;
   aiGatewayLogId?: string | null;
 };
 
@@ -39,6 +49,16 @@ const DEFAULT_ANSWER_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+export const summarizeAiError = (error: unknown): string => {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : JSON.stringify(error);
+  return (message || 'unknown_error').slice(0, 500);
+};
 
 const clampConfidence = (value: unknown): number => {
   const numeric = typeof value === 'number' ? value : Number(value);
@@ -67,6 +87,43 @@ const sanitizeSuggestedActionHref = (value: unknown): string | null => {
   } catch {
     return null;
   }
+};
+
+const readHeaderValue = (headers: unknown, name: string): string | null => {
+  if (!headers) {
+    return null;
+  }
+
+  if (typeof (headers as { get?: unknown }).get === 'function') {
+    const value = (headers as { get: (key: string) => string | null }).get(name);
+    return value && value.trim().length > 0 ? value.trim() : null;
+  }
+
+  if (isRecord(headers)) {
+    const value = headers[name] ?? headers[name.toLowerCase()];
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+  }
+
+  return null;
+};
+
+const readAiGatewayLogId = ({
+  env,
+  result,
+}: {
+  env: AiAnswerEnv;
+  result: unknown;
+}): string | null => {
+  const bindingLogId = env.AI?.aiGatewayLogId;
+  if (typeof bindingLogId === 'string' && bindingLogId.trim().length > 0) {
+    return bindingLogId.trim();
+  }
+
+  if (isRecord(result)) {
+    return readHeaderValue(result.headers, 'cf-aig-log-id');
+  }
+
+  return null;
 };
 
 const normalizeSuggestedActions = (value: unknown): AiSuggestedAction[] => {
@@ -196,6 +253,7 @@ export const generateAnswer = async ({
   message,
   retrievedContexts,
   businessFacts,
+  retrievalErrorSummary,
 }: {
   env: AiAnswerEnv;
   userId: string;
@@ -204,9 +262,26 @@ export const generateAnswer = async ({
   message: string;
   retrievedContexts: RetrievedKnowledgeContext[];
   businessFacts: BusinessFactSummary | null;
+  retrievalErrorSummary?: string | null;
 }): Promise<GeneratedAiAnswer> => {
+  const model = env.AI_ANSWER_MODEL?.trim() || DEFAULT_ANSWER_MODEL;
   const sources = buildAnswerSources({ retrievedContexts, businessFacts });
   const hasGrounding = retrievedContexts.length > 0 || Boolean(businessFacts?.factKeys.length);
+
+  if (retrievalErrorSummary) {
+    return {
+      answer:
+        'ナレッジ検索が一時的に利用できないため、断定できません。表示中の画面を確認し、必要に応じてownerまたはサポートへ確認してください。',
+      sources,
+      suggestedActions: defaultSuggestedActions({ access, needsHumanSupport: true }),
+      confidence: 30,
+      needsHumanSupport: true,
+      model,
+      latencyMs: 0,
+      generationStatus: 'fallback_retrieval_failed',
+      errorSummary: retrievalErrorSummary,
+    };
+  }
 
   if (!hasGrounding || !env.AI) {
     const answer = hasGrounding
@@ -218,13 +293,18 @@ export const generateAnswer = async ({
       suggestedActions: defaultSuggestedActions({ access, needsHumanSupport: true }),
       confidence: hasGrounding ? 45 : 20,
       needsHumanSupport: true,
+      model,
+      latencyMs: 0,
+      generationStatus: hasGrounding ? 'fallback_ai_unavailable' : 'fallback_no_grounding',
+      errorSummary: hasGrounding ? 'workers_ai_binding_not_configured' : null,
     };
   }
 
   let result: unknown;
+  const generationStartedAt = Date.now();
   try {
     result = await env.AI.run(
-      env.AI_ANSWER_MODEL?.trim() || DEFAULT_ANSWER_MODEL,
+      model,
       {
         messages: [
           { role: 'system', content: buildAiSystemPrompt() },
@@ -258,6 +338,7 @@ export const generateAnswer = async ({
     );
   } catch (error) {
     console.warn('[ai-chat] answer generation failed', error);
+    const latencyMs = Date.now() - generationStartedAt;
     return {
       answer:
         '現在の情報を確認しましたが、AI回答生成が一時的に利用できません。表示中の画面または管理者に確認してください。',
@@ -265,8 +346,14 @@ export const generateAnswer = async ({
       suggestedActions: defaultSuggestedActions({ access, needsHumanSupport: true }),
       confidence: 35,
       needsHumanSupport: true,
+      model,
+      latencyMs,
+      generationStatus: 'generation_failed',
+      errorSummary: summarizeAiError(error),
+      aiGatewayLogId: readAiGatewayLogId({ env, result: null }),
     };
   }
+  const latencyMs = Date.now() - generationStartedAt;
 
   const parsed = parseAnswerPayload(result);
   const confidence = clampConfidence(parsed.confidence ?? (hasGrounding ? 70 : 20));
@@ -283,5 +370,10 @@ export const generateAnswer = async ({
         : defaultSuggestedActions({ access, needsHumanSupport }),
     confidence,
     needsHumanSupport,
+    model,
+    latencyMs,
+    generationStatus: 'generated',
+    errorSummary: null,
+    aiGatewayLogId: readAiGatewayLogId({ env, result }),
   };
 };

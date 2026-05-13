@@ -1185,6 +1185,10 @@ export const aiMessage = sqliteTable(
     confidence: integer('confidence'),
     needsHumanSupport: integer('needs_human_support', { mode: 'boolean' }).default(false).notNull(),
     aiGatewayLogId: text('ai_gateway_log_id'),
+    aiModel: text('ai_model'),
+    aiLatencyMs: integer('ai_latency_ms'),
+    aiGenerationStatus: text('ai_generation_status'),
+    aiErrorSummary: text('ai_error_summary'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),

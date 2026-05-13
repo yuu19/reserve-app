@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
-import { generateAnswer, type AiAnswerEnv } from '../ai/answer-generator.js';
+import { generateAnswer, summarizeAiError, type AiAnswerEnv } from '../ai/answer-generator.js';
 import { resolveBusinessFacts } from '../ai/business-facts.js';
 import { resolveAiRequestContext } from '../ai/context-resolver.js';
 import {
@@ -308,6 +308,7 @@ export const createAiRoutes = ({ auth, database, env }: CreateAiRoutesOptions) =
     });
 
     let retrieved: RetrievedKnowledgeChunk[] = [];
+    let retrievalErrorSummary: string | null = null;
     try {
       retrieved = await retrieveKnowledge({
         env,
@@ -319,6 +320,7 @@ export const createAiRoutes = ({ auth, database, env }: CreateAiRoutesOptions) =
       });
     } catch (error) {
       console.warn('[ai-chat] retrieval failed', error);
+      retrievalErrorSummary = summarizeAiError(error);
     }
 
     const businessFacts = await resolveBusinessFacts({
@@ -333,6 +335,7 @@ export const createAiRoutes = ({ auth, database, env }: CreateAiRoutesOptions) =
       message: body.message,
       retrievedContexts: retrieved,
       businessFacts,
+      retrievalErrorSummary,
     });
     const safeSources = generated.sources
       .map((source) =>
@@ -353,10 +356,15 @@ export const createAiRoutes = ({ auth, database, env }: CreateAiRoutesOptions) =
       retrievedContext: readRetrievedContextSummary({
         chunks: retrieved,
         businessFactKeys: businessFacts.factKeys,
+        retrievalErrorSummary,
       }),
       confidence: generated.confidence,
       needsHumanSupport: generated.needsHumanSupport,
       aiGatewayLogId: generated.aiGatewayLogId,
+      aiModel: generated.model,
+      aiLatencyMs: generated.latencyMs,
+      aiGenerationStatus: generated.generationStatus,
+      aiErrorSummary: generated.errorSummary,
     });
 
     Sentry.addBreadcrumb({
@@ -367,6 +375,12 @@ export const createAiRoutes = ({ auth, database, env }: CreateAiRoutesOptions) =
         classroomId: context.access.classroomId,
         confidence: generated.confidence,
         needsHumanSupport: generated.needsHumanSupport,
+        model: generated.model,
+        aiGatewayLogId: generated.aiGatewayLogId,
+        generationStatus: generated.generationStatus,
+        aiLatencyMs: generated.latencyMs,
+        hasAiError: Boolean(generated.errorSummary),
+        retrievalFailed: Boolean(retrievalErrorSummary),
         durationMs: Date.now() - startedAt,
       },
     });
