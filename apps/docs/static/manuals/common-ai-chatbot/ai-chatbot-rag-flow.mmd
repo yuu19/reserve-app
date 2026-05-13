@@ -1,0 +1,39 @@
+flowchart TB
+  subgraph intake["質問受付と検索"]
+    direction LR
+    user --> backend --> embedding --> vector
+  end
+
+  subgraph answerFlow["根拠確認と回答"]
+    direction LR
+    d1 --> retrieve --> prompt --> answer --> response
+  end
+
+  user["1. 利用者<br/>ログイン済みWebユーザー"]
+  backend["2. バックエンド<br/>認証確認<br/>権限チェック<br/>利用回数確認"]
+  embedding["3. 質問を検索用に変換<br/>Workers AI"]
+  vector["4. 関連情報を検索<br/>Cloudflare Vectorize"]
+  d1[("D1<br/>ナレッジ本文<br/>会話<br/>フィードバック<br/>利用回数")]
+  retrieve["5. 根拠データ取得<br/>本文・説明情報<br/>権限を再確認"]
+  prompt["6. 回答材料を整理<br/>参照できる根拠だけを使用"]
+  answer["7. 回答生成<br/>AI Gateway<br/>Workers AI"]
+  response["8. 根拠付き回答を表示"]
+  save["9. 会話・フィードバック<br/>利用回数を保存"]
+
+  backend --> d1
+  vector --> retrieve
+  response --> save --> d1
+  vector -. "関連候補" .-> retrieve
+  retrieve -. "回答前に権限を再確認" .-> prompt
+
+  classDef blue fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#0f172a;
+  classDef green fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#0f172a;
+  classDef purple fill:#faf5ff,stroke:#7c3aed,stroke-width:2px,color:#0f172a;
+  classDef orange fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#0f172a;
+  classDef data fill:#eef2ff,stroke:#1d4ed8,stroke-width:2px,color:#0f172a;
+
+  class user,backend,embedding,prompt,answer,response blue;
+  class vector green;
+  class retrieve purple;
+  class save orange;
+  class d1 data;

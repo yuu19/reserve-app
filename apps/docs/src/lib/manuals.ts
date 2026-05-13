@@ -36,6 +36,23 @@ export const manualCategories: ManualCategory[] = [
 		]
 	},
 	{
+		id: 'common',
+		title: '共通機能',
+		description: 'ログイン済み利用者が共通して使う機能の案内です。',
+		plannedTopics: ['アカウントとログイン', '用語集'],
+		items: [
+			{
+				href: '/manuals/common/ai-chatbot',
+				title: 'AI チャットの使い方',
+				summary:
+					'AI チャットに質問できる内容、根拠付き回答、権限による表示範囲、フィードバックの扱いを案内します。',
+				updatedAt: '2026-05-13',
+				audience: 'ログイン済み利用者',
+				featured: true
+			}
+		]
+	},
+	{
 		id: 'admin',
 		title: '管理者向け',
 		description: '教室やサービスの運用を始める管理者向けガイドです。',

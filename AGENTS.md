@@ -7,6 +7,8 @@
 - DESIGN.md と preview.html に差異がある場合は、DESIGN.md を正としてください。
 
 ## Active Technologies
+- TypeScript strict / Cloudflare Workers + Hono / SvelteKit / Better Auth / Drizzle ORM / Cloudflare D1 / Cloudflare Workers AI / Cloudflare Vectorize V2 / Cloudflare AI Gateway / Sentry (004-ai-chatbot)
+- AI chatbot は D1 を knowledge・conversation・feedback・usage counter の正本、Vectorize を検索 index、backend を認可・業務 facts・回答生成境界として扱う (004-ai-chatbot)
 
 - TypeScript strict / Cloudflare Workers + Hono / SvelteKit / Expo / Better Auth / Drizzle ORM / Cloudflare D1 / Stripe / Resend / Sentry (001-organization-billing)
 - Organization billing は既存 `organization_billing` を主 aggregate とし、webhook event、notification、audit/signal 系の append-only tables を併用する (001-organization-billing)
@@ -20,3 +22,4 @@
 - 001-organization-billing: Speckit plan artifacts を organization 単位課金、trial-to-paid lifecycle、premium entitlement、internal billing inspection 向けに追加
 - 002-billing-hardening: Speckit plan artifacts を未払い/incomplete 制御、Stripe handoff 冪等性、reconciliation、invoice/payment event、owner notification、Customer Portal 条件、unknown price 対応向けに追加
 - 003-stripe-payment-failure: Speckit plan artifacts を Stripe 支払い失敗時の猶予開始時刻、recipient 単位通知再試行、復旧後 stale failure 対応向けに追加
+- 004-ai-chatbot: Speckit plan artifacts を Cloudflare Workers 上の RAG、role-safe source visibility、answer-time business facts、conversation/feedback retention、usage limit、web chat UI 向けに追加

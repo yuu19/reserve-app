@@ -1376,6 +1376,29 @@ describe('backend app', () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
+  it('marks API responses as non-indexable', async () => {
+    const response = await app.request('/api/health');
+
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
+  });
+
+  it('disallows crawling on the API domain', async () => {
+    const response = await app.request('/robots.txt');
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('User-agent: *\nDisallow: /\n');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
+  });
+
+  it('prevents OAuth callback URLs from being cached or leaked by referrer', async () => {
+    const response = await app.request('/api/auth/callback/google');
+
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
+  });
+
   it('exposes RPC auth session endpoint', async () => {
     const response = await app.request('/api/v1/auth/session');
 

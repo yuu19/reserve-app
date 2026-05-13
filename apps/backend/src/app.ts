@@ -21,6 +21,7 @@ import {
   verifyStripeWebhookSignatureDetailed,
 } from './payment/stripe.js';
 import { createAuthRoutes } from './routes/auth-routes.js';
+import { createAiRoutes } from './routes/ai-routes.js';
 import { createPublicRoutes } from './routes/public-routes.js';
 import type { ServiceImageUploadService } from './service-image-upload-service.js';
 
@@ -42,6 +43,21 @@ export const createApp = ({
   serviceImageUploadService,
 }: CreateAppOptions) => {
   const app = new OpenAPIHono();
+
+  app.use('*', async (c, next) => {
+    await next();
+
+    const pathname = new URL(c.req.url).pathname;
+    c.res.headers.set('X-Content-Type-Options', 'nosniff');
+    c.res.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+
+    if (pathname.startsWith('/api/auth/') || pathname.startsWith('/api/v1/auth/oidc/')) {
+      c.res.headers.set('Cache-Control', 'no-store');
+      c.res.headers.set('Referrer-Policy', 'no-referrer');
+    } else {
+      c.res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    }
+  });
 
   const normalizePackStatus = ({
     remainingCount,
@@ -78,6 +94,10 @@ export const createApp = ({
 
   app.get('/', (c) => {
     return c.text('Hono + Better Auth API');
+  });
+
+  app.get('/robots.txt', (c) => {
+    return c.text('User-agent: *\nDisallow: /\n');
   });
 
   const healthRoute = createRoute({
@@ -294,9 +314,16 @@ export const createApp = ({
     database,
     env,
   });
+  const { aiRoutes, internalAiRoutes } = createAiRoutes({
+    auth,
+    database,
+    env,
+  });
 
   app.route('/api/v1/auth', authRoutes);
   app.route('/api/v1/public', publicRoutes);
+  app.route('/api/v1/ai', aiRoutes);
+  app.route('/api/v1/internal/ai', internalAiRoutes);
 
   app.on(['GET', 'POST', 'OPTIONS'], '/api/auth/*', (c) => {
     return auth.handler(c.req.raw);

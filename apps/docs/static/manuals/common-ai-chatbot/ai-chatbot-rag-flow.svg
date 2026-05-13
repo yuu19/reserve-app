@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 694.8 352" width="694.8" height="352" style="--bg:#ffffff;--fg:#1f2328;--line:#d1d9e0;--accent:#0969da;--muted:#59636e;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 30%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="4.8" refX="8" refY="2.4" orient="auto">
+    <polygon points="0 0, 8 2.4, 0 4.8" fill="var(--_arrow)" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="4.8" refX="0" refY="2.4" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.4, 8 4.8" fill="var(--_arrow)" />
+  </marker>
+</defs>
+<rect x="131.75" y="40" width="465.9" height="96" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+<rect x="131.75" y="40" width="465.9" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+<text x="143.75" y="54" dy="0.35em" font-size="12" font-weight="600" fill="var(--_text-sec)">&quot;質問受付と検索&quot;</text>
+<rect x="74.59999999999997" y="140" width="580.2" height="96" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+<rect x="74.59999999999997" y="140" width="580.2" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+<text x="86.59999999999997" y="154" dy="0.35em" font-size="12" font-weight="600" fill="var(--_text-sec)">&quot;根拠確認と回答&quot;</text>
+<polyline points="364.7,136 364.7,176" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="594.1999999999999,206 594.1999999999999,256 354.7,256 354.7,294 252.17499999999998,294" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="364.7,276 364.7,256 374.7,256 374.7,206 120.59999999999997,206" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="208.35,106 248.35,106" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="330.4,106 370.4,106" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="466.75,106 506.75,106" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="150.59999999999997,206 190.59999999999997,206" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="279.79999999999995,206 319.79999999999995,206" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="394.69999999999993,206 434.7,206" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="509.59999999999997,206 549.5999999999999,206" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<rect x="252.17499999999998" y="276" width="225.05" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="40" y="88" width="67.75" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="147.75" y="88" width="60.6" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="248.35" y="88" width="82.05000000000001" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="370.4" y="88" width="96.35000000000001" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="506.75" y="88" width="74.9" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="90.59999999999997" y="188" width="60" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="190.59999999999997" y="188" width="89.2" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="319.79999999999995" y="188" width="74.9" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="434.7" y="188" width="74.9" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="549.5999999999999" y="188" width="89.2" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<text x="364.7" y="294" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">&quot;9. 会話・フィードバック&lt;br/&gt;利用回数を保存&quot;</text>
+<text x="73.875" y="106" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">class</text>
+<text x="178.05" y="106" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">user</text>
+<text x="289.375" y="106" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">backend</text>
+<text x="418.575" y="106" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">embedding</text>
+<text x="544.2" y="106" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">vector</text>
+<text x="120.59999999999997" y="206" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">d1</text>
+<text x="235.19999999999996" y="206" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">retrieve</text>
+<text x="357.24999999999994" y="206" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">prompt</text>
+<text x="472.15" y="206" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">answer</text>
+<text x="594.1999999999999" y="206" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">response</text>
+</svg>

@@ -55,8 +55,46 @@ type ImagesBinding = {
   };
 };
 
+type WorkersAiBinding = {
+  run: (
+    model: string,
+    inputs: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ) => Promise<unknown>;
+};
+
+type VectorizeMatch = {
+  id: string;
+  score?: number;
+  metadata?: Record<string, unknown>;
+};
+
+type VectorizeBinding = {
+  query: (
+    vector: number[],
+    options?: {
+      topK?: number;
+      returnMetadata?: boolean | 'all';
+      filter?: Record<string, unknown>;
+    },
+  ) => Promise<{ matches?: VectorizeMatch[] }>;
+  upsert: (
+    vectors: Array<{
+      id: string;
+      values: number[];
+      metadata?: Record<string, unknown>;
+    }>,
+  ) => Promise<unknown>;
+};
+
 export type BackendWorkerEnv = AuthRuntimeEnv & {
   DB: D1DatabaseBinding;
+  AI?: WorkersAiBinding;
+  AI_KNOWLEDGE_INDEX?: VectorizeBinding;
+  AI_GATEWAY_ID?: string;
+  AI_EMBEDDING_MODEL?: string;
+  AI_ANSWER_MODEL?: string;
+  AI_KNOWLEDGE_INDEX_NAME?: string;
   BETTER_AUTH_COOKIE_DOMAIN?: string;
   PUBLIC_EVENTS_ORGANIZATION_SLUG?: string;
   STRIPE_SECRET_KEY?: string;

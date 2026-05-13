@@ -1020,6 +1020,239 @@ export const bookingAuditLog = sqliteTable(
   ],
 );
 
+export const aiKnowledgeDocument = sqliteTable(
+  'ai_knowledge_document',
+  {
+    id: text('id').primaryKey(),
+    sourceKind: text('source_kind').notNull(),
+    sourcePath: text('source_path').notNull(),
+    title: text('title').notNull(),
+    locale: text('locale').default('ja').notNull(),
+    visibility: text('visibility').default('authenticated').notNull(),
+    internalOnly: integer('internal_only', { mode: 'boolean' }).default(false).notNull(),
+    organizationId: text('organization_id').references(() => organization.id, {
+      onDelete: 'cascade',
+    }),
+    classroomId: text('classroom_id').references(() => classroom.id, {
+      onDelete: 'cascade',
+    }),
+    feature: text('feature'),
+    checksum: text('checksum').notNull(),
+    indexStatus: text('index_status').default('pending').notNull(),
+    indexedAt: integer('indexed_at', { mode: 'timestamp_ms' }),
+    lastError: text('last_error'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('ai_knowledge_document_source_idx').on(table.sourceKind, table.sourcePath),
+    index('ai_knowledge_document_status_idx').on(table.indexStatus, table.indexedAt),
+    index('ai_knowledge_document_scope_idx').on(
+      table.organizationId,
+      table.classroomId,
+      table.visibility,
+    ),
+    uniqueIndex('ai_knowledge_document_source_uidx').on(
+      table.sourceKind,
+      table.sourcePath,
+      table.organizationId,
+      table.classroomId,
+    ),
+  ],
+);
+
+export const aiKnowledgeChunk = sqliteTable(
+  'ai_knowledge_chunk',
+  {
+    id: text('id').primaryKey(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => aiKnowledgeDocument.id, { onDelete: 'cascade' }),
+    chunkIndex: integer('chunk_index').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    title: text('title').notNull(),
+    sourceKind: text('source_kind').notNull(),
+    sourcePath: text('source_path').notNull(),
+    locale: text('locale').default('ja').notNull(),
+    visibility: text('visibility').default('authenticated').notNull(),
+    internalOnly: integer('internal_only', { mode: 'boolean' }).default(false).notNull(),
+    organizationId: text('organization_id').references(() => organization.id, {
+      onDelete: 'cascade',
+    }),
+    classroomId: text('classroom_id').references(() => classroom.id, {
+      onDelete: 'cascade',
+    }),
+    feature: text('feature'),
+    tagsJson: text('tags_json'),
+    indexedAt: integer('indexed_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    vectorStatus: text('vector_status').default('pending').notNull(),
+  },
+  (table) => [
+    index('ai_knowledge_chunk_document_idx').on(table.documentId, table.chunkIndex),
+    index('ai_knowledge_chunk_lookup_idx').on(
+      table.locale,
+      table.visibility,
+      table.organizationId,
+      table.classroomId,
+    ),
+    index('ai_knowledge_chunk_vector_status_idx').on(table.vectorStatus, table.indexedAt),
+    uniqueIndex('ai_knowledge_chunk_document_hash_uidx').on(table.documentId, table.contentHash),
+  ],
+);
+
+export const aiKnowledgeIndexRun = sqliteTable(
+  'ai_knowledge_index_run',
+  {
+    id: text('id').primaryKey(),
+    sourceRoot: text('source_root').notNull(),
+    status: text('status').default('running').notNull(),
+    startedAt: integer('started_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+    documentsSeen: integer('documents_seen').default(0).notNull(),
+    documentsIndexed: integer('documents_indexed').default(0).notNull(),
+    chunksUpserted: integer('chunks_upserted').default(0).notNull(),
+    chunksFailed: integer('chunks_failed').default(0).notNull(),
+    embeddingModel: text('embedding_model').notNull(),
+    embeddingShapeJson: text('embedding_shape_json'),
+    vectorIndexName: text('vector_index_name').notNull(),
+    errorSummary: text('error_summary'),
+  },
+  (table) => [
+    index('ai_knowledge_index_run_source_status_idx').on(
+      table.sourceRoot,
+      table.status,
+      table.startedAt,
+    ),
+  ],
+);
+
+export const aiConversation = sqliteTable(
+  'ai_conversation',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id').references(() => organization.id, {
+      onDelete: 'cascade',
+    }),
+    classroomId: text('classroom_id').references(() => classroom.id, {
+      onDelete: 'cascade',
+    }),
+    title: text('title'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    retentionExpiresAt: integer('retention_expires_at', { mode: 'timestamp_ms' }).notNull(),
+    anonymizedAt: integer('anonymized_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    index('ai_conversation_user_scope_idx').on(
+      table.userId,
+      table.organizationId,
+      table.classroomId,
+      table.updatedAt,
+    ),
+    index('ai_conversation_retention_idx').on(table.retentionExpiresAt, table.anonymizedAt),
+  ],
+);
+
+export const aiMessage = sqliteTable(
+  'ai_message',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => aiConversation.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(),
+    content: text('content').notNull(),
+    sourcesJson: text('sources_json'),
+    retrievedContextJson: text('retrieved_context_json'),
+    confidence: integer('confidence'),
+    needsHumanSupport: integer('needs_human_support', { mode: 'boolean' }).default(false).notNull(),
+    aiGatewayLogId: text('ai_gateway_log_id'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    retentionExpiresAt: integer('retention_expires_at', { mode: 'timestamp_ms' }).notNull(),
+    anonymizedAt: integer('anonymized_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    index('ai_message_conversation_created_idx').on(table.conversationId, table.createdAt),
+    index('ai_message_retention_idx').on(table.retentionExpiresAt, table.anonymizedAt),
+  ],
+);
+
+export const aiFeedback = sqliteTable(
+  'ai_feedback',
+  {
+    id: text('id').primaryKey(),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => aiMessage.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    rating: text('rating').notNull(),
+    comment: text('comment'),
+    resolved: integer('resolved', { mode: 'boolean' }).default(false).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    aggregateRetentionExpiresAt: integer('aggregate_retention_expires_at', {
+      mode: 'timestamp_ms',
+    }).notNull(),
+  },
+  (table) => [
+    index('ai_feedback_message_idx').on(table.messageId),
+    index('ai_feedback_rating_created_idx').on(table.rating, table.createdAt),
+    index('ai_feedback_retention_idx').on(table.aggregateRetentionExpiresAt),
+    uniqueIndex('ai_feedback_message_user_uidx').on(table.messageId, table.userId),
+  ],
+);
+
+export const aiUsageCounter = sqliteTable(
+  'ai_usage_counter',
+  {
+    id: text('id').primaryKey(),
+    scopeKind: text('scope_kind').notNull(),
+    scopeId: text('scope_id').notNull(),
+    windowKind: text('window_kind').notNull(),
+    windowStartAt: integer('window_start_at', { mode: 'timestamp_ms' }).notNull(),
+    count: integer('count').default(0).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('ai_usage_counter_window_uidx').on(
+      table.scopeKind,
+      table.scopeId,
+      table.windowKind,
+      table.windowStartAt,
+    ),
+    index('ai_usage_counter_expiry_idx').on(table.windowKind, table.windowStartAt),
+  ],
+);
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
@@ -1037,6 +1270,8 @@ export const userRelations = relations(user, ({ many }) => ({
     relationName: 'ticketPurchaseRejectedBy',
   }),
   bookingAuditLogs: many(bookingAuditLog),
+  aiConversations: many(aiConversation),
+  aiFeedback: many(aiFeedback),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -1049,6 +1284,68 @@ export const sessionRelations = relations(session, ({ one }) => ({
 export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, {
     fields: [account.userId],
+    references: [user.id],
+  }),
+}));
+
+export const aiKnowledgeDocumentRelations = relations(aiKnowledgeDocument, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [aiKnowledgeDocument.organizationId],
+    references: [organization.id],
+  }),
+  classroom: one(classroom, {
+    fields: [aiKnowledgeDocument.classroomId],
+    references: [classroom.id],
+  }),
+  chunks: many(aiKnowledgeChunk),
+}));
+
+export const aiKnowledgeChunkRelations = relations(aiKnowledgeChunk, ({ one }) => ({
+  document: one(aiKnowledgeDocument, {
+    fields: [aiKnowledgeChunk.documentId],
+    references: [aiKnowledgeDocument.id],
+  }),
+  organization: one(organization, {
+    fields: [aiKnowledgeChunk.organizationId],
+    references: [organization.id],
+  }),
+  classroom: one(classroom, {
+    fields: [aiKnowledgeChunk.classroomId],
+    references: [classroom.id],
+  }),
+}));
+
+export const aiConversationRelations = relations(aiConversation, ({ one, many }) => ({
+  user: one(user, {
+    fields: [aiConversation.userId],
+    references: [user.id],
+  }),
+  organization: one(organization, {
+    fields: [aiConversation.organizationId],
+    references: [organization.id],
+  }),
+  classroom: one(classroom, {
+    fields: [aiConversation.classroomId],
+    references: [classroom.id],
+  }),
+  messages: many(aiMessage),
+}));
+
+export const aiMessageRelations = relations(aiMessage, ({ one, many }) => ({
+  conversation: one(aiConversation, {
+    fields: [aiMessage.conversationId],
+    references: [aiConversation.id],
+  }),
+  feedback: many(aiFeedback),
+}));
+
+export const aiFeedbackRelations = relations(aiFeedback, ({ one }) => ({
+  message: one(aiMessage, {
+    fields: [aiFeedback.messageId],
+    references: [aiMessage.id],
+  }),
+  user: one(user, {
+    fields: [aiFeedback.userId],
     references: [user.id],
   }),
 }));
@@ -1073,6 +1370,9 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   billingOperationAttempts: many(organizationBillingOperationAttempt),
   billingInvoiceEvents: many(organizationBillingInvoiceEvent),
   billingDocumentReferences: many(organizationBillingDocumentReference),
+  aiKnowledgeDocuments: many(aiKnowledgeDocument),
+  aiKnowledgeChunks: many(aiKnowledgeChunk),
+  aiConversations: many(aiConversation),
 }));
 
 export const organizationBillingRelations = relations(organizationBilling, ({ one }) => ({
@@ -1140,6 +1440,9 @@ export const classroomRelations = relations(classroom, ({ one, many }) => ({
   bookingAuditLogs: many(bookingAuditLog),
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
+  aiKnowledgeDocuments: many(aiKnowledgeDocument),
+  aiKnowledgeChunks: many(aiKnowledgeChunk),
+  aiConversations: many(aiConversation),
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({
