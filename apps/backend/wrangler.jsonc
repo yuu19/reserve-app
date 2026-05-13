@@ -21,6 +21,15 @@
   "images": {
     "binding": "IMAGES",
   },
+  "ai": {
+    "binding": "AI",
+  },
+  "vectorize": [
+    {
+      "binding": "AI_KNOWLEDGE_INDEX",
+      "index_name": "reserve-app-knowledge",
+    },
+  ],
   "r2_buckets": [
     {
       "binding": "ORG_LOGO_BUCKET",
@@ -46,6 +55,10 @@
     "SERVICE_IMAGE_MAX_UPLOAD_BYTES": "8388608",
     "SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS": "300",
     "SERVICE_IMAGE_PUBLIC_BASE_URL": "",
+    "AI_EMBEDDING_MODEL": "@cf/baai/bge-m3",
+    "AI_ANSWER_MODEL": "@cf/meta/llama-3.1-8b-instruct",
+    "AI_GATEWAY_ID": "reserve-app-ai",
+    "AI_KNOWLEDGE_INDEX_NAME": "reserve-app-knowledge",
     "SENTRY_ENVIRONMENT": "production",
   },
   "routes": [

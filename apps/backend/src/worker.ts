@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createWorkerAuthRuntime, type BackendWorkerEnv } from './auth-worker.js';
+import { cleanupExpiredAiConversationContent } from './ai/conversation-store.js';
 import { runDailyBookingMaintenance } from './booking/scheduler.js';
 import {
   completeExpiredOrganizationPremiumTrials,
@@ -67,6 +68,9 @@ const handler = {
         reconcileProviderLinkedOrganizationBillingStates({
           database: runtime.database,
           env: runtime.env,
+        }),
+        cleanupExpiredAiConversationContent({
+          database: runtime.database,
         }),
       ]),
     );
