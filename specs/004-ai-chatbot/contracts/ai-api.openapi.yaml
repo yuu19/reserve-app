@@ -1,0 +1,295 @@
+openapi: 3.1.0
+info:
+  title: AI Chatbot Contracts
+  version: 1.0.0
+  description: >
+    Contracts for reserve-app AI Chatbot V1: authenticated chat, role-safe sources,
+    suggested actions, feedback, usage limits, and internal operator knowledge/quality review.
+servers:
+  - url: https://api.example.com
+    description: Production API origin
+security:
+  - sessionAuth: []
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+  schemas:
+    AiSourceKind:
+      type: string
+      enum: [docs, specs, faq, db_summary]
+    AiSourceVisibility:
+      type: string
+      enum: [public, authenticated, participant, staff, manager, admin, owner]
+    AiSuggestedActionKind:
+      type: string
+      enum: [open_page, contact_owner, contact_support]
+    AiSourceReference:
+      type: object
+      required: [sourceKind, title]
+      properties:
+        sourceKind:
+          $ref: '#/components/schemas/AiSourceKind'
+        title:
+          type: string
+        sourcePath:
+          type: [string, 'null']
+        chunkId:
+          type: [string, 'null']
+        visibility:
+          $ref: '#/components/schemas/AiSourceVisibility'
+    AiSuggestedAction:
+      type: object
+      required: [label, actionKind]
+      properties:
+        label:
+          type: string
+        href:
+          type: [string, 'null']
+        actionKind:
+          $ref: '#/components/schemas/AiSuggestedActionKind'
+    AiChatRequest:
+      type: object
+      required: [message]
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        conversationId:
+          type: string
+        organizationId:
+          type: string
+        classroomId:
+          type: string
+        currentPage:
+          type: string
+          maxLength: 2048
+    AiChatResponse:
+      type: object
+      required:
+        - conversationId
+        - messageId
+        - answer
+        - sources
+        - suggestedActions
+        - confidence
+        - needsHumanSupport
+      properties:
+        conversationId:
+          type: string
+        messageId:
+          type: string
+        answer:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiSourceReference'
+        suggestedActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiSuggestedAction'
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+        needsHumanSupport:
+          type: boolean
+        rateLimit:
+          type: object
+          required: [userRemainingThisHour, organizationRemainingToday]
+          properties:
+            userRemainingThisHour:
+              type: integer
+              minimum: 0
+            organizationRemainingToday:
+              type: integer
+              minimum: 0
+    AiFeedbackRequest:
+      type: object
+      required: [rating]
+      additionalProperties: false
+      properties:
+        rating:
+          type: string
+          enum: [helpful, unhelpful]
+        comment:
+          type: string
+          maxLength: 1000
+    AiFeedbackResponse:
+      type: object
+      required: [feedbackId, messageId, rating]
+      properties:
+        feedbackId:
+          type: string
+        messageId:
+          type: string
+        rating:
+          type: string
+          enum: [helpful, unhelpful]
+    AiKnowledgeStatus:
+      type: object
+      required:
+        - documentId
+        - sourceKind
+        - title
+        - locale
+        - visibility
+        - internalOnly
+        - indexStatus
+        - indexedAt
+      properties:
+        documentId:
+          type: string
+        sourceKind:
+          $ref: '#/components/schemas/AiSourceKind'
+        title:
+          type: string
+        sourcePath:
+          type: string
+        locale:
+          type: string
+          enum: [ja, en]
+        visibility:
+          $ref: '#/components/schemas/AiSourceVisibility'
+        internalOnly:
+          type: boolean
+        indexStatus:
+          type: string
+          enum: [pending, indexed, failed, stale, deleted]
+        indexedAt:
+          type: [string, 'null']
+          format: date-time
+        lastError:
+          type: [string, 'null']
+    AiFeedbackTheme:
+      type: object
+      required: [theme, count, latestAt]
+      properties:
+        theme:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+        latestAt:
+          type: [string, 'null']
+          format: date-time
+  responses:
+    Unauthorized:
+      description: Not authenticated.
+    Forbidden:
+      description: Authenticated but not allowed for the requested scope.
+    RateLimited:
+      description: User or organization AI chat limit reached.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [message, retryAfterSeconds]
+            properties:
+              message:
+                type: string
+              retryAfterSeconds:
+                type: integer
+                minimum: 1
+paths:
+  /api/v1/ai/chat:
+    post:
+      summary: Ask the reserve-app AI assistant.
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiChatRequest'
+      responses:
+        '200':
+          description: Grounded answer, safe fallback, or low-confidence answer with next action guidance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiChatResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/v1/ai/messages/{messageId}/feedback:
+    post:
+      summary: Submit helpful or unhelpful feedback for an assistant message.
+      security:
+        - sessionAuth: []
+      parameters:
+        - in: path
+          name: messageId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiFeedbackRequest'
+      responses:
+        '200':
+          description: Feedback accepted for a message the user may access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiFeedbackResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/internal/ai/knowledge:
+    get:
+      summary: Internal operator review of knowledge freshness and indexing failures.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Internal-only knowledge status list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documents]
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AiKnowledgeStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/internal/ai/feedback-themes:
+    get:
+      summary: Internal operator review of unhelpful-answer themes.
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Internal-only aggregate feedback themes without unauthorized raw conversation browsing.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [themes]
+                properties:
+                  themes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AiFeedbackTheme'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
