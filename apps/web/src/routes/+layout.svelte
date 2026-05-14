@@ -6,8 +6,7 @@
 	import type { Pathname } from '$app/types';
 	import { onDestroy, onMount } from 'svelte';
 	import { AiChatWidget } from '$lib/components/ai';
-	import ClassroomSwitcher from '$lib/components/classroom-switcher.svelte';
-	import OrganizationSwitcher from '$lib/components/organization-switcher.svelte';
+	import ContextSwitcher from '$lib/components/context-switcher.svelte';
 	import { Toaster, toast } from 'svelte-sonner';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -256,8 +255,6 @@
 		}
 		return 'ユーザー';
 	});
-	const activeOrganizationName = $derived(activeOrganization?.name ?? '組織未選択');
-	const activeClassroomName = $derived(activeClassroom?.name ?? '教室未選択');
 	const navigationProgressStyle = $derived(
 		`transform: scaleX(${navigationProgressValue}); opacity: ${
 			navigationProgressValue >= 1 ? 0.9 : 1
@@ -1063,25 +1060,17 @@
 						>
 					{/if}
 				</div>
-				<div class="flex items-center gap-2">
-					<OrganizationSwitcher
+				<div class="flex min-w-0 items-center gap-2">
+					<ContextSwitcher
 						{organizations}
-						activeOrganizationId={activeOrganization?.id ?? null}
-						{activeOrganizationName}
+						{classrooms}
+						{activeOrganization}
+						{activeClassroom}
 						loading={loadingSession}
 						busy={switchingOrganization || switchingClassroom}
-						onSelect={submitSetActiveOrganizationFromHeader}
+						onSelectOrganization={submitSetActiveOrganizationFromHeader}
+						onSelectClassroom={submitSetActiveClassroomFromHeader}
 					/>
-					{#if activeOrganization && classrooms.length > 0}
-						<ClassroomSwitcher
-							{classrooms}
-							activeClassroomId={activeClassroom?.id ?? null}
-							{activeClassroomName}
-							loading={loadingSession}
-							busy={switchingOrganization || switchingClassroom}
-							onSelect={submitSetActiveClassroomFromHeader}
-						/>
-					{/if}
 				</div>
 			</header>
 
@@ -1106,32 +1095,23 @@
 						src={brandMarkHref}
 						width="36"
 					/>
-					<div class="min-w-0">
+					<div class="min-w-0 max-[420px]:hidden">
 						<p class="truncate text-sm font-semibold text-foreground">{brandName}</p>
 						<p class="truncate text-[11px] text-muted-foreground">{brandTagline}</p>
 					</div>
 				</div>
-				<div class="flex items-center gap-2">
-					<OrganizationSwitcher
+				<div class="flex min-w-0 items-center justify-end gap-2">
+					<ContextSwitcher
 						{organizations}
-						activeOrganizationId={activeOrganization?.id ?? null}
-						{activeOrganizationName}
+						{classrooms}
+						{activeOrganization}
+						{activeClassroom}
 						loading={loadingSession}
 						busy={switchingOrganization || switchingClassroom}
 						compact={true}
-						onSelect={submitSetActiveOrganizationFromHeader}
+						onSelectOrganization={submitSetActiveOrganizationFromHeader}
+						onSelectClassroom={submitSetActiveClassroomFromHeader}
 					/>
-					{#if activeOrganization && classrooms.length > 0}
-						<ClassroomSwitcher
-							{classrooms}
-							activeClassroomId={activeClassroom?.id ?? null}
-							{activeClassroomName}
-							loading={loadingSession}
-							busy={switchingOrganization || switchingClassroom}
-							compact={true}
-							onSelect={submitSetActiveClassroomFromHeader}
-						/>
-					{/if}
 				</div>
 			</header>
 
