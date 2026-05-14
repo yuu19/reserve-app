@@ -32,6 +32,35 @@ type BusyAction =
 
 const invitationRoleOptions: OrganizationRole[] = ['admin', 'member'];
 
+const normalizeSlug = (value: string): string =>
+  value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 120)
+    .replace(/-+$/g, '');
+
+const createFallbackSlug = (value: string, fallback: string): string => {
+  const source = value.trim();
+  if (!source) {
+    return '';
+  }
+  const hash = Array.from(source)
+    .reduce((current, character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return (current * 31 + codePoint) >>> 0;
+    }, 0)
+    .toString(36)
+    .slice(0, 6);
+  return `${fallback}-${hash || '1'}`;
+};
+
+const createSlugCandidate = (value: string, fallback: string): string =>
+  normalizeSlug(value) || createFallbackSlug(value, fallback);
+
 const isRecord = (value: unknown): value is JsonRecord => {
   return typeof value === 'object' && value !== null;
 };
@@ -202,6 +231,7 @@ const AppConsole = () => {
     name: '',
     slug: '',
   });
+  const [organizationSlugManuallyEdited, setOrganizationSlugManuallyEdited] = useState(false);
   const [invitationForm, setInvitationForm] = useState({
     email: '',
     role: 'member' as OrganizationRole,
@@ -445,7 +475,7 @@ const AppConsole = () => {
     try {
       const response = await mobileApi.createOrganization({
         name: organizationForm.name.trim(),
-        slug: organizationForm.slug.trim(),
+        slug: createSlugCandidate(organizationForm.slug || organizationForm.name, 'organization'),
       });
       const payload = await parseResponseBody(response);
 
@@ -455,6 +485,7 @@ const AppConsole = () => {
       }
 
       setOrganizationForm({ name: '', slug: '' });
+      setOrganizationSlugManuallyEdited(false);
 
       const currentSession = await refreshSession();
       const nextActive = await loadOrganizations(currentSession);
@@ -728,14 +759,24 @@ const AppConsole = () => {
                     <TextField.Label>名前</TextField.Label>
                     <TextField.Input
                       value={organizationForm.name}
-                      onChangeText={(name) => setOrganizationForm((prev) => ({ ...prev, name }))}
+                      onChangeText={(name) =>
+                        setOrganizationForm((prev) => ({
+                          name,
+                          slug: organizationSlugManuallyEdited
+                            ? prev.slug
+                            : createSlugCandidate(name, 'organization'),
+                        }))
+                      }
                     />
                   </TextField>
                   <TextField isRequired>
-                    <TextField.Label>slug</TextField.Label>
+                    <TextField.Label>URL識別子</TextField.Label>
                     <TextField.Input
                       value={organizationForm.slug}
-                      onChangeText={(slug) => setOrganizationForm((prev) => ({ ...prev, slug }))}
+                      onChangeText={(slug) => {
+                        setOrganizationSlugManuallyEdited(true);
+                        setOrganizationForm((prev) => ({ ...prev, slug: normalizeSlug(slug) }));
+                      }}
                       autoCapitalize="none"
                       autoCorrect={false}
                     />
@@ -778,7 +819,7 @@ const AppConsole = () => {
                           </Text>
                         </View>
                         <Text className="text-xs text-muted-foreground">
-                          slug: {organization.slug}
+                          URL識別子: {organization.slug}
                         </Text>
                         <Button
                           variant="secondary"

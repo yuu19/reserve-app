@@ -17,6 +17,12 @@
 		uploadOrganizationLogo
 	} from '$lib/features/organization-context.svelte';
 	import {
+		createSlugCandidate,
+		normalizeSlug,
+		SLUG_INPUT_HINT,
+		SLUG_PATTERN_ATTRIBUTE
+	} from '$lib/features/slug';
+	import {
 		getCurrentPathWithSearch,
 		loadPortalAccess,
 		loadSession,
@@ -32,11 +38,25 @@
 	let organizations = $state<OrganizationPayload[]>([]);
 	let activeOrganization = $state<OrganizationPayload | null>(null);
 	let organizationForm = $state({ name: '', slug: '' });
+	let organizationSlugManuallyEdited = $state(false);
 	let organizationLogoFiles = $state<FileList | undefined>(undefined);
 
 	const selectedOrganizationLogoFile = $derived(organizationLogoFiles?.item(0) ?? null);
 	const activeOrganizationId = $derived(activeOrganization?.id ?? null);
 	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
+
+	const updateOrganizationName = (event: Event) => {
+		const name = (event.currentTarget as HTMLInputElement).value;
+		organizationForm.name = name;
+		if (!organizationSlugManuallyEdited) {
+			organizationForm.slug = createSlugCandidate(name, 'organization');
+		}
+	};
+
+	const updateOrganizationSlug = (event: Event) => {
+		organizationSlugManuallyEdited = true;
+		organizationForm.slug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
+	};
 
 	const refreshSettings = async () => {
 		const { session } = await loadSession();
@@ -73,7 +93,7 @@
 
 			const result = await createOrganization({
 				name: organizationForm.name,
-				slug: organizationForm.slug,
+				slug: createSlugCandidate(organizationForm.slug || organizationForm.name, 'organization'),
 				logo
 			});
 			if (!result.ok) {
@@ -82,6 +102,7 @@
 			}
 			toast.success(result.message);
 			organizationForm = { name: '', slug: '' };
+			organizationSlugManuallyEdited = false;
 			organizationLogoFiles = undefined;
 			await refreshSettings();
 		} finally {
@@ -160,19 +181,31 @@
 								name="organization_name"
 								type="text"
 								required
-								bind:value={organizationForm.name}
+								value={organizationForm.name}
+								oninput={updateOrganizationName}
+								disabled={busy}
 							/>
 						</div>
-						<div class="space-y-2">
-							<Label for="organization-slug">識別子 (slug)</Label>
-							<Input
-								id="organization-slug"
-								name="organization_slug"
-								type="text"
-								required
-								bind:value={organizationForm.slug}
-							/>
-						</div>
+						<details class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+							<summary class="cursor-pointer text-sm font-medium text-foreground">
+								URL識別子を編集
+							</summary>
+							<div class="mt-3 space-y-2">
+								<Label for="organization-slug">組織のURL識別子</Label>
+								<Input
+									id="organization-slug"
+									name="organization_slug"
+									type="text"
+									value={organizationForm.slug}
+									oninput={updateOrganizationSlug}
+									pattern={SLUG_PATTERN_ATTRIBUTE}
+									title={SLUG_INPUT_HINT}
+									autocomplete="off"
+									disabled={busy}
+								/>
+								<p class="text-xs text-muted-foreground">{SLUG_INPUT_HINT}</p>
+							</div>
+						</details>
 						<div class="space-y-2">
 							<Label for="organization-logo">ロゴ画像 (任意)</Label>
 							<Input
@@ -228,7 +261,7 @@
 												{organization.name}
 											</p>
 											<p class="truncate text-xs text-muted-foreground">
-												slug: {organization.slug}
+												URL識別子: {organization.slug}
 											</p>
 										</div>
 									</div>

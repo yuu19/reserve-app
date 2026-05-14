@@ -97,13 +97,16 @@ describe('/settings/+page.svelte', () => {
 			}
 		});
 		mocks.setActiveOrganization.mockResolvedValue({ ok: true, message: '' });
+		mocks.createOrganization.mockResolvedValue({ ok: true, message: '組織を作成しました。' });
 	});
 
 	it('renders organization logos in membership list with fallback', async () => {
 		render(SettingsPage);
 
 		await expect.element(page.getByRole('heading', { level: 1, name: '設定' })).toBeInTheDocument();
-		await expect.element(page.getByRole('heading', { level: 2, name: '組織設定' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '組織設定' }))
+			.toBeInTheDocument();
 		await expect.element(page.getByText('yusuke')).toBeInTheDocument();
 		await expect.element(page.getByText(/^org2$/)).toBeInTheDocument();
 
@@ -136,7 +139,25 @@ describe('/settings/+page.svelte', () => {
 
 		render(SettingsPage);
 
-		await expect.element(page.getByText('招待参加ユーザーは新しい組織を作成できません。')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('招待参加ユーザーは新しい組織を作成できません。'))
+			.toBeInTheDocument();
 		expect(page.getByRole('button', { name: '組織を作成' }).query()).toBeNull();
+	});
+
+	it('creates an organization with an auto-generated URL identifier', async () => {
+		render(SettingsPage);
+
+		await expect.element(page.getByLabelText('組織名')).toBeInTheDocument();
+		await page.getByLabelText('組織名').fill('Tokyo School');
+		await page.getByRole('button', { name: '組織を作成' }).click();
+
+		await vi.waitFor(() => {
+			expect(mocks.createOrganization).toHaveBeenCalledWith({
+				name: 'Tokyo School',
+				slug: 'tokyo-school',
+				logo: undefined
+			});
+		});
 	});
 });

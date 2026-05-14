@@ -15,6 +15,12 @@
 		uploadOrganizationLogo
 	} from '$lib/features/organization-context.svelte';
 	import {
+		createSlugCandidate,
+		normalizeSlug,
+		SLUG_INPUT_HINT,
+		SLUG_PATTERN_ATTRIBUTE
+	} from '$lib/features/slug';
+	import {
 		getCurrentPathWithSearch,
 		loadPendingInvitationHomePath,
 		loadPortalAccess,
@@ -35,17 +41,36 @@
 		classroomName: '',
 		classroomSlug: ''
 	});
+	let organizationSlugManuallyEdited = $state(false);
+	let classroomSlugManuallyEdited = $state(false);
 	let organizationLogoFiles = $state<FileList | undefined>(undefined);
 
 	const selectedOrganizationLogoFile = $derived(organizationLogoFiles?.item(0) ?? null);
 
-	const maybeMirrorClassroomDefaults = (source: 'name' | 'slug') => {
-		if (source === 'name' && !form.classroomName.trim()) {
-			form.classroomName = form.organizationName;
+	const updateOrganizationName = (event: Event) => {
+		const name = (event.currentTarget as HTMLInputElement).value;
+		form.organizationName = name;
+		if (!organizationSlugManuallyEdited) {
+			form.organizationSlug = createSlugCandidate(name, 'organization');
 		}
-		if (source === 'slug' && !form.classroomSlug.trim()) {
-			form.classroomSlug = form.organizationSlug;
+	};
+
+	const updateOrganizationSlug = (event: Event) => {
+		organizationSlugManuallyEdited = true;
+		form.organizationSlug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
+	};
+
+	const updateClassroomName = (event: Event) => {
+		const name = (event.currentTarget as HTMLInputElement).value;
+		form.classroomName = name;
+		if (!classroomSlugManuallyEdited) {
+			form.classroomSlug = name.trim() ? createSlugCandidate(name, 'classroom') : '';
 		}
+	};
+
+	const updateClassroomSlug = (event: Event) => {
+		classroomSlugManuallyEdited = true;
+		form.classroomSlug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
 	};
 
 	const refresh = async () => {
@@ -91,9 +116,14 @@
 
 			const result = await createOrganizationWithInitialClassroom({
 				organizationName: form.organizationName,
-				organizationSlug: form.organizationSlug,
+				organizationSlug: createSlugCandidate(
+					form.organizationSlug || form.organizationName,
+					'organization'
+				),
 				classroomName: form.classroomName,
-				classroomSlug: form.classroomSlug,
+				classroomSlug: form.classroomName.trim()
+					? createSlugCandidate(form.classroomSlug || form.classroomName, 'classroom')
+					: '',
 				logo
 			});
 			if (!result.ok || !result.organization || !result.classroom) {
@@ -147,8 +177,7 @@
 		<CardHeader class="space-y-2">
 			<h2 class="text-xl font-semibold text-foreground">初期セットアップ</h2>
 			<CardDescription>
-				組織作成は必須です。初期教室名と slug
-				を空欄にすると、組織名ベースの初期教室を自動で用意し、あとから教室管理で変更できます。
+				組織作成は必須です。URL識別子は名前から自動で用意します。初期教室名を空欄にすると、組織名ベースの初期教室をあとから変更できます。
 			</CardDescription>
 		</CardHeader>
 		<CardContent>
@@ -163,23 +192,33 @@
 								id="onboarding-organization-name"
 								name="onboarding_organization_name"
 								type="text"
-								bind:value={form.organizationName}
-								oninput={() => maybeMirrorClassroomDefaults('name')}
+								value={form.organizationName}
+								oninput={updateOrganizationName}
 								required
 								disabled={busy}
 							/>
 						</div>
 						<div class="space-y-2">
-							<Label for="onboarding-organization-slug">組織 slug</Label>
-							<Input
-								id="onboarding-organization-slug"
-								name="onboarding_organization_slug"
-								type="text"
-								bind:value={form.organizationSlug}
-								oninput={() => maybeMirrorClassroomDefaults('slug')}
-								required
-								disabled={busy}
-							/>
+							<details class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+								<summary class="cursor-pointer text-sm font-medium text-foreground">
+									組織のURL識別子を編集
+								</summary>
+								<div class="mt-3 space-y-2">
+									<Label for="onboarding-organization-slug">組織のURL識別子</Label>
+									<Input
+										id="onboarding-organization-slug"
+										name="onboarding_organization_slug"
+										type="text"
+										value={form.organizationSlug}
+										oninput={updateOrganizationSlug}
+										pattern={SLUG_PATTERN_ATTRIBUTE}
+										title={SLUG_INPUT_HINT}
+										autocomplete="off"
+										disabled={busy}
+									/>
+									<p class="text-xs text-muted-foreground">{SLUG_INPUT_HINT}</p>
+								</div>
+							</details>
 						</div>
 					</div>
 
@@ -190,24 +229,37 @@
 								id="onboarding-classroom-name"
 								name="onboarding_classroom_name"
 								type="text"
-								bind:value={form.classroomName}
+								value={form.classroomName}
+								oninput={updateClassroomName}
 								disabled={busy}
 							/>
 						</div>
 						<div class="space-y-2">
-							<Label for="onboarding-classroom-slug">初期教室 slug</Label>
-							<Input
-								id="onboarding-classroom-slug"
-								name="onboarding_classroom_slug"
-								type="text"
-								bind:value={form.classroomSlug}
-								disabled={busy}
-							/>
+							<details class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+								<summary class="cursor-pointer text-sm font-medium text-foreground">
+									初期教室のURL識別子を編集
+								</summary>
+								<div class="mt-3 space-y-2">
+									<Label for="onboarding-classroom-slug">初期教室のURL識別子</Label>
+									<Input
+										id="onboarding-classroom-slug"
+										name="onboarding_classroom_slug"
+										type="text"
+										value={form.classroomSlug}
+										oninput={updateClassroomSlug}
+										pattern={SLUG_PATTERN_ATTRIBUTE}
+										title={SLUG_INPUT_HINT}
+										autocomplete="off"
+										disabled={busy || !form.classroomName.trim()}
+									/>
+									<p class="text-xs text-muted-foreground">{SLUG_INPUT_HINT}</p>
+								</div>
+							</details>
 						</div>
 					</div>
 					<p class="text-xs text-muted-foreground">
 						推奨:
-						初回教室もここで設定してください。未入力の場合は組織名と同じ初期教室が自動作成されます。
+						初回教室もここで設定してください。未入力の場合は組織名ベースの初期教室が自動作成されます。
 					</p>
 
 					<div class="space-y-2">

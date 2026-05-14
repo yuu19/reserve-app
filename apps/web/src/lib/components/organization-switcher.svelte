@@ -124,7 +124,9 @@
 									<OrganizationLogo name={organization.name} logo={organization.logo} size="sm" />
 									<div class="min-w-0">
 										<p class="truncate text-sm font-medium text-foreground">{organization.name}</p>
-										<p class="truncate text-xs text-muted-foreground">slug: {organization.slug}</p>
+										<p class="truncate text-xs text-muted-foreground">
+											URL識別子: {organization.slug}
+										</p>
 									</div>
 								</div>
 								{#if organization.id === activeOrganizationId}

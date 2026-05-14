@@ -33,6 +33,13 @@
 		resolvePortalHomePath
 	} from '$lib/features/auth-session.svelte';
 	import { buildScopedPath } from '$lib/features/scoped-routing';
+	import {
+		createSlugCandidate,
+		createUniqueSlugCandidate,
+		normalizeSlug,
+		SLUG_INPUT_HINT,
+		SLUG_PATTERN_ATTRIBUTE
+	} from '$lib/features/slug';
 	import type { OrganizationBillingPayload, OrganizationPayload } from '$lib/rpc-client';
 	import type { OrganizationPremiumRestrictionPayload } from '$lib/features/premium-restrictions';
 	import { toast } from 'svelte-sonner';
@@ -48,7 +55,9 @@
 	let billing = $state<OrganizationBillingPayload | null>(null);
 	let premiumRestriction = $state<OrganizationPremiumRestrictionPayload | null>(null);
 	let createForm = $state({ name: '', slug: '' });
+	let createSlugManuallyEdited = $state(false);
 	let editDialogOpen = $state(false);
+	let slugChangeDialogOpen = $state(false);
 	let editTarget = $state<ClassroomContextPayload | null>(null);
 	let editForm = $state({ name: '', slug: '' });
 
@@ -64,6 +73,33 @@
 			return roleLabelMap[primaryRole];
 		}
 		return null;
+	};
+
+	const classroomSlugs = () => classrooms.map((classroom) => classroom.slug);
+
+	const updateCreateName = (event: Event) => {
+		const name = (event.currentTarget as HTMLInputElement).value;
+		createForm.name = name;
+		if (!createSlugManuallyEdited) {
+			createForm.slug = createUniqueSlugCandidate({
+				value: name,
+				fallback: 'classroom',
+				existingSlugs: classroomSlugs()
+			});
+		}
+	};
+
+	const updateCreateSlug = (event: Event) => {
+		createSlugManuallyEdited = true;
+		createForm.slug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
+	};
+
+	const updateEditName = (event: Event) => {
+		editForm.name = (event.currentTarget as HTMLInputElement).value;
+	};
+
+	const updateEditSlug = (event: Event) => {
+		editForm.slug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
 	};
 
 	const refresh = async () => {
@@ -103,7 +139,16 @@
 
 		busy = true;
 		try {
-			const result = await createClassroom(activeOrganization.slug, createForm);
+			const result = await createClassroom(activeOrganization.slug, {
+				name: createForm.name,
+				slug: createForm.slug
+					? normalizeSlug(createForm.slug)
+					: createUniqueSlugCandidate({
+							value: createForm.name,
+							fallback: 'classroom',
+							existingSlugs: classroomSlugs()
+						})
+			});
 			if (!result.ok) {
 				if (result.premiumRestriction) {
 					premiumRestriction = result.premiumRestriction;
@@ -116,6 +161,7 @@
 
 			toast.success(result.message);
 			createForm = { name: '', slug: '' };
+			createSlugManuallyEdited = false;
 			await refresh();
 		} finally {
 			busy = false;
@@ -128,18 +174,33 @@
 			name: classroom.name,
 			slug: classroom.slug
 		};
+		slugChangeDialogOpen = false;
 		editDialogOpen = true;
 	};
 
 	const submitUpdateClassroom = async (event: SubmitEvent) => {
 		event.preventDefault();
+		await submitUpdateClassroomForm(false);
+	};
+
+	const submitUpdateClassroomForm = async (slugChangeConfirmed: boolean) => {
 		if (!activeOrganization?.slug || !editTarget || !canManageOrganization) {
+			return;
+		}
+
+		const nextSlug = createSlugCandidate(editForm.slug || editForm.name, 'classroom');
+		editForm.slug = nextSlug;
+		if (nextSlug !== editTarget.slug && !slugChangeConfirmed) {
+			slugChangeDialogOpen = true;
 			return;
 		}
 
 		busy = true;
 		try {
-			const result = await updateClassroom(activeOrganization.slug, editTarget.slug, editForm);
+			const result = await updateClassroom(activeOrganization.slug, editTarget.slug, {
+				name: editForm.name,
+				slug: nextSlug
+			});
 			if (!result.ok || !result.classroom) {
 				if (result.premiumRestriction) {
 					premiumRestriction = result.premiumRestriction;
@@ -152,6 +213,7 @@
 
 			toast.success(result.message);
 			editDialogOpen = false;
+			slugChangeDialogOpen = false;
 
 			if (activeClassroom?.slug === editTarget.slug) {
 				await goto(
@@ -226,7 +288,7 @@
 	<header class="space-y-2">
 		<h1 class="text-3xl font-semibold text-foreground">教室管理</h1>
 		<p class="text-sm text-muted-foreground">
-			教室の作成、名称・slug の更新、教室ごとの管理導線への遷移を行います。
+			教室の作成、名称・URL識別子の更新、教室ごとの管理導線への遷移を行います。
 		</p>
 	</header>
 
@@ -274,22 +336,39 @@
 								<Input
 									id="classroom-name"
 									name="classroom_name"
-									bind:value={createForm.name}
+									value={createForm.name}
+									oninput={updateCreateName}
 									maxlength={120}
 									required
+									disabled={busy}
 								/>
 							</div>
-							<div class="space-y-2">
-								<Label for="classroom-slug">slug</Label>
-								<Input
-									id="classroom-slug"
-									name="classroom_slug"
-									bind:value={createForm.slug}
-									maxlength={120}
-									required
-								/>
-								<p class="text-xs text-muted-foreground">slug は scoped URL に使われます。</p>
+							<div class="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+								URL識別子:
+								<code class="font-mono text-foreground">
+									{createForm.slug || '教室名から自動生成'}
+								</code>
 							</div>
+							<details class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
+								<summary class="cursor-pointer text-sm font-medium text-foreground">
+									URL識別子を編集
+								</summary>
+								<div class="mt-3 space-y-2">
+									<Label for="classroom-slug">教室のURL識別子</Label>
+									<Input
+										id="classroom-slug"
+										name="classroom_slug"
+										value={createForm.slug}
+										oninput={updateCreateSlug}
+										pattern={SLUG_PATTERN_ATTRIBUTE}
+										title={SLUG_INPUT_HINT}
+										autocomplete="off"
+										maxlength={120}
+										disabled={busy}
+									/>
+									<p class="text-xs text-muted-foreground">{SLUG_INPUT_HINT}</p>
+								</div>
+							</details>
 							<Button type="submit" disabled={busy}>教室を作成</Button>
 						</form>
 					{/if}
@@ -320,7 +399,9 @@
 													<Badge variant="outline">{classroomRoleLabel}</Badge>
 												{/if}
 											</div>
-											<p class="text-xs text-muted-foreground">slug: {classroom.slug}</p>
+											<p class="text-xs text-muted-foreground">
+												URL識別子: {classroom.slug}
+											</p>
 										</div>
 										<div class="flex flex-wrap gap-2">
 											<Button
@@ -362,7 +443,7 @@
 		<DialogHeader>
 			<DialogTitle>教室を編集</DialogTitle>
 			<DialogDescription id="classroom-edit-description">
-				教室名と slug を更新します。slug を変更すると scoped URL も変わります。
+				教室名を更新します。URL識別子を変更すると、この教室のURLも変わります。
 			</DialogDescription>
 		</DialogHeader>
 		{#if editTarget}
@@ -372,20 +453,33 @@
 					<Input
 						id="edit-classroom-name"
 						name="edit_classroom_name"
-						bind:value={editForm.name}
+						value={editForm.name}
+						oninput={updateEditName}
 						maxlength={120}
 						required
+						disabled={busy}
 					/>
 				</div>
 				<div class="space-y-2">
-					<Label for="edit-classroom-slug">slug</Label>
+					<Label for="edit-classroom-slug">教室のURL識別子</Label>
 					<Input
 						id="edit-classroom-slug"
 						name="edit_classroom_slug"
-						bind:value={editForm.slug}
+						value={editForm.slug}
+						oninput={updateEditSlug}
+						pattern={SLUG_PATTERN_ATTRIBUTE}
+						title={SLUG_INPUT_HINT}
+						autocomplete="off"
 						maxlength={120}
 						required
+						disabled={busy}
 					/>
+					<p class="text-xs text-muted-foreground">{SLUG_INPUT_HINT}</p>
+					{#if editTarget && editForm.slug !== editTarget.slug}
+						<p class="text-xs text-destructive">
+							保存時に確認が必要です。既存のURLや共有済みリンクに影響します。
+						</p>
+					{/if}
 				</div>
 				<DialogFooter>
 					<Button
@@ -400,5 +494,38 @@
 				</DialogFooter>
 			</form>
 		{/if}
+	</DialogContent>
+</Dialog>
+
+<Dialog bind:open={slugChangeDialogOpen}>
+	<DialogContent aria-describedby="classroom-slug-change-description" class="sm:max-w-lg">
+		<DialogHeader>
+			<DialogTitle>URL識別子を変更しますか</DialogTitle>
+			<DialogDescription id="classroom-slug-change-description">
+				{editTarget?.name} のURLが
+				<code class="font-mono">{editTarget?.slug}</code>
+				から
+				<code class="font-mono">{editForm.slug}</code>
+				に変わります。共有済みのURLが使えなくなる可能性があります。
+			</DialogDescription>
+		</DialogHeader>
+		<DialogFooter>
+			<Button
+				type="button"
+				variant="ghost"
+				onclick={() => (slugChangeDialogOpen = false)}
+				disabled={busy}
+			>
+				戻る
+			</Button>
+			<Button
+				type="button"
+				variant="destructive"
+				onclick={() => void submitUpdateClassroomForm(true)}
+				disabled={busy}
+			>
+				URL識別子を変更して保存
+			</Button>
+		</DialogFooter>
 	</DialogContent>
 </Dialog>

@@ -111,7 +111,9 @@
 							<div class="flex items-center justify-between gap-2">
 								<div class="min-w-0">
 									<p class="truncate text-sm font-medium text-foreground">{classroom.name}</p>
-									<p class="truncate text-xs text-muted-foreground">slug: {classroom.slug}</p>
+									<p class="truncate text-xs text-muted-foreground">
+										URL識別子: {classroom.slug}
+									</p>
 								</div>
 								{#if classroom.id === activeClassroomId}
 									<span class="flex items-center gap-1">

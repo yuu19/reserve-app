@@ -134,11 +134,18 @@ describe('/admin/classrooms/+page.svelte', () => {
 			.element(page.getByRole('heading', { level: 2, name: '教室を作成' }))
 			.toBeInTheDocument();
 		await page.getByLabelText('教室名').fill('Premium Room');
-		await page.getByLabelText('slug').fill('premium-room');
 		await page.getByRole('button', { name: '教室を作成' }).click();
 
+		await vi.waitFor(() => {
+			expect(mocks.createClassroom).toHaveBeenCalledWith('org-one', {
+				name: 'Premium Room',
+				slug: 'premium-room'
+			});
+		});
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '複数教室管理には Premiumプランが必要です' }))
+			.element(
+				page.getByRole('heading', { level: 2, name: '複数教室管理には Premiumプランが必要です' })
+			)
 			.toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '契約画面を開く' })).toBeInTheDocument();
 	});

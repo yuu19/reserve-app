@@ -86,6 +86,11 @@ type CreateAuthRoutesOptions = {
 };
 
 const LOGO_KEY_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SLUG_VALIDATION_MESSAGE =
+  'Slug must contain only lowercase letters, numbers, and single hyphen separators.';
+
+const slugSchema = z.string().trim().min(1).max(120).regex(SLUG_PATTERN, SLUG_VALIDATION_MESSAGE);
 
 const isFileEntry = (value: FormDataEntryValue | null): value is File => {
   return typeof File !== 'undefined' && value instanceof File;
@@ -176,7 +181,7 @@ const googleOidcQuerySchema = z.object({
 
 const createOrganizationBodySchema = z.object({
   name: z.string().min(1).max(120),
-  slug: z.string().min(1).max(120),
+  slug: slugSchema,
   logo: z.string().max(2048).optional(),
   keepCurrentActiveOrganization: z.boolean().optional(),
 });
@@ -1263,12 +1268,12 @@ const classroomManagementSchema = classroomAccessSchema;
 
 const createClassroomBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
-  slug: z.string().trim().min(1).max(120),
+  slug: slugSchema,
 });
 
 const updateClassroomBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
-  slug: z.string().trim().min(1).max(120),
+  slug: slugSchema,
 });
 
 const listOrganizationAccessTreeRoute = createRoute({

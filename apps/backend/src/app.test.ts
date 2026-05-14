@@ -1533,6 +1533,15 @@ describe('backend app', () => {
     });
     expect(firstOrganizationResponse.status).toBe(200);
 
+    const invalidOrganizationSlugResponse = await owner.request('/api/v1/auth/organizations', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Invalid Org', slug: 'Invalid Org' }),
+    });
+    expect(invalidOrganizationSlugResponse.status).toBe(400);
+
     const secondOrganizationResponse = await owner.request('/api/v1/auth/organizations', {
       method: 'POST',
       headers: {
@@ -7125,6 +7134,21 @@ describe('backend app', () => {
       (createdClassroom.effective as { canManageClassroom?: boolean } | undefined)
         ?.canManageClassroom,
     ).toBe(true);
+
+    const invalidSlugResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Invalid Slug Room',
+          slug: 'invalid_slug',
+        }),
+      },
+    );
+    expect(invalidSlugResponse.status).toBe(400);
 
     const updateResponse = await owner.request(
       `/api/v1/auth/orgs/${encodeURIComponent(
