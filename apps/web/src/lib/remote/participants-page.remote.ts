@@ -12,7 +12,8 @@ import {
 	buildScopedInvitationPath,
 	createApiGetter,
 	resolveScopedAccessContext,
-	type ApiResult
+	type ApiResult,
+	type QueryValue
 } from '$lib/server/scoped-api';
 import { z } from 'zod';
 
@@ -31,6 +32,7 @@ type ParticipantsPageData = {
 	services: ServicePayload[];
 	ticketTypes: TicketTypePayload[];
 	ticketPurchases: TicketPurchasePayload[];
+	loadError: string | null;
 };
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -45,6 +47,16 @@ const toErrorMessage = (payload: unknown, fallback: string): string => {
 	}
 	if (typeof payload === 'string' && payload.length > 0) {
 		return payload;
+	}
+	return fallback;
+};
+
+const toExceptionMessage = (error: unknown, fallback: string): string => {
+	if (error instanceof Error && error.message) {
+		return error.message;
+	}
+	if (typeof error === 'string' && error.length > 0) {
+		return error;
 	}
 	return fallback;
 };
@@ -92,21 +104,44 @@ const asTicketTypes = (value: unknown): TicketTypePayload[] =>
 const asTicketPurchases = (value: unknown): TicketPurchasePayload[] =>
 	Array.isArray(value) ? value.filter(isTicketPurchase) : [];
 
-const assertAllowedFailure = (
+const createFailedApiResult = (message: string): ApiResult => ({
+	response: new Response(JSON.stringify({ message }), {
+		status: 503,
+		headers: { 'content-type': 'application/json' }
+	}),
+	payload: { message }
+});
+
+const createSafeApiGetter =
+	(getApi: ReturnType<typeof createApiGetter>) =>
+	async (path: string, query?: Record<string, QueryValue>): Promise<ApiResult> => {
+		try {
+			return await getApi(path, query);
+		} catch (error) {
+			const message = toExceptionMessage(error, 'API リクエストに失敗しました。');
+			console.error('getParticipantsPageData request failed', { path, query, message });
+			return createFailedApiResult(message);
+		}
+	};
+
+const getDependencyFailureMessage = (
 	result: ApiResult,
 	fallback: string,
-	label: string,
 	options: { allowForbidden?: boolean } = {}
-) => {
+): string | null => {
 	if (result.response.ok) {
-		return;
+		return null;
 	}
 	if (options.allowForbidden && result.response.status === 403) {
-		return;
+		return null;
 	}
-	const detail = toErrorMessage(result.payload, fallback);
-	throw new Error(`${label} (${result.response.status}): ${detail}`);
+	return `${fallback} (${result.response.status}): ${toErrorMessage(result.payload, fallback)}`;
 };
+
+const createLoadError = (messages: Array<string | null>): string | null =>
+	messages.some(Boolean)
+		? '一部の参加者データを取得できませんでした。時間をおいて再読み込みしてください。'
+		: null;
 
 const participantsPageQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
@@ -116,7 +151,7 @@ const participantsPageQuerySchema = z.object({
 export const getParticipantsPageData = query(
 	participantsPageQuerySchema,
 	async ({ orgSlug, classroomSlug }): Promise<ParticipantsPageData> => {
-		const getApi = createApiGetter();
+		const getApi = createSafeApiGetter(createApiGetter());
 		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
 		const scopedAccess = await resolveScopedAccessContext(getApi, activeContext);
 		if (!scopedAccess) {
@@ -132,7 +167,8 @@ export const getParticipantsPageData = query(
 				receivedInvitations: [],
 				services: [],
 				ticketTypes: [],
-				ticketPurchases: []
+				ticketPurchases: [],
+				loadError: null
 			};
 		}
 
@@ -172,7 +208,7 @@ export const getParticipantsPageData = query(
 			console.error('getParticipantsPageData dependency failed', {
 				label,
 				status: result.response.status,
-				payload: result.payload,
+				detail: toErrorMessage(result.payload, '参加者ページ依存データの取得に失敗しました。'),
 				orgSlug,
 				classroomSlug
 			});
@@ -189,8 +225,7 @@ export const getParticipantsPageData = query(
 				activeContext,
 				organizationId: scopedAccess.organizationId,
 				canManage:
-					scopedAccess.effective.canManageParticipants ||
-					scopedAccess.effective.canManageClassroom,
+					scopedAccess.effective.canManageParticipants || scopedAccess.effective.canManageClassroom,
 				canManageParticipants: scopedAccess.effective.canManageParticipants,
 				canManageClassroom: scopedAccess.effective.canManageClassroom,
 				premiumRestriction,
@@ -199,47 +234,43 @@ export const getParticipantsPageData = query(
 				receivedInvitations: asParticipantInvitations(receivedInvitationsResult.payload),
 				services: [],
 				ticketTypes: [],
-				ticketPurchases: []
+				ticketPurchases: [],
+				loadError: createLoadError([
+					getDependencyFailureMessage(
+						receivedInvitationsResult,
+						'受信した参加者招待の取得に失敗しました。'
+					)
+				])
 			};
 		}
 
-		assertAllowedFailure(participantsResult, '参加者情報の取得に失敗しました。', 'participants', {
-			allowForbidden: true
-		});
-		assertAllowedFailure(
-			sentInvitationsResult,
-			'参加者招待情報の取得に失敗しました。',
-			'classroom invitations',
-			{
-			allowForbidden: true
-			}
-		);
-		assertAllowedFailure(
-			receivedInvitationsResult,
-			'受信した参加者招待の取得に失敗しました。',
-			'user invitations'
-		);
-		assertAllowedFailure(servicesResult, 'サービス情報の取得に失敗しました。', 'services', {
-			allowForbidden: true
-		});
-		assertAllowedFailure(ticketTypesResult, '回数券種別の取得に失敗しました。', 'ticket types', {
-			allowForbidden: true
-		});
-		assertAllowedFailure(
-			ticketPurchasesResult,
-			'回数券購入申請の取得に失敗しました。',
-			'ticket purchases',
-			{
-			allowForbidden: true
-			}
-		);
+		const loadError = createLoadError([
+			getDependencyFailureMessage(participantsResult, '参加者情報の取得に失敗しました。', {
+				allowForbidden: true
+			}),
+			getDependencyFailureMessage(sentInvitationsResult, '参加者招待情報の取得に失敗しました。', {
+				allowForbidden: true
+			}),
+			getDependencyFailureMessage(
+				receivedInvitationsResult,
+				'受信した参加者招待の取得に失敗しました。'
+			),
+			getDependencyFailureMessage(servicesResult, 'サービス情報の取得に失敗しました。', {
+				allowForbidden: true
+			}),
+			getDependencyFailureMessage(ticketTypesResult, '回数券種別の取得に失敗しました。', {
+				allowForbidden: true
+			}),
+			getDependencyFailureMessage(ticketPurchasesResult, '回数券購入申請の取得に失敗しました。', {
+				allowForbidden: true
+			})
+		]);
 
 		return {
 			activeContext,
 			organizationId: scopedAccess.organizationId,
 			canManage:
-				scopedAccess.effective.canManageParticipants ||
-				scopedAccess.effective.canManageClassroom,
+				scopedAccess.effective.canManageParticipants || scopedAccess.effective.canManageClassroom,
 			canManageParticipants: scopedAccess.effective.canManageParticipants,
 			canManageClassroom: scopedAccess.effective.canManageClassroom,
 			premiumRestriction: null,
@@ -248,7 +279,8 @@ export const getParticipantsPageData = query(
 			receivedInvitations: asParticipantInvitations(receivedInvitationsResult.payload),
 			services: asServices(servicesResult.payload),
 			ticketTypes: asTicketTypes(ticketTypesResult.payload),
-			ticketPurchases: asTicketPurchases(ticketPurchasesResult.payload)
+			ticketPurchases: asTicketPurchases(ticketPurchasesResult.payload),
+			loadError
 		};
 	}
 );

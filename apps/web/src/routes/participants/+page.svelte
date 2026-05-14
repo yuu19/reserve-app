@@ -225,6 +225,9 @@
 		}
 		try {
 			const data = await loadParticipantsPageData();
+			if (data.loadError) {
+				toast.error(data.loadError);
+			}
 			if (!data.activeContext) {
 				resetParticipantViewState();
 				return;
