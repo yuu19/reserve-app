@@ -45,7 +45,7 @@
     "@types/node": "^20.11.17",
     "@types/react": "~19.2.13",
     "@types/react-dom": "^19.2.3",
-    "drizzle-kit": "^0.31.8",
+    "drizzle-kit": "^0.31.10",
     "miniflare": "^4.20260131.0",
     "typescript": "^5.8.3",
     "wrangler": "^4.62.0"
