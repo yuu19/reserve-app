@@ -2136,7 +2136,7 @@ describe('backend app', () => {
         await selectOrganizationBillingRow(organizationId);
       expect(billingAfterMissingSubscriptionPortal?.stripeSubscriptionId).toBeNull();
 
-      const trialPeriodEnd = 1778800000000;
+      const trialPeriodEnd = Date.now() + 7 * 24 * 60 * 60 * 1000;
       await d1
         .prepare(
           'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, current_period_end = ? WHERE organization_id = ?',
@@ -6362,6 +6362,7 @@ describe('backend app', () => {
       return originalFetch(input, init);
     });
 
+    let paymentMethodPendingTrialOrganizationId: string | null = null;
     try {
       const owner = createAuthAgent(appWithStripe);
       await signUpUser({
@@ -6375,6 +6376,7 @@ describe('backend app', () => {
         name: 'Trial Pending Org',
         slug: 'trial-pending-org',
       });
+      paymentMethodPendingTrialOrganizationId = organizationId;
 
       const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
         method: 'POST',
@@ -6416,6 +6418,14 @@ describe('backend app', () => {
       expect(summaryPayload.planState).toBe('premium_trial');
       expect(summaryPayload.paymentMethodStatus).toBe('pending');
     } finally {
+      if (paymentMethodPendingTrialOrganizationId) {
+        await d1
+          .prepare(
+            'UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?',
+          )
+          .bind(Date.now() + 7 * 24 * 60 * 60 * 1000, paymentMethodPendingTrialOrganizationId)
+          .run();
+      }
       fetchSpy.mockRestore();
     }
   });
