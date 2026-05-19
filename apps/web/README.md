@@ -188,6 +188,7 @@ pnpm --filter @apps/web run clean:e2e
 
 CI では pull request と `main` push で Chromium の E2E を実行します。
 失敗時の調査に使う `playwright-report` と `test-results` は GitHub Actions artifact に保存されます。
+`main` の最新 Playwright HTML レポートは GitHub Pages の `https://yuu19.github.io/reserve-app/` に公開されます。
 
 ## GitHub Actions deploy
 

@@ -49,13 +49,21 @@ jobs:
           E2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_E2E_WEBHOOK_SECRET }}
         run: pnpm --filter @apps/web test:e2e:billing
 
-      - name: Upload Stripe Billing Playwright artifacts
+      - name: Upload Stripe Billing Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-stripe-billing
+          path: apps/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload Stripe Billing Playwright artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-artifacts-stripe-billing
           path: |
-            apps/web/playwright-report/
             apps/web/test-results/
           if-no-files-found: ignore
           retention-days: 30
