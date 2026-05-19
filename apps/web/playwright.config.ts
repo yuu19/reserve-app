@@ -7,6 +7,24 @@ import { defineConfig, devices } from '@playwright/test';
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const webRoot = fileURLToPath(new URL('.', import.meta.url));
 const backendEnvFile = path.join(os.tmpdir(), 'reserve-app-backend-e2e.vars');
+const webE2eEnvFile = path.join(os.tmpdir(), 'reserve-app-web-e2e-env.json');
+const publicEventsOrgSlug =
+	process.env.PUBLIC_EVENTS_ORG_SLUG?.trim() || `public-events-e2e-${process.pid}`;
+const publicEventsClassroomSlug =
+	process.env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() || publicEventsOrgSlug;
+process.env.PUBLIC_EVENTS_ORG_SLUG = publicEventsOrgSlug;
+process.env.PUBLIC_EVENTS_CLASSROOM_SLUG = publicEventsClassroomSlug;
+fs.writeFileSync(
+	webE2eEnvFile,
+	JSON.stringify(
+		{
+			PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
+			PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug
+		},
+		null,
+		2
+	)
+);
 const billingE2eRequested =
 	process.env.BILLING_E2E_ENABLED === 'true' ||
 	process.argv.some((argument) => argument.includes('tests/e2e/billing'));
@@ -22,16 +40,7 @@ const requiredEnv = (name: string): string => {
 const quoteEnvValue = (value: string): string => JSON.stringify(value);
 
 const writeBackendEnvFile = () => {
-	const stripeSecretKey = requiredEnv('STRIPE_SECRET_KEY');
-	if (!stripeSecretKey.startsWith('sk_test_')) {
-		throw new Error('STRIPE_SECRET_KEY must be a Stripe testmode key for billing E2E tests.');
-	}
-
 	const e2eTestSecret = process.env.E2E_TEST_SECRET?.trim() || 'reserve-app-e2e-secret';
-	const webhookSecret =
-		process.env.STRIPE_WEBHOOK_SECRET?.trim() ||
-		process.env.E2E_STRIPE_WEBHOOK_SECRET?.trim() ||
-		'whsec_reserve_app_local_e2e';
 
 	const values: Record<string, string> = {
 		BETTER_AUTH_URL: 'http://localhost:3000',
@@ -44,17 +53,33 @@ const writeBackendEnvFile = () => {
 		INVITATION_ACCEPT_URL_BASE: 'http://localhost:5173/invitations/accept',
 		PARTICIPANT_INVITATION_ACCEPT_URL_BASE:
 			'http://localhost:5173/participants/invitations/accept',
-		PUBLIC_EVENTS_ORGANIZATION_SLUG: 'public-events',
+		PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
+		PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug,
 		RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL?.trim() || 'onboarding@resend.dev',
-		STRIPE_SECRET_KEY: stripeSecretKey,
-		STRIPE_WEBHOOK_SECRET: webhookSecret,
-		STRIPE_PREMIUM_MONTHLY_PRICE_ID: requiredEnv('STRIPE_PREMIUM_MONTHLY_PRICE_ID'),
-		STRIPE_PREMIUM_YEARLY_PRICE_ID: requiredEnv('STRIPE_PREMIUM_YEARLY_PRICE_ID'),
-		STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED: 'true',
 		E2E_TESTING_ENABLED: 'true',
 		E2E_TEST_SECRET: e2eTestSecret,
 		SENTRY_ENVIRONMENT: 'e2e'
 	};
+
+	if (billingE2eRequested) {
+		const stripeSecretKey = requiredEnv('STRIPE_SECRET_KEY');
+		if (!stripeSecretKey.startsWith('sk_test_')) {
+			throw new Error('STRIPE_SECRET_KEY must be a Stripe testmode key for billing E2E tests.');
+		}
+
+		const webhookSecret =
+			process.env.STRIPE_WEBHOOK_SECRET?.trim() ||
+			process.env.E2E_STRIPE_WEBHOOK_SECRET?.trim() ||
+			'whsec_reserve_app_local_e2e';
+
+		Object.assign(values, {
+			STRIPE_SECRET_KEY: stripeSecretKey,
+			STRIPE_WEBHOOK_SECRET: webhookSecret,
+			STRIPE_PREMIUM_MONTHLY_PRICE_ID: requiredEnv('STRIPE_PREMIUM_MONTHLY_PRICE_ID'),
+			STRIPE_PREMIUM_YEARLY_PRICE_ID: requiredEnv('STRIPE_PREMIUM_YEARLY_PRICE_ID'),
+			STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED: 'true'
+		});
+	}
 
 	fs.writeFileSync(
 		backendEnvFile,
@@ -65,9 +90,7 @@ const writeBackendEnvFile = () => {
 	);
 };
 
-if (billingE2eRequested) {
-	writeBackendEnvFile();
-}
+writeBackendEnvFile();
 
 export default defineConfig({
 	testDir: './tests/e2e',
@@ -100,14 +123,43 @@ export default defineConfig({
 					cwd: repoRoot,
 					env: {
 						...process.env,
-						PUBLIC_BACKEND_URL: 'http://localhost:3000'
+						PUBLIC_BACKEND_URL: 'http://localhost:3000',
+						PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
+						PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug
 					},
 					url: 'http://localhost:5173',
 					reuseExistingServer: !process.env.CI,
 					timeout: 120_000
 				}
 			]
-		: undefined,
+		: [
+				{
+					command: 'pnpm --filter @apps/backend run dev:e2e',
+					cwd: repoRoot,
+					env: {
+						...process.env,
+						E2E_BACKEND_ENV_FILE: backendEnvFile,
+						PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
+						PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug
+					},
+					url: 'http://localhost:3000/api/health',
+					reuseExistingServer: !process.env.CI,
+					timeout: 120_000
+				},
+				{
+					command: 'pnpm --filter @apps/web run dev:e2e',
+					cwd: repoRoot,
+					env: {
+						...process.env,
+						PUBLIC_BACKEND_URL: 'http://localhost:3000',
+						PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
+						PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug
+					},
+					url: 'http://localhost:5173',
+					reuseExistingServer: !process.env.CI,
+					timeout: 120_000
+				}
+			],
 	projects: [
 		{
 			name: 'chromium',
