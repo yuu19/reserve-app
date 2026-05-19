@@ -18,6 +18,7 @@ export type ManualItem = ManualCategory['items'][number] & {
 	categoryTitle: string;
 };
 
+/** docs app の manual index はここを正本にし、route 側では category/item の並び替えをしない。 */
 export const manualCategories: ManualCategory[] = [
 	{
 		id: 'guide',
@@ -93,6 +94,7 @@ export const manualItems: ManualItem[] = manualCategories.flatMap((category) =>
 	}))
 );
 
+/** 現在の URL から manual metadata を引けるよう、href を key にした lookup を事前構築する。 */
 export const manualLookup = new Map(manualItems.map((item) => [item.href, item]));
 
 export const featuredManuals = manualItems.filter((item) => item.featured);

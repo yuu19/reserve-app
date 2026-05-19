@@ -1,3 +1,4 @@
+/** DESIGN.md の SmartHR 系パレットを Expo/HeroUI Native 側で共有するための token。 */
 export const smartHrColors = {
   brand: '#00c4cc',
   primary: '#0077c7',
@@ -57,6 +58,11 @@ export const smartHrShadows = {
   xl: '0 4px 8px rgba(0, 0, 0, 0.15)',
 } as const;
 
+/**
+ * HeroUI Native に渡す theme 定義。
+ *
+ * dark mode も現時点では DESIGN.md の light palette に揃え、意図しない独自配色を避ける。
+ */
 export const smartHrHeroUITheme = {
   light: {
     colors: {

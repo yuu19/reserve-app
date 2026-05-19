@@ -47,6 +47,7 @@ export class AiChatState {
 	}
 
 	resetConversation() {
+		// conversationId を破棄して、次の送信を backend 上でも新しい会話として扱う。
 		this.messages = [];
 		this.input = '';
 		this.conversationId = null;
@@ -74,6 +75,7 @@ export class AiChatState {
 		];
 
 		try {
+			// 楽観的にユーザーメッセージを表示してから送信し、失敗時は入力欄へ戻して再送できるようにする。
 			const response = await askAi({
 				message,
 				conversationId: this.conversationId ?? undefined,
@@ -107,6 +109,7 @@ export class AiChatState {
 	}
 
 	async submitFeedback(messageId: string, rating: 'helpful' | 'unhelpful', comment?: string) {
+		// feedback はメッセージ単位の状態だけを先に更新し、他の会話履歴は immutable に保つ。
 		this.messages = this.messages.map((message) =>
 			message.id === messageId
 				? { ...message, feedbackRating: rating, feedbackStatus: 'sending', feedbackError: null }
@@ -135,4 +138,5 @@ export class AiChatState {
 	}
 }
 
+/** Svelte component から runes state を直接 new せずに作れるようにする factory。 */
 export const createAiChatState = () => new AiChatState();

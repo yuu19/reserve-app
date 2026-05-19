@@ -23,6 +23,7 @@ const isAccessEffectivePayload = (value: unknown): value is AccessEffectivePaylo
 	typeof value.canUseParticipantBooking === 'boolean';
 
 const parseResponseBody = async (response: Response): Promise<unknown> => {
+	// load function では backend の失敗 payload も画面に渡すため、JSON 以外も捨てずに読む。
 	const contentType = response.headers.get('content-type') ?? '';
 	if (contentType.includes('application/json')) {
 		return response.json();
@@ -51,6 +52,7 @@ const createApiUrl = (path: string, query: Record<string, QueryValue> = {}): str
 };
 
 const createForwardHeaders = () => {
+	// SSR から backend を呼ぶときは browser fetch と同じ session cookie を転送する。
 	const event = getRequestEvent();
 	const headers = new Headers();
 	const cookie = event.request.headers.get('cookie');
@@ -64,6 +66,7 @@ const createForwardHeaders = () => {
 	return headers;
 };
 
+/** SvelteKit load/server context から、cookie を引き継ぐ backend GET helper を作る。 */
 export const createApiGetter = () => {
 	const event = getRequestEvent();
 	const headers = createForwardHeaders();
@@ -87,9 +90,11 @@ export type ScopedAccessContext = ScopedApiIdentifiers & {
 	effective: AccessEffectivePayload;
 };
 
+/** scoped routing 用の slug context から invitation API path を組み立てる。 */
 export const buildScopedInvitationPath = (context: ScopedApiContext) =>
 	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms/${encodeURIComponent(context.classroomSlug)}/invitations`;
 
+/** slug ベースの scoped route から backend API が要求する organizationId/classroomId を解決する。 */
 export const resolveScopedApiIdentifiers = async (
 	getApi: ReturnType<typeof createApiGetter>,
 	context: ScopedApiContext
@@ -104,6 +109,9 @@ export const resolveScopedApiIdentifiers = async (
 	};
 };
 
+/**
+ * access-tree を優先して scoped access を解決し、足りない場合だけ classroom list に fallback する。
+ */
 export const resolveScopedAccessContext = async (
 	getApi: ReturnType<typeof createApiGetter>,
 	context: ScopedApiContext

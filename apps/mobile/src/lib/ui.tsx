@@ -146,10 +146,12 @@ const nativeUI: NativeUIModule | null = (() => {
   if (Platform.OS === 'web') {
     return null;
   }
+  // web bundle では native module を解決しないよう、実機環境だけ lazy require する。
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('heroui-native') as NativeUIModule;
 })();
 
+/** native では HeroUI Native、web preview では軽量 fallback component を返す共通 UI surface。 */
 export const Button = (nativeUI?.Button ?? WebButton) as NativeUIModule['Button'] | WebButtonType;
 export const Card = (nativeUI?.Card ?? WebCard) as NativeUIModule['Card'] | WebCardType;
 export const HeroUINativeProvider = (nativeUI?.HeroUINativeProvider ?? WebHeroUINativeProvider) as

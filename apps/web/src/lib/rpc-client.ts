@@ -996,6 +996,7 @@ const authFetch = (
 		headers?: HeadersInit;
 	} = {}
 ) => {
+	// Hono RPC で表現しにくい scoped endpoint は、ここで cookie 付き fetch に統一する。
 	const headers = new Headers(options.headers);
 	const shouldUseJson = options.json !== undefined;
 	if (shouldUseJson && !headers.has('content-type')) {
@@ -1064,6 +1065,8 @@ const resolveScopedIdentifiers = async (
 	}
 
 	const pending = (async () => {
+		// access-tree で slug から id を解決できる場合は追加 API を避ける。
+		// 旧 payload や部分的な権限だけの user では classrooms endpoint に fallback する。
 		const response = await authFetch('/api/v1/auth/orgs/access-tree');
 		const payload = await parseJsonResponse(response);
 		if (!response.ok || !isRecord(payload) || !Array.isArray(payload.orgs)) {
@@ -1161,6 +1164,11 @@ const withScopedJson = async <TJson extends Record<string, unknown>>(
 	});
 };
 
+/**
+ * web UI が backend auth API を呼ぶための集約 client。
+ *
+ * 型付き Hono RPC で足りるものと、scoped path や file upload のような fetch helper をここで揃える。
+ */
 export const authRpc = {
 	backendUrl,
 	buildGoogleOidcStartURL: (query?: GoogleOidcQuery) => {

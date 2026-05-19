@@ -45,6 +45,8 @@ export type AiFeedbackRequest = {
 };
 
 const parseJsonResponse = async (response: Response): Promise<unknown> => {
+	// backend は rate limit や認可失敗で JSON 以外を返す可能性があるため、UI 側では
+	// 失敗時メッセージを作れる形に丸める。
 	const contentType = response.headers.get('content-type') ?? '';
 	if (contentType.includes('application/json')) {
 		return response.json();
@@ -70,6 +72,7 @@ const readErrorMessage = (payload: unknown, fallback: string): string => {
 	return fallback;
 };
 
+/** 認証 cookie を付けて AI chat API を呼び、rate limit の再試行目安をエラーメッセージに含める。 */
 export const askAi = async (request: AiChatRequest): Promise<AiChatResponse> => {
 	const response = await fetch(new URL('/api/v1/ai/chat', authRpc.backendUrl), {
 		method: 'POST',
@@ -90,6 +93,7 @@ export const askAi = async (request: AiChatRequest): Promise<AiChatResponse> => 
 	return payload as AiChatResponse;
 };
 
+/** assistant message に対する feedback を送信する。失敗時は state 側が再試行表示できる例外にする。 */
 export const submitAiFeedback = async (
 	messageId: string,
 	request: AiFeedbackRequest
