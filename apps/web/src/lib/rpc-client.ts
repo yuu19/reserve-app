@@ -352,6 +352,9 @@ export type TicketPurchasePayload = {
 
 export type PublicEventListItemPayload = {
 	organizationId: string;
+	organizationSlug: string;
+	classroomId: string;
+	classroomSlug: string;
 	serviceId: string;
 	serviceName: string;
 	serviceDescription?: string | null;

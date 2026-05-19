@@ -59,6 +59,7 @@
 		try {
 			const result = await reservePublicEvent({
 				organizationId: detail.organizationId,
+				classroomId: detail.classroomId,
 				slotId: detail.slotId
 			});
 			if (!result.ok) {

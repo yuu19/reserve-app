@@ -3,7 +3,6 @@ import { authRpc } from '$lib/rpc-client';
 import { getPublicEventDetail, getPublicEvents } from '$lib/remote/events-page.remote';
 import { createBooking } from './bookings.svelte';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
-import { readWindowScopedRouteContext } from './scoped-routing';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -31,16 +30,17 @@ export const loadPublicEventDetail = async (slotId: string): Promise<PublicEvent
 	return getPublicEventDetail({ slotId });
 };
 
-export const ensureParticipantSelfEnrollment = async (_organizationId: string) => {
-	const context = readWindowScopedRouteContext();
-	if (!context) {
-		return {
-			ok: false,
-			created: false,
-			message: 'URL に組織/教室コンテキストがありません。'
-		};
-	}
-	const response = await authRpc.selfEnrollParticipantScoped(context);
+export const ensureParticipantSelfEnrollment = async ({
+	organizationId,
+	classroomId
+}: {
+	organizationId: string;
+	classroomId?: string | null;
+}) => {
+	const response = await authRpc.selfEnrollParticipant({
+		organizationId,
+		classroomId: classroomId ?? undefined
+	});
 	const payload = await parseResponseBody(response);
 	if (!response.ok) {
 		return {
@@ -60,12 +60,14 @@ export const ensureParticipantSelfEnrollment = async (_organizationId: string) =
 
 export const reservePublicEvent = async ({
 	organizationId,
+	classroomId,
 	slotId
 }: {
 	organizationId: string;
+	classroomId?: string | null;
 	slotId: string;
 }) => {
-	const enrollmentResult = await ensureParticipantSelfEnrollment(organizationId);
+	const enrollmentResult = await ensureParticipantSelfEnrollment({ organizationId, classroomId });
 	if (!enrollmentResult.ok) {
 		return {
 			ok: false,

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -13,6 +14,8 @@
 	let events = $state<PublicEventListItemPayload[]>([]);
 	let errorMessage = $state<string | null>(null);
 
+	type ResolvablePath = Pathname;
+
 	const toExceptionMessage = (error: unknown, fallback: string): string => {
 		if (error instanceof Error && error.message) {
 			return error.message;
@@ -21,7 +24,12 @@
 	};
 
 	const goToEventDetail = async (slotId: string) => {
-		await goto(resolve(`/events/${slotId}`));
+		const event = events.find((item) => item.slotId === slotId);
+		const path =
+			event && event.organizationSlug && event.classroomSlug
+				? `/${event.organizationSlug}/${event.classroomSlug}/events/${slotId}`
+				: `/events/${slotId}`;
+		await goto(resolve(path as ResolvablePath));
 	};
 
 	onMount(() => {

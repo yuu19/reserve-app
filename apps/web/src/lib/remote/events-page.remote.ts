@@ -48,9 +48,20 @@ const createApiUrl = (path: string): string => {
 	return new URL(path, backendUrl).toString();
 };
 
+const publicEventsPath = (suffix = ''): string => {
+	const orgSlug = env.PUBLIC_EVENTS_ORG_SLUG || 'public-events';
+	const classroomSlug = env.PUBLIC_EVENTS_CLASSROOM_SLUG || orgSlug;
+	return `/api/v1/public/orgs/${encodeURIComponent(orgSlug)}/classrooms/${encodeURIComponent(
+		classroomSlug
+	)}/events${suffix}`;
+};
+
 const isPublicEvent = (value: unknown): value is PublicEventListItemPayload =>
 	isRecord(value) &&
 	typeof value.organizationId === 'string' &&
+	typeof value.organizationSlug === 'string' &&
+	typeof value.classroomId === 'string' &&
+	typeof value.classroomSlug === 'string' &&
 	typeof value.serviceId === 'string' &&
 	typeof value.serviceName === 'string' &&
 	typeof value.slotId === 'string' &&
@@ -69,7 +80,7 @@ const asPublicEvents = (value: unknown): PublicEventListItemPayload[] =>
 
 export const getPublicEvents = query(async (): Promise<PublicEventListItemPayload[]> => {
 	const event = getRequestEvent();
-	const response = await event.fetch(createApiUrl('/api/v1/public/events'), {
+	const response = await event.fetch(createApiUrl(publicEventsPath()), {
 		method: 'GET'
 	});
 	const payload = await parseResponseBody(response);
@@ -87,7 +98,7 @@ export const getPublicEventDetail = query(
 	async ({ slotId }): Promise<PublicEventDetailPayload> => {
 		const event = getRequestEvent();
 		const response = await event.fetch(
-			createApiUrl(`/api/v1/public/events/${encodeURIComponent(slotId)}`),
+			createApiUrl(publicEventsPath(`/${encodeURIComponent(slotId)}`)),
 			{
 				method: 'GET'
 			}

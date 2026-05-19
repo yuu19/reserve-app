@@ -2,7 +2,12 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, asc, eq, gte } from 'drizzle-orm';
 import { resolveOrganizationClassroomContext } from '../booking/authorization.js';
 import { SLOT_STATUS } from '../booking/constants.js';
-import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
+import {
+  resolvePublicEventsClassroomSlug,
+  resolvePublicEventsOrganizationSlug,
+  type AuthRuntimeDatabase,
+  type AuthRuntimeEnv,
+} from '../auth-runtime.js';
 import * as dbSchema from '../db/schema.js';
 
 const publicEventSchema = z.object({
@@ -183,7 +188,7 @@ const resolvePublicOrganizationClassroom = async ({
   orgSlug: string;
   classroomSlug: string;
 }) => {
-  const configuredOrgSlug = env.PUBLIC_EVENTS_ORG_SLUG?.trim();
+  const configuredOrgSlug = resolvePublicEventsOrganizationSlug(env);
   if (configuredOrgSlug && configuredOrgSlug !== orgSlug) {
     return {
       error: {
@@ -211,7 +216,7 @@ const resolvePublicOrganizationClassroom = async ({
     };
   }
 
-  const configuredClassroomSlug = env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim();
+  const configuredClassroomSlug = resolvePublicEventsClassroomSlug(env);
   if (configuredClassroomSlug && classroomSlug !== configuredClassroomSlug) {
     return {
       error: {

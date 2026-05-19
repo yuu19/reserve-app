@@ -8,7 +8,13 @@ import {
   resolveOrganizationClassroomAccess,
   resolveOrganizationClassroomContext,
 } from '../booking/authorization.js';
-import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
+import {
+  resolvePublicEventsClassroomSlug,
+  resolvePublicEventsOrganizationSlug,
+  type AuthInstance,
+  type AuthRuntimeDatabase,
+  type AuthRuntimeEnv,
+} from '../auth-runtime.js';
 import {
   applyOrganizationPremiumTrialCompletion,
   ensureOrganizationBillingRow,
@@ -5322,7 +5328,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
       const participantEmail = identity.email;
 
-      const publicOrganizationSlug = env.PUBLIC_EVENTS_ORG_SLUG?.trim();
+      const publicOrganizationSlug = resolvePublicEventsOrganizationSlug(env);
       if (!publicOrganizationSlug) {
         return c.json({ message: 'PUBLIC_EVENTS_ORG_SLUG is not configured.' }, 503);
       }
@@ -5339,8 +5345,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Public events organization was not found.' }, 503);
       }
 
-      const publicClassroomSlug =
-        env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() || publicOrganizationSlug;
+      const publicClassroomSlug = resolvePublicEventsClassroomSlug(env) ?? publicOrganizationSlug;
       if (publicClassroomSlug.length === 0) {
         return c.json({ message: 'PUBLIC_EVENTS_CLASSROOM_SLUG is invalid.' }, 503);
       }

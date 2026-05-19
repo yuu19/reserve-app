@@ -53,6 +53,10 @@ export const resolveAuthPortalByPath = (path: string): AuthPortal | null => {
 		return 'participant';
 	}
 
+	if (/^\/[^/]+\/[^/]+\/events(?:\/|$)/u.test(pathname)) {
+		return 'participant';
+	}
+
 	if (isPathMatch(pathname, ADMIN_INVITATION_ACCEPT_PATH)) {
 		return 'admin';
 	}

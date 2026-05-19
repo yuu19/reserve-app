@@ -12,6 +12,7 @@ export type AuthRuntimeEnv = {
   BETTER_AUTH_COOKIE_DOMAIN?: string;
   INTERNAL_OPERATOR_EMAILS?: string;
   PUBLIC_EVENTS_ORG_SLUG?: string;
+  PUBLIC_EVENTS_ORGANIZATION_SLUG?: string;
   PUBLIC_EVENTS_CLASSROOM_SLUG?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
@@ -23,6 +24,12 @@ export type AuthRuntimeEnv = {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
 } & ResendEnv;
+
+export const resolvePublicEventsOrganizationSlug = (env: AuthRuntimeEnv): string | undefined =>
+  env.PUBLIC_EVENTS_ORG_SLUG?.trim() || env.PUBLIC_EVENTS_ORGANIZATION_SLUG?.trim() || undefined;
+
+export const resolvePublicEventsClassroomSlug = (env: AuthRuntimeEnv): string | undefined =>
+  env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() || resolvePublicEventsOrganizationSlug(env);
 
 type DrizzleDatabase = Parameters<typeof drizzleAdapter>[0];
 export type AuthRuntimeDatabase = DrizzleDatabase;
