@@ -28,7 +28,6 @@
 		redirectToLoginWithNext,
 		resolvePortalHomePath
 	} from '$lib/features/auth-session.svelte';
-	import { buildScopedPath } from '$lib/features/scoped-routing';
 	import { toast } from 'svelte-sonner';
 
 	type ResolvablePath = Pathname;
@@ -137,13 +136,11 @@
 
 			await goto(
 				resolve(
-					buildScopedPath(
-						{
-							orgSlug: result.organization.slug,
-							classroomSlug: result.classroom.slug
-						},
-						'/admin/dashboard'
-					) as ResolvablePath
+					'/[orgSlug]/[classroomSlug]/admin/dashboard',
+					{
+						orgSlug: result.organization.slug,
+						classroomSlug: result.classroom.slug
+					}
 				),
 				{ invalidateAll: true }
 			);

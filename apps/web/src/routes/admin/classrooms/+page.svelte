@@ -32,7 +32,6 @@
 		redirectToLoginWithNext,
 		resolvePortalHomePath
 	} from '$lib/features/auth-session.svelte';
-	import { buildScopedPath } from '$lib/features/scoped-routing';
 	import {
 		createSlugCandidate,
 		createUniqueSlugCandidate,
@@ -218,13 +217,11 @@
 			if (activeClassroom?.slug === editTarget.slug) {
 				await goto(
 					resolve(
-						buildScopedPath(
-							{
-								orgSlug: activeOrganization.slug,
-								classroomSlug: result.classroom.slug
-							},
-							'/admin/classrooms'
-						) as ResolvablePath
+						'/[orgSlug]/[classroomSlug]/admin/classrooms',
+						{
+							orgSlug: activeOrganization.slug,
+							classroomSlug: result.classroom.slug
+						}
 					),
 					{ invalidateAll: true }
 				);
@@ -243,13 +240,11 @@
 		}
 		await goto(
 			resolve(
-				buildScopedPath(
-					{
-						orgSlug: activeOrganization.slug,
-						classroomSlug
-					},
-					'/admin/classrooms'
-				) as ResolvablePath
+				'/[orgSlug]/[classroomSlug]/admin/classrooms',
+				{
+					orgSlug: activeOrganization.slug,
+					classroomSlug
+				}
 			),
 			{ invalidateAll: true }
 		);
@@ -261,13 +256,11 @@
 		}
 		await goto(
 			resolve(
-				buildScopedPath(
-					{
-						orgSlug: activeOrganization.slug,
-						classroomSlug
-					},
-					'/admin/invitations'
-				) as ResolvablePath
+				'/[orgSlug]/[classroomSlug]/admin/invitations',
+				{
+					orgSlug: activeOrganization.slug,
+					classroomSlug
+				}
 			)
 		);
 	};
