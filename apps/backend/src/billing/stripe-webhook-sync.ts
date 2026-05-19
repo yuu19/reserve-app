@@ -188,6 +188,8 @@ const claimStripeWebhookEvent = async ({
   eventId: string;
   eventType: string;
 }) => {
+  // webhook 受領記録は event id + scope で冪等に claim する。失敗済み受領記録だけは
+  // Stripe の再送で再処理できるよう processing に戻す。
   const rows = await database
     .insert(dbSchema.stripeWebhookEvent)
     .values({
@@ -446,6 +448,8 @@ const normalizeStripeOrganizationBillingWebhookEvent = ({
   event: StripeWebhookEvent;
   env: AuthRuntimeEnv;
 }): NormalizedStripeOrganizationBillingWebhookEvent => {
+  // Stripe event payload は処理前に billing 用の union へ正規化し、route 本体から
+  // provider payload shape の分岐を切り離す。
   if (event.type === 'checkout.session.completed') {
     const session = readStripeCheckoutSessionSummary(event.data?.object ?? null);
     if (!session) {
@@ -581,6 +585,8 @@ const resolveLatestSubscriptionSummary = async ({
       subscriptionId: fallback.id,
     });
   } catch {
+    // deleted event は subscription lookup が失敗しても、payload 自体が canceled を示すなら
+    // それを最終状態として扱える。
     if (eventType === 'customer.subscription.deleted' && fallback.status === 'canceled') {
       return fallback;
     }
@@ -620,6 +626,11 @@ const isProviderRecoveredSubscriptionStatus = (
   );
 };
 
+/**
+ * Stripe webhook を organization billing aggregate、追記型の受領記録、audit/signal に反映する。
+ *
+ * 再試行可能な provider/linkage 失敗は受領記録を failed にしつつ 500 を返し、Stripe 再送に任せる。
+ */
 export const handleStripeOrganizationBillingWebhook = async ({
   database,
   env,
@@ -896,6 +907,8 @@ export const handleStripeOrganizationBillingWebhook = async ({
         if (latestSubscriptionStatus) {
           const isCanceled = latestSubscriptionStatus === 'canceled';
           const isFreeOrCanceled = latestSubscriptionStatus === 'free' || isCanceled;
+          // 支払い失敗 event が後着しても provider subscription が既に復旧済みなら、
+          // owner には stale history として見せ、利用状態は復旧済みのままにする。
           stalePaymentIssueAfterRecovery =
             isPaymentIssueEvent && isProviderRecoveredSubscriptionStatus(latestSubscriptionStatus);
 

@@ -38,6 +38,12 @@ const isAiSourceKind = (value: string): value is AiSourceKind =>
 const normalizeSourceKind = (value: string): AiSourceKind =>
   isAiSourceKind(value) ? value : 'docs';
 
+/**
+ * Vectorize match を取得し、各チャンクを D1 の可視性メタデータで再検証する。
+ *
+ * Vector filter は検索範囲を狭めるだけで、index status、情報源スコープ、locale、
+ * 重複 content 抑制の正本は D1 とする。
+ */
 export const retrieveKnowledge = async ({
   env,
   database,
@@ -79,6 +85,8 @@ export const retrieveKnowledge = async ({
     return [];
   }
 
+  // Vectorize の match order だけを信用せず、document row で stale/deleted chunk を落としてから
+  // 残った候補を score 順に並べる。
   const matchById = new Map(matches.map((match) => [match.id, match]));
   const chunkIds = matches.map((match) => match.id);
   const rows = await database

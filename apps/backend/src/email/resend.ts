@@ -131,9 +131,7 @@ const createContractsUrl = ({ env }: { env: ResendEnv }) => {
 };
 
 const isValidFromField = (value: string) => {
-  // Resend accepts either:
-  // - email@example.com
-  // - Name <email@example.com>
+  // Resend は plain email と表示名付き email の両方を受け付ける。
   const plainEmailPattern = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/;
   const namedEmailPattern = /^[^<>]+<\s*[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+\s*>$/;
   return plainEmailPattern.test(value) || namedEmailPattern.test(value);
@@ -398,6 +396,7 @@ export const sendBookingNotificationEmail = async ({
   }
 };
 
+/** 課金 workflow から呼ばれる trial reminder メールを送る。設定不備は retryable でない例外にする。 */
 export const sendTrialEndingReminderEmail = async ({
   env,
   inviteeEmail,
@@ -451,6 +450,7 @@ export const sendTrialEndingReminderEmail = async ({
   }
 };
 
+/** 支払い失敗・認証要求・猶予期限通知の owner 向けメールを送る。配送失敗は呼び出し側で retry 判定する。 */
 export const sendBillingPaymentIssueEmail = async ({
   env,
   inviteeEmail,

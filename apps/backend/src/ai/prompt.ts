@@ -12,6 +12,7 @@ export type BusinessFactSummary = {
   sensitive: boolean;
 };
 
+/** プロンプトや保存用概要に入る前に、高リスクな secret と支払い参照情報をマスクする。 */
 export const redactSensitiveText = (value: string): string =>
   value
     .replace(/sk_(live|test)_[A-Za-z0-9_]+/g, '[redacted-secret]')
@@ -76,6 +77,12 @@ export const formatBusinessFactsForPrompt = (facts: BusinessFactSummary | null):
   return facts.lines.map((line) => `- ${redactSensitiveText(line)}`).join('\n');
 };
 
+/**
+ * 認可済みの事実だけから最終ユーザープロンプトを構築する。
+ *
+ * この関数を呼ぶ前に、ルートレベルのアクセスフィルタで許可されない文書と DB 由来の事実は
+ * 取り除かれている必要がある。
+ */
 export const buildAnswerPrompt = ({
   userId,
   access,
@@ -111,6 +118,8 @@ export const shouldSkipAiGatewayCache = (
   message: string,
   facts: BusinessFactSummary | null,
 ): boolean => {
+  // 請求や個人情報に関するプロンプトは変動しやすい機微コンテキストを含み得るため、
+  // モデル呼び出し自体がキャッシュ可能でも AI Gateway キャッシュを避ける。
   if (facts?.sensitive) {
     return true;
   }

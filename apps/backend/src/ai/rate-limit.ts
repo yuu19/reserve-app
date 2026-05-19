@@ -123,6 +123,8 @@ const incrementCountersIfUnderLimit = async ({
   organizationWindowStart: Date;
   now: Date;
 }): Promise<IncrementedCounterRow[]> => {
+  // D1 には複数 row をまたぐ条件付き increment helper がないため、ユーザー単位の時間枠と
+  // 組織単位の日次枠の判定を 1 つの更新文に閉じ込める。
   const rows = (await database.all(sql`
     WITH requested(scope_kind, scope_id, window_kind, window_start_at, limit_value) AS MATERIALIZED (
       SELECT 'user', ${userId}, 'hour', ${userWindowStart.getTime()}, ${USER_HOURLY_LIMIT}
@@ -157,6 +159,12 @@ const incrementCountersIfUnderLimit = async ({
   return rows;
 };
 
+/**
+ * ユーザー単位の時間枠と組織単位の日次枠の両方で AI 利用回数を atomic に消費する。
+ *
+ * UI 表示用の残数を返し、拒否時は最初に枯渇した期間に基づく
+ * 再試行 delay を含める。
+ */
 export const checkAndIncrementAiUsage = async ({
   database,
   userId,
@@ -262,6 +270,7 @@ export const checkAndIncrementAiUsage = async ({
   };
 };
 
+/** rate limit 判定に不要になった古い AI usage window を削除する。 */
 export const compactExpiredAiUsageCounters = async ({
   database,
   now = new Date(),

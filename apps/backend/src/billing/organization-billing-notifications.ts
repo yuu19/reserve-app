@@ -177,6 +177,7 @@ const trialReminderFailureReasonFromError = (error: unknown): string => {
   return 'unexpected_error';
 };
 
+/** 保存済み notification kind を UI/inspection が扱える既知値へ正規化する。 */
 export const normalizeOrganizationBillingNotificationKind = (
   value: unknown,
 ): OrganizationBillingNotificationKind => {
@@ -392,6 +393,11 @@ const matchesNotificationRecipient = (
   return attempt.recipientUserId === owner.userId || attempt.recipientEmail === owner.email;
 };
 
+/**
+ * owner ごとの過去 attempt から、支払い問題通知を送るか skip するかを決める。
+ *
+ * 既に送信済み/skip 済みの recipient には同じ Stripe event で再送せず、未完了分だけ再試行する。
+ */
 export const resolveOrganizationBillingPaymentIssueNotificationRecipientPlans = ({
   owners,
   attempts,
@@ -570,6 +576,7 @@ const insertOrganizationBillingNotification = async ({
   });
 };
 
+/** trial reminder 送信に必要な billing context を、entitlement policy と payment method 状態から作る。 */
 export const resolveOrganizationTrialReminderContext = async ({
   database,
   env,
@@ -612,6 +619,7 @@ export const resolveOrganizationTrialReminderContext = async ({
   };
 };
 
+/** internal billing inspection 用に、trial reminder の期待状態、履歴、失敗理由をまとめる。 */
 export const readTrialReminderDeliveryAuditInspection = async ({
   database,
   organizationId,
@@ -785,6 +793,11 @@ export const readTrialReminderDeliveryAuditInspection = async ({
   };
 };
 
+/**
+ * Stripe trial_will_end webhook から owner 向け reminder を送信し、attempt と signal を残す。
+ *
+ * Resend の一時的な配送失敗だけ再試行可能として返し、所有者不在や設定不備は調査 signal に寄せる。
+ */
 export const sendOrganizationTrialWillEndReminder = async ({
   database,
   env,
@@ -1001,6 +1014,11 @@ export const sendOrganizationTrialWillEndReminder = async ({
   }
 };
 
+/**
+ * payment_failed / payment_action_required を verified owner ごとに通知する。
+ *
+ * recipient 単位で過去 attempt を見て再送範囲を絞り、部分失敗は再試行可能/終端失敗を分けて返す。
+ */
 export const sendOrganizationPaymentIssueNotification = async ({
   database,
   env,

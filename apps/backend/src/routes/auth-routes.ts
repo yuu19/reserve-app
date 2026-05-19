@@ -117,6 +117,7 @@ const getIpAddress = (headers: Headers): string | null => {
   return first?.trim() ?? null;
 };
 
+/** E2E 実行時だけ、共有 secret 付き header から Stripe test clock id を受け取る。 */
 export const resolveE2eStripeTestClockId = ({
   env,
   headers,
@@ -1761,6 +1762,9 @@ const selfEnrollParticipantRoute = createRoute({
   },
 });
 
+/**
+ * Better Auth を土台に、organization/classroom、billing、invitation、asset upload の authenticated API を構築する。
+ */
 export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOptions) => {
   const database = options.database;
   const env = options.env;
@@ -1773,8 +1777,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       return;
     }
 
-    // Clear legacy host-only auth cookies to avoid mismatched state/session after
-    // migrating to Domain=.wakureserve.com cookies.
+    // Domain=.wakureserve.com cookie へ移行したあとも、旧 host-only cookie が残ると
+    // OAuth state/session が食い違うため、callback 時にまとめて削除する。
     const legacyCookieNames = [
       '__Secure-better-auth.oauth_state',
       '__Secure-better-auth.session_token',
@@ -3291,8 +3295,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       asResponse: true,
     });
 
-    // Better Auth returns 200 + { url, redirect } for social sign-in starts.
-    // Convert to an actual 302 for browser navigation unless explicitly disabled.
+    // Better Auth は social sign-in 開始時に 200 + { url, redirect } を返す。
+    // 明示的に無効化されていない場合は、ブラウザ遷移用の 302 に変換する。
     if (query.disableRedirect === true) {
       const headers = new Headers(response.headers);
       appendLegacyOAuthStateCleanupCookie(headers);

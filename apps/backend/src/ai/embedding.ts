@@ -19,6 +19,7 @@ const isNumberArray = (value: unknown): value is number[] =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
+/** モデルごとに異なる Workers AI レスポンス形状から埋め込みベクトルを読み取る。 */
 export const readEmbeddingVector = (result: unknown): number[] => {
   if (isRecord(result)) {
     const data = result.data;
@@ -43,6 +44,7 @@ export const readEmbeddingVector = (result: unknown): number[] => {
   throw new Error('Workers AI embedding response did not include a vector.');
 };
 
+/** モデル固有の出力に依存せず、診断用の embedding 形状を可能な範囲で返す。 */
 export const readEmbeddingShape = (result: unknown): number[] | null => {
   if (!isRecord(result)) {
     return null;
@@ -60,6 +62,11 @@ export const readEmbeddingShape = (result: unknown): number[] | null => {
   }
 };
 
+/**
+ * Workers AI で embedding を生成し、必要に応じて AI Gateway キャッシュを経由する。
+ *
+ * ナレッジ index 作成はキャッシュ可能な embedding を使い、実ユーザー query はキャッシュを無効化できる。
+ */
 export const generateEmbedding = async ({
   env,
   text,

@@ -7,6 +7,12 @@ import type { BusinessFactSummary } from './prompt.js';
 const readCount = (rows: Array<{ count: number | string | null }>): number =>
   Number(rows[0]?.count ?? 0);
 
+/**
+ * 呼び出し側の解決済みアクセスで安全に扱える、回答時点の DB 由来の事実を構築する。
+ *
+ * 請求詳細はオーナー限定とし、非オーナーの文脈にはオーナー確認が必要なことだけを
+ * マスク済み概要として返す。
+ */
 export const resolveBusinessFacts = async ({
   database,
   access,

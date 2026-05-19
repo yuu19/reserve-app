@@ -101,6 +101,9 @@ const toTime = (value: string | Date | null | undefined): number | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 };
 
+/**
+ * 支払い失敗の起点時刻と猶予期限を、provider 時刻とアプリ受領時刻のどちら由来か判別できる形で返す。
+ */
 export const resolveOrganizationBillingPaymentIssueTiming = ({
   paymentIssueStartedAt,
   pastDueGraceEndsAt,
@@ -127,6 +130,12 @@ export const resolveOrganizationBillingPaymentIssueTiming = ({
   };
 };
 
+/**
+ * subscription status と直近の invoice/payment event から、owner 向けに表示する支払い問題状態を決める。
+ *
+ * Stripe 側で復旧済みでも失敗 event が後着することがあるため、stale failure history を
+ * 通常の未払い状態とは分けて返す。
+ */
 export const resolveOrganizationBillingPaymentIssueState = ({
   subscriptionStatus,
   entitlementReason,
@@ -207,6 +216,7 @@ export const hasActivePremiumSubscription = (value: string | null): boolean => {
   );
 };
 
+/** 組織作成直後や旧データでも billing aggregate を参照できるよう、free 行を遅延作成する。 */
 export const ensureOrganizationBillingRow = async (
   database: AuthRuntimeDatabase,
   organizationId: string,
@@ -222,6 +232,7 @@ export const ensureOrganizationBillingRow = async (
     .onConflictDoNothing();
 };
 
+/** billing 行と audit history の両方を見て、過去に premium trial を開始済みか判定する。 */
 export const hasOrganizationStartedPremiumTrial = async ({
   database,
   organizationId,
@@ -258,6 +269,11 @@ export const hasOrganizationStartedPremiumTrial = async ({
   return Number(auditRows[0]?.count ?? 0) > 0;
 };
 
+/**
+ * organization billing aggregate を premium trial に遷移させる。
+ *
+ * Stripe subscription と紐づく trial でも、手動 trial でも同じ D1 aggregate を正本にする。
+ */
 export const startOrganizationPremiumTrial = async ({
   database,
   organizationId,
@@ -370,6 +386,9 @@ export const resolveOrganizationBillingProfileReadiness = (
     checkedAt: billing?.billingProfileCheckedAt ?? null,
   });
 
+/**
+ * 現在の billing state、owner 権限、Stripe 設定から owner が次に実行できる billing 操作を返す。
+ */
 export const resolveOrganizationBillingActionAvailability = ({
   billing,
   canManageBilling,
@@ -460,6 +479,11 @@ export const resolveOrganizationBillingTrialEndsAt = ({
   return planState === 'premium_trial' ? currentPeriodEnd : null;
 };
 
+/**
+ * Stripe customer の default payment method を読み、trial 終了や CTA 表示に使う支払い方法状態を評価する。
+ *
+ * Stripe 未設定・一時的な lookup 失敗は、即時失格ではなく pending として扱う。
+ */
 export const resolveOrganizationBillingPaymentMethodEvaluation = async ({
   env,
   planCode,
@@ -532,6 +556,11 @@ export const resolveOrganizationBillingPaymentMethodStatus = async ({
   return paymentMethod.status;
 };
 
+/**
+ * trial 終了時点の Stripe 状態と支払い方法状態から、premium paid へ移行するか free へ戻すかを確定する。
+ *
+ * provider 同期が未完了の可能性がある場合は、冪等な再試行に回せる 503 相当の結果を返す。
+ */
 export const applyOrganizationPremiumTrialCompletion = async ({
   database,
   env,
@@ -725,6 +754,8 @@ const resolvePaymentIssueFields = ({
 }) => {
   const providerIssueTime = providerPaymentIssueStartedAt?.getTime() ?? null;
   const existingIssueTime = existingPaymentIssueStartedAt?.getTime() ?? null;
+  // provider が event 発生時刻を返す場合は猶予期限の起点に使う。既存の起点より新しい
+  // webhook が後着しても、猶予期間を不必要に延ばさない。
   const paymentIssueStartedAt =
     providerPaymentIssueStartedAt &&
     (existingIssueTime === null || providerIssueTime! <= existingIssueTime)
@@ -761,6 +792,11 @@ const resolvePaymentIssueFields = ({
   };
 };
 
+/**
+ * Stripe 同期や Checkout 完了を organization billing aggregate に反映する。
+ *
+ * 支払い失敗系 status では猶予期限をここで一元計算し、復旧系 status では failure state を消す。
+ */
 export const upsertOrganizationBillingByOrganizationId = async ({
   database,
   organizationId,
@@ -852,6 +888,9 @@ export const upsertOrganizationBillingByOrganizationId = async ({
     });
 };
 
+/**
+ * Stripe webhook から組織を復元するため、customer/subscription のどちらか一致する aggregate を探す。
+ */
 export const selectOrganizationBillingByStripeIdentifiers = async ({
   database,
   stripeCustomerId,

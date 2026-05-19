@@ -23,6 +23,12 @@ const retentionExpiresAt = (now: Date): Date => new Date(now.getTime() + CONVERS
 const feedbackRetentionExpiresAt = (now: Date): Date =>
   new Date(now.getTime() + FEEDBACK_AGGREGATE_RETENTION_MS);
 
+/**
+ * 既存の会話が完全に同じユーザー・組織・教室スコープに属するときだけ再利用する。
+ *
+ * null は指定された会話 ID が呼び出し側の現在の認可境界外であることを示し、
+ * ルート側では forbidden として扱う。
+ */
 export const ensureAiConversation = async ({
   database,
   conversationId,
@@ -84,6 +90,7 @@ export const ensureAiConversation = async ({
   return { conversationId: id, created: true };
 };
 
+/** 検索・モデル・保持期限メタデータとあわせてユーザー/アシスタントメッセージを保存する。 */
 export const insertAiMessage = async ({
   database,
   conversationId,
@@ -142,6 +149,7 @@ export const insertAiMessage = async ({
   return { id, conversationId };
 };
 
+/** 呼び出し側スコープ内のアシスタントメッセージにだけフィードバックを付与できることを確認する。 */
 export const canUserAccessAssistantMessage = async ({
   database,
   messageId,
@@ -179,6 +187,7 @@ export const canUserAccessAssistantMessage = async ({
   return rows[0] ?? null;
 };
 
+/** 集計用のフィードバック期間を維持しながら、ユーザー/メッセージごとに feedback を upsert する。 */
 export const submitAiFeedback = async ({
   database,
   messageId,
@@ -224,6 +233,7 @@ export const submitAiFeedback = async ({
   return rows[0] ?? { id, messageId, rating };
 };
 
+/** chunk 本文を露出せず、内部ナレッジの鮮度 view を返す。 */
 export const listAiKnowledgeStatuses = async ({ database }: { database: AuthRuntimeDatabase }) => {
   const rows = await database
     .select({
@@ -261,6 +271,7 @@ export const listAiKnowledgeStatuses = async ({ database }: { database: AuthRunt
   }));
 };
 
+/** 運用者レビュー向けに、直近の低評価 feedback コメントを軽量テーマに集約する。 */
 export const listAiFeedbackThemes = async ({ database }: { database: AuthRuntimeDatabase }) => {
   const rows = await database
     .select({
@@ -294,6 +305,7 @@ export const listAiFeedbackThemes = async ({ database }: { database: AuthRuntime
   }));
 };
 
+/** 集計用の feedback signal を残しつつ、期限切れの会話内容を匿名化する。 */
 export const cleanupExpiredAiConversationContent = async ({
   database,
   now = new Date(),
@@ -338,6 +350,8 @@ export const readRetrievedContextSummary = ({
   businessFactKeys: string[];
   retrievalErrorSummary?: string | null;
 }) => ({
+  // 保持期間と情報開示リスクを下げるため、メッセージログには id、score、visibility だけを残し、
+  // 検索済みテキストの全文は保存しない。
   chunks: chunks.map((chunk) => ({
     id: chunk.id,
     score: chunk.score ?? null,

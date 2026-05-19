@@ -250,6 +250,12 @@ const ensureInternalOperator = async ({
   return { status: 200 as const };
 };
 
+/**
+ * 認証済み AI route と内部 AI inspection route を作成する。
+ *
+ * チャットリクエストは検索、生成、永続化、情報源開示、feedback の前に
+ * ユーザーの組織・教室アクセスを解決する。
+ */
 export const createAiRoutes = ({ auth, database, env }: CreateAiRoutesOptions) => {
   const aiRoutes = new OpenAPIHono();
   const internalAiRoutes = new OpenAPIHono();
@@ -319,6 +325,8 @@ export const createAiRoutes = ({ auth, database, env }: CreateAiRoutesOptions) =
         internalOperator: context.internalOperator,
       });
     } catch (error) {
+      // 検索失敗時も conversation は捨てず、根拠不足として回答と
+      // エラー概要を保存し、あとから確認できるようにする。
       console.warn('[ai-chat] retrieval failed', error);
       retrievalErrorSummary = summarizeAiError(error);
     }
@@ -337,6 +345,8 @@ export const createAiRoutes = ({ auth, database, env }: CreateAiRoutesOptions) =
       businessFacts,
       retrievalErrorSummary,
     });
+    // モデル出力が source に触れていても、API response では同じアクセス文脈で再度絞り、
+    // hidden path や internal-only reference をサーバー境界内に留める。
     const safeSources = generated.sources
       .map((source) =>
         sanitizeSourceReference({

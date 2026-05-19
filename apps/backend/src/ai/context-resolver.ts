@@ -65,6 +65,12 @@ const resolveContextByClassroomId = async ({
   return rows[0] ?? null;
 };
 
+/**
+ * AI リクエストのユーザー、スコープ、可視性予算、内部運用者フラグを解決する。
+ *
+ * クライアント指定の組織・教室 ID で所属レコード以上にアクセスが広がらないよう、
+ * チャットルートは検索・生成の前にこの関数を通す。
+ */
 export const resolveAiRequestContext = async ({
   auth,
   database,

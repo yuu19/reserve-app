@@ -74,6 +74,8 @@ const sanitizeSuggestedActionHref = (value: unknown): string | null => {
   }
 
   const candidate = value.trim();
+  // 提案アクションはモデル出力なので、任意の外部遷移先を作れないよう
+  // 同一アプリ内の相対リンクだけを許可する。
   if (!candidate.startsWith('/') || candidate.startsWith('//')) {
     return null;
   }
@@ -114,6 +116,8 @@ const readAiGatewayLogId = ({
   env: AiAnswerEnv;
   result: unknown;
 }): string | null => {
+  // Workers AI は最新の AI Gateway ログ ID を binding に出す一方、レスポンスヘッダーに
+  // 出る形もあり得るため、デプロイ差分に備えて両方を読む。
   const bindingLogId = env.AI?.aiGatewayLogId;
   if (typeof bindingLogId === 'string' && bindingLogId.trim().length > 0) {
     return bindingLogId.trim();
@@ -213,7 +217,7 @@ const parseAnswerPayload = (result: unknown): Partial<GeneratedAiAnswer> => {
       };
     }
   } catch {
-    // Plain text provider output is accepted and wrapped below.
+    // プロバイダーがプレーンテキストだけを返した場合も受け入れ、下で応答形式に包む。
   }
 
   return {
@@ -245,6 +249,12 @@ const defaultSuggestedActions = ({
   return [{ label: 'サポートへ相談する', actionKind: 'contact_support' }];
 };
 
+/**
+ * 許可済みの検索済みナレッジと、回答時点の業務事実から回答を生成する。
+ *
+ * 根拠不足、検索失敗、Workers AI 利用不可のときも、呼び出し側が
+ * 監査可能なアシスタントメッセージを保存できるよう、決定的な代替 payload を返す。
+ */
 export const generateAnswer = async ({
   env,
   userId,
@@ -284,6 +294,8 @@ export const generateAnswer = async ({
   }
 
   if (!hasGrounding || !env.AI) {
+    // 検索済み文書や許可済み DB 由来の事実がない状態で業務案内を作らない。
+    // AI binding 不足は、根拠がある場合だけやや軽い代替応答として扱う。
     const answer = hasGrounding
       ? '現在の情報を確認しましたが、AI回答生成が一時的に利用できません。表示中の画面または管理者に確認してください。'
       : '確認できる根拠が見つからないため、断定できません。ownerまたはサポートへ確認してください。';
@@ -327,6 +339,8 @@ export const generateAnswer = async ({
               id: env.AI_GATEWAY_ID,
               skipCache: shouldSkipAiGatewayCache(message, businessFacts),
               cacheTtl: shouldSkipAiGatewayCache(message, businessFacts) ? undefined : 60,
+              // 組織・教室のメタデータは AI Gateway の観測用に限定し、
+              // プロンプト側にはアクセスフィルター済みの業務コンテキストだけを渡す。
               metadata: {
                 purpose: 'ai-chat-answer',
                 organizationId: access.organizationId,

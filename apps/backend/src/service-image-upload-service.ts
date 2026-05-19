@@ -10,17 +10,14 @@ type R2BucketBinding = {
       customMetadata?: Record<string, string>;
     },
   ) => Promise<{ key: string }>;
-  get: (key: string) => Promise<
-    | {
-        body: ReadableStream;
-        httpMetadata?: {
-          contentType?: string;
-          cacheControl?: string;
-        };
-        writeHttpMetadata?: (headers: Headers) => void;
-      }
-    | null
-  >;
+  get: (key: string) => Promise<{
+    body: ReadableStream;
+    httpMetadata?: {
+      contentType?: string;
+      cacheControl?: string;
+    };
+    writeHttpMetadata?: (headers: Headers) => void;
+  } | null>;
 };
 
 type ServiceImageUploadEnv = {
@@ -101,12 +98,7 @@ const DEFAULT_MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const DEFAULT_UPLOAD_TOKEN_TTL_SECONDS = 300;
 const DEFAULT_BACKEND_BASE_URL = 'http://localhost:3000';
 
-const ALLOWED_IMAGE_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/avif',
-]);
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
 
 const CONTENT_TYPE_EXTENSION_MAP: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -130,7 +122,8 @@ const parsePositiveInt = (value: string | undefined, fallback: number): number =
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
-const normalizeContentType = (value: string): string => value.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+const normalizeContentType = (value: string): string =>
+  value.split(';', 1)[0]?.trim().toLowerCase() ?? '';
 
 const toHex = (buffer: ArrayBuffer): string =>
   Array.from(new Uint8Array(buffer))
@@ -149,9 +142,11 @@ const timingSafeEqual = (left: string, right: string): boolean => {
   return diff === 0;
 };
 
-const base64UrlEncodeUtf8 = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
+const base64UrlEncodeUtf8 = (value: string): string =>
+  Buffer.from(value, 'utf8').toString('base64url');
 
-const base64UrlDecodeUtf8 = (value: string): string => Buffer.from(value, 'base64url').toString('utf8');
+const base64UrlDecodeUtf8 = (value: string): string =>
+  Buffer.from(value, 'base64url').toString('utf8');
 
 const createObjectKey = ({
   organizationId,
@@ -245,16 +240,26 @@ const assertAllowedContentType = (contentType: string) => {
   return normalized;
 };
 
+/**
+ * service image 用の署名付き upload service を構築する。
+ *
+ * token には key、owner、organization、content-type、上限サイズ、期限だけを入れ、
+ * R2 への実書き込み時に署名・期限・content-type・サイズを再検証する。
+ */
 export const createServiceImageUploadService = (
   env: ServiceImageUploadEnv,
 ): ServiceImageUploadService | null => {
   const bucket = env.SERVICE_IMAGE_BUCKET ?? env.ORG_LOGO_BUCKET;
-  const signingSecret = env.SERVICE_IMAGE_UPLOAD_SIGNING_SECRET?.trim() || env.BETTER_AUTH_SECRET?.trim();
+  const signingSecret =
+    env.SERVICE_IMAGE_UPLOAD_SIGNING_SECRET?.trim() || env.BETTER_AUTH_SECRET?.trim();
   if (!bucket || !signingSecret) {
     return null;
   }
 
-  const maxUploadBytes = parsePositiveInt(env.SERVICE_IMAGE_MAX_UPLOAD_BYTES, DEFAULT_MAX_UPLOAD_BYTES);
+  const maxUploadBytes = parsePositiveInt(
+    env.SERVICE_IMAGE_MAX_UPLOAD_BYTES,
+    DEFAULT_MAX_UPLOAD_BYTES,
+  );
   const tokenTtlSeconds = parsePositiveInt(
     env.SERVICE_IMAGE_UPLOAD_TOKEN_TTL_SECONDS,
     DEFAULT_UPLOAD_TOKEN_TTL_SECONDS,

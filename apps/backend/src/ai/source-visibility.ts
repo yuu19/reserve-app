@@ -29,10 +29,12 @@ export type AiAccessContext = {
 const isAiSourceVisibility = (value: string): value is AiSourceVisibility =>
   AI_SOURCE_VISIBILITIES.includes(value as AiSourceVisibility);
 
+/** 不明な visibility は黙って public へ倒さず authenticated として扱う。 */
 export const normalizeAiSourceVisibility = (
   value: string | null | undefined,
 ): AiSourceVisibility => (value && isAiSourceVisibility(value) ? value : 'authenticated');
 
+/** 現在の access facts から読み取れる最上位の AI source visibility role を解決する。 */
 export const resolveAiPrimaryRole = (
   access: OrganizationClassroomAccess,
 ): AiSourceVisibility | 'authenticated' => {
@@ -54,6 +56,7 @@ export const resolveAiPrimaryRole = (
   return 'authenticated';
 };
 
+/** 単一の組織・教室 context でユーザーが読める source visibility を列挙する。 */
 export const resolveAllowedVisibilities = (
   access: OrganizationClassroomAccess,
 ): AiSourceVisibility[] => {
@@ -76,6 +79,7 @@ export const resolveAllowedVisibilities = (
   }
 };
 
+/** owner/admin は内部ナレッジを読め、設定済み internal operator は組織 role check を bypass する。 */
 export const canUseInternalKnowledge = ({
   access,
   internalOperator = false,
@@ -86,6 +90,7 @@ export const canUseInternalKnowledge = ({
   return access.facts.orgRole === 'owner' || access.facts.orgRole === 'admin';
 };
 
+/** source row に visibility、internal-only、locale、組織、教室の各 check を適用する。 */
 export const isSourceScopeAllowed = ({
   source,
   access,

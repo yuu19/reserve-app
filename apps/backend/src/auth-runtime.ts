@@ -53,6 +53,12 @@ const toAbsoluteUrl = (value: string | undefined): string | undefined => {
   }
 };
 
+/**
+ * Hono route と Worker entrypoint が共有する Better Auth runtime を作成する。
+ *
+ * 返却する trusted origins は CORS にも使うため、mobile custom scheme、
+ * localhost、本番 web origin をここで一元的に解決する。
+ */
 export const createAuthRuntime = ({
   database,
   env,
@@ -118,8 +124,8 @@ export const createAuthRuntime = ({
     },
     advanced: {
       useSecureCookies,
-      // Allow cross-origin frontend origins (e.g. workers.dev / localhost) to
-      // send auth cookies in production. Local HTTP keeps Lax.
+      // workers.dev や custom domain などの cross-origin frontend からも本番では
+      // auth cookie を送れるようにする。ローカル HTTP では Lax のままにする。
       defaultCookieAttributes: {
         sameSite: useSecureCookies ? 'none' : 'lax',
       },

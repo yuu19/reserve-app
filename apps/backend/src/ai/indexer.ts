@@ -91,6 +91,12 @@ export const chunkKnowledgeContent = ({
   return chunks;
 };
 
+/**
+ * Markdown 系ナレッジファイルを探索し、frontmatter を index 可能な document に写像する。
+ *
+ * ここではビルド時のローカルファイルだけを読み、Vectorize への書き込みは
+ * upsertKnowledgeDocument に委ねる。
+ */
 export const discoverMarkdownKnowledge = async ({
   rootDir,
   sourceKind,
@@ -137,6 +143,12 @@ export const discoverMarkdownKnowledge = async ({
   return documents;
 };
 
+/**
+ * D1 のナレッジ文書・chunk record と対応する Vectorize vector を upsert する。
+ *
+ * D1 が index lifecycle と content hash を保持し、Vectorize には検索用の
+ * vector と lookup 用メタデータだけを渡す。
+ */
 export const upsertKnowledgeDocument = async ({
   env,
   database,

@@ -253,6 +253,9 @@ const areBillingSnapshotsEqual = (
   );
 };
 
+/**
+ * audit/signal 比較用に、現在の billing aggregate と entitlement policy を同じ形へ正規化する。
+ */
 export const readOrganizationBillingObservationSnapshot = async ({
   database,
   env,
@@ -310,6 +313,9 @@ export const readOrganizationBillingObservationSnapshot = async ({
   } satisfies OrganizationBillingObservationSnapshot;
 };
 
+/**
+ * billing state が実際に変わった場合だけ、sequence 付き audit event を追記する。
+ */
 export const appendOrganizationBillingAuditEvent = async ({
   database,
   organizationId,
@@ -363,6 +369,7 @@ export const appendOrganizationBillingAuditEvent = async ({
   return true;
 };
 
+/** mismatch、通知失敗、profile 不備など、状態遷移とは別の調査 signal を追記する。 */
 export const appendOrganizationBillingSignal = async ({
   database,
   organizationId,
@@ -415,6 +422,9 @@ export const appendOrganizationBillingSignal = async ({
   });
 };
 
+/**
+ * 直近の同種 signal が未解決の場合だけ resolved signal を追記し、調査 timeline を閉じる。
+ */
 export const appendResolvedBillingSignalIfNeeded = async ({
   database,
   organizationId,
@@ -482,6 +492,9 @@ export const appendResolvedBillingSignalIfNeeded = async ({
   return true;
 };
 
+/**
+ * Stripe の最新 subscription とアプリ snapshot を比べ、reconciliation signal の理由を決める。
+ */
 export const evaluateReconciliationMismatchReason = ({
   appSnapshot,
   providerSubscription,
@@ -538,6 +551,7 @@ export const evaluateReconciliationMismatchReason = ({
   };
 };
 
+/** internal billing inspection 用に、reconciliation signal と webhook receipt/failure をまとめて返す。 */
 export const readInternalBillingReconciliationInspection = async ({
   database,
   organizationId,

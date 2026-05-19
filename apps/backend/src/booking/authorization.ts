@@ -72,6 +72,7 @@ export const getActiveOrganizationId = (session: unknown): string | null => {
   return typeof activeOrganizationId === 'string' ? activeOrganizationId : null;
 };
 
+/** Better Auth session から、route authorization に必要な最小の user identity だけを取り出す。 */
 export const getSessionIdentity = async (
   auth: AuthInstance,
   headers: Headers,
@@ -186,6 +187,7 @@ export const buildOrganizationPremiumFeatureDeniedPayload = (
   };
 };
 
+/** Premium 機能の route guard と UI 表示で共通に使う entitlement gate を読む。 */
 export const readOrganizationPremiumFeatureGate = async ({
   database,
   env,
@@ -205,8 +207,8 @@ export const readOrganizationPremiumFeatureGate = async ({
   });
 
   if (
-    policy.isPremiumEligible
-    && hasOrganizationBillingPaidTierCapability(policy.paidTier, 'organization_premium_features')
+    policy.isPremiumEligible &&
+    hasOrganizationBillingPaidTierCapability(policy.paidTier, 'organization_premium_features')
   ) {
     return {
       allowed: true,
@@ -263,6 +265,11 @@ const resolvePrimaryRole = (badges: Exclude<AccessDisplayRole, null>[]): AccessD
   return null;
 };
 
+/**
+ * organization id/slug と optional classroom slug から、scope 付き classroom context を解決する。
+ *
+ * classroom slug が省略された場合は legacy organization-as-classroom 形状にも fallback する。
+ */
 export const resolveOrganizationClassroomContext = async ({
   database,
   organizationId,
@@ -313,9 +320,11 @@ export const resolveOrganizationClassroomContext = async ({
     classroomRows.find((row: (typeof classroomRows)[number]) => row.slug === targetClassroomSlug) ??
     (classroomSlug
       ? null
-      : classroomRows.find((row: (typeof classroomRows)[number]) => row.id === organization.id) ??
-        classroomRows.find((row: (typeof classroomRows)[number]) => row.slug === defaultClassroomSlug) ??
-        classroomRows[0]);
+      : (classroomRows.find((row: (typeof classroomRows)[number]) => row.id === organization.id) ??
+        classroomRows.find(
+          (row: (typeof classroomRows)[number]) => row.slug === defaultClassroomSlug,
+        ) ??
+        classroomRows[0]));
 
   if (!resolvedClassroom) {
     return null;
@@ -331,6 +340,7 @@ export const resolveOrganizationClassroomContext = async ({
   };
 };
 
+/** organization 配下の classroom context を一覧し、scoped routing の切替候補として返す。 */
 export const listOrganizationClassroomContexts = async ({
   database,
   organizationId,
@@ -382,6 +392,9 @@ export const listOrganizationClassroomContexts = async ({
   }));
 };
 
+/**
+ * organization role、classroom member role、participant record を合成し、画面と API で使う effective access を返す。
+ */
 export const resolveOrganizationClassroomAccess = async ({
   database,
   userId,
@@ -398,7 +411,10 @@ export const resolveOrganizationClassroomAccess = async ({
       })
       .from(dbSchema.member)
       .where(
-        and(eq(dbSchema.member.organizationId, context.organizationId), eq(dbSchema.member.userId, userId)),
+        and(
+          eq(dbSchema.member.organizationId, context.organizationId),
+          eq(dbSchema.member.userId, userId),
+        ),
       )
       .limit(1),
     database
@@ -437,10 +453,12 @@ export const resolveOrganizationClassroomAccess = async ({
   const canManageBookingsFromOrganization = canManageBookingsByRole(organizationRole);
   const canManageBookingsFromMembership = canManageBookingsByClassroomRole(classroomStaffRole);
   const canManageParticipantsFromOrganization = canManageParticipantsByRole(organizationRole);
-  const canManageParticipantsFromMembership = canManageParticipantsByClassroomRole(classroomStaffRole);
+  const canManageParticipantsFromMembership =
+    canManageParticipantsByClassroomRole(classroomStaffRole);
   const canManageClassroom = canManageClassroomFromOrganization || canManageClassroomFromMembership;
   const canManageBookings = canManageBookingsFromOrganization || canManageBookingsFromMembership;
-  const canManageParticipants = canManageParticipantsFromOrganization || canManageParticipantsFromMembership;
+  const canManageParticipants =
+    canManageParticipantsFromOrganization || canManageParticipantsFromMembership;
   const canUseParticipantBooking = hasParticipantRecord;
   const badges = buildDisplayBadges({
     organizationRole,

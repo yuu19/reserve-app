@@ -46,17 +46,14 @@ type OrganizationLogoEnv = {
         customMetadata?: Record<string, string>;
       },
     ) => Promise<{ key: string }>;
-    get: (key: string) => Promise<
-      | {
-          body: ReadableStream;
-          httpMetadata?: {
-            contentType?: string;
-            cacheControl?: string;
-          };
-          writeHttpMetadata?: (headers: Headers) => void;
-        }
-      | null
-    >;
+    get: (key: string) => Promise<{
+      body: ReadableStream;
+      httpMetadata?: {
+        contentType?: string;
+        cacheControl?: string;
+      };
+      writeHttpMetadata?: (headers: Headers) => void;
+    } | null>;
   };
   BETTER_AUTH_URL?: string;
   ORG_LOGO_PUBLIC_BASE_URL?: string;
@@ -94,12 +91,7 @@ const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_LOGO_DIMENSION = 512;
 const DEFAULT_OUTPUT_QUALITY = 85;
 
-const ALLOWED_IMAGE_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/avif',
-]);
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
 
 const parsePositiveInt = (value: string | undefined, fallback: number) => {
   if (!value) {
@@ -136,6 +128,9 @@ const createLogoObjectKey = (ownerUserId: string) => {
   return `org-logo-${ownerIdPrefix}-${crypto.randomUUID()}.webp`;
 };
 
+/**
+ * Cloudflare Images と R2 を使い、組織ロゴを webp に正規化して保存する service を構築する。
+ */
 export const createOrganizationLogoService = (
   env: OrganizationLogoEnv,
 ): OrganizationLogoService | null => {
@@ -161,7 +156,8 @@ export const createOrganizationLogoService = (
         throw new Error(`Image file is too large. Max size is ${maxUploadBytes} bytes.`);
       }
 
-      const transformed = await images.input(file.stream() as ReadableStream<Uint8Array>)
+      const transformed = await images
+        .input(file.stream() as ReadableStream<Uint8Array>)
         .transform({
           width: DEFAULT_MAX_LOGO_DIMENSION,
           height: DEFAULT_MAX_LOGO_DIMENSION,

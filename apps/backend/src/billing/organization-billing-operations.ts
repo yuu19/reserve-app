@@ -78,6 +78,9 @@ const toAttempt = (
   updatedAt: row.updatedAt,
 });
 
+/**
+ * Checkout/Portal handoff の短時間再実行を同じ操作として扱う idempotency key を作る。
+ */
 export const buildBillingOperationIdempotencyKey = ({
   organizationId,
   purpose,
@@ -99,6 +102,9 @@ export const buildBillingOperationIdempotencyKey = ({
   ].join(':');
 };
 
+/**
+ * まだ有効な handoff URL がある operation attempt を再利用し、Stripe session の重複作成を避ける。
+ */
 export const readReusableBillingOperationAttempt = async ({
   database,
   organizationId,
@@ -138,6 +144,11 @@ export const readReusableBillingOperationAttempt = async ({
   return reusable ? toAttempt(reusable) : null;
 };
 
+/**
+ * Stripe handoff 操作を D1 上で claim する。
+ *
+ * 同一 window の idempotency key が競合した場合は、勝った attempt を再利用して呼び出し元に返す。
+ */
 export const createBillingOperationAttempt = async ({
   database,
   organizationId,
@@ -213,6 +224,7 @@ export const createBillingOperationAttempt = async ({
   throw new Error('BILLING_OPERATION_ATTEMPT_CLAIM_FAILED');
 };
 
+/** Stripe 側の handoff 作成に成功した attempt に、URL と provider identifiers を保存する。 */
 export const markBillingOperationAttemptSucceeded = async ({
   database,
   attemptId,
@@ -251,6 +263,7 @@ export const markBillingOperationAttemptSucceeded = async ({
   return rows[0] ? toAttempt(rows[0]) : null;
 };
 
+/** handoff 作成に失敗した attempt を、owner UI と内部調査で読める状態に更新する。 */
 export const markBillingOperationAttemptFailed = async ({
   database,
   attemptId,
@@ -275,6 +288,7 @@ export const markBillingOperationAttemptFailed = async ({
   return rows[0] ? toAttempt(rows[0]) : null;
 };
 
+/** owner や internal inspection が参照する直近の billing handoff 履歴を返す。 */
 export const readRecentBillingOperationAttempts = async ({
   database,
   organizationId,

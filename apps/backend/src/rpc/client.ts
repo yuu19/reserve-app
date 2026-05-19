@@ -6,6 +6,7 @@ type RpcClientOptions = {
   fetch?: typeof globalThis.fetch;
 };
 
+/** AppType の推論が必要なテストや内部呼び出し向けに、型付き Hono RPC client を作成する。 */
 export const createRpcClient = (baseUrl: string, options: RpcClientOptions = {}) => {
   return hc<AppType>(baseUrl, {
     fetch: options.fetch,

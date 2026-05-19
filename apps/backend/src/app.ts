@@ -34,6 +34,10 @@ type CreateAppOptions = {
   serviceImageUploadService?: ServiceImageUploadService | null;
 };
 
+/**
+ * Better Auth、OpenAPI route、公開 route、Stripe webhook、機能別 route を
+ * 単一の D1-backed runtime に束ねて Worker の HTTP 窓口を構成する。
+ */
 export const createApp = ({
   auth,
   authTrustedOrigins,
@@ -163,6 +167,8 @@ export const createApp = ({
     });
     if (billingWebhook.matched) {
       if (billingWebhook.statusCode === 500) {
+        // 再試行可能な organization billing の失敗は、webhook 受領記録を失敗として残したうえで
+        // Stripe に再送させるため 5xx として返す。
         return c.json(
           {
             message: billingWebhook.message ?? 'Stripe webhook processing should be retried.',
@@ -173,8 +179,8 @@ export const createApp = ({
       return c.json({ received: true }, 200);
     }
 
-    // Legacy ticket purchase checkout sessions are no longer created by the API.
-    // Keep this branch so already-issued sessions can complete without manual recovery.
+    // 旧来のチケット購入 Checkout セッションは API から新規作成しない。
+    // 既に発行済みのセッションだけは手動復旧なしで完了できるよう、この分岐を残す。
     if (event.type === 'checkout.session.completed') {
       const session = readStripeCheckoutSessionSummary(event.data?.object ?? null);
       if (!session) {

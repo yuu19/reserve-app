@@ -277,6 +277,7 @@ const getStripeJson = async ({
   return payload;
 };
 
+/** organization billing で使う Stripe customer を作成し、E2E では test clock も紐づけられるようにする。 */
 export const createCustomer = async ({
   env,
   name,
@@ -367,6 +368,11 @@ export const createCheckoutSession = async ({
   };
 };
 
+/**
+ * organization premium の有料 Checkout session を作成する。
+ *
+ * metadata は webhook で organization aggregate に戻すための最小情報だけを渡す。
+ */
 export const createSubscriptionCheckoutSession = async ({
   env,
   priceId,
@@ -417,6 +423,7 @@ export const createSubscriptionCheckoutSession = async ({
   };
 };
 
+/** 支払い方法未登録のまま trial 終了した場合は Stripe 側で cancel される trial subscription を作成する。 */
 export const createTrialSubscription = async ({
   env,
   customerId,
@@ -451,6 +458,7 @@ export const createTrialSubscription = async ({
   return summary;
 };
 
+/** 既存 customer に支払い方法を登録するための setup mode Checkout session を作成する。 */
 export const createSetupCheckoutSession = async ({
   env,
   successUrl,
@@ -533,6 +541,7 @@ export const updateSubscriptionDefaultPaymentMethod = async ({
   });
 };
 
+/** owner を Stripe Customer Portal に渡す。subscriptionUpdate 指定時は更新 flow に固定する。 */
 export const createBillingPortalSession = async ({
   env,
   customerId,
@@ -651,6 +660,9 @@ export const readStripeSetupCheckoutSessionSummaryById = async ({
   return summary;
 };
 
+/**
+ * Stripe-Signature を Workers crypto で検証し、失敗理由を receipt に保存できる粒度で返す。
+ */
 export const verifyStripeWebhookSignatureDetailed = async ({
   rawBody,
   signatureHeader,
@@ -757,7 +769,7 @@ const resolveSubscriptionPeriodBounds = (
     .filter((value): value is Date => value instanceof Date);
 
   return {
-    // Match Stripe's former subscription-level semantics for mixed intervals.
+    // Stripe の旧 subscription-level period と同じ意味になるよう、複数 item では共通範囲を使う。
     currentPeriodStart:
       starts.length > 0 ? new Date(Math.max(...starts.map((value) => value.getTime()))) : null,
     currentPeriodEnd:
@@ -765,6 +777,7 @@ const resolveSubscriptionPeriodBounds = (
   };
 };
 
+/** Checkout metadata が organization billing 用として完全に揃っている場合だけ読み取る。 */
 export const readStripeBillingCheckoutMetadata = (
   value: unknown,
 ): StripeBillingCheckoutMetadata | null => {
@@ -793,6 +806,7 @@ export const readStripeBillingCheckoutMetadata = (
   };
 };
 
+/** 支払い方法登録用 Checkout metadata を読み取り、通常の課金 Checkout と混同しないよう分離する。 */
 export const readStripePaymentMethodCheckoutMetadata = (
   value: unknown,
 ): StripePaymentMethodCheckoutMetadata | null => {
@@ -852,6 +866,7 @@ export const readStripeChargeReceiptDocumentSummary = (
   };
 };
 
+/** invoice webhook payload から owner notification と document reference に必要な payment 情報だけ抽出する。 */
 export const readStripeInvoicePaymentEventSummary = (
   value: unknown,
 ): StripeInvoicePaymentEventSummary | null => {
@@ -942,6 +957,7 @@ export const readStripeCheckoutSessionSummary = (
   };
 };
 
+/** Stripe subscription payload の version 差を吸収し、アプリが使う最小 summary に正規化する。 */
 export const readStripeSubscriptionSummary = (value: unknown): StripeSubscriptionSummary | null => {
   if (!isRecord(value)) {
     return null;

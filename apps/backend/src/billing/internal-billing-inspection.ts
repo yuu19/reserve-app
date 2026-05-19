@@ -241,6 +241,8 @@ const buildInternalBillingInvestigationTimeline = ({
     };
   };
 }) => {
+  // 監査記録、signal、notification、webhook 受領記録を同じ時系列に並べ、
+  // internal operator が Stripe とアプリ状態のずれを 1 画面で追えるようにする。
   const auditEntries: InternalBillingTimelineEntry[] = auditRows.map((row) => ({
     id: `audit:${row.sequenceNumber}`,
     lane: 'billing_state',
@@ -387,6 +389,9 @@ const buildInternalBillingInvestigationTimeline = ({
   });
 };
 
+/**
+ * internal operator 向けに、organization billing の現在値、policy、document、通知、reconciliation を集約する。
+ */
 export const readInternalBillingInspection = async ({
   database,
   env,

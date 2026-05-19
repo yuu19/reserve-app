@@ -100,6 +100,11 @@ const normalizePriceIds = (priceIds: Array<string | undefined>): string[] =>
     .map((priceId) => priceId?.trim() ?? '')
     .filter((priceId): priceId is string => priceId.length > 0);
 
+/**
+ * Stripe price id をアプリ内の有料 tier に解決する。
+ *
+ * 未知の price は premium_unknown として扱い、意図しない entitlement 付与を避ける。
+ */
 export const resolveOrganizationBillingPaidTier = ({
   planCode,
   stripePriceId,
@@ -159,6 +164,7 @@ export const resolveOrganizationBillingPaidTier = ({
   };
 };
 
+/** paid tier が指定 capability を持つかを、null-safe に判定する。 */
 export const hasOrganizationBillingPaidTierCapability = (
   paidTier: OrganizationBillingPaidTier | null,
   capability: OrganizationBillingPaidTierCapability,
@@ -172,6 +178,12 @@ const isFutureIsoDate = (value: string | null | undefined, now: Date) => {
   return !Number.isNaN(parsed.getTime()) && parsed.getTime() > now.getTime();
 };
 
+/**
+ * organization billing aggregate から Premium 利用可否を決める唯一の policy 関数。
+ *
+ * trial、paid、past_due grace、unknown price を route 側で個別判断しないために、
+ * UI 表示用の reason もここで揃える。
+ */
 export const resolveOrganizationPremiumEntitlementPolicy = ({
   planCode,
   subscriptionStatus,
@@ -385,6 +397,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
   };
 };
 
+/** D1 の billing aggregate と Stripe payment method 状態を読み、現在の Premium policy を返す。 */
 export const readOrganizationPremiumEntitlementPolicy = async ({
   database,
   env,
