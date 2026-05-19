@@ -1,6 +1,6 @@
 # テスト戦略
 
-最終更新: 2026-05-07
+最終更新: 2026-05-19
 
 ## 1. 目的
 
@@ -47,7 +47,7 @@
 - UI 見た目ではなく、判定・変換・画面データの整形をここで検証する
 - バグが `remote` や feature state に閉じるなら browser test を増やす前に server test を足す
 
-### Web browser
+### Web browser component
 
 主な対象:
 
@@ -62,6 +62,38 @@
 - `.svelte` の回帰は browser test で守る
 - 1つの画面で重要な分岐が複数ある場合は、最低でも代表ケースを 1 つ入れる
 - 細かい CSS の差分ではなく、ユーザーが見える状態遷移を確認する
+
+### Web Playwright E2E
+
+主な対象:
+
+- 管理者の新規登録と初回組織作成
+- 管理者のサービス・単発Slot確認
+- 公開イベントからの参加者登録と予約
+- 管理者招待の受諾と宛先メール制御
+- AI チャットの画面導線、根拠表示、フィードバック送信
+
+`apps/web` の Playwright E2E は、通常の PR / `main` push で実行する。
+Cloudflare Workers の backend と SvelteKit の web をローカルで起動し、主要導線をブラウザから確認する。
+
+方針:
+
+- 実ユーザーがたどる導線を優先し、必要な前提データは API helper で作る
+- Stripe test mode に依存する契約遷移は通常 E2E に含めない
+- 外部 AI は呼ばず、AI チャットはネットワークを stub して UI 契約を確認する
+
+### Docs Playwright E2E
+
+主な対象:
+
+- ユーザーマニュアル一覧
+- 管理者向け初回セットアップ
+- 契約と Premium
+- AI チャットの使い方
+- 画像と SVG の参照切れ
+
+docs の Playwright E2E は、静的なデモページではなく公開済みマニュアルを確認する。
+本文の主要見出しと、マニュアル内の画像・SVG が読み込めることを smoke test として守る。
 
 ### Mobile
 
@@ -110,7 +142,24 @@ pnpm --filter @apps/web exec vitest run --project client
 pnpm --filter @apps/web test:unit -- --project client
 ```
 
-browser test は現状 CI の必須対象ではない。UI を大きく触った PR ではローカルで実行する。
+browser component test は UI を大きく触った PR でローカル実行する。
+
+### Web Playwright E2E
+
+```bash
+pnpm --filter @apps/web test:e2e
+```
+
+通常の web E2E は Stripe test mode を使わない。
+public event 用の組織 slug と教室 slug は Playwright 設定で worker ごとに生成し、環境変数で明示されている場合はその値を使う。
+
+### Docs Playwright E2E
+
+```bash
+pnpm --filter @apps/docs test:e2e
+```
+
+docs E2E は docs worker を build し、preview server 上でマニュアルを確認する。
 
 ### Stripe 課金 E2E
 
@@ -145,13 +194,17 @@ GitHub Actions `.github/workflows/ci-tests.yml` では次を実行する。
 - `pnpm --filter @apps/backend test`
 - `pnpm --filter @apps/web test`
 - `pnpm --filter @apps/docs build`
+- `pnpm --filter @apps/docs test:e2e`
+- `pnpm --filter @apps/web test:e2e`
 
 これは次を意味する。
 
 - backend 統合テストは PR / `main` push ごとに必須
 - web server test は PR / `main` push ごとに必須
 - docs の production build は PR / `main` push ごとに必須
-- web browser test は手動実行
+- docs Playwright E2E は PR / `main` push ごとに必須
+- web Playwright E2E は PR / `main` push ごとに必須
+- web browser component test は手動実行
 - mobile は自動テスト未導入
 
 Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行する。
@@ -173,6 +226,7 @@ Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行
 追加推奨:
 
 - 導線変更がある場合は該当 `.svelte.spec.ts`
+- 管理者ログイン、初回組織作成、招待受諾に影響する場合は web Playwright E2E
 
 対象例:
 
@@ -190,7 +244,8 @@ Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行
 
 追加推奨:
 
-- participant/admin 画面を触るなら browser test
+- participant/admin 画面を触るなら browser component test
+- 公開イベントや予約導線を触るなら web Playwright E2E
 
 ### Web の状態管理・remote 層
 
@@ -210,6 +265,18 @@ Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行
 追加推奨:
 
 - 判定ロジックが複雑なら feature test も追加する
+- 画面間の遷移、ログイン後リダイレクト、予約完了などを変える場合は web Playwright E2E
+
+### ドキュメント / マニュアル
+
+最低限実施:
+
+- `pnpm --filter @apps/docs build`
+- 画像やリンクを追加した場合は docs Playwright E2E
+
+追加推奨:
+
+- スクリーンショット差し替え後は、該当ページの見出し、本文、画像読み込みを確認する
 
 ### Migration / D1 スキーマ変更
 
@@ -246,7 +313,8 @@ Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行
 
 - backend 統合テスト
 - web server test
-- 必要な browser test
+- 必要な browser component test
+- 必要な web Playwright E2E / docs Playwright E2E
 - 手動確認メモ
 
 少なくとも「どのレイヤーで壊れるはずだったか」が説明できる状態で出す。
@@ -254,7 +322,8 @@ Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行
 ## 8. 現時点のギャップ
 
 - mobile の自動テストがない
-- 通常の web browser test が CI の必須ではない
+- web Playwright E2E の対象は主要導線に限定している
+- web browser component test は CI の必須ではない
 - coverage の閾値は未設定
 
 このため、認可・招待・予約のような高リスク変更は、backend 統合テストを最優先に厚くする。
