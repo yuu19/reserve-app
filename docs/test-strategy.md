@@ -214,6 +214,9 @@ Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行
 失敗した場合は、まず GitHub Actions の artifact、Stripe Dashboard の Test Clock、対象 Customer / Subscription / Invoice を確認する。
 アプリの unit / integration test が通っていて Stripe 課金 E2E だけが失敗する場合は、外部依存の一時不調か、Stripe 設定の差分として切り分ける。
 
+`main` の Playwright HTML レポートは、GitHub Actions artifact から Cloudflare R2 に集約して公開する。
+公開 URL、GitHub Secrets / Variables、保持方針は [Playwright Report の R2 公開構成](./playwright-report-r2.md) を参照する。
+
 ## 5. 変更種別ごとの期待値
 
 ### 認可・招待・セッション

@@ -12,11 +12,9 @@ on:
 permissions:
   contents: read
   actions: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: playwright-pages
+  group: playwright-reports-r2
   cancel-in-progress: false
 
 jobs:
@@ -25,13 +23,17 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.conclusion != 'cancelled' && github.event.workflow_run.conclusion != 'skipped') }}
     runs-on: ubuntu-latest
     environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      name: playwright-reports
+      url: ${{ steps.upload.outputs.report_url }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       TRIGGER_RUN_ID: ${{ github.event.workflow_run.id || '' }}
       TRIGGER_WORKFLOW: ${{ github.event.workflow_run.name || '' }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      REPORT_BASE_URL: ${{ vars.PLAYWRIGHT_REPORT_BASE_URL }}
+      REPORT_PREFIX: ${{ vars.PLAYWRIGHT_REPORT_PREFIX }}
 
     steps:
       - name: Prepare report directory
@@ -246,14 +248,59 @@ jobs:
           </html>
           HTML
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+      - name: Upload reports to R2
+        id: upload
+        if: always()
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
 
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: .pages
+          required_env=(
+            "AWS_ACCESS_KEY_ID"
+            "AWS_SECRET_ACCESS_KEY"
+            "R2_BUCKET"
+            "REPORT_BASE_URL"
+          )
 
-      - name: Deploy GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          for name in "${required_env[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::${name} is required for publishing Playwright reports to R2."
+              exit 1
+            fi
+          done
+
+          if [ "${R2_ENDPOINT}" = "https://.r2.cloudflarestorage.com" ]; then
+            echo "::error::R2_ACCOUNT_ID is required for publishing Playwright reports to R2."
+            exit 1
+          fi
+
+          prefix="${REPORT_PREFIX#/}"
+          prefix="${prefix%/}"
+
+          if [ -n "${prefix}" ]; then
+            s3_uri="s3://${R2_BUCKET}/${prefix}/"
+            report_url="${REPORT_BASE_URL%/}/${prefix}/"
+          else
+            s3_uri="s3://${R2_BUCKET}/"
+            report_url="${REPORT_BASE_URL%/}/"
+          fi
+
+          aws s3 sync .pages "${s3_uri}" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --delete \
+            --cache-control "no-store"
+
+          echo "report_url=${report_url}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Playwright Reports"
+            echo ""
+            echo "- Index: ${report_url}"
+            echo "- Docs: ${report_url}docs/"
+            echo "- Web: ${report_url}web/"
+            echo "- Stripe Billing: ${report_url}stripe-billing/"
+          } >> "$GITHUB_STEP_SUMMARY"

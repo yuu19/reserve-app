@@ -8,6 +8,7 @@
 - [authorization.md](./authorization.md)
 - [billing.md](./billing.md)
 - [database-er.md](./database-er.md)
+- [playwright-report-r2.md](./playwright-report-r2.md)
 - [test-strategy.md](./test-strategy.md)
 
 ## 現在の移行ステータス（2026-03）
