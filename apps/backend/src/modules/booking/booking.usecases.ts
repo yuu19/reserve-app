@@ -52,9 +52,10 @@ import type {
   BookingMineQuery,
   BookingNoShowBody,
 } from './booking.schemas.js';
-import { consumeTicketPackForParticipant, normalizePackStatus } from '../tickets/ticket.state.js';
-import * as dbSchema from '../../db/schema.js';
-import { eq, sql } from 'drizzle-orm';
+import {
+  consumeTicketPackForParticipant,
+  restoreConsumedTicketPackBalance,
+} from '../tickets/ticket.state.js';
 
 const isUniqueConstraintError = (error: unknown): boolean => {
   const queue: unknown[] = [error];
@@ -79,44 +80,6 @@ const isUniqueConstraintError = (error: unknown): boolean => {
 
 const resolveBookingPolicy = (value: string | null | undefined): 'instant' | 'approval' => {
   return value === 'approval' ? 'approval' : 'instant';
-};
-
-const restoreConsumedTicket = async ({
-  ctx,
-  consumedTicketPackId,
-  participantsCount,
-}: {
-  ctx: BookingRouteContext;
-  consumedTicketPackId: string | null;
-  participantsCount: number;
-}) => {
-  if (!consumedTicketPackId) {
-    return;
-  }
-  const restoredRows = await ctx.database
-    .update(dbSchema.ticketPack)
-    .set({
-      remainingCount: sql`${dbSchema.ticketPack.remainingCount} + ${participantsCount}`,
-    })
-    .where(eq(dbSchema.ticketPack.id, consumedTicketPackId))
-    .returning({
-      id: dbSchema.ticketPack.id,
-      remainingCount: dbSchema.ticketPack.remainingCount,
-      expiresAt: dbSchema.ticketPack.expiresAt,
-    });
-  const restoredPack = restoredRows[0];
-  if (restoredPack) {
-    const packStatus = normalizePackStatus({
-      remainingCount: restoredPack.remainingCount,
-      expiresAt: restoredPack.expiresAt,
-    });
-    await ctx.database
-      .update(dbSchema.ticketPack)
-      .set({
-        status: packStatus,
-      })
-      .where(eq(dbSchema.ticketPack.id, restoredPack.id));
-  }
 };
 
 /**
@@ -234,11 +197,13 @@ export const createBooking = async (
   };
 
   const restoreTicket = async () => {
-    await restoreConsumedTicket({
-      ctx,
-      consumedTicketPackId,
-      participantsCount,
-    });
+    if (consumedTicketPackId) {
+      await restoreConsumedTicketPackBalance({
+        database: ctx.database,
+        ticketPackId: consumedTicketPackId,
+        participantsCount,
+      });
+    }
     consumedTicketPackId = null;
   };
 
@@ -673,11 +638,13 @@ export const approveBookingByStaff = async (
   };
 
   const restoreTicket = async () => {
-    await restoreConsumedTicket({
-      ctx,
-      consumedTicketPackId,
-      participantsCount: booking.participantsCount,
-    });
+    if (consumedTicketPackId) {
+      await restoreConsumedTicketPackBalance({
+        database: ctx.database,
+        ticketPackId: consumedTicketPackId,
+        participantsCount: booking.participantsCount,
+      });
+    }
     consumedTicketPackId = null;
     consumedBalanceAfter = null;
   };

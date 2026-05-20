@@ -153,6 +153,46 @@ export const consumeTicketPackForParticipant = async ({
 };
 
 /**
+ * 予約作成・承認の補償処理で、消費済み ticket pack の残数と状態を復元します。
+ */
+export const restoreConsumedTicketPackBalance = async ({
+  database,
+  ticketPackId,
+  participantsCount,
+}: {
+  database: AuthRuntimeDatabase;
+  ticketPackId: string;
+  participantsCount: number;
+}) => {
+  const restoredRows = await database
+    .update(dbSchema.ticketPack)
+    .set({
+      remainingCount: sql`${dbSchema.ticketPack.remainingCount} + ${participantsCount}`,
+    })
+    .where(eq(dbSchema.ticketPack.id, ticketPackId))
+    .returning({
+      id: dbSchema.ticketPack.id,
+      remainingCount: dbSchema.ticketPack.remainingCount,
+      expiresAt: dbSchema.ticketPack.expiresAt,
+    });
+  const restoredPack = restoredRows[0];
+  if (!restoredPack) {
+    return;
+  }
+
+  const packStatus = normalizePackStatus({
+    remainingCount: restoredPack.remainingCount,
+    expiresAt: restoredPack.expiresAt,
+  });
+  await database
+    .update(dbSchema.ticketPack)
+    .set({
+      status: packStatus,
+    })
+    .where(eq(dbSchema.ticketPack.id, restoredPack.id));
+};
+
+/**
  * ticket pack を発行し、grant ledger を同時に記録します。
  */
 export const issueTicketPackWithLedger = async ({
