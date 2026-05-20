@@ -1,5 +1,5 @@
 import { hc } from 'hono/client';
-import type { AppType } from '../app.js';
+import type { AppType } from '../app/create-app.js';
 
 type RpcClientOptions = {
   credentials?: RequestCredentials;

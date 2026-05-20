@@ -1,9 +1,13 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
-import { generateAnswer, summarizeAiError, type AiAnswerEnv } from '../ai/answer-generator.js';
-import { resolveBusinessFacts } from '../ai/business-facts.js';
-import { resolveAiRequestContext } from '../ai/context-resolver.js';
+import {
+  generateAnswer,
+  summarizeAiError,
+  type AiAnswerEnv,
+} from '../features/ai/answer-generator.js';
+import { resolveBusinessFacts } from '../features/ai/business-facts.js';
+import { resolveAiRequestContext } from '../features/ai/context-resolver.js';
 import {
   canUserAccessAssistantMessage,
   ensureAiConversation,
@@ -12,16 +16,16 @@ import {
   listAiKnowledgeStatuses,
   readRetrievedContextSummary,
   submitAiFeedback,
-} from '../ai/conversation-store.js';
-import { checkAndIncrementAiUsage } from '../ai/rate-limit.js';
+} from '../features/ai/conversation-store.js';
+import { checkAndIncrementAiUsage } from '../features/ai/rate-limit.js';
 import {
   retrieveKnowledge,
   type AiRetrieverEnv,
   type RetrievedKnowledgeChunk,
-} from '../ai/retriever.js';
-import { sanitizeSourceReference } from '../ai/source-visibility.js';
-import { getSessionIdentity } from '../booking/authorization.js';
-import { canAccessInternalBillingInspection } from '../billing/internal-operator-access.js';
+} from '../features/ai/retriever.js';
+import { sanitizeSourceReference } from '../features/ai/source-visibility.js';
+import { getSessionIdentity } from '../domain/booking/authorization.js';
+import { canAccessInternalBillingInspection } from '../domain/billing/internal-operator-access.js';
 
 type AiRoutesEnv = AuthRuntimeEnv & AiAnswerEnv & AiRetrieverEnv;
 

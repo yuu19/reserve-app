@@ -1,14 +1,14 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, asc, eq, gte } from 'drizzle-orm';
-import { resolveOrganizationClassroomContext } from '../booking/authorization.js';
-import { SLOT_STATUS } from '../booking/constants.js';
+import { resolveOrganizationClassroomContext } from '../domain/booking/authorization.js';
+import { SLOT_STATUS } from '../domain/booking/constants.js';
 import {
   resolvePublicEventsClassroomSlug,
   resolvePublicEventsOrganizationSlug,
   type AuthRuntimeDatabase,
   type AuthRuntimeEnv,
 } from '../auth-runtime.js';
-import * as dbSchema from '../db/schema.js';
+import * as dbSchema from '../infra/db/schema.js';
 
 const publicEventSchema = z.object({
   organizationId: z.string(),

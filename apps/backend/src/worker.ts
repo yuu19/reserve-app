@@ -1,16 +1,16 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createWorkerAuthRuntime, type BackendWorkerEnv } from './auth-worker.js';
-import { cleanupExpiredAiConversationContent } from './ai/conversation-store.js';
-import { runDailyBookingMaintenance } from './booking/scheduler.js';
+import { cleanupExpiredAiConversationContent } from './features/ai/conversation-store.js';
+import { runDailyBookingMaintenance } from './domain/booking/scheduler.js';
 import {
   completeExpiredOrganizationPremiumTrials,
   reconcileProviderLinkedOrganizationBillingStates,
   reconcileRiskyOrganizationBillingStates,
   sendPastDueGraceExpiryReminders,
-} from './billing/organization-billing-maintenance.js';
-import { createApp } from './app.js';
-import { createOrganizationLogoService } from './organization-logo-service.js';
-import { createServiceImageUploadService } from './service-image-upload-service.js';
+} from './domain/billing/organization-billing-maintenance.js';
+import { createApp } from './app/create-app.js';
+import { createOrganizationLogoService } from './infra/storage/organization-logo-service.js';
+import { createServiceImageUploadService } from './infra/storage/service-image-upload-service.js';
 
 let workerApp: ReturnType<typeof createApp> | null = null;
 let workerRuntime: ReturnType<typeof createWorkerAuthRuntime> | null = null;

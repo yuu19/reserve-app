@@ -7,7 +7,7 @@ import {
   readOrganizationPremiumFeatureGate,
   resolveOrganizationClassroomAccess,
   resolveOrganizationClassroomContext,
-} from '../booking/authorization.js';
+} from '../domain/booking/authorization.js';
 import {
   resolvePublicEventsClassroomSlug,
   resolvePublicEventsOrganizationSlug,
@@ -33,26 +33,26 @@ import {
   startOrganizationPremiumTrial,
   updateOrganizationBillingStripeCustomerId,
   type OrganizationBillingSubscriptionStatus,
-} from '../billing/organization-billing.js';
-import type { OrganizationBillingInvoicePaymentEvent } from '../billing/organization-billing-invoice-events.js';
-import { buildBillingDocumentReadiness } from '../billing/organization-billing-documents.js';
+} from '../domain/billing/organization-billing.js';
+import type { OrganizationBillingInvoicePaymentEvent } from '../domain/billing/organization-billing-invoice-events.js';
+import { buildBillingDocumentReadiness } from '../domain/billing/organization-billing-documents.js';
 import {
   readOrganizationBillingDocumentReferences,
   readOrganizationBillingInvoicePaymentEvents,
-} from '../billing/organization-billing-invoice-events.js';
-import { readOrganizationOwnerBillingHistory } from '../billing/organization-billing-history.js';
-import { readInternalBillingInspection } from '../billing/internal-billing-inspection.js';
+} from '../domain/billing/organization-billing-invoice-events.js';
+import { readOrganizationOwnerBillingHistory } from '../domain/billing/organization-billing-history.js';
+import { readInternalBillingInspection } from '../domain/billing/internal-billing-inspection.js';
 import {
   canAccessInternalBillingInspection,
   INTERNAL_BILLING_INSPECTION_DENIED_MESSAGE,
-} from '../billing/internal-operator-access.js';
-import { resolveOrganizationPremiumEntitlementPolicy } from '../billing/organization-billing-policy.js';
+} from '../domain/billing/internal-operator-access.js';
+import { resolveOrganizationPremiumEntitlementPolicy } from '../domain/billing/organization-billing-policy.js';
 import {
   appendOrganizationBillingAuditEvent,
   appendOrganizationBillingSignal,
   appendResolvedBillingSignalIfNeeded,
   readOrganizationBillingObservationSnapshot,
-} from '../billing/organization-billing-observability.js';
+} from '../domain/billing/organization-billing-observability.js';
 import {
   BILLING_HANDOFF_REUSE_WINDOW_MS,
   createBillingOperationAttempt,
@@ -60,21 +60,21 @@ import {
   markBillingOperationAttemptSucceeded,
   type OrganizationBillingOperationAttempt,
   type OrganizationBillingOperationPurpose,
-} from '../billing/organization-billing-operations.js';
-import * as dbSchema from '../db/schema.js';
+} from '../domain/billing/organization-billing-operations.js';
+import * as dbSchema from '../infra/db/schema.js';
 import {
   sendOrganizationInvitationEmail,
   sendParticipantInvitationEmail,
-} from '../email/resend.js';
-import type { OrganizationLogoService } from '../organization-logo-service.js';
+} from '../infra/email/resend.js';
+import type { OrganizationLogoService } from '../infra/storage/organization-logo-service.js';
 import {
   createBillingPortalSession,
   createCustomer,
   createSetupCheckoutSession,
   createSubscriptionCheckoutSession,
   createTrialSubscription,
-} from '../payment/stripe.js';
-import type { ServiceImageUploadService } from '../service-image-upload-service.js';
+} from '../infra/payment/stripe.js';
+import type { ServiceImageUploadService } from '../infra/storage/service-image-upload-service.js';
 import { registerBookingRoutes } from './booking-routes.js';
 
 type AuthRouteBindings = {

@@ -18,7 +18,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "stripe:catalog:create": "node scripts/create-stripe-billing-catalog.mjs",
-    "auth:generate": "better-auth generate --output src/db/schema.ts",
+    "auth:generate": "better-auth generate --output src/infra/db/schema.ts",
     "db:generate": "drizzle-kit generate",
     "clean": "rm -rf dist .turbo",
     "start": "wrangler dev --local --port 3000",

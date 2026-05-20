@@ -2,8 +2,8 @@ import { expo as expoPlugin } from '@better-auth/expo';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { organization } from 'better-auth/plugins/organization';
-import * as schema from './db/schema.js';
-import type { ResendEnv } from './email/resend.js';
+import * as schema from './infra/db/schema.js';
+import type { ResendEnv } from './infra/email/resend.js';
 
 export type AuthRuntimeEnv = {
   BETTER_AUTH_URL?: string;

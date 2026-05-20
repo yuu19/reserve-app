@@ -1,0 +1,926 @@
+import { and, count, eq, or, sql, type SQL } from 'drizzle-orm';
+import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
+import * as dbSchema from '../../infra/db/schema.js';
+import {
+  readStripeCustomerSummary,
+  readStripeSubscriptionSummaryById,
+} from '../../infra/payment/stripe.js';
+import {
+  buildBillingProfileReadiness,
+  type OrganizationBillingProfileReadiness,
+} from './organization-billing-profile.js';
+
+export const ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS = 7;
+export const ORGANIZATION_BILLING_PAST_DUE_GRACE_DAYS = 7;
+export const ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE =
+  'Organization already has an active premium trial or paid subscription.';
+export const ORGANIZATION_PREMIUM_TRIAL_COMPLETION_CONFLICT_MESSAGE =
+  'Organization does not have an active premium trial.';
+export const ORGANIZATION_PREMIUM_TRIAL_COMPLETION_NOT_READY_MESSAGE =
+  'Organization premium trial has not reached its completion time yet.';
+export const ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE =
+  'Payment method status is still syncing with Stripe. Retry after billing synchronization completes.';
+
+export type OrganizationBillingPlanCode = 'free' | 'premium';
+export type OrganizationBillingSubscriptionStatus =
+  | 'free'
+  | 'trialing'
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'unpaid'
+  | 'incomplete';
+export type OrganizationBillingPlanState = 'free' | 'premium_trial' | 'premium_paid';
+export type OrganizationBillingPaymentMethodStatus = 'not_started' | 'pending' | 'registered';
+export type OrganizationBillingPaymentIssueState =
+  | 'none'
+  | 'payment_failed'
+  | 'payment_action_required'
+  | 'past_due_grace_active'
+  | 'past_due_grace_expired'
+  | 'unpaid'
+  | 'incomplete'
+  | 'recovered'
+  | 'stale_failure_history_only';
+export type OrganizationBillingPaymentIssueStartedAtSource =
+  | 'provider_issue_time'
+  | 'application_receipt_time'
+  | 'none';
+export type OrganizationBillingPaymentIssueTiming = {
+  issueStartedAt: string | null;
+  issueStartedAtSource: OrganizationBillingPaymentIssueStartedAtSource;
+  graceEndsAt: string | null;
+};
+export type OrganizationBillingPaymentMethodReason =
+  | 'plan_is_free'
+  | 'missing_customer'
+  | 'missing_default_payment_method'
+  | 'default_payment_method_registered'
+  | 'stripe_not_configured'
+  | 'stripe_lookup_failed';
+
+export type OrganizationBillingPaymentMethodEvaluation = {
+  status: OrganizationBillingPaymentMethodStatus;
+  reason: OrganizationBillingPaymentMethodReason;
+};
+
+export type OrganizationBillingActionAvailability = {
+  canStartTrial: boolean;
+  canStartPaidCheckout: boolean;
+  canRegisterPaymentMethod: boolean;
+  canOpenBillingPortal: boolean;
+  trialUsed: boolean;
+  availableIntervals: Array<'month' | 'year'>;
+  nextOwnerAction: string | null;
+  readOnlyReason: string | null;
+};
+
+type OrganizationBillingPaymentIssueEventType =
+  | 'payment_failed'
+  | 'payment_action_required'
+  | 'payment_succeeded'
+  | null;
+
+const toIsoDateString = (value: unknown): string | null => {
+  const candidate =
+    value instanceof Date
+      ? value
+      : typeof value === 'number' || typeof value === 'string'
+        ? new Date(value)
+        : null;
+
+  if (!candidate || Number.isNaN(candidate.getTime())) {
+    return null;
+  }
+
+  return candidate.toISOString();
+};
+
+const toTime = (value: string | Date | null | undefined): number | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+};
+
+/**
+ * 支払い失敗の起点時刻と猶予期限を、provider 時刻とアプリ受領時刻のどちら由来か判別できる形で返す。
+ */
+export const resolveOrganizationBillingPaymentIssueTiming = ({
+  paymentIssueStartedAt,
+  pastDueGraceEndsAt,
+  providerIssueStartedAt,
+}: {
+  paymentIssueStartedAt?: Date | string | null;
+  pastDueGraceEndsAt?: Date | string | null;
+  providerIssueStartedAt?: Date | string | null;
+}): OrganizationBillingPaymentIssueTiming => {
+  const issueStartedAt = toIsoDateString(paymentIssueStartedAt);
+  const graceEndsAt = toIsoDateString(pastDueGraceEndsAt);
+  const issueTime = toTime(issueStartedAt);
+  const providerTime = toTime(providerIssueStartedAt ?? null);
+  const issueStartedAtSource: OrganizationBillingPaymentIssueStartedAtSource = !issueStartedAt
+    ? 'none'
+    : providerTime !== null && issueTime === providerTime
+      ? 'provider_issue_time'
+      : 'application_receipt_time';
+
+  return {
+    issueStartedAt,
+    issueStartedAtSource,
+    graceEndsAt,
+  };
+};
+
+/**
+ * subscription status と直近の invoice/payment event から、owner 向けに表示する支払い問題状態を決める。
+ *
+ * Stripe 側で復旧済みでも失敗 event が後着することがあるため、stale failure history を
+ * 通常の未払い状態とは分けて返す。
+ */
+export const resolveOrganizationBillingPaymentIssueState = ({
+  subscriptionStatus,
+  entitlementReason,
+  latestPaymentIssueEventType = null,
+  hasRecoveredPaymentIssueHistory = false,
+  hasStaleFailureHistory = false,
+}: {
+  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  entitlementReason?: string | null;
+  latestPaymentIssueEventType?: OrganizationBillingPaymentIssueEventType;
+  hasRecoveredPaymentIssueHistory?: boolean;
+  hasStaleFailureHistory?: boolean;
+}): OrganizationBillingPaymentIssueState => {
+  if (subscriptionStatus === 'past_due') {
+    return entitlementReason === 'premium_paid_past_due_grace_active'
+      ? 'past_due_grace_active'
+      : 'past_due_grace_expired';
+  }
+
+  if (subscriptionStatus === 'unpaid') {
+    return 'unpaid';
+  }
+
+  if (subscriptionStatus === 'incomplete') {
+    return 'incomplete';
+  }
+
+  if (hasStaleFailureHistory) {
+    return 'stale_failure_history_only';
+  }
+
+  if (latestPaymentIssueEventType === 'payment_succeeded' && hasRecoveredPaymentIssueHistory) {
+    return 'recovered';
+  }
+
+  if (latestPaymentIssueEventType === 'payment_action_required') {
+    return 'payment_action_required';
+  }
+
+  if (latestPaymentIssueEventType === 'payment_failed') {
+    return 'payment_failed';
+  }
+
+  return 'none';
+};
+
+export const isBillingInterval = (value: string | null): 'month' | 'year' | null => {
+  if (value === 'month' || value === 'year') {
+    return value;
+  }
+  return null;
+};
+
+export const isBillingSubscriptionStatus = (
+  value: string | null,
+): OrganizationBillingSubscriptionStatus | null => {
+  if (
+    value === 'free' ||
+    value === 'trialing' ||
+    value === 'active' ||
+    value === 'past_due' ||
+    value === 'canceled' ||
+    value === 'unpaid' ||
+    value === 'incomplete'
+  ) {
+    return value;
+  }
+  return null;
+};
+
+export const hasActivePremiumSubscription = (value: string | null): boolean => {
+  return (
+    value === 'trialing' ||
+    value === 'active' ||
+    value === 'past_due' ||
+    value === 'unpaid' ||
+    value === 'incomplete'
+  );
+};
+
+/** 組織作成直後や旧データでも billing aggregate を参照できるよう、free 行を遅延作成する。 */
+export const ensureOrganizationBillingRow = async (
+  database: AuthRuntimeDatabase,
+  organizationId: string,
+) => {
+  await database
+    .insert(dbSchema.organizationBilling)
+    .values({
+      id: crypto.randomUUID(),
+      organizationId,
+      planCode: 'free',
+      subscriptionStatus: 'free',
+    })
+    .onConflictDoNothing();
+};
+
+/** billing 行と audit history の両方を見て、過去に premium trial を開始済みか判定する。 */
+export const hasOrganizationStartedPremiumTrial = async ({
+  database,
+  organizationId,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+}) => {
+  await ensureOrganizationBillingRow(database, organizationId);
+
+  const billingRows = await database
+    .select({
+      trialStartedAt: dbSchema.organizationBilling.trialStartedAt,
+    })
+    .from(dbSchema.organizationBilling)
+    .where(eq(dbSchema.organizationBilling.organizationId, organizationId))
+    .limit(1);
+
+  if (billingRows[0]?.trialStartedAt) {
+    return true;
+  }
+
+  const auditRows = await database
+    .select({
+      count: count(),
+    })
+    .from(dbSchema.organizationBillingAuditEvent)
+    .where(
+      and(
+        eq(dbSchema.organizationBillingAuditEvent.organizationId, organizationId),
+        eq(dbSchema.organizationBillingAuditEvent.sourceKind, 'trial_start'),
+      ),
+    );
+
+  return Number(auditRows[0]?.count ?? 0) > 0;
+};
+
+/**
+ * organization billing aggregate を premium trial に遷移させる。
+ *
+ * Stripe subscription と紐づく trial でも、手動 trial でも同じ D1 aggregate を正本にする。
+ */
+export const startOrganizationPremiumTrial = async ({
+  database,
+  organizationId,
+  now = new Date(),
+  trialStartedAt = now,
+  trialEndsAt = new Date(
+    trialStartedAt.getTime() + ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
+  ),
+  stripeCustomerId = null,
+  stripeSubscriptionId = null,
+  stripePriceId = null,
+  billingInterval = null,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  now?: Date;
+  trialStartedAt?: Date;
+  trialEndsAt?: Date;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  billingInterval?: 'month' | 'year' | null;
+}) => {
+  await ensureOrganizationBillingRow(database, organizationId);
+
+  await database
+    .update(dbSchema.organizationBilling)
+    .set({
+      planCode: 'premium',
+      billingInterval,
+      subscriptionStatus: 'trialing',
+      cancelAtPeriodEnd: false,
+      trialStartedAt,
+      trialEndedAt: null,
+      currentPeriodStart: trialStartedAt,
+      currentPeriodEnd: trialEndsAt,
+      paymentIssueStartedAt: null,
+      pastDueGraceEndsAt: null,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      stripePriceId,
+    })
+    .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
+
+  return {
+    trialStartedAt,
+    trialEndsAt,
+  };
+};
+
+export const updateOrganizationBillingStripeCustomerId = async ({
+  database,
+  organizationId,
+  stripeCustomerId,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  stripeCustomerId: string;
+}) => {
+  await ensureOrganizationBillingRow(database, organizationId);
+
+  await database
+    .update(dbSchema.organizationBilling)
+    .set({
+      stripeCustomerId,
+    })
+    .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
+};
+
+export const selectOrganizationBillingSummary = async (
+  database: AuthRuntimeDatabase,
+  organizationId: string,
+) => {
+  await ensureOrganizationBillingRow(database, organizationId);
+
+  const rows = await database
+    .select({
+      planCode: dbSchema.organizationBilling.planCode,
+      billingInterval: dbSchema.organizationBilling.billingInterval,
+      subscriptionStatus: dbSchema.organizationBilling.subscriptionStatus,
+      cancelAtPeriodEnd: dbSchema.organizationBilling.cancelAtPeriodEnd,
+      trialStartedAt: dbSchema.organizationBilling.trialStartedAt,
+      trialEndedAt: dbSchema.organizationBilling.trialEndedAt,
+      currentPeriodStart: dbSchema.organizationBilling.currentPeriodStart,
+      currentPeriodEnd: dbSchema.organizationBilling.currentPeriodEnd,
+      paymentIssueStartedAt: dbSchema.organizationBilling.paymentIssueStartedAt,
+      pastDueGraceEndsAt: dbSchema.organizationBilling.pastDueGraceEndsAt,
+      billingProfileReadiness: dbSchema.organizationBilling.billingProfileReadiness,
+      billingProfileNextAction: dbSchema.organizationBilling.billingProfileNextAction,
+      billingProfileCheckedAt: dbSchema.organizationBilling.billingProfileCheckedAt,
+      lastReconciledAt: dbSchema.organizationBilling.lastReconciledAt,
+      lastReconciliationReason: dbSchema.organizationBilling.lastReconciliationReason,
+      stripeCustomerId: dbSchema.organizationBilling.stripeCustomerId,
+      stripeSubscriptionId: dbSchema.organizationBilling.stripeSubscriptionId,
+      stripePriceId: dbSchema.organizationBilling.stripePriceId,
+    })
+    .from(dbSchema.organizationBilling)
+    .where(eq(dbSchema.organizationBilling.organizationId, organizationId))
+    .limit(1);
+
+  return rows[0] ?? null;
+};
+
+export const resolveOrganizationBillingProfileReadiness = (
+  billing: Awaited<ReturnType<typeof selectOrganizationBillingSummary>>,
+): OrganizationBillingProfileReadiness =>
+  buildBillingProfileReadiness({
+    state: billing?.billingProfileReadiness ?? 'not_required',
+    nextAction: billing?.billingProfileNextAction ?? null,
+    checkedAt: billing?.billingProfileCheckedAt ?? null,
+  });
+
+/**
+ * 現在の billing state、owner 権限、Stripe 設定から owner が次に実行できる billing 操作を返す。
+ */
+export const resolveOrganizationBillingActionAvailability = ({
+  billing,
+  canManageBilling,
+  trialUsed,
+  stripeBillingConfigured,
+  availableIntervals,
+}: {
+  billing: Awaited<ReturnType<typeof selectOrganizationBillingSummary>>;
+  canManageBilling: boolean;
+  trialUsed: boolean;
+  stripeBillingConfigured: boolean;
+  availableIntervals: Array<'month' | 'year'>;
+}): OrganizationBillingActionAvailability => {
+  const planCode: OrganizationBillingPlanCode =
+    billing?.planCode === 'premium' ? 'premium' : 'free';
+  const subscriptionStatus =
+    isBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
+  const providerLinked = Boolean(billing?.stripeCustomerId && billing?.stripeSubscriptionId);
+  const hasProviderManagedSubscription =
+    planCode === 'premium' &&
+    providerLinked &&
+    (subscriptionStatus === 'active' ||
+      subscriptionStatus === 'trialing' ||
+      subscriptionStatus === 'past_due' ||
+      subscriptionStatus === 'unpaid' ||
+      subscriptionStatus === 'incomplete');
+  const canStartTrial =
+    canManageBilling && !trialUsed && planCode === 'free' && subscriptionStatus === 'free';
+  const canStartPaidCheckout =
+    canManageBilling &&
+    stripeBillingConfigured &&
+    availableIntervals.length > 0 &&
+    (planCode === 'free' || subscriptionStatus === 'free' || subscriptionStatus === 'canceled') &&
+    !hasProviderManagedSubscription;
+  const canRegisterPaymentMethod =
+    canManageBilling &&
+    stripeBillingConfigured &&
+    planCode === 'premium' &&
+    subscriptionStatus === 'trialing';
+  const canOpenBillingPortal =
+    canManageBilling && stripeBillingConfigured && hasProviderManagedSubscription;
+  const readOnlyReason = canManageBilling ? null : 'billing_management_requires_organization_owner';
+  const nextOwnerAction =
+    readOnlyReason ??
+    (canStartTrial
+      ? 'start_trial'
+      : canStartPaidCheckout
+        ? 'start_paid_checkout'
+        : canRegisterPaymentMethod
+          ? 'register_payment_method'
+          : canOpenBillingPortal
+            ? 'open_billing_portal'
+            : null);
+
+  return {
+    canStartTrial,
+    canStartPaidCheckout,
+    canRegisterPaymentMethod,
+    canOpenBillingPortal,
+    trialUsed,
+    availableIntervals,
+    nextOwnerAction,
+    readOnlyReason,
+  };
+};
+
+export const resolveOrganizationBillingPlanState = ({
+  planCode,
+  subscriptionStatus,
+}: {
+  planCode: OrganizationBillingPlanCode;
+  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+}): OrganizationBillingPlanState => {
+  if (planCode !== 'premium') {
+    return 'free';
+  }
+
+  return subscriptionStatus === 'trialing' ? 'premium_trial' : 'premium_paid';
+};
+
+export const resolveOrganizationBillingTrialEndsAt = ({
+  planState,
+  currentPeriodEnd,
+}: {
+  planState: OrganizationBillingPlanState;
+  currentPeriodEnd: string | null;
+}): string | null => {
+  return planState === 'premium_trial' ? currentPeriodEnd : null;
+};
+
+/**
+ * Stripe customer の default payment method を読み、trial 終了や CTA 表示に使う支払い方法状態を評価する。
+ *
+ * Stripe 未設定・一時的な lookup 失敗は、即時失格ではなく pending として扱う。
+ */
+export const resolveOrganizationBillingPaymentMethodEvaluation = async ({
+  env,
+  planCode,
+  stripeCustomerId,
+}: {
+  env: AuthRuntimeEnv;
+  planCode: OrganizationBillingPlanCode;
+  stripeCustomerId: string | null;
+}): Promise<OrganizationBillingPaymentMethodEvaluation> => {
+  if (planCode !== 'premium') {
+    return {
+      status: 'not_started',
+      reason: 'plan_is_free',
+    };
+  }
+
+  if (!stripeCustomerId) {
+    return {
+      status: 'not_started',
+      reason: 'missing_customer',
+    };
+  }
+
+  if (!env.STRIPE_SECRET_KEY?.trim()) {
+    return {
+      status: 'pending',
+      reason: 'stripe_not_configured',
+    };
+  }
+
+  try {
+    const customer = await readStripeCustomerSummary({
+      env,
+      customerId: stripeCustomerId,
+    });
+    if (customer.defaultPaymentMethodId) {
+      return {
+        status: 'registered',
+        reason: 'default_payment_method_registered',
+      };
+    }
+
+    return {
+      status: 'pending',
+      reason: 'missing_default_payment_method',
+    };
+  } catch {
+    return {
+      status: 'pending',
+      reason: 'stripe_lookup_failed',
+    };
+  }
+};
+
+export const resolveOrganizationBillingPaymentMethodStatus = async ({
+  env,
+  planCode,
+  stripeCustomerId,
+}: {
+  env: AuthRuntimeEnv;
+  planCode: OrganizationBillingPlanCode;
+  stripeCustomerId: string | null;
+}): Promise<OrganizationBillingPaymentMethodStatus> => {
+  const paymentMethod = await resolveOrganizationBillingPaymentMethodEvaluation({
+    env,
+    planCode,
+    stripeCustomerId,
+  });
+
+  return paymentMethod.status;
+};
+
+/**
+ * trial 終了時点の Stripe 状態と支払い方法状態から、premium paid へ移行するか free へ戻すかを確定する。
+ *
+ * provider 同期が未完了の可能性がある場合は、冪等な再試行に回せる 503 相当の結果を返す。
+ */
+export const applyOrganizationPremiumTrialCompletion = async ({
+  database,
+  env,
+  organizationId,
+  now = new Date(),
+}: {
+  database: AuthRuntimeDatabase;
+  env: AuthRuntimeEnv;
+  organizationId: string;
+  now?: Date;
+}): Promise<
+  | {
+      ok: true;
+      message: string;
+    }
+  | {
+      ok: false;
+      status: 409 | 422 | 503;
+      message: string;
+    }
+> => {
+  const billing = await selectOrganizationBillingSummary(database, organizationId);
+  if (billing?.planCode !== 'premium' || billing.subscriptionStatus !== 'trialing') {
+    return {
+      ok: false,
+      status: 409,
+      message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_CONFLICT_MESSAGE,
+    };
+  }
+
+  const trialEndsAt = billing.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd : null;
+  if (!trialEndsAt || trialEndsAt.getTime() > now.getTime()) {
+    return {
+      ok: false,
+      status: 409,
+      message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_NOT_READY_MESSAGE,
+    };
+  }
+
+  const paymentMethod = await resolveOrganizationBillingPaymentMethodEvaluation({
+    env,
+    planCode: 'premium',
+    stripeCustomerId: billing.stripeCustomerId ?? null,
+  });
+
+  if (billing.stripeSubscriptionId && env.STRIPE_SECRET_KEY?.trim()) {
+    try {
+      const latestSubscription = await readStripeSubscriptionSummaryById({
+        env,
+        subscriptionId: billing.stripeSubscriptionId,
+      });
+      const latestSubscriptionStatus = isBillingSubscriptionStatus(latestSubscription.status);
+      if (
+        latestSubscriptionStatus &&
+        latestSubscriptionStatus !== 'trialing' &&
+        latestSubscriptionStatus !== 'free'
+      ) {
+        const isCanceled = latestSubscriptionStatus === 'canceled';
+        await database
+          .update(dbSchema.organizationBilling)
+          .set({
+            planCode: isCanceled ? 'free' : 'premium',
+            billingInterval: isCanceled
+              ? null
+              : resolveBillingIntervalFromPriceId(env, latestSubscription.priceId),
+            subscriptionStatus: isCanceled ? 'free' : latestSubscriptionStatus,
+            cancelAtPeriodEnd: isCanceled ? false : latestSubscription.cancelAtPeriodEnd,
+            trialEndedAt: now,
+            currentPeriodStart: isCanceled ? null : latestSubscription.currentPeriodStart,
+            currentPeriodEnd: isCanceled ? null : latestSubscription.currentPeriodEnd,
+            paymentIssueStartedAt: null,
+            pastDueGraceEndsAt: null,
+            stripeSubscriptionId: isCanceled ? null : latestSubscription.id,
+            stripePriceId: isCanceled ? null : latestSubscription.priceId,
+          })
+          .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
+
+        return {
+          ok: true,
+          message: isCanceled
+            ? 'Organization premium trial ended and returned to free because billing requirements were not met.'
+            : 'Organization premium trial converted to premium paid.',
+        };
+      }
+    } catch {
+      return {
+        ok: false,
+        status: 503,
+        message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
+      };
+    }
+
+    return {
+      ok: false,
+      status: 503,
+      message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
+    };
+  }
+
+  if (paymentMethod.reason === 'default_payment_method_registered') {
+    await database
+      .update(dbSchema.organizationBilling)
+      .set({
+        planCode: 'premium',
+        billingInterval: isBillingInterval(billing.billingInterval ?? null),
+        subscriptionStatus: 'active',
+        cancelAtPeriodEnd: false,
+        trialEndedAt: now,
+        currentPeriodStart: now,
+        currentPeriodEnd: null,
+        paymentIssueStartedAt: null,
+        pastDueGraceEndsAt: null,
+      })
+      .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
+
+    return {
+      ok: true,
+      message: 'Organization premium trial converted to premium paid.',
+    };
+  }
+
+  if (
+    paymentMethod.reason === 'missing_customer' ||
+    paymentMethod.reason === 'missing_default_payment_method'
+  ) {
+    await database
+      .update(dbSchema.organizationBilling)
+      .set({
+        planCode: 'free',
+        billingInterval: null,
+        subscriptionStatus: 'free',
+        cancelAtPeriodEnd: false,
+        trialEndedAt: now,
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        paymentIssueStartedAt: null,
+        pastDueGraceEndsAt: null,
+        stripeSubscriptionId: null,
+        stripePriceId: null,
+      })
+      .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
+
+    return {
+      ok: true,
+      message:
+        'Organization premium trial ended and returned to free because billing requirements were not met.',
+    };
+  }
+
+  return paymentMethod.reason === 'stripe_not_configured'
+    ? {
+        ok: false,
+        status: 422,
+        message: 'Stripe billing is not configured.',
+      }
+    : {
+        ok: false,
+        status: 503,
+        message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
+      };
+};
+
+export const resolveBillingIntervalFromPriceId = (
+  env: AuthRuntimeEnv,
+  priceId: string | null,
+): 'month' | 'year' | null => {
+  if (!priceId) {
+    return null;
+  }
+  if (env.STRIPE_PREMIUM_MONTHLY_PRICE_ID?.trim() === priceId) {
+    return 'month';
+  }
+  if (env.STRIPE_PREMIUM_YEARLY_PRICE_ID?.trim() === priceId) {
+    return 'year';
+  }
+  return null;
+};
+
+const resolvePaymentIssueFields = ({
+  subscriptionStatus,
+  existingPaymentIssueStartedAt,
+  existingPastDueGraceEndsAt,
+  providerPaymentIssueStartedAt,
+  now,
+}: {
+  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  existingPaymentIssueStartedAt?: Date | null;
+  existingPastDueGraceEndsAt?: Date | null;
+  providerPaymentIssueStartedAt?: Date | null;
+  now: Date;
+}) => {
+  const providerIssueTime = providerPaymentIssueStartedAt?.getTime() ?? null;
+  const existingIssueTime = existingPaymentIssueStartedAt?.getTime() ?? null;
+  // provider が event 発生時刻を返す場合は猶予期限の起点に使う。既存の起点より新しい
+  // webhook が後着しても、猶予期間を不必要に延ばさない。
+  const paymentIssueStartedAt =
+    providerPaymentIssueStartedAt &&
+    (existingIssueTime === null || providerIssueTime! <= existingIssueTime)
+      ? providerPaymentIssueStartedAt
+      : (existingPaymentIssueStartedAt ?? providerPaymentIssueStartedAt ?? now);
+
+  if (subscriptionStatus === 'past_due') {
+    const canKeepExistingGrace =
+      existingPastDueGraceEndsAt &&
+      existingIssueTime !== null &&
+      paymentIssueStartedAt.getTime() === existingIssueTime;
+
+    return {
+      paymentIssueStartedAt,
+      pastDueGraceEndsAt:
+        (canKeepExistingGrace ? existingPastDueGraceEndsAt : null) ??
+        new Date(
+          paymentIssueStartedAt.getTime() +
+            ORGANIZATION_BILLING_PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
+        ),
+    };
+  }
+
+  if (subscriptionStatus === 'incomplete' || subscriptionStatus === 'unpaid') {
+    return {
+      paymentIssueStartedAt,
+      pastDueGraceEndsAt: null,
+    };
+  }
+
+  return {
+    paymentIssueStartedAt: null,
+    pastDueGraceEndsAt: null,
+  };
+};
+
+/**
+ * Stripe 同期や Checkout 完了を organization billing aggregate に反映する。
+ *
+ * 支払い失敗系 status では猶予期限をここで一元計算し、復旧系 status では failure state を消す。
+ */
+export const upsertOrganizationBillingByOrganizationId = async ({
+  database,
+  organizationId,
+  planCode,
+  stripeCustomerId,
+  stripeSubscriptionId,
+  stripePriceId,
+  billingInterval,
+  subscriptionStatus,
+  cancelAtPeriodEnd,
+  currentPeriodStart,
+  currentPeriodEnd,
+  paymentIssueOccurredAt,
+  now = new Date(),
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  planCode: OrganizationBillingPlanCode;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  billingInterval?: 'month' | 'year' | null;
+  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodStart?: Date | null;
+  currentPeriodEnd?: Date | null;
+  paymentIssueOccurredAt?: Date | null;
+  now?: Date;
+}) => {
+  await ensureOrganizationBillingRow(database, organizationId);
+  const existingRows = await database
+    .select({
+      paymentIssueStartedAt: dbSchema.organizationBilling.paymentIssueStartedAt,
+      pastDueGraceEndsAt: dbSchema.organizationBilling.pastDueGraceEndsAt,
+    })
+    .from(dbSchema.organizationBilling)
+    .where(eq(dbSchema.organizationBilling.organizationId, organizationId))
+    .limit(1);
+  const paymentIssueFields = resolvePaymentIssueFields({
+    subscriptionStatus,
+    existingPaymentIssueStartedAt: existingRows[0]?.paymentIssueStartedAt ?? null,
+    existingPastDueGraceEndsAt: existingRows[0]?.pastDueGraceEndsAt ?? null,
+    providerPaymentIssueStartedAt: paymentIssueOccurredAt ?? null,
+    now,
+  });
+  await database
+    .insert(dbSchema.organizationBilling)
+    .values({
+      id: crypto.randomUUID(),
+      organizationId,
+      planCode,
+      stripeCustomerId: stripeCustomerId ?? null,
+      stripeSubscriptionId: stripeSubscriptionId ?? null,
+      stripePriceId: stripePriceId ?? null,
+      billingInterval: billingInterval ?? null,
+      subscriptionStatus,
+      cancelAtPeriodEnd: cancelAtPeriodEnd ?? false,
+      trialStartedAt: subscriptionStatus === 'trialing' ? (currentPeriodStart ?? new Date()) : null,
+      trialEndedAt: null,
+      currentPeriodStart: currentPeriodStart ?? null,
+      currentPeriodEnd: currentPeriodEnd ?? null,
+      paymentIssueStartedAt: paymentIssueFields.paymentIssueStartedAt,
+      pastDueGraceEndsAt: paymentIssueFields.pastDueGraceEndsAt,
+    })
+    .onConflictDoUpdate({
+      target: dbSchema.organizationBilling.organizationId,
+      set: {
+        planCode,
+        stripeCustomerId: stripeCustomerId ?? null,
+        stripeSubscriptionId: stripeSubscriptionId ?? null,
+        stripePriceId: stripePriceId ?? null,
+        billingInterval: billingInterval ?? null,
+        subscriptionStatus,
+        cancelAtPeriodEnd: cancelAtPeriodEnd ?? false,
+        trialStartedAt:
+          subscriptionStatus === 'trialing'
+            ? (currentPeriodStart ?? new Date())
+            : sql`${dbSchema.organizationBilling.trialStartedAt}`,
+        trialEndedAt:
+          subscriptionStatus === 'trialing'
+            ? null
+            : sql`${dbSchema.organizationBilling.trialEndedAt}`,
+        currentPeriodStart: currentPeriodStart ?? null,
+        currentPeriodEnd: currentPeriodEnd ?? null,
+        paymentIssueStartedAt: paymentIssueFields.paymentIssueStartedAt,
+        pastDueGraceEndsAt: paymentIssueFields.pastDueGraceEndsAt,
+        updatedAt: new Date(),
+      },
+    });
+};
+
+/**
+ * Stripe webhook から組織を復元するため、customer/subscription のどちらか一致する aggregate を探す。
+ */
+export const selectOrganizationBillingByStripeIdentifiers = async ({
+  database,
+  stripeCustomerId,
+  stripeSubscriptionId,
+}: {
+  database: AuthRuntimeDatabase;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+}) => {
+  const filters: SQL[] = [];
+  if (stripeSubscriptionId) {
+    filters.push(eq(dbSchema.organizationBilling.stripeSubscriptionId, stripeSubscriptionId));
+  }
+  if (stripeCustomerId) {
+    filters.push(eq(dbSchema.organizationBilling.stripeCustomerId, stripeCustomerId));
+  }
+  if (filters.length === 0) {
+    return null;
+  }
+
+  const rows = await database
+    .select({
+      organizationId: dbSchema.organizationBilling.organizationId,
+    })
+    .from(dbSchema.organizationBilling)
+    .where(filters.length === 1 ? filters[0] : or(...filters))
+    .limit(1);
+
+  return rows[0] ?? null;
+};

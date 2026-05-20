@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/d1';
 import { Miniflare } from 'miniflare';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createApp } from './app.js';
+import { createApp } from './app/create-app.js';
 import { createAuthRuntime } from './auth-runtime.js';
 import {
   completeExpiredOrganizationPremiumTrials,
   reconcileProviderLinkedOrganizationBillingStates,
   reconcileRiskyOrganizationBillingStates,
-} from './billing/organization-billing-maintenance.js';
+} from './domain/billing/organization-billing-maintenance.js';
 
 type D1DatabaseBinding = Awaited<ReturnType<Miniflare['getD1Database']>>;
 
