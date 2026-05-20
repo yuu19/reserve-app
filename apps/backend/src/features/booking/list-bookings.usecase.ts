@@ -8,7 +8,7 @@ import {
   validationError,
   type JsonRouteResult,
 } from '../../shared/route-result.js';
-import type { BookingRouteContext } from '../../shared/route-context.js';
+import type { BookingRouteContext } from './booking-route-context.js';
 import { listBookings } from './booking.repository.js';
 import type { BookingListQuery, BookingMineQuery } from './booking.schemas.js';
 

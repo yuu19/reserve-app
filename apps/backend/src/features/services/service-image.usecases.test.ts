@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ServiceImageUploadError } from '../../infra/storage/service-image-upload-service.js';
-import type { BookingRouteContext } from '../../shared/route-context.js';
+import type { BookingRouteContext } from '../booking/booking-route-context.js';
 import {
   createServiceImageUploadUrl,
   getServiceImage,

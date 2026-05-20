@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 /**
- * modules 配下の usecase が Hono へ返せる JSON HTTP status を限定します。
+ * usecase が Hono へ返せる JSON HTTP status を限定します。
  */
 export type JsonStatus = 200 | 201 | 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 503;
 

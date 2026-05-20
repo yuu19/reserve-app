@@ -11,7 +11,7 @@ import {
   unauthorized,
   type JsonRouteResult,
 } from '../../shared/route-result.js';
-import type { BookingRouteContext } from '../../shared/route-context.js';
+import type { BookingRouteContext } from './booking-route-context.js';
 import {
   consumeBookingTicketLedger,
   findServiceForBookingCreate,

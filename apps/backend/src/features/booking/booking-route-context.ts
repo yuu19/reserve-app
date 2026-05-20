@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../auth-runtime.js';
+import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
   findParticipantsByUserAndOrganization,
   getSessionIdentity,
@@ -9,9 +9,9 @@ import {
   resolveOrganizationClassroomAccess,
   resolveOrganizationClassroomContext,
   type SessionIdentity,
-} from '../domain/booking/authorization.js';
-import * as dbSchema from '../infra/db/schema.js';
-import type { ServiceImageUploadService } from '../infra/storage/service-image-upload-service.js';
+} from '../../domain/booking/authorization.js';
+import * as dbSchema from '../../infra/db/schema.js';
+import type { ServiceImageUploadService } from '../../infra/storage/service-image-upload-service.js';
 
 /**
  * Better Auth middleware が route context に保存する user/session 変数の型です。
@@ -24,7 +24,7 @@ export type AuthRouteBindings = {
 };
 
 /**
- * booking modules の route 登録に注入する外部依存をまとめます。
+ * 予約系 route 登録に注入する外部依存をまとめます。
  */
 export type BookingRouteDeps = {
   authRoutes: OpenAPIHono<AuthRouteBindings>;
@@ -35,7 +35,7 @@ export type BookingRouteDeps = {
 };
 
 /**
- * modules 配下の usecase が共有する認証・認可・premium 判定の境界です。
+ * 予約系 usecase が共有する認証・認可・premium 判定の境界です。
  */
 export type BookingRouteContext = BookingRouteDeps & {
   requireIdentity: (headers: Headers) => Promise<SessionIdentity | null>;

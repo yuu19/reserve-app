@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOOKING_STATUS, SLOT_STATUS } from '../../domain/booking/constants.js';
-import type { BookingRouteContext } from '../../shared/route-context.js';
+import type { BookingRouteContext } from './booking-route-context.js';
 import { approveBookingByStaff } from './approve-booking.usecase.js';
 import { cancelBookingByParticipant } from './cancel-booking.usecase.js';
 import { createBooking } from './create-booking.usecase.js';

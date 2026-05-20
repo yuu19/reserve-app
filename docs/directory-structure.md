@@ -15,6 +15,7 @@ apps/backend/src/
 
   features/
     booking/
+      booking-route-context.ts
       booking.routes.ts
       booking.schemas.ts
       booking.usecases.ts
@@ -47,6 +48,7 @@ apps/backend/src/
       ticket.usecases.ts
       ticket.repository.ts
       ticket.state.ts
+      legacy-ticket-checkout-webhook.usecase.ts
 
     organizations/
       organization.routes.ts
@@ -111,7 +113,6 @@ apps/backend/src/
       sentry.ts
 
   shared/
-    route-context.ts
     route-result.ts
     serializers.ts
     date.ts
@@ -138,7 +139,10 @@ apps/backend/src/modules/recurring
 apps/backend/src/modules/tickets
 → apps/backend/src/features/tickets
 
-apps/backend/src/modules/shared
+apps/backend/src/modules/shared/route-context.ts
+→ apps/backend/src/features/booking/booking-route-context.ts
+
+apps/backend/src/modules/shared の純粋 helper
 → apps/backend/src/shared
 ```
 
@@ -186,6 +190,9 @@ infra    -> domain, shared は可
 shared   -> どこにも依存しない
 ```
 
+予約系の route context は例外的に `features/booking` を境界として共有します。
+`services`、`slots`、`recurring`、`tickets` は予約運用の同一境界として `features/booking/booking-route-context.ts` の型だけを参照できます。
+
 避けるべき依存です。
 
 ```txt
@@ -211,7 +218,7 @@ import { registerTicketRoutes } from '../features/tickets/ticket.routes.js';
 import {
   createBookingRouteContext,
   type BookingRouteDeps,
-} from '../shared/route-context.js';
+} from '../features/booking/booking-route-context.js';
 
 export const registerBookingRoutes = (deps: BookingRouteDeps) => {
   const ctx = createBookingRouteContext(deps);
@@ -228,23 +235,39 @@ export const registerBookingRoutes = (deps: BookingRouteDeps) => {
 
 `src/booking/constants.ts` は `BOOKING_STATUS`, `SLOT_STATUS`, `TICKET_*` などのドメイン定数を持っています。これは feature 実装より domain shared に近いです。
 
-`src/booking/authorization.ts` も session identity、organization/classroom access、premium gate など横断的な権限ロジックを持っているので、`domain/booking/authorization.ts` に寄せるのが自然です。
+`src/booking/authorization.ts` は session identity、organization/classroom access、premium gate など横断的な権限ロジックを持っています。
+現状では DB と認証 runtime に依存するため、純粋な domain というより横断的な application service に近いです。
+この移動は暫定配置とし、後続で `features/access-control` などへ分離する余地があります。
+
+## `shared` に残すもの
+
+`shared` は、どの feature からも使える純粋 helper だけを置きます。
+DB、認証、外部 storage、route 登録に依存するものは置きません。
+
+予約系 route の認証・認可・premium 判定を束ねる context は、予約機能の application 境界として `features/booking/booking-route-context.ts` に置きます。
+
+## `create-app.ts` から切り出すもの
+
+`create-app.ts` は middleware、health check、OpenAPI、webhook endpoint、route 登録、依存注入に寄せます。
+旧 Stripe ticket checkout の復旧処理は、ticket 購入の業務処理なので `features/tickets/legacy-ticket-checkout-webhook.usecase.ts` に置きます。
 
 ## 一気にやる場合の作業順
 
 ```txt
 1. src/modules を src/features に rename
 2. import '../modules/...' を '../features/...' に一括置換
-3. src/modules/shared を src/shared に移動
-4. import '../shared/...' / '../../shared/...' を調整
-5. src/booking を src/domain/booking に移動
-6. import '../../booking/...' を '../../domain/booking/...' に置換
-7. src/db を src/infra/db に移動
-8. src/email を src/infra/email に移動
-9. src/payment を src/infra/payment に移動
-10. storage 系 service を src/infra/storage に移動
-11. billing 系 domain logic を src/domain/billing に移動
-12. typecheck / test / lint
+3. src/modules/shared/route-context.ts を src/features/booking/booking-route-context.ts に移動
+4. src/modules/shared の純粋 helper を src/shared に移動
+5. import '../shared/...' / '../../shared/...' を調整
+6. src/booking を src/domain/booking に移動
+7. import '../../booking/...' を '../../domain/booking/...' に置換
+8. src/db を src/infra/db に移動
+9. src/email を src/infra/email に移動
+10. src/payment を src/infra/payment に移動
+11. storage 系 service を src/infra/storage に移動
+12. billing 系 domain logic を src/domain/billing に移動
+13. 旧 ticket checkout webhook 復旧処理を features/tickets に切り出す
+14. typecheck / test / lint
 ```
 
 ## 一気にやる場合の注意点
@@ -284,9 +307,8 @@ apps/backend/src/
 この構成なら、`features/booking` と `domain/booking` の違いが明確になります。
 
 ```txt
-features/booking = 予約機能の API / usecase / DB query
-domain/booking   = 予約ドメインの共通ルール / 定数 / 権限 / 監査
+features/booking = 予約機能の API / usecase / DB query / route context
+domain/booking   = 予約ドメインの共通ルール / 定数 / 監査
 ```
 
 この方針であれば、`modules/` は不要です。
-

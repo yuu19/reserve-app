@@ -11,7 +11,7 @@ import {
   validationError,
   type JsonRouteResult,
 } from '../../shared/route-result.js';
-import type { BookingRouteContext } from '../../shared/route-context.js';
+import type { BookingRouteContext } from '../booking/booking-route-context.js';
 import {
   archiveService,
   findServiceForUpdate,
