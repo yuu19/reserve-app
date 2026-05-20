@@ -66,6 +66,7 @@ export const completeExpiredOrganizationPremiumTrials = async ({
         eq(dbSchema.organizationBilling.planCode, 'premium'),
         eq(dbSchema.organizationBilling.subscriptionStatus, 'trialing'),
         lte(dbSchema.organizationBilling.currentPeriodEnd, now),
+        isNull(dbSchema.organizationBilling.stripeCustomerId),
         isNull(dbSchema.organizationBilling.stripeSubscriptionId),
       ),
     )

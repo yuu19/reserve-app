@@ -419,7 +419,12 @@ export const resolveOrganizationBillingActionAvailability = ({
       subscriptionStatus === 'unpaid' ||
       subscriptionStatus === 'incomplete');
   const canStartTrial =
-    canManageBilling && !trialUsed && planCode === 'free' && subscriptionStatus === 'free';
+    canManageBilling &&
+    stripeBillingConfigured &&
+    availableIntervals.length > 0 &&
+    !trialUsed &&
+    planCode === 'free' &&
+    subscriptionStatus === 'free';
   const canStartPaidCheckout =
     canManageBilling &&
     stripeBillingConfigured &&
@@ -433,7 +438,13 @@ export const resolveOrganizationBillingActionAvailability = ({
     subscriptionStatus === 'trialing';
   const canOpenBillingPortal =
     canManageBilling && stripeBillingConfigured && hasProviderManagedSubscription;
-  const readOnlyReason = canManageBilling ? null : 'billing_management_requires_organization_owner';
+  const readOnlyReason = !canManageBilling
+    ? 'billing_management_requires_organization_owner'
+    : planCode === 'free' && !stripeBillingConfigured
+      ? 'stripe_billing_not_configured'
+      : planCode === 'free' && availableIntervals.length === 0
+        ? 'billing_price_not_configured'
+        : null;
   const nextOwnerAction =
     readOnlyReason ??
     (canStartTrial

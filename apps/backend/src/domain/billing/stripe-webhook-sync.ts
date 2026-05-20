@@ -46,6 +46,13 @@ import {
 } from '../../infra/payment/stripe.js';
 
 const ORGANIZATION_BILLING_WEBHOOK_SCOPE = 'organization_billing';
+const STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS = 2 * 60 * 1000;
+
+type StripeWebhookEventClaimResult =
+  | { kind: 'claimed' }
+  | { kind: 'already_processed' }
+  | { kind: 'already_processing_fresh' }
+  | { kind: 'already_processing_stale_claimed' };
 
 type StripeWebhookFailureStage =
   | 'signature_verification'
@@ -187,9 +194,10 @@ const claimStripeWebhookEvent = async ({
   database: AuthRuntimeDatabase;
   eventId: string;
   eventType: string;
-}) => {
+}): Promise<StripeWebhookEventClaimResult> => {
   // webhook 受領記録は event id + scope で冪等に claim する。失敗済み受領記録だけは
   // Stripe の再送で再処理できるよう processing に戻す。
+  const now = new Date();
   const rows = await database
     .insert(dbSchema.stripeWebhookEvent)
     .values({
@@ -197,6 +205,8 @@ const claimStripeWebhookEvent = async ({
       eventType,
       scope: ORGANIZATION_BILLING_WEBHOOK_SCOPE,
       processingStatus: 'processing',
+      createdAt: now,
+      updatedAt: now,
     })
     .onConflictDoNothing()
     .returning({
@@ -204,37 +214,76 @@ const claimStripeWebhookEvent = async ({
     });
 
   if (rows[0]) {
-    return true;
+    return { kind: 'claimed' };
   }
 
-  const retryRows = await database
-    .update(dbSchema.stripeWebhookEvent)
-    .set({
-      processingStatus: 'processing',
-      failureReason: null,
-      processedAt: null,
+  const existingRows = await database
+    .select({
+      processingStatus: dbSchema.stripeWebhookEvent.processingStatus,
+      updatedAt: dbSchema.stripeWebhookEvent.updatedAt,
+      createdAt: dbSchema.stripeWebhookEvent.createdAt,
     })
+    .from(dbSchema.stripeWebhookEvent)
     .where(
       and(
         eq(dbSchema.stripeWebhookEvent.id, eventId),
         eq(dbSchema.stripeWebhookEvent.scope, ORGANIZATION_BILLING_WEBHOOK_SCOPE),
-        eq(dbSchema.stripeWebhookEvent.processingStatus, 'failed'),
       ),
     )
-    .returning({
-      id: dbSchema.stripeWebhookEvent.id,
-    });
+    .limit(1);
+  const existing = existingRows[0];
+  if (!existing) {
+    return { kind: 'claimed' };
+  }
 
-  if (retryRows[0]) {
-    return true;
+  if (existing.processingStatus === 'processed') {
+    await database
+      .update(dbSchema.stripeWebhookEvent)
+      .set({
+        duplicateDetected: true,
+        duplicateDetectedAt: now,
+        receiptStatus: 'duplicate',
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(dbSchema.stripeWebhookEvent.id, eventId),
+          eq(dbSchema.stripeWebhookEvent.scope, ORGANIZATION_BILLING_WEBHOOK_SCOPE),
+        ),
+      );
+    return { kind: 'already_processed' };
+  }
+
+  const processingReferenceTime = existing.updatedAt ?? existing.createdAt;
+  const stale =
+    existing.processingStatus === 'failed' ||
+    processingReferenceTime.getTime() <= now.getTime() - STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS;
+
+  if (stale) {
+    await database
+      .update(dbSchema.stripeWebhookEvent)
+      .set({
+        processingStatus: 'processing',
+        failureReason: null,
+        processedAt: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(dbSchema.stripeWebhookEvent.id, eventId),
+          eq(dbSchema.stripeWebhookEvent.scope, ORGANIZATION_BILLING_WEBHOOK_SCOPE),
+        ),
+      );
+    return { kind: 'already_processing_stale_claimed' };
   }
 
   await database
     .update(dbSchema.stripeWebhookEvent)
     .set({
       duplicateDetected: true,
-      duplicateDetectedAt: new Date(),
-      receiptStatus: 'duplicate',
+      duplicateDetectedAt: now,
+      receiptStatus: 'duplicate_processing',
+      updatedAt: now,
     })
     .where(
       and(
@@ -243,7 +292,7 @@ const claimStripeWebhookEvent = async ({
       ),
     );
 
-  return false;
+  return { kind: 'already_processing_fresh' };
 };
 
 const markStripeWebhookEventProcessed = async ({
@@ -267,6 +316,7 @@ const markStripeWebhookEventProcessed = async ({
       stripeCustomerId: stripeCustomerId ?? null,
       stripeSubscriptionId: stripeSubscriptionId ?? null,
       failureReason: null,
+      receiptStatus: 'processed',
       processedAt: new Date(),
     })
     .where(eq(dbSchema.stripeWebhookEvent.id, eventId));
@@ -654,8 +704,15 @@ export const handleStripeOrganizationBillingWebhook = async ({
       eventId: normalized.eventId,
       eventType: normalized.eventType,
     });
-    if (!claimed) {
+    if (claimed.kind === 'already_processed') {
       return createStripeWebhookHandledResult({ duplicate: true });
+    }
+    if (claimed.kind === 'already_processing_fresh') {
+      return createStripeWebhookHandledResult({
+        duplicate: true,
+        retryable: true,
+        message: 'Stripe webhook event is already processing and has not completed yet.',
+      });
     }
 
     return failStripeWebhookEvent({
@@ -674,8 +731,15 @@ export const handleStripeOrganizationBillingWebhook = async ({
     eventId: normalized.eventId,
     eventType: normalized.eventType,
   });
-  if (!claimed) {
+  if (claimed.kind === 'already_processed') {
     return createStripeWebhookHandledResult({ duplicate: true });
+  }
+  if (claimed.kind === 'already_processing_fresh') {
+    return createStripeWebhookHandledResult({
+      duplicate: true,
+      retryable: true,
+      message: 'Stripe webhook event is already processing and has not completed yet.',
+    });
   }
 
   try {

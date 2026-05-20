@@ -1,8 +1,16 @@
-import { and, desc, eq, gt, isNull } from 'drizzle-orm';
+import {
+  buildPortalSessionReuseKey,
+  buildSetupCheckoutReuseKey,
+  buildStartTrialSubscriptionReuseKey,
+  buildSubscriptionCheckoutReuseKey,
+  type BillingOperationReuseKey,
+} from '@repo/saas-billing-core';
+import { and, desc, eq, gt, isNull, lt, or } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import * as dbSchema from '../../infra/db/schema.js';
 
 export const BILLING_HANDOFF_REUSE_WINDOW_MS = 30 * 60 * 1000;
+export const BILLING_OPERATION_PENDING_STALE_MS = 2 * 60 * 1000;
 
 export type OrganizationBillingOperationPurpose =
   | 'trial_start'
@@ -29,6 +37,7 @@ export type OrganizationBillingOperationAttempt = {
   stripeSubscriptionId: string | null;
   stripeCheckoutSessionId: string | null;
   stripePortalSessionId: string | null;
+  reuseKey: BillingOperationReuseKey | null;
   idempotencyKey: string;
   failureReason: string | null;
   createdByUserId: string | null;
@@ -71,6 +80,7 @@ const toAttempt = (
   stripeSubscriptionId: row.stripeSubscriptionId ?? null,
   stripeCheckoutSessionId: row.stripeCheckoutSessionId ?? null,
   stripePortalSessionId: row.stripePortalSessionId ?? null,
+  reuseKey: row.reuseKey as BillingOperationReuseKey | null,
   idempotencyKey: row.idempotencyKey,
   failureReason: row.failureReason ?? null,
   createdByUserId: row.createdByUserId ?? null,
@@ -79,27 +89,63 @@ const toAttempt = (
 });
 
 /**
- * Checkout/Portal handoff の短時間再実行を同じ操作として扱う idempotency key を作る。
+ * reserve-app の既存 operation purpose を、再利用可能な operation reuseKey へ対応させる。
  */
-export const buildBillingOperationIdempotencyKey = ({
+export const buildOrganizationBillingOperationReuseKey = ({
   organizationId,
   purpose,
   billingInterval,
-  now = new Date(),
+  stripeSubscriptionId,
 }: {
   organizationId: string;
   purpose: OrganizationBillingOperationPurpose;
   billingInterval?: 'month' | 'year' | null;
-  now?: Date;
+  stripeSubscriptionId?: string | null;
+}): BillingOperationReuseKey => {
+  if (purpose === 'trial_start') {
+    return buildStartTrialSubscriptionReuseKey({
+      subjectType: 'organization',
+      subjectId: organizationId,
+      planCode: 'premium',
+    });
+  }
+
+  if (purpose === 'paid_checkout') {
+    return buildSubscriptionCheckoutReuseKey({
+      subjectType: 'organization',
+      subjectId: organizationId,
+      planCode: 'premium',
+      interval: billingInterval ?? 'month',
+    });
+  }
+
+  if (purpose === 'payment_method_setup') {
+    return buildSetupCheckoutReuseKey({
+      subjectType: 'organization',
+      subjectId: organizationId,
+    });
+  }
+
+  return buildPortalSessionReuseKey({
+    subjectType: 'organization',
+    subjectId: organizationId,
+    flow: stripeSubscriptionId
+      ? { type: 'subscription_update', subscriptionId: stripeSubscriptionId }
+      : { type: 'default' },
+  });
+};
+
+/**
+ * operation attempt ごとの Stripe idempotency key を作る。
+ */
+export const buildBillingOperationIdempotencyKey = ({
+  reuseKey,
+  attemptNumber,
+}: {
+  reuseKey: BillingOperationReuseKey;
+  attemptNumber: number;
 }) => {
-  const windowStart = Math.floor(now.getTime() / BILLING_HANDOFF_REUSE_WINDOW_MS);
-  return [
-    'organization_billing_operation',
-    organizationId,
-    purpose,
-    billingInterval ?? 'none',
-    String(windowStart),
-  ].join(':');
+  return ['organization_billing_operation', reuseKey, String(attemptNumber)].join(':');
 };
 
 /**
@@ -110,12 +156,14 @@ export const readReusableBillingOperationAttempt = async ({
   organizationId,
   purpose,
   billingInterval = null,
+  reuseKey,
   now = new Date(),
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
   purpose: OrganizationBillingOperationPurpose;
   billingInterval?: 'month' | 'year' | null;
+  reuseKey?: BillingOperationReuseKey | null;
   now?: Date;
 }) => {
   const rows = await database
@@ -128,6 +176,19 @@ export const readReusableBillingOperationAttempt = async ({
         billingInterval
           ? eq(dbSchema.organizationBillingOperationAttempt.billingInterval, billingInterval)
           : isNull(dbSchema.organizationBillingOperationAttempt.billingInterval),
+        reuseKey
+          ? eq(dbSchema.organizationBillingOperationAttempt.reuseKey, reuseKey)
+          : or(
+              isNull(dbSchema.organizationBillingOperationAttempt.reuseKey),
+              eq(
+                dbSchema.organizationBillingOperationAttempt.reuseKey,
+                buildOrganizationBillingOperationReuseKey({
+                  organizationId,
+                  purpose,
+                  billingInterval,
+                }),
+              ),
+            ),
         gt(dbSchema.organizationBillingOperationAttempt.handoffExpiresAt, now),
       ),
     )
@@ -144,6 +205,66 @@ export const readReusableBillingOperationAttempt = async ({
   return reusable ? toAttempt(reusable) : null;
 };
 
+const readFreshProcessingBillingOperationAttempt = async ({
+  database,
+  organizationId,
+  purpose,
+  billingInterval = null,
+  reuseKey,
+  now = new Date(),
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  purpose: OrganizationBillingOperationPurpose;
+  billingInterval?: 'month' | 'year' | null;
+  reuseKey: BillingOperationReuseKey;
+  now?: Date;
+}) => {
+  const staleBefore = new Date(now.getTime() - BILLING_OPERATION_PENDING_STALE_MS);
+  const rows = await database
+    .select()
+    .from(dbSchema.organizationBillingOperationAttempt)
+    .where(
+      and(
+        eq(dbSchema.organizationBillingOperationAttempt.organizationId, organizationId),
+        eq(dbSchema.organizationBillingOperationAttempt.purpose, purpose),
+        billingInterval
+          ? eq(dbSchema.organizationBillingOperationAttempt.billingInterval, billingInterval)
+          : isNull(dbSchema.organizationBillingOperationAttempt.billingInterval),
+        eq(dbSchema.organizationBillingOperationAttempt.reuseKey, reuseKey),
+        eq(dbSchema.organizationBillingOperationAttempt.state, 'processing'),
+        gt(dbSchema.organizationBillingOperationAttempt.createdAt, staleBefore),
+      ),
+    )
+    .orderBy(desc(dbSchema.organizationBillingOperationAttempt.createdAt))
+    .limit(1);
+
+  return rows[0] ? toAttempt(rows[0]) : null;
+};
+
+const countBillingOperationAttemptsForReuseKey = async ({
+  database,
+  organizationId,
+  reuseKey,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  reuseKey: BillingOperationReuseKey;
+}) => {
+  const rows = await database
+    .select({ id: dbSchema.organizationBillingOperationAttempt.id })
+    .from(dbSchema.organizationBillingOperationAttempt)
+    .where(
+      and(
+        eq(dbSchema.organizationBillingOperationAttempt.organizationId, organizationId),
+        eq(dbSchema.organizationBillingOperationAttempt.reuseKey, reuseKey),
+      ),
+    )
+    .limit(100);
+
+  return rows.length;
+};
+
 /**
  * Stripe handoff 操作を D1 上で claim する。
  *
@@ -154,6 +275,8 @@ export const createBillingOperationAttempt = async ({
   organizationId,
   purpose,
   billingInterval = null,
+  reuseKey: requestedReuseKey,
+  stripeSubscriptionId = null,
   createdByUserId = null,
   now = new Date(),
 }: {
@@ -161,14 +284,25 @@ export const createBillingOperationAttempt = async ({
   organizationId: string;
   purpose: OrganizationBillingOperationPurpose;
   billingInterval?: 'month' | 'year' | null;
+  reuseKey?: BillingOperationReuseKey | null;
+  stripeSubscriptionId?: string | null;
   createdByUserId?: string | null;
   now?: Date;
 }) => {
+  const reuseKey =
+    requestedReuseKey ??
+    buildOrganizationBillingOperationReuseKey({
+      organizationId,
+      purpose,
+      billingInterval,
+      stripeSubscriptionId,
+    });
   const existing = await readReusableBillingOperationAttempt({
     database,
     organizationId,
     purpose,
     billingInterval,
+    reuseKey,
     now,
   });
   if (existing) {
@@ -178,11 +312,49 @@ export const createBillingOperationAttempt = async ({
     };
   }
 
-  const idempotencyKey = buildBillingOperationIdempotencyKey({
+  const freshProcessing = await readFreshProcessingBillingOperationAttempt({
+    database,
     organizationId,
     purpose,
     billingInterval,
+    reuseKey,
     now,
+  });
+  if (freshProcessing) {
+    return {
+      attempt: freshProcessing,
+      reused: true,
+    };
+  }
+
+  await database
+    .update(dbSchema.organizationBillingOperationAttempt)
+    .set({
+      state: 'expired',
+      failureReason: 'processing attempt exceeded freshness window',
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(dbSchema.organizationBillingOperationAttempt.organizationId, organizationId),
+        eq(dbSchema.organizationBillingOperationAttempt.reuseKey, reuseKey),
+        eq(dbSchema.organizationBillingOperationAttempt.state, 'processing'),
+        lt(
+          dbSchema.organizationBillingOperationAttempt.createdAt,
+          new Date(now.getTime() - BILLING_OPERATION_PENDING_STALE_MS),
+        ),
+      ),
+    );
+
+  const attemptNumber =
+    (await countBillingOperationAttemptsForReuseKey({
+      database,
+      organizationId,
+      reuseKey,
+    })) + 1;
+  const idempotencyKey = buildBillingOperationIdempotencyKey({
+    reuseKey,
+    attemptNumber,
   });
   const insertedRows = await database
     .insert(dbSchema.organizationBillingOperationAttempt)
@@ -193,6 +365,7 @@ export const createBillingOperationAttempt = async ({
       billingInterval,
       state: 'processing',
       provider: 'stripe',
+      reuseKey,
       idempotencyKey,
       createdByUserId,
       createdAt: now,

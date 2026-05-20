@@ -218,6 +218,7 @@ export const organizationBillingOperationAttempt = sqliteTable(
     stripeSubscriptionId: text('stripe_subscription_id'),
     stripeCheckoutSessionId: text('stripe_checkout_session_id'),
     stripePortalSessionId: text('stripe_portal_session_id'),
+    reuseKey: text('reuse_key'),
     idempotencyKey: text('idempotency_key').notNull(),
     failureReason: text('failure_reason'),
     createdByUserId: text('created_by_user_id').references(() => user.id, {
@@ -242,6 +243,12 @@ export const organizationBillingOperationAttempt = sqliteTable(
       table.organizationId,
       table.purpose,
       table.handoffExpiresAt,
+    ),
+    index('organization_billing_operation_attempt_reuse_key_idx').on(
+      table.organizationId,
+      table.reuseKey,
+      table.state,
+      table.createdAt,
     ),
     uniqueIndex('organization_billing_operation_attempt_idempotency_uidx').on(table.idempotencyKey),
   ],
