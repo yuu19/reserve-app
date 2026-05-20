@@ -78,6 +78,9 @@ const ensureCanManageSchedule = async ({
   return { result: null, identity, schedule };
 };
 
+/**
+ * recurring service の schedule を作成し、既定生成範囲の slot を同期します。
+ */
 export const createRecurringSchedule = async (
   ctx: BookingRouteContext,
   body: RecurringCreateBody,
@@ -174,6 +177,9 @@ export const createRecurringSchedule = async (
   });
 };
 
+/**
+ * staff が管理できる recurring schedule を scope と条件で絞り込んで返します。
+ */
 export const listManageableRecurringSchedules = async (
   ctx: BookingRouteContext,
   query: RecurringListQuery,
@@ -209,6 +215,9 @@ export const listManageableRecurringSchedules = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeRecurringSchedule(row)));
 };
 
+/**
+ * recurring schedule を更新し、変更後の定義で既定生成範囲の slot を再同期します。
+ */
 export const updateExistingRecurringSchedule = async (
   ctx: BookingRouteContext,
   body: RecurringUpdateBody,
@@ -267,6 +276,9 @@ export const updateExistingRecurringSchedule = async (
   });
 };
 
+/**
+ * 特定日の recurring exception を作成または更新し、影響範囲の slot を再同期します。
+ */
 export const upsertExistingRecurringException = async (
   ctx: BookingRouteContext,
   body: RecurringExceptionBody,
@@ -336,6 +348,9 @@ export const upsertExistingRecurringException = async (
   });
 };
 
+/**
+ * recurring schedule から指定期間の slot を手動で同期生成します。
+ */
 export const generateRecurringSlots = async (
   ctx: BookingRouteContext,
   body: RecurringGenerateBody,

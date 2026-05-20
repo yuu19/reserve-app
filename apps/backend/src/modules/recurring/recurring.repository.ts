@@ -2,6 +2,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import * as dbSchema from '../../db/schema.js';
 
+/**
+ * recurring schedule 作成時に service の所属 scope を確認するための情報を取得します。
+ */
 export const findServiceForRecurringSchedule = async (
   database: AuthRuntimeDatabase,
   serviceId: string,
@@ -18,6 +21,9 @@ export const findServiceForRecurringSchedule = async (
   return rows[0] ?? null;
 };
 
+/**
+ * recurring schedule を D1 に作成し、曜日指定は JSON 文字列として保存します。
+ */
 export const insertRecurringSchedule = async ({
   database,
   recurringScheduleId,
@@ -70,6 +76,9 @@ export const insertRecurringSchedule = async ({
   });
 };
 
+/**
+ * recurring schedule の最新行を ID で取得します。
+ */
 export const getRecurringScheduleById = async (
   database: AuthRuntimeDatabase,
   recurringScheduleId: string,
@@ -82,6 +91,9 @@ export const getRecurringScheduleById = async (
   return rows[0] ?? null;
 };
 
+/**
+ * recurring schedule 操作前の権限判定に必要な scope 情報を取得します。
+ */
 export const findRecurringScheduleScope = async (
   database: AuthRuntimeDatabase,
   recurringScheduleId: string,
@@ -98,6 +110,9 @@ export const findRecurringScheduleScope = async (
   return rows[0] ?? null;
 };
 
+/**
+ * staff 向けに organization/classroom/service/status で recurring schedule を一覧します。
+ */
 export const listRecurringSchedules = async ({
   database,
   organizationId,
@@ -129,6 +144,9 @@ export const listRecurringSchedules = async ({
     .orderBy(desc(dbSchema.recurringSchedule.createdAt));
 };
 
+/**
+ * 未指定フィールドを保持したまま recurring schedule の変更分だけを D1 に反映します。
+ */
 export const updateRecurringSchedule = async ({
   database,
   recurringScheduleId,
@@ -174,6 +192,9 @@ export const updateRecurringSchedule = async ({
     .where(eq(dbSchema.recurringSchedule.id, recurringScheduleId));
 };
 
+/**
+ * 特定日の recurring exception が既に存在するかを確認します。
+ */
 export const findRecurringException = async ({
   database,
   recurringScheduleId,
@@ -198,6 +219,9 @@ export const findRecurringException = async ({
   return rows[0] ?? null;
 };
 
+/**
+ * recurring exception を同一日で upsert します。
+ */
 export const upsertRecurringException = async ({
   database,
   existingExceptionId,
@@ -247,6 +271,9 @@ export const upsertRecurringException = async ({
   });
 };
 
+/**
+ * 特定日の recurring exception 最新行を取得します。
+ */
 export const getRecurringException = async ({
   database,
   recurringScheduleId,

@@ -9,6 +9,9 @@ import * as dbSchema from '../../db/schema.js';
 import { parseIsoDateOrNull } from '../shared/date.js';
 import { serializeTicketPack, serializeTicketPurchase } from '../shared/serializers.js';
 
+/**
+ * ticket type の有効期限日数または明示指定から ticket pack の終了日時を解決します。
+ */
 export const resolveEndDate = (
   ticketTypeExpiresInDays: number | null,
   explicitExpiresAt?: string,
@@ -23,6 +26,9 @@ export const resolveEndDate = (
   return null;
 };
 
+/**
+ * 残数と有効期限から ticket pack の業務状態を算出します。
+ */
 export const normalizePackStatus = ({
   remainingCount,
   expiresAt,
@@ -43,6 +49,12 @@ const dateToComparable = (value: Date | null): number => {
   return value ? value.getTime() : Number.MAX_SAFE_INTEGER;
 };
 
+/**
+ * participant の active ticket pack から、期限が近いものを優先して必要枚数を消費します。
+ *
+ * @throws TICKET_REQUIRED 消費可能な pack がない場合。
+ * @throws TICKET_CONFLICT 同時更新などで候補 pack の消費に失敗した場合。
+ */
 export const consumeTicketPackForParticipant = async ({
   database,
   organizationId,
@@ -140,6 +152,9 @@ export const consumeTicketPackForParticipant = async ({
   };
 };
 
+/**
+ * ticket pack を発行し、grant ledger を同時に記録します。
+ */
 export const issueTicketPackWithLedger = async ({
   database,
   organizationId,
@@ -206,6 +221,12 @@ export const issueTicketPackWithLedger = async ({
   };
 };
 
+/**
+ * 承認待ち ticket purchase を承認し、ticket pack 発行と購入行更新をまとめて処理します。
+ *
+ * @remarks
+ * 購入行更新に失敗した場合は、先に作成した ticket pack と ledger を削除して補償します。
+ */
 export const approveTicketPurchaseWithIssue = async ({
   database,
   purchaseId,

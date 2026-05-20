@@ -15,6 +15,9 @@ import {
   updateExistingSlot,
 } from './slot.usecases.js';
 
+/**
+ * slot の作成・更新・一覧・参加者向け空き枠・キャンセル route を登録します。
+ */
 export const registerSlotRoutes = (ctx: BookingRouteContext) => {
   ctx.authRoutes.openapi(createSlotRoute, async (c) =>
     jsonRouteResult(c, await createSlot(ctx, c.req.valid('json'), c.req.raw.headers)),

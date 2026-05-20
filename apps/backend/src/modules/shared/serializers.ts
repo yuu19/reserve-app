@@ -1,5 +1,8 @@
 import { toIsoDate } from './date.js';
 
+/**
+ * slot 行の日時列を API レスポンス用に ISO 文字列へ正規化します。
+ */
 export const serializeSlot = (row: Record<string, unknown> | undefined) => ({
   ...row,
   startAt: toIsoDate(row?.startAt),
@@ -10,6 +13,9 @@ export const serializeSlot = (row: Record<string, unknown> | undefined) => ({
   updatedAt: toIsoDate(row?.updatedAt),
 });
 
+/**
+ * booking 行の日時列を API レスポンス用に ISO 文字列へ正規化します。
+ */
 export const serializeBooking = (row: Record<string, unknown> | undefined) => ({
   ...row,
   cancelledAt: toIsoDate(row?.cancelledAt),
@@ -18,6 +24,9 @@ export const serializeBooking = (row: Record<string, unknown> | undefined) => ({
   updatedAt: toIsoDate(row?.updatedAt),
 });
 
+/**
+ * D1 に JSON 文字列として保存した ticket type の serviceIds を安全に配列へ戻します。
+ */
 export const parseTicketTypeServiceIds = (value: unknown): string[] => {
   if (typeof value !== 'string' || value.length === 0) {
     return [];
@@ -33,6 +42,9 @@ export const parseTicketTypeServiceIds = (value: unknown): string[] => {
   }
 };
 
+/**
+ * ticket type 行の JSON 列と日時列を API レスポンス用に正規化します。
+ */
 export const serializeTicketType = (row: Record<string, unknown> | undefined) => ({
   ...row,
   serviceIds: parseTicketTypeServiceIds(row?.serviceIdsJson),
@@ -40,6 +52,9 @@ export const serializeTicketType = (row: Record<string, unknown> | undefined) =>
   updatedAt: toIsoDate(row?.updatedAt),
 });
 
+/**
+ * ticket pack 行の有効期限と監査日時を API レスポンス用に正規化します。
+ */
 export const serializeTicketPack = (row: Record<string, unknown> | undefined) => ({
   ...row,
   expiresAt: toIsoDate(row?.expiresAt),
@@ -47,6 +62,9 @@ export const serializeTicketPack = (row: Record<string, unknown> | undefined) =>
   updatedAt: toIsoDate(row?.updatedAt),
 });
 
+/**
+ * ticket purchase 行の承認・却下日時を API レスポンス用に正規化します。
+ */
 export const serializeTicketPurchase = (row: Record<string, unknown> | undefined) => ({
   ...row,
   approvedAt: toIsoDate(row?.approvedAt),
@@ -55,6 +73,9 @@ export const serializeTicketPurchase = (row: Record<string, unknown> | undefined
   updatedAt: toIsoDate(row?.updatedAt),
 });
 
+/**
+ * recurring schedule 行の曜日 JSON と生成管理日時を API レスポンス用に正規化します。
+ */
 export const serializeRecurringSchedule = (
   row: (Record<string, unknown> & { byWeekdayJson?: string | null }) | undefined,
 ) => ({
@@ -65,6 +86,9 @@ export const serializeRecurringSchedule = (
   lastGeneratedAt: toIsoDate(row?.lastGeneratedAt),
 });
 
+/**
+ * recurring exception 行の監査日時を API レスポンス用に正規化します。
+ */
 export const serializeRecurringException = (row: Record<string, unknown> | undefined) => ({
   ...row,
   createdAt: toIsoDate(row?.createdAt),

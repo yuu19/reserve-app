@@ -56,9 +56,15 @@ import type {
   TicketTypeListQuery,
 } from './ticket.schemas.js';
 
+/**
+ * Stripe 経由の ticket purchase が未実装であることを API 応答に使う固定文言です。
+ */
 export const TICKET_STRIPE_PURCHASE_UNAVAILABLE_MESSAGE =
   'Ticket purchase Stripe payment is currently unavailable.';
 
+/**
+ * classroom 管理権限と premium を確認し、必要なら serviceIds 所属も検証して ticket type を作成します。
+ */
 export const createTicketType = async (
   ctx: BookingRouteContext,
   body: TicketTypeCreateBody,
@@ -128,6 +134,9 @@ export const createTicketType = async (
   return jsonResult(serializeTicketType(ticketType as Record<string, unknown> | undefined));
 };
 
+/**
+ * staff が閲覧できる ticket type を scope と active 条件で一覧します。
+ */
 export const listManageableTicketTypes = async (
   ctx: BookingRouteContext,
   query: TicketTypeListQuery,
@@ -162,6 +171,9 @@ export const listManageableTicketTypes = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeTicketType(row)));
 };
 
+/**
+ * participant が所属 classroom で購入可能な ticket type だけを返します。
+ */
 export const listPurchasableTicketTypeOptions = async (
   ctx: BookingRouteContext,
   query: OrgQuery,
@@ -210,6 +222,12 @@ export const listPurchasableTicketTypeOptions = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeTicketType(row)));
 };
 
+/**
+ * participant の ticket purchase を作成します。
+ *
+ * @remarks
+ * Stripe 決済は未提供のため、現時点では現地支払い・銀行振込など承認待ち purchase の作成に限定します。
+ */
 export const createTicketPurchase = async (
   ctx: BookingRouteContext,
   body: TicketPurchaseCreateBody,
@@ -284,6 +302,9 @@ export const createTicketPurchase = async (
   });
 };
 
+/**
+ * participant 自身の ticket purchase を一覧します。
+ */
 export const listMyTicketPurchases = async (
   ctx: BookingRouteContext,
   query: TicketPurchaseMineQuery,
@@ -320,6 +341,9 @@ export const listMyTicketPurchases = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeTicketPurchase(row)));
 };
 
+/**
+ * staff が管理権限を持つ ticket purchase を条件付きで一覧します。
+ */
 export const listStaffTicketPurchases = async (
   ctx: BookingRouteContext,
   query: TicketPurchaseListQuery,
@@ -356,6 +380,9 @@ export const listStaffTicketPurchases = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeTicketPurchase(row)));
 };
 
+/**
+ * staff が承認待ち ticket purchase を承認し、ticket pack を発行します。
+ */
 export const approveTicketPurchase = async (
   ctx: BookingRouteContext,
   body: TicketPurchaseApproveBody,
@@ -411,6 +438,9 @@ export const approveTicketPurchase = async (
   });
 };
 
+/**
+ * staff が承認待ち ticket purchase を却下します。
+ */
 export const rejectExistingTicketPurchase = async (
   ctx: BookingRouteContext,
   body: TicketPurchaseRejectBody,
@@ -462,6 +492,9 @@ export const rejectExistingTicketPurchase = async (
   return jsonResult(serializeTicketPurchase(rows as Record<string, unknown> | undefined));
 };
 
+/**
+ * participant が自身の承認待ちまたは支払い待ち ticket purchase を取り消します。
+ */
 export const cancelExistingTicketPurchase = async (
   ctx: BookingRouteContext,
   body: TicketPurchaseCancelBody,
@@ -507,6 +540,9 @@ export const cancelExistingTicketPurchase = async (
   return jsonResult(serializeTicketPurchase(row as Record<string, unknown> | undefined));
 };
 
+/**
+ * staff が participant に ticket pack を手動付与し、ledger を記録します。
+ */
 export const grantTicketPack = async (
   ctx: BookingRouteContext,
   body: TicketPackGrantBody,
@@ -579,6 +615,9 @@ export const grantTicketPack = async (
   return jsonResult(issued.ticketPack);
 };
 
+/**
+ * participant 自身の ticket pack を一覧し、期限切れ pack を取得前に expired へ更新します。
+ */
 export const listMyTicketPacks = async (
   ctx: BookingRouteContext,
   query: TicketPackMineQuery,

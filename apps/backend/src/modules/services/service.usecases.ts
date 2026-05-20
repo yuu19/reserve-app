@@ -57,6 +57,9 @@ const serializeService = (row: Record<string, unknown> | undefined) => ({
   updatedAt: toIsoDate(row?.updatedAt),
 });
 
+/**
+ * classroom 管理権限を確認し、premium が必要な設定を検証して service を作成します。
+ */
 export const createService = async (
   ctx: BookingRouteContext,
   body: ServiceCreateBody,
@@ -131,6 +134,9 @@ export const createService = async (
   return jsonResult(serializeService(service as Record<string, unknown> | undefined));
 };
 
+/**
+ * service 管理画面向けに、閲覧権限のある service 一覧を返します。
+ */
 export const listManageableServices = async (
   ctx: BookingRouteContext,
   query: ServiceListQuery,
@@ -165,6 +171,9 @@ export const listManageableServices = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeService(row)));
 };
 
+/**
+ * service の所属 scope と管理権限を確認し、許可されたフィールドだけを部分更新します。
+ */
 export const updateExistingService = async (
   ctx: BookingRouteContext,
   body: ServiceUpdateBody,
@@ -234,6 +243,9 @@ export const updateExistingService = async (
   return jsonResult(serializeService(service as Record<string, unknown> | undefined));
 };
 
+/**
+ * classroom 管理権限を確認し、service を inactive として archive します。
+ */
 export const archiveExistingService = async (
   ctx: BookingRouteContext,
   body: ServiceArchiveBody,

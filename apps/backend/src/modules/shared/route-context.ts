@@ -13,6 +13,9 @@ import {
 import * as dbSchema from '../../db/schema.js';
 import type { ServiceImageUploadService } from '../../service-image-upload-service.js';
 
+/**
+ * Better Auth middleware が route context に保存する user/session 変数の型です。
+ */
 export type AuthRouteBindings = {
   Variables: {
     user: Record<string, unknown> | null;
@@ -20,6 +23,9 @@ export type AuthRouteBindings = {
   };
 };
 
+/**
+ * booking modules の route 登録に注入する外部依存をまとめます。
+ */
 export type BookingRouteDeps = {
   authRoutes: OpenAPIHono<AuthRouteBindings>;
   auth: AuthInstance;
@@ -28,6 +34,9 @@ export type BookingRouteDeps = {
   serviceImageUploadService?: ServiceImageUploadService | null;
 };
 
+/**
+ * modules 配下の usecase が共有する認証・認可・premium 判定の境界です。
+ */
 export type BookingRouteContext = BookingRouteDeps & {
   requireIdentity: (headers: Headers) => Promise<SessionIdentity | null>;
   resolveRequestedClassroomContext: (input: {
@@ -86,6 +95,12 @@ export type BookingRouteContext = BookingRouteDeps & {
   ) => ReturnType<typeof readOrganizationPremiumFeatureGate>;
 };
 
+/**
+ * Hono route と usecase の間で共有する予約系コンテキストを生成します。
+ *
+ * @remarks
+ * organization 全体の操作は owner/admin 権限、classroom 指定の操作は教室ごとの有効権限で判定します。
+ */
 export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteContext => {
   const { auth, database, env } = deps;
 

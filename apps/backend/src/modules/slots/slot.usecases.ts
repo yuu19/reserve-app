@@ -66,6 +66,9 @@ const resolveSlotBookingWindow = ({
   };
 };
 
+/**
+ * service 所属と classroom 管理権限を確認し、予約受付窓を解決して slot を作成します。
+ */
 export const createSlot = async (
   ctx: BookingRouteContext,
   body: SlotCreateBody,
@@ -131,6 +134,9 @@ export const createSlot = async (
   return jsonResult(serializeSlot(slot as Record<string, unknown> | undefined));
 };
 
+/**
+ * 予約が入っていない未来の open slot だけを、管理権限確認後に更新します。
+ */
 export const updateExistingSlot = async (
   ctx: BookingRouteContext,
   body: SlotUpdateBody,
@@ -206,6 +212,9 @@ export const updateExistingSlot = async (
   return jsonResult(serializeSlot(updatedSlot as Record<string, unknown> | undefined));
 };
 
+/**
+ * staff が管理可能な slot を期間・service・status で絞り込んで返します。
+ */
 export const listStaffSlots = async (
   ctx: BookingRouteContext,
   query: SlotListQuery,
@@ -249,6 +258,9 @@ export const listStaffSlots = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeSlot(row)));
 };
 
+/**
+ * participant が所属する classroom のうち、現在予約可能な slot だけを返します。
+ */
 export const listParticipantAvailableSlots = async (
   ctx: BookingRouteContext,
   query: SlotAvailableQuery,
@@ -307,6 +319,9 @@ export const listParticipantAvailableSlots = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeSlot(row)));
 };
 
+/**
+ * 管理権限を確認し、open slot とその確定予約をキャンセル状態へ遷移します。
+ */
 export const cancelExistingSlot = async (
   ctx: BookingRouteContext,
   body: SlotCancelBody,
@@ -349,4 +364,7 @@ export const cancelExistingSlot = async (
   return jsonResult({ ok: true });
 };
 
+/**
+ * slot module から既定 timezone を公開します。
+ */
 export { DEFAULT_TIMEZONE };

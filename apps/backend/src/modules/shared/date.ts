@@ -1,6 +1,9 @@
 import { DEFAULT_TIMEZONE } from '../../booking/constants.js';
 import { isSupportedTimezone } from '../../booking/recurring.js';
 
+/**
+ * 任意入力の ISO 日時文字列を、usecase 側で扱う Date または null に正規化します。
+ */
 export const parseIsoDateOrNull = (value: string | undefined): Date | null => {
   if (!value) {
     return null;
@@ -9,6 +12,9 @@ export const parseIsoDateOrNull = (value: string | undefined): Date | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+/**
+ * D1/Drizzle から返る日時値を API レスポンス用の ISO 文字列へそろえます。
+ */
 export const toIsoDate = (value: unknown): string | null => {
   if (value instanceof Date) {
     return value.toISOString();
@@ -22,6 +28,9 @@ export const toIsoDate = (value: unknown): string | null => {
   return null;
 };
 
+/**
+ * recurring schedule の日付指定をカレンダー日付として分解します。
+ */
 export const parseDateParts = (
   value: string,
 ): { year: number; month: number; day: number } | null => {
@@ -40,11 +49,17 @@ export const parseDateParts = (
   return { year, month, day };
 };
 
+/**
+ * 未指定時は既定タイムゾーンに寄せ、MVP で許可された timezone だけを返します。
+ */
 export const assertSupportedTimezone = (timezone: string | undefined): string | null => {
   const resolved = timezone ?? DEFAULT_TIMEZONE;
   return isSupportedTimezone(resolved) ? resolved : null;
 };
 
+/**
+ * 予約通知メールで表示する日本語向け日時ラベルを生成します。
+ */
 export const formatDateTimeLabel = (value: Date, timezone: string) => {
   try {
     return new Intl.DateTimeFormat('ja-JP', {

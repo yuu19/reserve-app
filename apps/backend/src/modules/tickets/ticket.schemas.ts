@@ -11,11 +11,17 @@ const boolStringSchema = z
   .optional()
   .transform((value) => (value === undefined ? undefined : value === 'true'));
 
+/**
+ * organization と任意の classroom scope を受け取る共通 query を検証します。
+ */
 export const orgQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
 });
 
+/**
+ * staff が ticket type を作成する入力を検証します。
+ */
 export const ticketTypeCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -28,12 +34,18 @@ export const ticketTypeCreateBodySchema = z.object({
   stripePriceId: z.string().trim().min(1).max(200).optional(),
 });
 
+/**
+ * staff 向け ticket type 一覧 query を検証します。
+ */
 export const ticketTypeListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
   isActive: boolStringSchema,
 });
 
+/**
+ * staff が participant に ticket pack を付与する入力を検証します。
+ */
 export const ticketPackGrantBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -43,6 +55,9 @@ export const ticketPackGrantBodySchema = z.object({
   expiresAt: isoDateTimeSchema.optional(),
 });
 
+/**
+ * participant 自身の ticket pack 一覧 query を検証します。
+ */
 export const ticketPackMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -62,6 +77,9 @@ const ticketPurchaseStatusSchema = z.enum([
   TICKET_PURCHASE_STATUS.CANCELLED_BY_PARTICIPANT,
 ]);
 
+/**
+ * participant が ticket purchase を作成する入力を検証します。
+ */
 export const ticketPurchaseCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -69,12 +87,18 @@ export const ticketPurchaseCreateBodySchema = z.object({
   paymentMethod: ticketPurchaseMethodSchema,
 });
 
+/**
+ * participant 自身の ticket purchase 一覧 query を検証します。
+ */
 export const ticketPurchaseMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
   status: ticketPurchaseStatusSchema.optional(),
 });
 
+/**
+ * staff 向け ticket purchase 一覧 query を検証します。
+ */
 export const ticketPurchaseListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -83,34 +107,79 @@ export const ticketPurchaseListQuerySchema = z.object({
   status: ticketPurchaseStatusSchema.optional(),
 });
 
+/**
+ * staff が ticket purchase を承認する入力を検証します。
+ */
 export const ticketPurchaseApproveBodySchema = z.object({
   purchaseId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
 });
 
+/**
+ * staff が ticket purchase を却下する入力を検証します。
+ */
 export const ticketPurchaseRejectBodySchema = z.object({
   purchaseId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
+/**
+ * participant が自身の ticket purchase を取り消す入力を検証します。
+ */
 export const ticketPurchaseCancelBodySchema = z.object({
   purchaseId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
 });
 
+/**
+ * organization/classroom scope を受け取る参加者向け query 型です。
+ */
 export type OrgQuery = z.infer<typeof orgQuerySchema>;
+/**
+ * ticket type 作成 usecase が受け取る検証済み body 型です。
+ */
 export type TicketTypeCreateBody = z.infer<typeof ticketTypeCreateBodySchema>;
+/**
+ * ticket type 一覧 usecase が受け取る検証済み query 型です。
+ */
 export type TicketTypeListQuery = z.infer<typeof ticketTypeListQuerySchema>;
+/**
+ * ticket pack 手動付与 usecase が受け取る検証済み body 型です。
+ */
 export type TicketPackGrantBody = z.infer<typeof ticketPackGrantBodySchema>;
+/**
+ * participant 自身の ticket pack 一覧 usecase が受け取る検証済み query 型です。
+ */
 export type TicketPackMineQuery = z.infer<typeof ticketPackMineQuerySchema>;
+/**
+ * ticket purchase 作成 usecase が受け取る検証済み body 型です。
+ */
 export type TicketPurchaseCreateBody = z.infer<typeof ticketPurchaseCreateBodySchema>;
+/**
+ * participant 自身の ticket purchase 一覧 usecase が受け取る検証済み query 型です。
+ */
 export type TicketPurchaseMineQuery = z.infer<typeof ticketPurchaseMineQuerySchema>;
+/**
+ * staff 向け ticket purchase 一覧 usecase が受け取る検証済み query 型です。
+ */
 export type TicketPurchaseListQuery = z.infer<typeof ticketPurchaseListQuerySchema>;
+/**
+ * ticket purchase 承認 usecase が受け取る検証済み body 型です。
+ */
 export type TicketPurchaseApproveBody = z.infer<typeof ticketPurchaseApproveBodySchema>;
+/**
+ * ticket purchase 却下 usecase が受け取る検証済み body 型です。
+ */
 export type TicketPurchaseRejectBody = z.infer<typeof ticketPurchaseRejectBodySchema>;
+/**
+ * ticket purchase 取り消し usecase が受け取る検証済み body 型です。
+ */
 export type TicketPurchaseCancelBody = z.infer<typeof ticketPurchaseCancelBodySchema>;
 
+/**
+ * staff が ticket type を作成する OpenAPI 定義です。
+ */
 export const createTicketTypeRoute = createRoute({
   method: 'post',
   path: '/organizations/ticket-types',
@@ -134,6 +203,9 @@ export const createTicketTypeRoute = createRoute({
   },
 });
 
+/**
+ * staff が管理対象 ticket type を一覧する OpenAPI 定義です。
+ */
 export const listTicketTypesRoute = createRoute({
   method: 'get',
   path: '/organizations/ticket-types',
@@ -149,6 +221,9 @@ export const listTicketTypesRoute = createRoute({
   },
 });
 
+/**
+ * staff が participant に ticket pack を手動付与する OpenAPI 定義です。
+ */
 export const grantTicketPackRoute = createRoute({
   method: 'post',
   path: '/organizations/ticket-packs/grant',
@@ -173,6 +248,9 @@ export const grantTicketPackRoute = createRoute({
   },
 });
 
+/**
+ * participant が自身の ticket pack を一覧する OpenAPI 定義です。
+ */
 export const listMyTicketPacksRoute = createRoute({
   method: 'get',
   path: '/organizations/ticket-packs/mine',
@@ -188,6 +266,9 @@ export const listMyTicketPacksRoute = createRoute({
   },
 });
 
+/**
+ * participant が購入可能な ticket type を一覧する OpenAPI 定義です。
+ */
 export const listPurchasableTicketTypesRoute = createRoute({
   method: 'get',
   path: '/organizations/ticket-types/purchasable',
@@ -203,6 +284,9 @@ export const listPurchasableTicketTypesRoute = createRoute({
   },
 });
 
+/**
+ * participant が ticket purchase を作成する OpenAPI 定義です。
+ */
 export const createTicketPurchaseRoute = createRoute({
   method: 'post',
   path: '/organizations/ticket-purchases',
@@ -228,6 +312,9 @@ export const createTicketPurchaseRoute = createRoute({
   },
 });
 
+/**
+ * participant が自身の ticket purchase を一覧する OpenAPI 定義です。
+ */
 export const listMyTicketPurchasesRoute = createRoute({
   method: 'get',
   path: '/organizations/ticket-purchases/mine',
@@ -243,6 +330,9 @@ export const listMyTicketPurchasesRoute = createRoute({
   },
 });
 
+/**
+ * staff が管理対象 ticket purchase を一覧する OpenAPI 定義です。
+ */
 export const listTicketPurchasesRoute = createRoute({
   method: 'get',
   path: '/organizations/ticket-purchases',
@@ -258,6 +348,9 @@ export const listTicketPurchasesRoute = createRoute({
   },
 });
 
+/**
+ * staff が承認待ち ticket purchase を承認する OpenAPI 定義です。
+ */
 export const approveTicketPurchaseRoute = createRoute({
   method: 'post',
   path: '/organizations/ticket-purchases/approve',
@@ -282,6 +375,9 @@ export const approveTicketPurchaseRoute = createRoute({
   },
 });
 
+/**
+ * staff が承認待ち ticket purchase を却下する OpenAPI 定義です。
+ */
 export const rejectTicketPurchaseRoute = createRoute({
   method: 'post',
   path: '/organizations/ticket-purchases/reject',
@@ -306,6 +402,9 @@ export const rejectTicketPurchaseRoute = createRoute({
   },
 });
 
+/**
+ * participant が自身の承認待ち ticket purchase を取り消す OpenAPI 定義です。
+ */
 export const cancelTicketPurchaseRoute = createRoute({
   method: 'post',
   path: '/organizations/ticket-purchases/cancel',

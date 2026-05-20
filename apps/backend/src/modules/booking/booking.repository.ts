@@ -8,6 +8,9 @@ import {
 } from '../../booking/constants.js';
 import * as dbSchema from '../../db/schema.js';
 
+/**
+ * 予約作成時に slot の所属・受付窓・状態を確認するための情報を取得します。
+ */
 export const findSlotForBookingCreate = async (database: AuthRuntimeDatabase, slotId: string) => {
   const slotRows = await database
     .select({
@@ -26,6 +29,9 @@ export const findSlotForBookingCreate = async (database: AuthRuntimeDatabase, sl
   return slotRows[0] ?? null;
 };
 
+/**
+ * 予約作成・承認時に service の予約方式と回数券要否を取得します。
+ */
 export const findServiceForBookingCreate = async (
   database: AuthRuntimeDatabase,
   serviceId: string,
@@ -42,6 +48,9 @@ export const findServiceForBookingCreate = async (
   return serviceRows[0] ?? null;
 };
 
+/**
+ * 予約行を指定 status で作成します。
+ */
 export const insertBooking = async ({
   database,
   bookingId,
@@ -78,6 +87,9 @@ export const insertBooking = async ({
   });
 };
 
+/**
+ * 予約の最新行を ID で取得します。
+ */
 export const getBookingById = async (database: AuthRuntimeDatabase, bookingId: string) => {
   const rows = await database
     .select()
@@ -87,6 +99,9 @@ export const getBookingById = async (database: AuthRuntimeDatabase, bookingId: s
   return rows[0] ?? null;
 };
 
+/**
+ * 即時予約作成時に受付期間と定員を同時に確認しながら slot 定員を確保します。
+ */
 export const reserveSlotCapacityForBookingCreate = async ({
   database,
   slotId,
@@ -116,6 +131,9 @@ export const reserveSlotCapacityForBookingCreate = async ({
   return capacityRows.length > 0;
 };
 
+/**
+ * 承認制予約の承認時に、slot が open で空き定員がある場合だけ定員を確保します。
+ */
 export const reserveSlotCapacityForApproval = async ({
   database,
   slotId,
@@ -141,6 +159,9 @@ export const reserveSlotCapacityForApproval = async ({
   return capacityRows.length > 0;
 };
 
+/**
+ * 予約作成や承認の失敗時に、確保済み slot 定員を補償的に戻します。
+ */
 export const releaseSlotCapacity = async ({
   database,
   slotId,
@@ -162,6 +183,9 @@ export const releaseSlotCapacity = async ({
     .where(eq(dbSchema.slot.id, slotId));
 };
 
+/**
+ * 予約で消費した ticket pack の ledger を append-only に記録します。
+ */
 export const consumeBookingTicketLedger = async ({
   database,
   organizationId,
@@ -197,6 +221,9 @@ export const consumeBookingTicketLedger = async ({
   });
 };
 
+/**
+ * participant キャンセル時に本人確認と状態遷移へ必要な予約 scope を取得します。
+ */
 export const findBookingForParticipantCancel = async (
   database: AuthRuntimeDatabase,
   bookingId: string,
@@ -219,6 +246,9 @@ export const findBookingForParticipantCancel = async (
   return bookingRows[0] ?? null;
 };
 
+/**
+ * staff 操作時に予約の organization/classroom scope と現在状態を取得します。
+ */
 export const findBookingScope = async (database: AuthRuntimeDatabase, bookingId: string) => {
   const bookingRows = await database
     .select({
@@ -237,6 +267,9 @@ export const findBookingScope = async (database: AuthRuntimeDatabase, bookingId:
   return bookingRows[0] ?? null;
 };
 
+/**
+ * キャンセル期限判定に使う slot 開始日時を取得します。
+ */
 export const findSlotStart = async (database: AuthRuntimeDatabase, slotId: string) => {
   const slotRows = await database
     .select({
@@ -249,6 +282,9 @@ export const findSlotStart = async (database: AuthRuntimeDatabase, slotId: strin
   return slotRows[0] ?? null;
 };
 
+/**
+ * service ごとのキャンセル期限設定を取得します。
+ */
 export const findServiceCancellationPolicy = async (
   database: AuthRuntimeDatabase,
   serviceId: string,
@@ -263,6 +299,9 @@ export const findServiceCancellationPolicy = async (
   return serviceRows[0] ?? null;
 };
 
+/**
+ * participant 操作として予約をキャンセル状態に更新します。
+ */
 export const cancelBookingByParticipantState = async ({
   database,
   bookingId,
@@ -285,6 +324,9 @@ export const cancelBookingByParticipantState = async ({
     .where(eq(dbSchema.booking.id, bookingId));
 };
 
+/**
+ * staff 操作として予約をキャンセル状態に更新します。
+ */
 export const cancelBookingByStaffState = async ({
   database,
   bookingId,
@@ -307,6 +349,9 @@ export const cancelBookingByStaffState = async ({
     .where(eq(dbSchema.booking.id, bookingId));
 };
 
+/**
+ * 確定予約のキャンセル後に、slot の reservedCount を過剰に戻さない条件で減算します。
+ */
 export const releaseConfirmedBookingSlotCapacity = async ({
   database,
   slotId,
@@ -324,6 +369,9 @@ export const releaseConfirmedBookingSlotCapacity = async ({
     .where(and(eq(dbSchema.slot.id, slotId), gte(dbSchema.slot.reservedCount, participantsCount)));
 };
 
+/**
+ * 予約キャンセルで ticket pack 残数を戻し、復元 ledger を記録します。
+ */
 export const restoreTicketPackForBookingCancel = async ({
   database,
   organizationId,
@@ -374,6 +422,9 @@ export const restoreTicketPackForBookingCancel = async ({
   });
 };
 
+/**
+ * 承認待ち予約だけを確定予約へ遷移させ、必要なら ticketPackId を紐づけます。
+ */
 export const approvePendingBooking = async ({
   database,
   bookingId,
@@ -399,6 +450,9 @@ export const approvePendingBooking = async ({
   return updatedRows.length > 0;
 };
 
+/**
+ * 承認待ち予約だけを staff 却下状態へ遷移させます。
+ */
 export const rejectPendingBooking = async ({
   database,
   bookingId,
@@ -428,6 +482,9 @@ export const rejectPendingBooking = async ({
   return updatedRows.length > 0;
 };
 
+/**
+ * 確定予約を no-show として記録します。
+ */
 export const markConfirmedBookingNoShow = async ({
   database,
   bookingId,
@@ -444,6 +501,9 @@ export const markConfirmedBookingNoShow = async ({
     .where(eq(dbSchema.booking.id, bookingId));
 };
 
+/**
+ * participant/staff それぞれの権限境界で使う予約一覧を条件付きで取得します。
+ */
 export const listBookings = async ({
   database,
   organizationId,

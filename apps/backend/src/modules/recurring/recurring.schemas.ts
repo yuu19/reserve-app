@@ -16,6 +16,9 @@ const boolStringSchema = z
   .optional()
   .transform((value) => (value === undefined ? undefined : value === 'true'));
 
+/**
+ * recurring schedule 作成 API の入力を検証します。
+ */
 export const recurringCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -36,6 +39,9 @@ export const recurringCreateBodySchema = z.object({
   capacityOverride: z.int().min(1).max(500).optional(),
 });
 
+/**
+ * recurring schedule 一覧 API の query を検証します。
+ */
 export const recurringListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -43,6 +49,9 @@ export const recurringListQuerySchema = z.object({
   isActive: boolStringSchema,
 });
 
+/**
+ * recurring schedule 更新 API の入力を、部分更新として検証します。
+ */
 export const recurringUpdateBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
@@ -63,6 +72,9 @@ export const recurringUpdateBodySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+/**
+ * 特定日を skip または override する recurring exception 入力を検証します。
+ */
 export const recurringExceptionBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
@@ -77,6 +89,9 @@ export const recurringExceptionBodySchema = z.object({
   overrideCapacity: z.int().min(1).max(500).optional(),
 });
 
+/**
+ * recurring slot の手動生成範囲を検証します。
+ */
 export const recurringGenerateBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
@@ -84,12 +99,30 @@ export const recurringGenerateBodySchema = z.object({
   to: isoDateTimeSchema.optional(),
 });
 
+/**
+ * recurring schedule 作成 usecase が受け取る検証済み body 型です。
+ */
 export type RecurringCreateBody = z.infer<typeof recurringCreateBodySchema>;
+/**
+ * recurring schedule 一覧 usecase が受け取る検証済み query 型です。
+ */
 export type RecurringListQuery = z.infer<typeof recurringListQuerySchema>;
+/**
+ * recurring schedule 更新 usecase が受け取る検証済み body 型です。
+ */
 export type RecurringUpdateBody = z.infer<typeof recurringUpdateBodySchema>;
+/**
+ * recurring exception upsert usecase が受け取る検証済み body 型です。
+ */
 export type RecurringExceptionBody = z.infer<typeof recurringExceptionBodySchema>;
+/**
+ * recurring slot 手動生成 usecase が受け取る検証済み body 型です。
+ */
 export type RecurringGenerateBody = z.infer<typeof recurringGenerateBodySchema>;
 
+/**
+ * recurring schedule を作成し、既定期間の slot を同期生成する OpenAPI 定義です。
+ */
 export const createRecurringScheduleRoute = createRoute({
   method: 'post',
   path: '/organizations/recurring-schedules',
@@ -113,6 +146,9 @@ export const createRecurringScheduleRoute = createRoute({
   },
 });
 
+/**
+ * staff が管理対象 recurring schedule を取得する OpenAPI 定義です。
+ */
 export const listRecurringSchedulesRoute = createRoute({
   method: 'get',
   path: '/organizations/recurring-schedules',
@@ -128,6 +164,9 @@ export const listRecurringSchedulesRoute = createRoute({
   },
 });
 
+/**
+ * recurring schedule を更新し、既定期間の slot を再同期する OpenAPI 定義です。
+ */
 export const updateRecurringScheduleRoute = createRoute({
   method: 'post',
   path: '/organizations/recurring-schedules/update',
@@ -152,6 +191,9 @@ export const updateRecurringScheduleRoute = createRoute({
   },
 });
 
+/**
+ * recurring schedule の特定日例外を作成または更新する OpenAPI 定義です。
+ */
 export const upsertRecurringExceptionRoute = createRoute({
   method: 'post',
   path: '/organizations/recurring-schedules/exceptions',
@@ -176,6 +218,9 @@ export const upsertRecurringExceptionRoute = createRoute({
   },
 });
 
+/**
+ * recurring schedule から指定期間の slot を手動生成する OpenAPI 定義です。
+ */
 export const generateRecurringSlotsRoute = createRoute({
   method: 'post',
   path: '/organizations/recurring-schedules/generate',

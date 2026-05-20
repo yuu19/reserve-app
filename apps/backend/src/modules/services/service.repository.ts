@@ -2,6 +2,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import * as dbSchema from '../../db/schema.js';
 
+/**
+ * service を D1 に作成します。
+ */
 export const insertService = async ({
   database,
   createdId,
@@ -59,6 +62,9 @@ export const insertService = async ({
   });
 };
 
+/**
+ * service の最新行を ID で取得します。
+ */
 export const getServiceById = async (database: AuthRuntimeDatabase, serviceId: string) => {
   const rows = await database
     .select()
@@ -68,6 +74,9 @@ export const getServiceById = async (database: AuthRuntimeDatabase, serviceId: s
   return rows[0] ?? null;
 };
 
+/**
+ * organization/classroom scope の service を、必要に応じて archived も含めて一覧します。
+ */
 export const listServices = async ({
   database,
   organizationId,
@@ -94,6 +103,9 @@ export const listServices = async ({
     .orderBy(desc(dbSchema.service.createdAt));
 };
 
+/**
+ * service 更新前の権限判定と premium 判定に必要な scope 情報を取得します。
+ */
 export const findServiceForUpdate = async (database: AuthRuntimeDatabase, serviceId: string) => {
   const currentRows = await database
     .select({
@@ -109,6 +121,9 @@ export const findServiceForUpdate = async (database: AuthRuntimeDatabase, servic
   return currentRows[0] ?? null;
 };
 
+/**
+ * service の archive 可否判定に必要な organization/classroom scope を取得します。
+ */
 export const findServiceScope = async (database: AuthRuntimeDatabase, serviceId: string) => {
   const serviceRows = await database
     .select({
@@ -122,6 +137,9 @@ export const findServiceScope = async (database: AuthRuntimeDatabase, serviceId:
   return serviceRows[0] ?? null;
 };
 
+/**
+ * 未指定フィールドを保持したまま service の変更分だけを D1 に反映します。
+ */
 export const updateService = async ({
   database,
   serviceId,
@@ -173,6 +191,9 @@ export const updateService = async ({
     .where(eq(dbSchema.service.id, serviceId));
 };
 
+/**
+ * service を物理削除せず inactive にして一覧対象から外します。
+ */
 export const archiveService = async (database: AuthRuntimeDatabase, serviceId: string) => {
   await database
     .update(dbSchema.service)

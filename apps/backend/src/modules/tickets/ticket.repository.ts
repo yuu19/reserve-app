@@ -3,6 +3,9 @@ import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import { TICKET_PACK_STATUS, TICKET_PURCHASE_STATUS } from '../../booking/constants.js';
 import * as dbSchema from '../../db/schema.js';
 
+/**
+ * ticket type に紐づける serviceIds が同一 organization/classroom に存在する数を返します。
+ */
 export const countServicesByIds = async ({
   database,
   organizationId,
@@ -33,6 +36,9 @@ export const countServicesByIds = async ({
   return Number(serviceCount[0]?.value ?? 0);
 };
 
+/**
+ * ticket type を D1 に作成し、対象 serviceIds は JSON 文字列として保存します。
+ */
 export const insertTicketType = async ({
   database,
   ticketTypeId,
@@ -72,6 +78,9 @@ export const insertTicketType = async ({
   });
 };
 
+/**
+ * ticket type の最新行を ID で取得します。
+ */
 export const getTicketTypeById = async (database: AuthRuntimeDatabase, ticketTypeId: string) => {
   const rows = await database
     .select()
@@ -81,6 +90,9 @@ export const getTicketTypeById = async (database: AuthRuntimeDatabase, ticketTyp
   return rows[0] ?? null;
 };
 
+/**
+ * staff 向けに organization/classroom/status で ticket type を一覧します。
+ */
 export const listTicketTypes = async ({
   database,
   organizationId,
@@ -107,6 +119,9 @@ export const listTicketTypes = async ({
     .orderBy(desc(dbSchema.ticketType.createdAt));
 };
 
+/**
+ * participant が所属する classroom のうち販売中の ticket type だけを一覧します。
+ */
 export const listPurchasableTicketTypes = async ({
   database,
   organizationId,
@@ -134,6 +149,9 @@ export const listPurchasableTicketTypes = async ({
     .orderBy(desc(dbSchema.ticketType.createdAt));
 };
 
+/**
+ * ticket purchase 作成時に購入対象 ticket type の販売可否と scope を取得します。
+ */
 export const findTicketTypeForPurchase = async ({
   database,
   ticketTypeId,
@@ -166,6 +184,9 @@ export const findTicketTypeForPurchase = async ({
   return ticketTypeRows[0] ?? null;
 };
 
+/**
+ * ticket purchase を承認待ち状態で D1 に作成します。
+ */
 export const insertTicketPurchase = async ({
   database,
   purchaseId,
@@ -194,6 +215,9 @@ export const insertTicketPurchase = async ({
   });
 };
 
+/**
+ * ticket purchase の最新行を ID で取得します。
+ */
 export const getTicketPurchaseById = async (database: AuthRuntimeDatabase, purchaseId: string) => {
   const rows = await database
     .select()
@@ -203,6 +227,9 @@ export const getTicketPurchaseById = async (database: AuthRuntimeDatabase, purch
   return rows[0] ?? null;
 };
 
+/**
+ * participant/staff 向けに ticket purchase を scope と条件で一覧します。
+ */
 export const listTicketPurchases = async ({
   database,
   organizationId,
@@ -244,6 +271,9 @@ export const listTicketPurchases = async ({
     .orderBy(desc(dbSchema.ticketPurchase.createdAt));
 };
 
+/**
+ * ticket purchase の staff/participant 操作に必要な scope と状態を取得します。
+ */
 export const findTicketPurchaseScope = async (
   database: AuthRuntimeDatabase,
   purchaseId: string,
@@ -262,6 +292,9 @@ export const findTicketPurchaseScope = async (
   return purchaseRows[0] ?? null;
 };
 
+/**
+ * 承認待ち ticket purchase だけを staff 却下状態へ遷移します。
+ */
 export const rejectTicketPurchase = async ({
   database,
   purchaseId,
@@ -294,6 +327,9 @@ export const rejectTicketPurchase = async ({
   return updatedRows[0] ?? null;
 };
 
+/**
+ * participant が自身の ticket purchase を取り消した状態に更新します。
+ */
 export const cancelTicketPurchase = async ({
   database,
   purchaseId,
@@ -309,6 +345,9 @@ export const cancelTicketPurchase = async ({
     .where(eq(dbSchema.ticketPurchase.id, purchaseId));
 };
 
+/**
+ * staff による ticket pack 付与前に participant の所属 classroom を確認します。
+ */
 export const findParticipantForTicketPackGrant = async ({
   database,
   organizationId,
@@ -337,6 +376,9 @@ export const findParticipantForTicketPackGrant = async ({
   return participantRows[0] ?? null;
 };
 
+/**
+ * staff による ticket pack 付与前に ticket type の所属と付与枚数設定を取得します。
+ */
 export const findTicketTypeForTicketPackGrant = async ({
   database,
   organizationId,
@@ -367,6 +409,9 @@ export const findTicketTypeForTicketPackGrant = async ({
   return ticketTypeRows[0] ?? null;
 };
 
+/**
+ * participant の active ticket pack のうち有効期限を過ぎたものを expired に更新します。
+ */
 export const expireActiveTicketPacks = async ({
   database,
   organizationId,
@@ -396,6 +441,9 @@ export const expireActiveTicketPacks = async ({
     );
 };
 
+/**
+ * participant が所有する ticket pack を作成日時順で一覧します。
+ */
 export const listTicketPacks = async ({
   database,
   organizationId,

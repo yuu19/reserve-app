@@ -15,6 +15,9 @@ import {
   upsertExistingRecurringException,
 } from './recurring.usecases.js';
 
+/**
+ * recurring schedule と例外日、手動 slot 生成の route を登録します。
+ */
 export const registerRecurringRoutes = (ctx: BookingRouteContext) => {
   ctx.authRoutes.openapi(createRecurringScheduleRoute, async (c) =>
     jsonRouteResult(c, await createRecurringSchedule(ctx, c.req.valid('json'), c.req.raw.headers)),

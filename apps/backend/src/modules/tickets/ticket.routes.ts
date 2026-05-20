@@ -27,6 +27,9 @@ import {
   rejectExistingTicketPurchase,
 } from './ticket.usecases.js';
 
+/**
+ * ticket type、purchase、pack の管理・参加者向け route を登録します。
+ */
 export const registerTicketRoutes = (ctx: BookingRouteContext) => {
   ctx.authRoutes.openapi(createTicketTypeRoute, async (c) =>
     jsonRouteResult(c, await createTicketType(ctx, c.req.valid('json'), c.req.raw.headers)),

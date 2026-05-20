@@ -119,6 +119,12 @@ const restoreConsumedTicket = async ({
   }
 };
 
+/**
+ * participant の予約申込を処理し、即時予約では定員・回数券・監査ログ・通知まで反映します。
+ *
+ * @remarks
+ * 承認制 service は定員や回数券をまだ消費せず、pending approval の申込として保存します。
+ */
 export const createBooking = async (
   ctx: BookingRouteContext,
   body: BookingCreateBody,
@@ -341,6 +347,9 @@ export const createBooking = async (
   }
 };
 
+/**
+ * participant 自身が参照できる予約だけを一覧します。
+ */
 export const listMyBookings = async (
   ctx: BookingRouteContext,
   query: BookingMineQuery,
@@ -379,6 +388,9 @@ export const listMyBookings = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeBooking(row)));
 };
 
+/**
+ * participant 本人の予約をキャンセルし、確定予約では定員と ticket pack を復元します。
+ */
 export const cancelBookingByParticipant = async (
   ctx: BookingRouteContext,
   body: BookingActionBody,
@@ -482,6 +494,9 @@ export const cancelBookingByParticipant = async (
   return jsonResult({ ok: true });
 };
 
+/**
+ * staff が管理権限を持つ予約を条件付きで一覧します。
+ */
 export const listStaffBookings = async (
   ctx: BookingRouteContext,
   query: BookingListQuery,
@@ -520,6 +535,9 @@ export const listStaffBookings = async (
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeBooking(row)));
 };
 
+/**
+ * staff が確定予約をキャンセルし、定員・ticket pack・監査ログ・通知を反映します。
+ */
 export const cancelBookingByStaff = async (
   ctx: BookingRouteContext,
   body: BookingActionBody,
@@ -589,6 +607,12 @@ export const cancelBookingByStaff = async (
   return jsonResult({ ok: true });
 };
 
+/**
+ * staff が承認待ち予約を承認し、定員確保と必要な ticket pack 消費を同時に処理します。
+ *
+ * @remarks
+ * 定員確保後に ticket 消費や状態更新が失敗した場合は、補償処理で定員と ticket を戻します。
+ */
 export const approveBookingByStaff = async (
   ctx: BookingRouteContext,
   body: BookingApproveBody,
@@ -749,6 +773,9 @@ export const approveBookingByStaff = async (
   }
 };
 
+/**
+ * staff が承認待ち予約を却下し、監査ログと通知を残します。
+ */
 export const rejectBookingByStaff = async (
   ctx: BookingRouteContext,
   body: BookingActionBody,
@@ -820,6 +847,9 @@ export const rejectBookingByStaff = async (
   return jsonResult({ ok: true });
 };
 
+/**
+ * staff が確定予約を no-show に遷移させ、監査ログと通知を残します。
+ */
 export const markBookingNoShow = async (
   ctx: BookingRouteContext,
   body: BookingNoShowBody,

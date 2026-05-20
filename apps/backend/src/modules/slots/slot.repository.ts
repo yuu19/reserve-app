@@ -3,6 +3,9 @@ import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import { BOOKING_STATUS, SLOT_STATUS } from '../../booking/constants.js';
 import * as dbSchema from '../../db/schema.js';
 
+/**
+ * slot 作成・更新時に service 所属と予約受付窓を確認するための情報を取得します。
+ */
 export const findServiceForSlot = async (database: AuthRuntimeDatabase, serviceId: string) => {
   const rows = await database
     .select({
@@ -19,6 +22,9 @@ export const findServiceForSlot = async (database: AuthRuntimeDatabase, serviceI
   return rows[0] ?? null;
 };
 
+/**
+ * slot 更新前に状態・予約数・scope を確認するための情報を取得します。
+ */
 export const findSlotForUpdate = async (database: AuthRuntimeDatabase, slotId: string) => {
   const rows = await database
     .select({
@@ -37,6 +43,9 @@ export const findSlotForUpdate = async (database: AuthRuntimeDatabase, slotId: s
   return rows[0] ?? null;
 };
 
+/**
+ * slot キャンセル前に状態と scope を確認するための情報を取得します。
+ */
 export const findSlotForCancel = async (database: AuthRuntimeDatabase, slotId: string) => {
   const rows = await database
     .select({
@@ -51,6 +60,9 @@ export const findSlotForCancel = async (database: AuthRuntimeDatabase, slotId: s
   return rows[0] ?? null;
 };
 
+/**
+ * service の設定から解決済みの単発 slot を D1 に作成します。
+ */
 export const insertSlot = async ({
   database,
   slotId,
@@ -96,6 +108,9 @@ export const insertSlot = async ({
   });
 };
 
+/**
+ * slot の最新行を ID で取得します。
+ */
 export const getSlotById = async (database: AuthRuntimeDatabase, slotId: string) => {
   const rows = await database
     .select()
@@ -105,6 +120,9 @@ export const getSlotById = async (database: AuthRuntimeDatabase, slotId: string)
   return rows[0] ?? null;
 };
 
+/**
+ * 予約がない open slot の日時・定員・表示情報を更新します。
+ */
 export const updateSlot = async ({
   database,
   slotId,
@@ -140,6 +158,9 @@ export const updateSlot = async ({
     .where(eq(dbSchema.slot.id, slotId));
 };
 
+/**
+ * staff 向けに、指定 scope と期間に一致する slot を開始日時順で一覧します。
+ */
 export const listSlots = async ({
   database,
   organizationId,
@@ -179,6 +200,9 @@ export const listSlots = async ({
     .orderBy(asc(dbSchema.slot.startAt));
 };
 
+/**
+ * participant がアクセスでき、受付中かつ空き定員のある slot だけを一覧します。
+ */
 export const listAvailableSlots = async ({
   database,
   organizationId,
@@ -223,6 +247,9 @@ export const listAvailableSlots = async ({
     .orderBy(asc(dbSchema.slot.startAt));
 };
 
+/**
+ * slot をキャンセルし、その slot の確定予約を staff キャンセル状態へまとめて遷移します。
+ */
 export const cancelSlotAndConfirmedBookings = async ({
   database,
   slotId,

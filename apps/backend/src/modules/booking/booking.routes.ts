@@ -21,6 +21,9 @@ import {
   rejectBookingByStaff,
 } from './booking.usecases.js';
 
+/**
+ * 予約の申込から承認、キャンセル、無断欠席までの lifecycle route を登録します。
+ */
 export const registerBookingLifecycleRoutes = (ctx: BookingRouteContext) => {
   ctx.authRoutes.openapi(createBookingRoute, async (c) =>
     jsonRouteResult(c, await createBooking(ctx, c.req.valid('json'), c.req.raw.headers)),

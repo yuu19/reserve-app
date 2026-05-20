@@ -8,6 +8,9 @@ const boolStringSchema = z
 const serviceKindSchema = z.enum(['single', 'recurring']);
 const bookingPolicySchema = z.enum(['instant', 'approval']);
 
+/**
+ * service 作成 API の入力を検証します。
+ */
 export const serviceCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -41,12 +44,18 @@ export const serviceCreateBodySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+/**
+ * service 一覧 API の query を検証します。
+ */
 export const serviceListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
   includeArchived: boolStringSchema,
 });
 
+/**
+ * service 更新 API の入力を、部分更新として検証します。
+ */
 export const serviceUpdateBodySchema = z.object({
   serviceId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
@@ -81,6 +90,9 @@ export const serviceUpdateBodySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+/**
+ * service image の署名付き upload URL 発行に必要な入力を検証します。
+ */
 export const serviceImageUploadUrlBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -89,10 +101,16 @@ export const serviceImageUploadUrlBodySchema = z.object({
   size: z.int().min(1),
 });
 
+/**
+ * 署名付き service image upload route の token path param を検証します。
+ */
 export const serviceImageUploadTokenParamSchema = z.object({
   token: z.string().trim().min(20).max(4096),
 });
 
+/**
+ * service image 配信 route の object key path param を検証します。
+ */
 export const serviceImageKeyParamSchema = z.object({
   key: z
     .string()
@@ -102,17 +120,38 @@ export const serviceImageKeyParamSchema = z.object({
     .max(255),
 });
 
+/**
+ * service archive API の入力を検証します。
+ */
 export const serviceArchiveBodySchema = z.object({
   serviceId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
 });
 
+/**
+ * service 作成 usecase が受け取る検証済み body 型です。
+ */
 export type ServiceCreateBody = z.infer<typeof serviceCreateBodySchema>;
+/**
+ * service 一覧 usecase が受け取る検証済み query 型です。
+ */
 export type ServiceListQuery = z.infer<typeof serviceListQuerySchema>;
+/**
+ * service 更新 usecase が受け取る検証済み body 型です。
+ */
 export type ServiceUpdateBody = z.infer<typeof serviceUpdateBodySchema>;
+/**
+ * service archive usecase が受け取る検証済み body 型です。
+ */
 export type ServiceArchiveBody = z.infer<typeof serviceArchiveBodySchema>;
+/**
+ * service image upload URL 発行 route が受け取る検証済み body 型です。
+ */
 export type ServiceImageUploadUrlBody = z.infer<typeof serviceImageUploadUrlBodySchema>;
 
+/**
+ * service を作成する OpenAPI 定義です。
+ */
 export const createServiceRoute = createRoute({
   method: 'post',
   path: '/organizations/services',
@@ -132,6 +171,9 @@ export const createServiceRoute = createRoute({
   },
 });
 
+/**
+ * 管理者・スタッフ向け service 一覧の OpenAPI 定義です。
+ */
 export const listServicesRoute = createRoute({
   method: 'get',
   path: '/organizations/services',
@@ -145,6 +187,9 @@ export const listServicesRoute = createRoute({
   },
 });
 
+/**
+ * service image 用の署名付き upload URL を発行する OpenAPI 定義です。
+ */
 export const createServiceImageUploadUrlRoute = createRoute({
   method: 'post',
   path: '/organizations/services/images/upload-url',
@@ -165,6 +210,9 @@ export const createServiceImageUploadUrlRoute = createRoute({
   },
 });
 
+/**
+ * 署名付き URL token で service image を保存する OpenAPI 定義です。
+ */
 export const uploadServiceImageBySignedUrlRoute = createRoute({
   method: 'put',
   path: '/organizations/services/images/upload/{token}',
@@ -180,6 +228,9 @@ export const uploadServiceImageBySignedUrlRoute = createRoute({
   },
 });
 
+/**
+ * 保存済み service image を object key で配信する OpenAPI 定義です。
+ */
 export const getServiceImageRoute = createRoute({
   method: 'get',
   path: '/organizations/services/images/{key}',
@@ -194,6 +245,9 @@ export const getServiceImageRoute = createRoute({
   },
 });
 
+/**
+ * service を部分更新する OpenAPI 定義です。
+ */
 export const updateServiceRoute = createRoute({
   method: 'post',
   path: '/organizations/services/update',
@@ -214,6 +268,9 @@ export const updateServiceRoute = createRoute({
   },
 });
 
+/**
+ * service を非 active にする OpenAPI 定義です。
+ */
 export const archiveServiceRoute = createRoute({
   method: 'post',
   path: '/organizations/services/archive',

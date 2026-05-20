@@ -35,6 +35,12 @@ const getBookingNotificationContext = async ({
   return rows[0] ?? null;
 };
 
+/**
+ * 予約 lifecycle のメール通知を best-effort で送信します。
+ *
+ * @remarks
+ * 通知失敗は予約状態遷移を巻き戻さず、警告ログに留めます。
+ */
 export const notifyBookingEmailBestEffort = async ({
   database,
   env,

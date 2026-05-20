@@ -8,6 +8,9 @@ const isoDateTimeSchema = z
 
 const slotStatusSchema = z.enum([SLOT_STATUS.OPEN, SLOT_STATUS.CANCELED, SLOT_STATUS.COMPLETED]);
 
+/**
+ * slot 作成 API の入力を検証します。
+ */
 export const slotCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -19,6 +22,9 @@ export const slotCreateBodySchema = z.object({
   locationLabel: z.string().trim().max(120).optional(),
 });
 
+/**
+ * 予約のない open slot を更新する入力を検証します。
+ */
 export const slotUpdateBodySchema = z.object({
   slotId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
@@ -29,6 +35,9 @@ export const slotUpdateBodySchema = z.object({
   locationLabel: z.string().trim().max(120).optional(),
 });
 
+/**
+ * staff 向け slot 一覧 API の query を検証します。
+ */
 export const slotListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -38,6 +47,9 @@ export const slotListQuerySchema = z.object({
   status: slotStatusSchema.optional(),
 });
 
+/**
+ * participant 向け空き slot 一覧 API の query を検証します。
+ */
 export const slotAvailableQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
   classroomId: z.string().min(1).optional(),
@@ -46,18 +58,39 @@ export const slotAvailableQuerySchema = z.object({
   to: isoDateTimeSchema,
 });
 
+/**
+ * slot キャンセル API の入力を検証します。
+ */
 export const slotCancelBodySchema = z.object({
   slotId: z.string().min(1),
   classroomId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
+/**
+ * slot 作成 usecase が受け取る検証済み body 型です。
+ */
 export type SlotCreateBody = z.infer<typeof slotCreateBodySchema>;
+/**
+ * slot 更新 usecase が受け取る検証済み body 型です。
+ */
 export type SlotUpdateBody = z.infer<typeof slotUpdateBodySchema>;
+/**
+ * staff 向け slot 一覧 usecase が受け取る検証済み query 型です。
+ */
 export type SlotListQuery = z.infer<typeof slotListQuerySchema>;
+/**
+ * participant 向け空き slot 一覧 usecase が受け取る検証済み query 型です。
+ */
 export type SlotAvailableQuery = z.infer<typeof slotAvailableQuerySchema>;
+/**
+ * slot キャンセル usecase が受け取る検証済み body 型です。
+ */
 export type SlotCancelBody = z.infer<typeof slotCancelBodySchema>;
 
+/**
+ * service に紐づく単発 slot を作成する OpenAPI 定義です。
+ */
 export const createSlotRoute = createRoute({
   method: 'post',
   path: '/organizations/slots',
@@ -82,6 +115,9 @@ export const createSlotRoute = createRoute({
   },
 });
 
+/**
+ * 予約前の open slot を更新する OpenAPI 定義です。
+ */
 export const updateSlotRoute = createRoute({
   method: 'post',
   path: '/organizations/slots/update',
@@ -107,6 +143,9 @@ export const updateSlotRoute = createRoute({
   },
 });
 
+/**
+ * staff が管理対象 slot を期間指定で取得する OpenAPI 定義です。
+ */
 export const listSlotsRoute = createRoute({
   method: 'get',
   path: '/organizations/slots',
@@ -122,6 +161,9 @@ export const listSlotsRoute = createRoute({
   },
 });
 
+/**
+ * participant が予約可能な slot だけを取得する OpenAPI 定義です。
+ */
 export const listAvailableSlotsRoute = createRoute({
   method: 'get',
   path: '/organizations/slots/available',
@@ -137,6 +179,9 @@ export const listAvailableSlotsRoute = createRoute({
   },
 });
 
+/**
+ * open slot をキャンセルし、確定予約も staff キャンセルへ遷移させる OpenAPI 定義です。
+ */
 export const cancelSlotRoute = createRoute({
   method: 'post',
   path: '/organizations/slots/cancel',
