@@ -1657,6 +1657,13 @@ describe('backend app', () => {
       const url =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
+      if (url === 'https://api.stripe.com/v1/customers') {
+        return new Response(JSON.stringify({ id: 'cus_test_org' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
       if (url === 'https://api.stripe.com/v1/checkout/sessions') {
         return new Response(
           JSON.stringify({
@@ -2511,6 +2518,7 @@ describe('backend app', () => {
         STRIPE_SECRET_KEY: 'sk_test_handoff',
         STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
         STRIPE_PREMIUM_YEARLY_PRICE_ID: stripeYearlyPriceId,
+        STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED: 'true',
         WEB_BASE_URL: 'http://localhost:5173',
       },
     });
@@ -2526,7 +2534,9 @@ describe('backend app', () => {
       const params = new URLSearchParams(body);
 
       if (url === 'https://api.stripe.com/v1/customers') {
-        return new Response(JSON.stringify({ id: 'cus_handoff_trial' }), {
+        const organizationSuffix =
+          params.get('metadata[organizationId]')?.replace(/[^a-zA-Z0-9_]/g, '_') ?? 'handoff_trial';
+        return new Response(JSON.stringify({ id: `cus_${organizationSuffix}` }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -2869,6 +2879,63 @@ describe('backend app', () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+
+  it('keeps billing readable but blocks owner handoffs when Stripe prices are missing', async () => {
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_missing_prices',
+        STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED: 'true',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+    const { agent: owner, organizationId } = await createBillingFixtureOwner({
+      application: appWithStripe,
+      name: 'Missing Price Owner',
+      email: 'missing-price-owner@example.com',
+      organizationName: 'Missing Price Org',
+      slug: `missing-price-${crypto.randomUUID().slice(0, 8)}`,
+    });
+
+    const summaryResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(summaryResponse.status).toBe(200);
+    expect(await toJson(summaryResponse)).toMatchObject({
+      actionAvailability: {
+        canStartTrial: false,
+        canStartPaidCheckout: false,
+        availableIntervals: [],
+        readOnlyReason: 'billing_price_not_configured',
+      },
+    });
+
+    const checkoutResponse = await owner.request('/api/v1/auth/organizations/billing/checkout', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId, billingInterval: 'month' }),
+    });
+    expect(checkoutResponse.status).toBe(422);
+    expect(await toJson(checkoutResponse)).toMatchObject({
+      status: 'failed',
+      message: 'Stripe premium month price id is not configured.',
+    });
+
+    const trialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    expect(trialResponse.status).toBe(422);
+    expect(await toJson(trialResponse)).toMatchObject({
+      status: 'failed',
+      message: 'Stripe premium trial price id is not configured.',
+    });
   });
 
   it('normalizes invoice payment webhooks, suppresses duplicates, and records payment issue notifications', async () => {
@@ -4352,6 +4419,158 @@ describe('backend app', () => {
     ]);
   });
 
+  it('does not treat fresh processing billing webhook duplicates as successful no-ops', async () => {
+    const stripeWebhookSecret = 'whsec_test_processing_duplicate';
+    const stripeMonthlyPriceId = 'price_processing_duplicate_monthly';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_processing_duplicate',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+    const owner = createAuthAgent(appWithStripe);
+    await signUpUser({
+      agent: owner,
+      name: 'Processing Duplicate Owner',
+      email: 'processing-duplicate-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Processing Duplicate Org',
+      slug: `processing-duplicate-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_processing_duplicate',
+      eventType: 'checkout.session.completed',
+      scope: 'organization_billing',
+      processingStatus: 'processing',
+      createdAt: new Date(),
+    });
+
+    const webhookPayload = JSON.stringify({
+      id: 'evt_processing_duplicate',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_processing_duplicate',
+          customer: 'cus_processing_duplicate',
+          subscription: 'sub_processing_duplicate',
+          metadata: {
+            billingPurpose: 'organization_plan',
+            organizationId,
+            planCode: 'premium',
+            billingInterval: 'month',
+          },
+        },
+      },
+    });
+    const signature = await createStripeSignatureHeader(webhookPayload, stripeWebhookSecret);
+    const response = await appWithStripe.request('/api/webhooks/stripe', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': signature,
+      },
+      body: webhookPayload,
+    });
+
+    expect(response.status).toBe(500);
+    expect(await toJson(response)).toMatchObject({
+      message: 'Stripe webhook event is already processing and has not completed yet.',
+    });
+    const webhookEventRow = await selectStripeWebhookEventRow('evt_processing_duplicate');
+    expect(webhookEventRow).toMatchObject({
+      processingStatus: 'processing',
+      receiptStatus: 'duplicate_processing',
+    });
+    expect(Boolean(webhookEventRow?.duplicateDetected)).toBe(true);
+    expect(await selectOrganizationBillingRow(organizationId)).toMatchObject({
+      planCode: 'free',
+      subscriptionStatus: 'free',
+    });
+  });
+
+  it('reclaims stale processing billing webhook events for Stripe redelivery', async () => {
+    const stripeWebhookSecret = 'whsec_test_stale_processing';
+    const stripeMonthlyPriceId = 'price_stale_processing_monthly';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_stale_processing',
+        STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+    const owner = createAuthAgent(appWithStripe);
+    await signUpUser({
+      agent: owner,
+      name: 'Stale Processing Owner',
+      email: 'stale-processing-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Stale Processing Org',
+      slug: `stale-processing-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    await insertStripeWebhookEventRow({
+      id: 'evt_stale_processing',
+      eventType: 'checkout.session.completed',
+      scope: 'organization_billing',
+      processingStatus: 'processing',
+      createdAt: new Date(Date.now() - 5 * 60 * 1000),
+    });
+
+    const webhookPayload = JSON.stringify({
+      id: 'evt_stale_processing',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_stale_processing',
+          customer: 'cus_stale_processing',
+          subscription: 'sub_stale_processing',
+          metadata: {
+            billingPurpose: 'organization_plan',
+            organizationId,
+            planCode: 'premium',
+            billingInterval: 'month',
+          },
+        },
+      },
+    });
+    const signature = await createStripeSignatureHeader(webhookPayload, stripeWebhookSecret);
+    const response = await appWithStripe.request('/api/webhooks/stripe', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': signature,
+      },
+      body: webhookPayload,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await selectStripeWebhookEventRow('evt_stale_processing')).toMatchObject({
+      processingStatus: 'processed',
+      organizationId,
+      receiptStatus: 'processed',
+    });
+    expect(await selectOrganizationBillingRow(organizationId)).toMatchObject({
+      planCode: 'premium',
+      subscriptionStatus: 'incomplete',
+      stripeCustomerId: 'cus_stale_processing',
+      stripeSubscriptionId: 'sub_stale_processing',
+    });
+  });
+
   it('sends owner-only trial reminder emails and records billing notification history', async () => {
     const stripeWebhookSecret = 'whsec_test_trial_reminder_success';
     const stripeMonthlyPriceId = 'price_trial_reminder_monthly';
@@ -5138,131 +5357,196 @@ describe('backend app', () => {
   });
 
   it('starts owner-only premium trials and rejects duplicate active lifecycle states', async () => {
-    const owner = createAuthAgent(app);
-    await signUpUser({
-      agent: owner,
-      name: 'Trial Owner',
-      email: 'trial-owner@example.com',
+    const stripeMonthlyPriceId = 'price_owner_only_trial_monthly';
+    const currentPeriodStartSeconds = Math.floor(Date.now() / 1000);
+    const currentPeriodEndSeconds = currentPeriodStartSeconds + 7 * 24 * 60 * 60;
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_owner_only_trial',
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+        STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED: 'true',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const method = init?.method ?? 'GET';
+
+      if (url === 'https://api.stripe.com/v1/customers' && method === 'POST') {
+        return new Response(JSON.stringify({ id: 'cus_owner_only_trial' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      if (url === 'https://api.stripe.com/v1/subscriptions' && method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            id: 'sub_owner_only_trial',
+            customer: 'cus_owner_only_trial',
+            status: 'trialing',
+            current_period_start: currentPeriodStartSeconds,
+            current_period_end: currentPeriodEndSeconds,
+            items: { data: [{ price: { id: stripeMonthlyPriceId } }] },
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
     });
 
-    const organizationId = await createOrganization({
-      agent: owner,
-      name: 'Trial Org',
-      slug: 'trial-org',
-    });
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Trial Owner',
+        email: 'trial-owner@example.com',
+      });
 
-    const admin = createAuthAgent(app);
-    await signUpUser({
-      agent: admin,
-      name: 'Trial Admin',
-      email: 'trial-admin@example.com',
-    });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Trial Org',
+        slug: 'trial-org',
+      });
 
-    const member = createAuthAgent(app);
-    await signUpUser({
-      agent: member,
-      name: 'Trial Member',
-      email: 'trial-member@example.com',
-    });
-    await insertOrganizationMember({
-      organizationId,
-      userId: (await selectUserIdByEmail('trial-admin@example.com')) as string,
-      role: 'admin',
-    });
-    await insertOrganizationMember({
-      organizationId,
-      userId: (await selectUserIdByEmail('trial-member@example.com')) as string,
-      role: 'member',
-    });
+      const admin = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: admin,
+        name: 'Trial Admin',
+        email: 'trial-admin@example.com',
+      });
 
-    const adminTrialResponse = await admin.request('/api/v1/auth/organizations/billing/trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId }),
-    });
-    expect(adminTrialResponse.status).toBe(403);
+      const member = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: member,
+        name: 'Trial Member',
+        email: 'trial-member@example.com',
+      });
+      await insertOrganizationMember({
+        organizationId,
+        userId: (await selectUserIdByEmail('trial-admin@example.com')) as string,
+        role: 'admin',
+      });
+      await insertOrganizationMember({
+        organizationId,
+        userId: (await selectUserIdByEmail('trial-member@example.com')) as string,
+        role: 'member',
+      });
 
-    const memberTrialResponse = await member.request('/api/v1/auth/organizations/billing/trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId }),
-    });
-    expect(memberTrialResponse.status).toBe(403);
+      const adminTrialResponse = await admin.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(adminTrialResponse.status).toBe(403);
 
-    const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId }),
-    });
-    expect(ownerTrialResponse.status).toBe(200);
-    const ownerTrialPayload = (await toJson(ownerTrialResponse)) as Record<string, unknown>;
-    expect(ownerTrialPayload.message).toBe('Started a 7-day premium trial.');
+      const memberTrialResponse = await member.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(memberTrialResponse.status).toBe(403);
 
-    const billingAfterTrial = await selectOrganizationBillingRow(organizationId);
-    expect(billingAfterTrial?.planCode).toBe('premium');
-    expect(billingAfterTrial?.subscriptionStatus).toBe('trialing');
-    expect(billingAfterTrial?.billingInterval).toBeNull();
-    expect(Boolean(billingAfterTrial?.cancelAtPeriodEnd)).toBe(false);
-    expect(billingAfterTrial?.currentPeriodStart).not.toBeNull();
-    expect(billingAfterTrial?.currentPeriodEnd).not.toBeNull();
-    expect(
-      Number(billingAfterTrial?.currentPeriodEnd ?? 0) -
-        Number(billingAfterTrial?.currentPeriodStart ?? 0),
-    ).toBe(7 * 24 * 60 * 60 * 1000);
+      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      expect(ownerTrialResponse.status).toBe(200);
+      const ownerTrialPayload = (await toJson(ownerTrialResponse)) as Record<string, unknown>;
+      expect(ownerTrialPayload.message).toBe('Started a 7-day premium trial.');
 
-    const trialBillingResponse = await owner.request(
-      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
-    );
-    expect(trialBillingResponse.status).toBe(200);
-    const trialBillingPayload = (await toJson(trialBillingResponse)) as Record<string, unknown>;
-    expect(trialBillingPayload.planCode).toBe('premium');
-    expect(trialBillingPayload.subscriptionStatus).toBe('trialing');
-    expect(trialBillingPayload.planState).toBe('premium_trial');
-    expect(trialBillingPayload.trialEndsAt).toBe(
-      new Date(Number(billingAfterTrial?.currentPeriodEnd)).toISOString(),
-    );
-    expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([
-      expect.objectContaining({
-        sequenceNumber: 1,
-        sourceKind: 'trial_start',
-        previousPlanState: 'free',
-        nextPlanState: 'premium_trial',
-        previousSubscriptionStatus: 'free',
-        nextSubscriptionStatus: 'trialing',
-        previousEntitlementState: 'free_only',
-        nextEntitlementState: 'premium_enabled',
-      }),
-    ]);
-    expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([]);
+      const billingAfterTrial = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterTrial?.planCode).toBe('premium');
+      expect(billingAfterTrial?.subscriptionStatus).toBe('trialing');
+      expect(billingAfterTrial?.billingInterval).toBe('month');
+      expect(Boolean(billingAfterTrial?.cancelAtPeriodEnd)).toBe(false);
+      expect(billingAfterTrial?.currentPeriodStart).not.toBeNull();
+      expect(billingAfterTrial?.currentPeriodEnd).not.toBeNull();
+      expect(
+        Number(billingAfterTrial?.currentPeriodEnd ?? 0) -
+          Number(billingAfterTrial?.currentPeriodStart ?? 0),
+      ).toBe(7 * 24 * 60 * 60 * 1000);
 
-    const duplicateTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId }),
-    });
-    expect(duplicateTrialResponse.status).toBe(409);
-    const duplicateTrialPayload = (await toJson(duplicateTrialResponse)) as Record<string, unknown>;
-    expect(duplicateTrialPayload.message).toBe(
-      'Organization already has an active premium trial or paid subscription.',
-    );
+      const trialBillingResponse = await owner.request(
+        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+      );
+      expect(trialBillingResponse.status).toBe(200);
+      const trialBillingPayload = (await toJson(trialBillingResponse)) as Record<string, unknown>;
+      expect(trialBillingPayload.planCode).toBe('premium');
+      expect(trialBillingPayload.subscriptionStatus).toBe('trialing');
+      expect(trialBillingPayload.planState).toBe('premium_trial');
+      expect(trialBillingPayload.trialEndsAt).toBe(
+        new Date(Number(billingAfterTrial?.currentPeriodEnd)).toISOString(),
+      );
+      expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([
+        expect.objectContaining({
+          sequenceNumber: 1,
+          sourceKind: 'trial_start',
+          previousPlanState: 'free',
+          nextPlanState: 'premium_trial',
+          previousSubscriptionStatus: 'free',
+          nextSubscriptionStatus: 'trialing',
+          previousEntitlementState: 'free_only',
+          nextEntitlementState: 'premium_enabled',
+        }),
+      ]);
+      expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([]);
 
-    await d1
-      .prepare(
-        'UPDATE organization_billing SET subscription_status = ?, billing_interval = ?, current_period_end = ? WHERE organization_id = ?',
-      )
-      .bind('active', 'month', 1779000000000, organizationId)
-      .run();
+      const duplicateTrialResponse = await owner.request(
+        '/api/v1/auth/organizations/billing/trial',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ organizationId }),
+        },
+      );
+      expect(duplicateTrialResponse.status).toBe(409);
+      const duplicateTrialPayload = (await toJson(duplicateTrialResponse)) as Record<
+        string,
+        unknown
+      >;
+      expect(duplicateTrialPayload.message).toBe(
+        'Organization already has an active premium trial or paid subscription.',
+      );
 
-    const activeConflictResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId }),
-    });
-    expect(activeConflictResponse.status).toBe(409);
-    const activeConflictPayload = (await toJson(activeConflictResponse)) as Record<string, unknown>;
-    expect(activeConflictPayload.message).toBe(
-      'Organization already has an active premium trial or paid subscription.',
-    );
+      await d1
+        .prepare(
+          'UPDATE organization_billing SET subscription_status = ?, billing_interval = ?, current_period_end = ? WHERE organization_id = ?',
+        )
+        .bind('active', 'month', 1779000000000, organizationId)
+        .run();
+
+      const activeConflictResponse = await owner.request(
+        '/api/v1/auth/organizations/billing/trial',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ organizationId }),
+        },
+      );
+      expect(activeConflictResponse.status).toBe(409);
+      const activeConflictPayload = (await toJson(activeConflictResponse)) as Record<
+        string,
+        unknown
+      >;
+      expect(activeConflictPayload.message).toBe(
+        'Organization already has an active premium trial or paid subscription.',
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it('creates a Stripe-backed trial subscription when premium price configuration is available', async () => {
