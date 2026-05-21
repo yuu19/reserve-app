@@ -7,10 +7,36 @@ import {
   readRecentBillingOperationAttempts,
   readReusableBillingOperationAttempt,
   type OrganizationBillingOperationPurpose,
-  type OrganizationBillingOperationState,
 } from '../../domain/billing/organization-billing-operations.js';
+import type { BillingOperationStore } from '../../features/billing/billing-operation.store.js';
 
-export const createOrganizationBillingOperationStore = (database: AuthRuntimeDatabase) => ({
+export const createOrganizationBillingOperationStore = ({
+  database,
+}: {
+  database: AuthRuntimeDatabase;
+}): BillingOperationStore & {
+  claimAttempt(
+    input: Omit<Parameters<typeof createBillingOperationAttempt>[0], 'database'>,
+  ): ReturnType<typeof createBillingOperationAttempt>;
+  readReusableAttempt(input: {
+    organizationId: string;
+    purpose: OrganizationBillingOperationPurpose;
+    billingInterval?: 'month' | 'year' | null;
+    reuseKey?: BillingOperationReuseKey | null;
+    now?: Date;
+  }): ReturnType<typeof readReusableBillingOperationAttempt>;
+  readRecent(
+    organizationId: string,
+    limit?: number,
+  ): ReturnType<typeof readRecentBillingOperationAttempts>;
+} => ({
+  createAttempt(input) {
+    return createBillingOperationAttempt({
+      database,
+      ...input,
+    });
+  },
+
   claimAttempt(input: {
     organizationId: string;
     purpose: OrganizationBillingOperationPurpose;
@@ -39,18 +65,16 @@ export const createOrganizationBillingOperationStore = (database: AuthRuntimeDat
     });
   },
 
-  markSucceeded(input: Omit<Parameters<typeof markBillingOperationAttemptSucceeded>[0], 'database'>) {
+  markSucceeded(
+    input: Omit<Parameters<typeof markBillingOperationAttemptSucceeded>[0], 'database'>,
+  ) {
     return markBillingOperationAttemptSucceeded({
       database,
       ...input,
     });
   },
 
-  markFailed(
-    input: Omit<Parameters<typeof markBillingOperationAttemptFailed>[0], 'database'> & {
-      state?: Extract<OrganizationBillingOperationState, 'conflict' | 'expired' | 'failed'>;
-    },
-  ) {
+  markFailed(input) {
     return markBillingOperationAttemptFailed({
       database,
       ...input,
