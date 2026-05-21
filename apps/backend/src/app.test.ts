@@ -2938,6 +2938,195 @@ describe('backend app', () => {
     });
   });
 
+  it('marks failed trial setup and portal billing operation attempts immediately', async () => {
+    const stripeMonthlyPriceId = 'price_operation_failure_monthly';
+    const authRuntimeWithStripe = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        STRIPE_SECRET_KEY: 'sk_test_operation_failure',
+        STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripeMonthlyPriceId,
+        STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED: 'true',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithStripe = createApp(authRuntimeWithStripe);
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const body = typeof init?.body === 'string' ? init.body : '';
+      const params = new URLSearchParams(body);
+
+      if (url === 'https://api.stripe.com/v1/customers') {
+        const organizationSuffix =
+          params.get('metadata[organizationId]')?.replace(/[^a-zA-Z0-9_]/g, '_') ??
+          crypto.randomUUID().replace(/-/g, '_');
+        return new Response(JSON.stringify({ id: `cus_failure_${organizationSuffix}` }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      if (url === 'https://api.stripe.com/v1/subscriptions') {
+        return new Response(
+          JSON.stringify({
+            error: { message: 'Stripe trial subscription failed.' },
+          }),
+          {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url === 'https://api.stripe.com/v1/checkout/sessions') {
+        return new Response(
+          JSON.stringify({
+            error: { message: 'Stripe setup checkout failed.' },
+          }),
+          {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      if (url === 'https://api.stripe.com/v1/billing_portal/sessions') {
+        return new Response(
+          JSON.stringify({
+            error: { message: 'Stripe billing portal failed.' },
+          }),
+          {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithStripe);
+      await signUpUser({
+        agent: owner,
+        name: 'Operation Failure Owner',
+        email: 'operation-failure-owner@example.com',
+      });
+
+      const trialOrganizationId = await createOrganization({
+        agent: owner,
+        name: 'Operation Failure Trial Org',
+        slug: `operation-failure-trial-${crypto.randomUUID().slice(0, 8)}`,
+      });
+      const trialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId: trialOrganizationId }),
+      });
+      expect(trialResponse.status).toBe(500);
+      expect(await toJson(trialResponse)).toMatchObject({
+        status: 'failed',
+        message: 'Stripe trial subscription failed.',
+      });
+
+      const retryTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId: trialOrganizationId }),
+      });
+      expect(retryTrialResponse.status).toBe(500);
+      const trialAttempts =
+        await selectOrganizationBillingOperationAttemptRows(trialOrganizationId);
+      expect(trialAttempts).toHaveLength(2);
+      expect(new Set(trialAttempts.map((attempt) => attempt.idempotencyKey)).size).toBe(2);
+      expect(trialAttempts).toEqual([
+        expect.objectContaining({
+          purpose: 'trial_start',
+          state: 'failed',
+          failureReason: 'Stripe trial subscription failed.',
+        }),
+        expect.objectContaining({
+          purpose: 'trial_start',
+          state: 'failed',
+          failureReason: 'Stripe trial subscription failed.',
+        }),
+      ]);
+
+      const setupOrganizationId = await createOrganization({
+        agent: owner,
+        name: 'Operation Failure Setup Org',
+        slug: `operation-failure-setup-${crypto.randomUUID().slice(0, 8)}`,
+      });
+      await setOrganizationBillingState({
+        organizationId: setupOrganizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        billingInterval: 'month',
+        currentPeriodEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+      const setupResponse = await owner.request(
+        '/api/v1/auth/organizations/billing/payment-method',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ organizationId: setupOrganizationId }),
+        },
+      );
+      expect(setupResponse.status).toBe(500);
+      expect(await toJson(setupResponse)).toMatchObject({
+        status: 'failed',
+        message: 'Stripe setup checkout failed.',
+      });
+      expect(await selectOrganizationBillingOperationAttemptRows(setupOrganizationId)).toEqual([
+        expect.objectContaining({
+          purpose: 'payment_method_setup',
+          state: 'failed',
+          failureReason: 'Stripe setup checkout failed.',
+        }),
+      ]);
+
+      const portalOrganizationId = await createOrganization({
+        agent: owner,
+        name: 'Operation Failure Portal Org',
+        slug: `operation-failure-portal-${crypto.randomUUID().slice(0, 8)}`,
+      });
+      await setOrganizationBillingState({
+        organizationId: portalOrganizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'active',
+        billingInterval: 'month',
+        currentPeriodStart: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        currentPeriodEnd: new Date(Date.now() + 29 * 24 * 60 * 60 * 1000),
+        stripeCustomerId: 'cus_operation_failure_portal',
+        stripeSubscriptionId: 'sub_operation_failure_portal',
+        stripePriceId: stripeMonthlyPriceId,
+      });
+      const portalResponse = await owner.request('/api/v1/auth/organizations/billing/portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId: portalOrganizationId }),
+      });
+      expect(portalResponse.status).toBe(500);
+      expect(await toJson(portalResponse)).toMatchObject({
+        status: 'failed',
+        message: 'Stripe billing portal failed.',
+      });
+      expect(await selectOrganizationBillingOperationAttemptRows(portalOrganizationId)).toEqual([
+        expect.objectContaining({
+          purpose: 'billing_portal',
+          state: 'failed',
+          failureReason: 'Stripe billing portal failed.',
+        }),
+      ]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('normalizes invoice payment webhooks, suppresses duplicates, and records payment issue notifications', async () => {
     const stripeWebhookSecret = 'whsec_test_invoice_payment_events';
     const stripeMonthlyPriceId = 'price_invoice_payment_monthly';

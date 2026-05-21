@@ -724,6 +724,10 @@ const createOrganizationBillingPortalRoute = createRoute({
       description: 'Stripe billing is not configured',
       content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
+    500: {
+      description: 'Stripe portal creation failed',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
   },
 });
 
@@ -767,6 +771,10 @@ const createOrganizationBillingTrialRoute = createRoute({
       description: 'organizationId is required',
       content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
+    500: {
+      description: 'Premium trial start failed',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
   },
 });
 
@@ -808,6 +816,10 @@ const createOrganizationBillingPaymentMethodRoute = createRoute({
     },
     422: {
       description: 'Stripe billing is not configured',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
+    500: {
+      description: 'Stripe setup checkout creation failed',
       content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
   },
@@ -955,6 +967,16 @@ const buildBillingHandoff = ({
     reused,
     operationAttemptId: attempt.id,
   };
+};
+
+const toBillingOperationFailureMessage = (error: unknown, fallbackMessage: string): string => {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error.length > 0) {
+    return error;
+  }
+  return fallbackMessage;
 };
 
 export const registerBillingRoutes = (
@@ -1594,98 +1616,116 @@ export const registerBillingRoutes = (
           409,
         );
       }
-      const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
-        database,
-        env,
-        organizationId,
-      });
-      const e2eStripeTestClockId = resolveE2eStripeTestClockId({
-        env,
-        headers: c.req.raw.headers,
-      });
-      let stripeCustomerId = billing?.stripeCustomerId ?? null;
-      let stripeSubscriptionId: string | null = null;
-      let stripePriceId: string | null = null;
-      let billingInterval: 'month' | 'year' | null = null;
-      let trialStartedAt: Date | undefined;
-      let trialEndsAt: Date | undefined;
-
-      if (env.STRIPE_SECRET_KEY?.trim() && defaultTrialPrice) {
-        const provider = createStripeBillingProvider({
+      try {
+        const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+          database,
           env,
-          testClockId: e2eStripeTestClockId,
+          organizationId,
         });
-        if (!stripeCustomerId) {
-          const customer = await provider.createCustomer({
-            idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
+        const e2eStripeTestClockId = resolveE2eStripeTestClockId({
+          env,
+          headers: c.req.raw.headers,
+        });
+        let stripeCustomerId = billing?.stripeCustomerId ?? null;
+        let stripeSubscriptionId: string | null = null;
+        let stripePriceId: string | null = null;
+        let billingInterval: 'month' | 'year' | null = null;
+        let trialStartedAt: Date | undefined;
+        let trialEndsAt: Date | undefined;
+
+        if (env.STRIPE_SECRET_KEY?.trim() && defaultTrialPrice) {
+          const provider = createStripeBillingProvider({
+            env,
+            testClockId: e2eStripeTestClockId,
+          });
+          if (!stripeCustomerId) {
+            const customer = await provider.createCustomer({
+              idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
+              metadata: {
+                billingPurpose: 'organization_trial',
+                organizationId,
+                billingOperationAttemptId: operation.attempt.id,
+              },
+            });
+            stripeCustomerId = customer.id;
+          }
+
+          const subscription = await provider.createTrialSubscription({
+            customerId: stripeCustomerId,
+            priceId: defaultTrialPrice.priceId,
+            trialDays: ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
+            idempotencyKey: operation.attempt.idempotencyKey,
             metadata: {
-              billingPurpose: 'organization_trial',
+              billingPurpose: 'organization_plan',
               organizationId,
+              planCode: 'premium',
+              billingInterval: defaultTrialPrice.billingInterval,
               billingOperationAttemptId: operation.attempt.id,
             },
           });
-          stripeCustomerId = customer.id;
+          stripeSubscriptionId = subscription.id;
+          stripePriceId = subscription.priceId ?? defaultTrialPrice.priceId;
+          billingInterval = defaultTrialPrice.billingInterval;
+          trialStartedAt = subscription.currentPeriodStart ?? undefined;
+          trialEndsAt = subscription.currentPeriodEnd ?? undefined;
         }
 
-        const subscription = await provider.createTrialSubscription({
-          customerId: stripeCustomerId,
-          priceId: defaultTrialPrice.priceId,
-          trialDays: ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
-          idempotencyKey: operation.attempt.idempotencyKey,
-          metadata: {
-            billingPurpose: 'organization_plan',
-            organizationId,
-            planCode: 'premium',
-            billingInterval: defaultTrialPrice.billingInterval,
-            billingOperationAttemptId: operation.attempt.id,
-          },
-        });
-        stripeSubscriptionId = subscription.id;
-        stripePriceId = subscription.priceId ?? defaultTrialPrice.priceId;
-        billingInterval = defaultTrialPrice.billingInterval;
-        trialStartedAt = subscription.currentPeriodStart ?? undefined;
-        trialEndsAt = subscription.currentPeriodEnd ?? undefined;
-      }
-
-      await startOrganizationPremiumTrial({
-        database,
-        organizationId,
-        trialStartedAt,
-        trialEndsAt,
-        stripeCustomerId,
-        stripeSubscriptionId,
-        stripePriceId,
-        billingInterval,
-      });
-      const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
-        database,
-        env,
-        organizationId,
-      });
-      await appendOrganizationBillingAuditEvent({
-        database,
-        organizationId,
-        sourceKind: 'trial_start',
-        previousSnapshot: previousBillingSnapshot,
-        nextSnapshot: nextBillingSnapshot,
-        sourceContext: 'owner_started_premium_trial',
-      });
-      await markBillingOperationAttemptSucceeded({
-        database,
-        attemptId: operation.attempt.id,
-        stripeCustomerId,
-        stripeSubscriptionId,
-      });
-
-      return c.json(
-        await buildBillingActionEnvelope({
+        await startOrganizationPremiumTrial({
+          database,
           organizationId,
-          role,
-          status: 'succeeded',
-          message: `Started a ${ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS}-day premium trial.`,
-        }),
-        200,
-      );
+          trialStartedAt,
+          trialEndsAt,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripePriceId,
+          billingInterval,
+        });
+        const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+          database,
+          env,
+          organizationId,
+        });
+        await appendOrganizationBillingAuditEvent({
+          database,
+          organizationId,
+          sourceKind: 'trial_start',
+          previousSnapshot: previousBillingSnapshot,
+          nextSnapshot: nextBillingSnapshot,
+          sourceContext: 'owner_started_premium_trial',
+        });
+        await markBillingOperationAttemptSucceeded({
+          database,
+          attemptId: operation.attempt.id,
+          stripeCustomerId,
+          stripeSubscriptionId,
+        });
+
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'succeeded',
+            message: `Started a ${ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS}-day premium trial.`,
+          }),
+          200,
+        );
+      } catch (error) {
+        const message = toBillingOperationFailureMessage(error, 'Premium trial start failed.');
+        await markBillingOperationAttemptFailed({
+          database,
+          attemptId: operation.attempt.id,
+          failureReason: message,
+        });
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'failed',
+            message,
+          }),
+          500,
+        );
+      }
     })();
   });
 
@@ -1772,78 +1812,99 @@ export const registerBillingRoutes = (
         );
       }
 
-      const provider = createStripeBillingProvider({ env });
-      let customerId = billing.stripeCustomerId;
-      if (!customerId) {
-        const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
-          database,
-          env,
-          organizationId,
-        });
-        const customer = await provider.createCustomer({
-          idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
+      try {
+        const provider = createStripeBillingProvider({ env });
+        let customerId = billing.stripeCustomerId;
+        if (!customerId) {
+          const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+            database,
+            env,
+            organizationId,
+          });
+          const customer = await provider.createCustomer({
+            idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
+            metadata: {
+              billingPurpose: 'organization_payment_method',
+              organizationId,
+              billingOperationAttemptId: operation.attempt.id,
+            },
+          });
+          customerId = customer.id;
+          await updateOrganizationBillingStripeCustomerId({
+            database,
+            organizationId,
+            stripeCustomerId: customerId,
+          });
+          const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+            database,
+            env,
+            organizationId,
+          });
+          await appendOrganizationBillingAuditEvent({
+            database,
+            organizationId,
+            sourceKind: 'payment_method_customer_linked',
+            previousSnapshot: previousBillingSnapshot,
+            nextSnapshot: nextBillingSnapshot,
+            sourceContext: 'stripe_customer_created_for_payment_method_registration',
+          });
+        }
+
+        const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+        const contractsUrl = `${webBaseUrl}/admin/contracts`;
+        const session = await provider.createSetupCheckoutSession({
+          customerId,
+          successUrl: `${contractsUrl}?paymentMethod=success`,
+          cancelUrl: `${contractsUrl}?paymentMethod=cancel`,
+          idempotencyKey: operation.attempt.idempotencyKey,
           metadata: {
             billingPurpose: 'organization_payment_method',
             organizationId,
             billingOperationAttemptId: operation.attempt.id,
           },
         });
-        customerId = customer.id;
-        await updateOrganizationBillingStripeCustomerId({
+        const succeededAttempt = await markBillingOperationAttemptSucceeded({
           database,
-          organizationId,
+          attemptId: operation.attempt.id,
+          handoffUrl: session.url,
+          handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
           stripeCustomerId: customerId,
+          stripeSubscriptionId: billing.stripeSubscriptionId ?? null,
+          stripeCheckoutSessionId: session.id,
         });
-        const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'processing',
+            message: 'Payment method setup handoff is ready.',
+            handoffAttempt: succeededAttempt,
+            handoffPurpose: 'payment_method_setup',
+            handoffReused: false,
+          }),
+          200,
+        );
+      } catch (error) {
+        const message = toBillingOperationFailureMessage(
+          error,
+          'Payment method setup handoff failed.',
+        );
+        await markBillingOperationAttemptFailed({
           database,
-          env,
-          organizationId,
+          attemptId: operation.attempt.id,
+          failureReason: message,
         });
-        await appendOrganizationBillingAuditEvent({
-          database,
-          organizationId,
-          sourceKind: 'payment_method_customer_linked',
-          previousSnapshot: previousBillingSnapshot,
-          nextSnapshot: nextBillingSnapshot,
-          sourceContext: 'stripe_customer_created_for_payment_method_registration',
-        });
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'failed',
+            message,
+          }),
+          500,
+        );
       }
-
-      const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
-      const contractsUrl = `${webBaseUrl}/admin/contracts`;
-      const session = await provider.createSetupCheckoutSession({
-        customerId,
-        successUrl: `${contractsUrl}?paymentMethod=success`,
-        cancelUrl: `${contractsUrl}?paymentMethod=cancel`,
-        idempotencyKey: operation.attempt.idempotencyKey,
-        metadata: {
-          billingPurpose: 'organization_payment_method',
-          organizationId,
-          billingOperationAttemptId: operation.attempt.id,
-        },
-      });
-      const succeededAttempt = await markBillingOperationAttemptSucceeded({
-        database,
-        attemptId: operation.attempt.id,
-        handoffUrl: session.url,
-        handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: billing.stripeSubscriptionId ?? null,
-        stripeCheckoutSessionId: session.id,
-      });
-
-      return c.json(
-        await buildBillingActionEnvelope({
-          organizationId,
-          role,
-          status: 'processing',
-          message: 'Payment method setup handoff is ready.',
-          handoffAttempt: succeededAttempt,
-          handoffPurpose: 'payment_method_setup',
-          handoffReused: false,
-        }),
-        200,
-      );
     })();
   });
 
@@ -2043,40 +2104,58 @@ export const registerBillingRoutes = (
         );
       }
 
-      const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
-      const contractsUrl = `${webBaseUrl}/admin/contracts`;
-      const provider = createStripeBillingProvider({ env });
-      const portalSession = await provider.createBillingPortalSession({
-        customerId: billing.stripeCustomerId,
-        returnUrl: contractsUrl,
-        idempotencyKey: operation.attempt.idempotencyKey,
-        flow: {
-          type: 'subscription_update',
-          subscriptionId: billing.stripeSubscriptionId,
-        },
-      });
-      const succeededAttempt = await markBillingOperationAttemptSucceeded({
-        database,
-        attemptId: operation.attempt.id,
-        handoffUrl: portalSession.url,
-        handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
-        stripeCustomerId: billing.stripeCustomerId,
-        stripeSubscriptionId: billing.stripeSubscriptionId,
-        stripePortalSessionId: portalSession.id,
-      });
+      try {
+        const webBaseUrl = (env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
+        const contractsUrl = `${webBaseUrl}/admin/contracts`;
+        const provider = createStripeBillingProvider({ env });
+        const portalSession = await provider.createBillingPortalSession({
+          customerId: billing.stripeCustomerId,
+          returnUrl: contractsUrl,
+          idempotencyKey: operation.attempt.idempotencyKey,
+          flow: {
+            type: 'subscription_update',
+            subscriptionId: billing.stripeSubscriptionId,
+          },
+        });
+        const succeededAttempt = await markBillingOperationAttemptSucceeded({
+          database,
+          attemptId: operation.attempt.id,
+          handoffUrl: portalSession.url,
+          handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
+          stripeCustomerId: billing.stripeCustomerId,
+          stripeSubscriptionId: billing.stripeSubscriptionId,
+          stripePortalSessionId: portalSession.id,
+        });
 
-      return c.json(
-        await buildBillingActionEnvelope({
-          organizationId,
-          role,
-          status: 'processing',
-          message: 'Billing portal handoff is ready.',
-          handoffAttempt: succeededAttempt,
-          handoffPurpose: 'billing_portal',
-          handoffReused: false,
-        }),
-        200,
-      );
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'processing',
+            message: 'Billing portal handoff is ready.',
+            handoffAttempt: succeededAttempt,
+            handoffPurpose: 'billing_portal',
+            handoffReused: false,
+          }),
+          200,
+        );
+      } catch (error) {
+        const message = toBillingOperationFailureMessage(error, 'Billing portal handoff failed.');
+        await markBillingOperationAttemptFailed({
+          database,
+          attemptId: operation.attempt.id,
+          failureReason: message,
+        });
+        return c.json(
+          await buildBillingActionEnvelope({
+            organizationId,
+            role,
+            status: 'failed',
+            message,
+          }),
+          500,
+        );
+      }
     })();
   });
 
