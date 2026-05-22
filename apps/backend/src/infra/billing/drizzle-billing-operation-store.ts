@@ -1,0 +1,306 @@
+import {
+  BILLING_OPERATION_PENDING_STALE_MS,
+  buildBillingOperationIdempotencyKey,
+  type BillingOperationAttempt,
+  type BillingOperationAttemptState,
+  type BillingOperationPurpose,
+  type BillingOperationReuseKey,
+  type BillingOperationStore,
+  type BillingProviderCode,
+} from '@repo/saas-billing-core';
+import { and, desc, eq, gt, lt, max } from 'drizzle-orm';
+import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
+import * as dbSchema from '../db/schema.js';
+
+const normalizeProvider = (value: string): BillingProviderCode =>
+  value === 'stripe' ? value : 'stripe';
+
+const normalizePurpose = (value: string): BillingOperationPurpose => {
+  if (
+    value === 'start_trial_subscription' ||
+    value === 'create_subscription_checkout' ||
+    value === 'create_setup_checkout' ||
+    value === 'create_portal_session'
+  ) {
+    return value;
+  }
+  return 'create_subscription_checkout';
+};
+
+const normalizeState = (value: string): BillingOperationAttemptState => {
+  if (
+    value === 'processing' ||
+    value === 'succeeded' ||
+    value === 'failed' ||
+    value === 'expired' ||
+    value === 'conflict'
+  ) {
+    return value;
+  }
+  return 'failed';
+};
+
+const toAttempt = (
+  row: typeof dbSchema.billingOperationAttempt.$inferSelect,
+): BillingOperationAttempt => ({
+  id: row.id,
+  billingAccountId: row.billingAccountId,
+  purpose: normalizePurpose(row.purpose),
+  reuseKey: row.reuseKey as BillingOperationReuseKey,
+  attemptNumber: row.attemptNumber,
+  idempotencyKey: row.idempotencyKey,
+  state: normalizeState(row.state),
+  handoffUrl: row.handoffUrl ?? null,
+  handoffExpiresAt: row.handoffExpiresAt ?? null,
+  provider: normalizeProvider(row.provider),
+  providerCustomerId: row.providerCustomerId ?? null,
+  providerSubscriptionId: row.providerSubscriptionId ?? null,
+  providerCheckoutSessionId: row.providerCheckoutSessionId ?? null,
+  providerPortalSessionId: row.providerPortalSessionId ?? null,
+  failureReason: row.failureReason ?? null,
+  createdByUserId: row.createdByUserId ?? null,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+const readReusableSucceededAttempt = async ({
+  database,
+  billingAccountId,
+  reuseKey,
+  now,
+}: {
+  database: AuthRuntimeDatabase;
+  billingAccountId: string;
+  reuseKey: BillingOperationReuseKey;
+  now: Date;
+}) => {
+  const rows = await database
+    .select()
+    .from(dbSchema.billingOperationAttempt)
+    .where(
+      and(
+        eq(dbSchema.billingOperationAttempt.billingAccountId, billingAccountId),
+        eq(dbSchema.billingOperationAttempt.reuseKey, reuseKey),
+        eq(dbSchema.billingOperationAttempt.state, 'succeeded'),
+        gt(dbSchema.billingOperationAttempt.handoffExpiresAt, now),
+      ),
+    )
+    .orderBy(desc(dbSchema.billingOperationAttempt.createdAt))
+    .limit(1);
+
+  const row = rows[0];
+  return row?.handoffUrl && row.handoffExpiresAt && row.handoffExpiresAt.getTime() > now.getTime()
+    ? toAttempt(row)
+    : null;
+};
+
+const readFreshProcessingAttempt = async ({
+  database,
+  billingAccountId,
+  reuseKey,
+  now,
+}: {
+  database: AuthRuntimeDatabase;
+  billingAccountId: string;
+  reuseKey: BillingOperationReuseKey;
+  now: Date;
+}) => {
+  const staleBefore = new Date(now.getTime() - BILLING_OPERATION_PENDING_STALE_MS);
+  const rows = await database
+    .select()
+    .from(dbSchema.billingOperationAttempt)
+    .where(
+      and(
+        eq(dbSchema.billingOperationAttempt.billingAccountId, billingAccountId),
+        eq(dbSchema.billingOperationAttempt.reuseKey, reuseKey),
+        eq(dbSchema.billingOperationAttempt.state, 'processing'),
+        gt(dbSchema.billingOperationAttempt.createdAt, staleBefore),
+      ),
+    )
+    .orderBy(desc(dbSchema.billingOperationAttempt.createdAt))
+    .limit(1);
+  return rows[0] ? toAttempt(rows[0]) : null;
+};
+
+const readNextAttemptNumber = async ({
+  database,
+  billingAccountId,
+  reuseKey,
+}: {
+  database: AuthRuntimeDatabase;
+  billingAccountId: string;
+  reuseKey: BillingOperationReuseKey;
+}) => {
+  const rows = await database
+    .select({
+      attemptNumber: max(dbSchema.billingOperationAttempt.attemptNumber),
+    })
+    .from(dbSchema.billingOperationAttempt)
+    .where(
+      and(
+        eq(dbSchema.billingOperationAttempt.billingAccountId, billingAccountId),
+        eq(dbSchema.billingOperationAttempt.reuseKey, reuseKey),
+      ),
+    );
+
+  return Number(rows[0]?.attemptNumber ?? 0) + 1;
+};
+
+export const createDrizzleBillingOperationStore = ({
+  database,
+}: {
+  database: AuthRuntimeDatabase;
+}): BillingOperationStore => ({
+  async claimAttempt({
+    billingAccountId,
+    purpose,
+    reuseKey,
+    provider,
+    createdByUserId = null,
+    now,
+  }) {
+    const reusableSucceeded = await readReusableSucceededAttempt({
+      database,
+      billingAccountId,
+      reuseKey,
+      now,
+    });
+    if (reusableSucceeded) {
+      return {
+        kind: 'reused_succeeded',
+        attempt: reusableSucceeded,
+      };
+    }
+
+    const freshProcessing = await readFreshProcessingAttempt({
+      database,
+      billingAccountId,
+      reuseKey,
+      now,
+    });
+    if (freshProcessing) {
+      return {
+        kind: 'already_processing_fresh',
+        attempt: freshProcessing,
+      };
+    }
+
+    await database
+      .update(dbSchema.billingOperationAttempt)
+      .set({
+        state: 'expired',
+        failureReason: 'processing attempt exceeded freshness window',
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(dbSchema.billingOperationAttempt.billingAccountId, billingAccountId),
+          eq(dbSchema.billingOperationAttempt.reuseKey, reuseKey),
+          eq(dbSchema.billingOperationAttempt.state, 'processing'),
+          lt(
+            dbSchema.billingOperationAttempt.createdAt,
+            new Date(now.getTime() - BILLING_OPERATION_PENDING_STALE_MS),
+          ),
+        ),
+      );
+
+    const attemptNumber = await readNextAttemptNumber({
+      database,
+      billingAccountId,
+      reuseKey,
+    });
+    const idempotencyKey = buildBillingOperationIdempotencyKey({
+      reuseKey,
+      attemptNumber,
+    });
+
+    const rows = await database
+      .insert(dbSchema.billingOperationAttempt)
+      .values({
+        id: crypto.randomUUID(),
+        billingAccountId,
+        purpose,
+        reuseKey,
+        attemptNumber,
+        idempotencyKey,
+        state: 'processing',
+        provider,
+        createdByUserId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    if (rows[0]) {
+      return {
+        kind: 'claimed',
+        attempt: toAttempt(rows[0]),
+      };
+    }
+
+    const existingRows = await database
+      .select()
+      .from(dbSchema.billingOperationAttempt)
+      .where(eq(dbSchema.billingOperationAttempt.idempotencyKey, idempotencyKey))
+      .limit(1);
+    if (existingRows[0]) {
+      return {
+        kind: 'already_processing_fresh',
+        attempt: toAttempt(existingRows[0]),
+      };
+    }
+
+    throw new Error('BILLING_OPERATION_ATTEMPT_CLAIM_FAILED');
+  },
+
+  async markSucceeded({
+    attemptId,
+    handoffUrl = null,
+    handoffExpiresAt = null,
+    providerCustomerId = null,
+    providerSubscriptionId = null,
+    providerCheckoutSessionId = null,
+    providerPortalSessionId = null,
+  }) {
+    const rows = await database
+      .update(dbSchema.billingOperationAttempt)
+      .set({
+        state: 'succeeded',
+        handoffUrl,
+        handoffExpiresAt,
+        providerCustomerId,
+        providerSubscriptionId,
+        providerCheckoutSessionId,
+        providerPortalSessionId,
+        failureReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(dbSchema.billingOperationAttempt.id, attemptId))
+      .returning();
+    return rows[0] ? toAttempt(rows[0]) : null;
+  },
+
+  async markFailed({ attemptId, state = 'failed', failureReason }) {
+    const rows = await database
+      .update(dbSchema.billingOperationAttempt)
+      .set({
+        state,
+        failureReason,
+        updatedAt: new Date(),
+      })
+      .where(eq(dbSchema.billingOperationAttempt.id, attemptId))
+      .returning();
+    return rows[0] ? toAttempt(rows[0]) : null;
+  },
+
+  async readRecent({ billingAccountId, limit = 10 }) {
+    const rows = await database
+      .select()
+      .from(dbSchema.billingOperationAttempt)
+      .where(eq(dbSchema.billingOperationAttempt.billingAccountId, billingAccountId))
+      .orderBy(desc(dbSchema.billingOperationAttempt.createdAt))
+      .limit(Math.max(1, Math.min(Math.trunc(limit), 50)));
+    return rows.map(toAttempt);
+  },
+});

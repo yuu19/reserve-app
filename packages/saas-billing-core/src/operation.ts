@@ -1,4 +1,9 @@
-import type { BillingInterval, BillingOperationPurpose, BillingSubjectType } from './types.js';
+import type {
+  BillingInterval,
+  BillingOperationPurpose,
+  BillingProviderCode,
+  BillingSubjectType,
+} from './types.js';
 
 export type BillingOperationReuseKey =
   | `start_trial_subscription:${BillingSubjectType}:${string}:${string}`
@@ -17,6 +22,81 @@ export type BillingOperationHandoff = {
   reused: boolean;
 };
 
+export type BillingOperationAttemptState =
+  | 'processing'
+  | 'succeeded'
+  | 'failed'
+  | 'expired'
+  | 'conflict';
+
+export type BillingOperationAttempt = {
+  id: string;
+  billingAccountId: string;
+  purpose: BillingOperationPurpose;
+  reuseKey: BillingOperationReuseKey;
+  attemptNumber: number;
+  idempotencyKey: string;
+  state: BillingOperationAttemptState;
+  handoffUrl: string | null;
+  handoffExpiresAt: Date | null;
+  provider: BillingProviderCode;
+  providerCustomerId: string | null;
+  providerSubscriptionId: string | null;
+  providerCheckoutSessionId: string | null;
+  providerPortalSessionId: string | null;
+  failureReason: string | null;
+  createdByUserId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ClaimBillingOperationAttemptResult =
+  | { kind: 'claimed'; attempt: BillingOperationAttempt }
+  | { kind: 'reused_succeeded'; attempt: BillingOperationAttempt }
+  | { kind: 'already_processing_fresh'; attempt: BillingOperationAttempt };
+
+export interface BillingOperationStore {
+  claimAttempt(input: {
+    billingAccountId: string;
+    purpose: BillingOperationPurpose;
+    reuseKey: BillingOperationReuseKey;
+    provider: BillingProviderCode;
+    createdByUserId?: string | null;
+    now: Date;
+  }): Promise<ClaimBillingOperationAttemptResult>;
+
+  markSucceeded(input: {
+    attemptId: string;
+    handoffUrl?: string | null;
+    handoffExpiresAt?: Date | null;
+    providerCustomerId?: string | null;
+    providerSubscriptionId?: string | null;
+    providerCheckoutSessionId?: string | null;
+    providerPortalSessionId?: string | null;
+  }): Promise<BillingOperationAttempt | null>;
+
+  markFailed(input: {
+    attemptId: string;
+    state?: Extract<BillingOperationAttemptState, 'conflict' | 'expired' | 'failed'>;
+    failureReason: string;
+  }): Promise<BillingOperationAttempt | null>;
+
+  readRecent(input: {
+    billingAccountId: string;
+    limit?: number;
+  }): Promise<BillingOperationAttempt[]>;
+}
+
+export const BILLING_OPERATION_PENDING_STALE_MS = 2 * 60 * 1000;
+
+export const buildBillingOperationIdempotencyKey = ({
+  reuseKey,
+  attemptNumber,
+}: {
+  reuseKey: BillingOperationReuseKey;
+  attemptNumber: number;
+}) => `billing:${reuseKey}:${attemptNumber}`;
+
 export const buildStartTrialSubscriptionReuseKey = ({
   subjectType,
   subjectId,
@@ -25,8 +105,7 @@ export const buildStartTrialSubscriptionReuseKey = ({
   subjectType: BillingSubjectType;
   subjectId: string;
   planCode: string;
-}): BillingOperationReuseKey =>
-  `start_trial_subscription:${subjectType}:${subjectId}:${planCode}`;
+}): BillingOperationReuseKey => `start_trial_subscription:${subjectType}:${subjectId}:${planCode}`;
 
 export const buildSubscriptionCheckoutReuseKey = ({
   subjectType,
