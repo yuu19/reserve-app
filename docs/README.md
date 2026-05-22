@@ -8,6 +8,7 @@
 - [authorization.md](./authorization.md)
 - [billing.md](./billing.md)
 - [database-er.md](./database-er.md)
+- [database-er-reference.html](./database-er-reference.html)（現行DBのテーブル定義、リレーション、静的ER図）
 - [playwright-report-r2.md](./playwright-report-r2.md)
 - [test-strategy.md](./test-strategy.md)
 

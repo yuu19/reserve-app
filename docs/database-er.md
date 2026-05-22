@@ -1,7 +1,9 @@
 # DB説明とER（Org + Classroom）
 
-最終更新: 2026-03-10
-参照: `apps/backend/src/db/schema.ts`
+最終更新: 2026-05-23
+参照: `apps/backend/src/infra/db/schema.ts`
+
+現行DBの全テーブル、リレーション、静的ER図は [database-er-reference.html](./database-er-reference.html) を参照。
 
 ## 1. 概要
 
