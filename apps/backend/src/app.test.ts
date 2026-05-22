@@ -297,6 +297,26 @@ const selectStripeWebhookEventRow = async (eventId: string) => {
     }>();
 };
 
+const selectBillingProviderEventRow = async (eventId: string) => {
+  return d1
+    .prepare(
+      'SELECT provider_event_id as providerEventId, event_type as eventType, payload_hash as payloadHash, processing_status as processingStatus, receipt_status as receiptStatus, duplicate_detected as duplicateDetected, attempt_count as attemptCount, processing_started_at as processingStartedAt, last_attempt_at as lastAttemptAt, processed_at as processedAt FROM billing_provider_event WHERE provider = ? AND provider_event_id = ? AND scope = ? LIMIT 1',
+    )
+    .bind('stripe', eventId, 'billing')
+    .first<{
+      providerEventId: string;
+      eventType: string;
+      payloadHash: string;
+      processingStatus: string;
+      receiptStatus: string;
+      duplicateDetected: number | boolean;
+      attemptCount: number;
+      processingStartedAt: number | null;
+      lastAttemptAt: number | null;
+      processedAt: number | null;
+    }>();
+};
+
 const countStripeWebhookEventRows = async (eventId: string) => {
   const row = await d1
     .prepare('SELECT COUNT(*) as count FROM stripe_webhook_event WHERE id = ?')
@@ -927,7 +947,7 @@ const insertStripeWebhookEventRow = async ({
 const selectOrganizationBillingOperationAttemptRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT id, purpose, billing_interval as billingInterval, state, handoff_url as handoffUrl, handoff_expires_at as handoffExpiresAt, stripe_checkout_session_id as stripeCheckoutSessionId, stripe_portal_session_id as stripePortalSessionId, idempotency_key as idempotencyKey, failure_reason as failureReason FROM organization_billing_operation_attempt WHERE organization_id = ? ORDER BY created_at ASC',
+      "SELECT o.id, CASE o.purpose WHEN 'start_trial_subscription' THEN 'trial_start' WHEN 'create_setup_checkout' THEN 'payment_method_setup' WHEN 'create_portal_session' THEN 'billing_portal' ELSE 'paid_checkout' END as purpose, CASE WHEN o.reuse_key LIKE '%:month' THEN 'month' WHEN o.reuse_key LIKE '%:year' THEN 'year' ELSE NULL END as billingInterval, o.state, o.handoff_url as handoffUrl, o.handoff_expires_at as handoffExpiresAt, o.provider_checkout_session_id as stripeCheckoutSessionId, o.provider_portal_session_id as stripePortalSessionId, o.idempotency_key as idempotencyKey, o.failure_reason as failureReason FROM billing_operation_attempt o INNER JOIN billing_account a ON a.id = o.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? ORDER BY o.created_at ASC",
     )
     .bind(organizationId)
     .all<{
@@ -1038,6 +1058,94 @@ const selectOrganizationBillingDocumentReferenceRows = async (organizationId: st
       availability: string;
       ownerFacingStatus: string;
       providerDerived: number | boolean;
+    }>();
+
+  return result.results;
+};
+
+const selectBillingPaymentIssueRowBySubject = async (organizationId: string) => {
+  return d1
+    .prepare(
+      'SELECT i.state, i.issue_started_at as issueStartedAt, i.issue_started_at_source as issueStartedAtSource, i.past_due_grace_ends_at as pastDueGraceEndsAt, i.latest_provider_event_id as latestProviderEventId, i.latest_invoice_id as latestInvoiceId, i.latest_payment_intent_id as latestPaymentIntentId FROM billing_payment_issue i INNER JOIN billing_account a ON a.id = i.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? LIMIT 1',
+    )
+    .bind('organization', organizationId)
+    .first<{
+      state: string;
+      issueStartedAt: number | null;
+      issueStartedAtSource: string;
+      pastDueGraceEndsAt: number | null;
+      latestProviderEventId: string | null;
+      latestInvoiceId: string | null;
+      latestPaymentIntentId: string | null;
+    }>();
+};
+
+const selectBillingPaymentIssueEventRowsBySubject = async (organizationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT e.event_type as eventType, e.provider_event_id as providerEventId, e.provider_invoice_id as providerInvoiceId, e.provider_payment_intent_id as providerPaymentIntentId, e.occurred_at as occurredAt FROM billing_payment_issue_event e INNER JOIN billing_account a ON a.id = e.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? ORDER BY e.created_at ASC',
+    )
+    .bind('organization', organizationId)
+    .all<{
+      eventType: string;
+      providerEventId: string | null;
+      providerInvoiceId: string | null;
+      providerPaymentIntentId: string | null;
+      occurredAt: number | null;
+    }>();
+
+  return result.results;
+};
+
+const selectBillingNotificationRowsBySubject = async (organizationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT n.notification_kind as notificationKind, n.recipient_email as recipientEmail, n.delivery_status as deliveryStatus, n.failure_reason as failureReason, n.provider_event_id as providerEventId, n.provider_invoice_id as providerInvoiceId FROM billing_notification n INNER JOIN billing_account a ON a.id = n.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? ORDER BY n.created_at ASC',
+    )
+    .bind('organization', organizationId)
+    .all<{
+      notificationKind: string;
+      recipientEmail: string;
+      deliveryStatus: string;
+      failureReason: string | null;
+      providerEventId: string | null;
+      providerInvoiceId: string | null;
+    }>();
+
+  return result.results;
+};
+
+const selectBillingDocumentReferenceRowsBySubject = async (organizationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT d.document_kind as documentKind, d.provider_document_id as providerDocumentId, d.availability, d.owner_facing_status as ownerFacingStatus, d.provider_derived as providerDerived FROM billing_document_reference d INNER JOIN billing_account a ON a.id = d.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? ORDER BY d.created_at ASC',
+    )
+    .bind('organization', organizationId)
+    .all<{
+      documentKind: string;
+      providerDocumentId: string;
+      availability: string;
+      ownerFacingStatus: string;
+      providerDerived: number | boolean;
+    }>();
+
+  return result.results;
+};
+
+const selectBillingSignalRowsBySubject = async (organizationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT s.signal_kind as signalKind, s.signal_status as signalStatus, s.source_kind as sourceKind, s.reason, s.provider_event_id as providerEventId, s.provider_plan_state as providerPlanState, s.provider_subscription_status as providerSubscriptionStatus FROM billing_signal s INNER JOIN billing_account a ON a.id = s.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? ORDER BY s.created_at ASC',
+    )
+    .bind('organization', organizationId)
+    .all<{
+      signalKind: string;
+      signalStatus: string;
+      sourceKind: string;
+      reason: string;
+      providerEventId: string | null;
+      providerPlanState: string | null;
+      providerSubscriptionStatus: string | null;
     }>();
 
   return result.results;
@@ -2713,7 +2821,7 @@ describe('backend app', () => {
 
       await d1
         .prepare(
-          "UPDATE organization_billing_operation_attempt SET handoff_expires_at = ?, idempotency_key = idempotency_key || ':expired' WHERE organization_id = ? AND purpose = 'payment_method_setup'",
+          "UPDATE billing_operation_attempt SET handoff_expires_at = ?, idempotency_key = idempotency_key || ':expired' WHERE billing_account_id IN (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ?) AND purpose = 'create_setup_checkout'",
         )
         .bind(Date.now() - 1_000, organizationId)
         .run();
@@ -2856,7 +2964,7 @@ describe('backend app', () => {
 
       await d1
         .prepare(
-          "UPDATE organization_billing_operation_attempt SET handoff_expires_at = ?, idempotency_key = idempotency_key || ':expired' WHERE organization_id = ? AND purpose = 'billing_portal'",
+          "UPDATE billing_operation_attempt SET handoff_expires_at = ?, idempotency_key = idempotency_key || ':expired' WHERE billing_account_id IN (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ?) AND purpose = 'create_portal_session'",
         )
         .bind(Date.now() - 1_000, portalOrganizationId)
         .run();
@@ -3378,10 +3486,60 @@ describe('backend app', () => {
           }),
         ]),
       );
+      expect(await selectBillingDocumentReferenceRowsBySubject(organizationId)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentKind: 'invoice',
+            providerDocumentId: 'in_invoice_available_verified',
+            availability: 'available',
+            ownerFacingStatus: 'available',
+          }),
+          expect.objectContaining({
+            documentKind: 'receipt',
+            providerDocumentId: 'ch_payment_succeeded_verified',
+            availability: 'available',
+            ownerFacingStatus: 'available',
+          }),
+        ]),
+      );
       expect(await selectStripeWebhookEventRow('evt_payment_failed_verified')).toMatchObject({
         processingStatus: 'processed',
         duplicateDetected: 1,
         receiptStatus: 'duplicate',
+      });
+      expect(await selectBillingProviderEventRow('evt_payment_failed_verified')).toMatchObject({
+        eventType: 'invoice.payment_failed',
+        processingStatus: 'processed',
+        receiptStatus: 'duplicate',
+        duplicateDetected: 1,
+        attemptCount: 1,
+      });
+      expect(await selectBillingPaymentIssueEventRowsBySubject(organizationId)).toEqual([
+        expect.objectContaining({
+          eventType: 'payment_succeeded',
+          providerEventId: 'evt_payment_succeeded_verified',
+          providerInvoiceId: 'in_payment_succeeded_verified',
+          providerPaymentIntentId: 'pi_payment_succeeded_verified',
+        }),
+        expect.objectContaining({
+          eventType: 'payment_failed',
+          providerEventId: 'evt_payment_failed_verified',
+          providerInvoiceId: 'in_payment_failed_verified',
+          providerPaymentIntentId: 'pi_payment_failed_verified',
+        }),
+        expect.objectContaining({
+          eventType: 'payment_action_required',
+          providerEventId: 'evt_payment_action_required_verified',
+          providerInvoiceId: 'in_payment_action_required_verified',
+          providerPaymentIntentId: 'pi_payment_action_required_verified',
+        }),
+      ]);
+      expect(await selectBillingPaymentIssueRowBySubject(organizationId)).toMatchObject({
+        state: 'payment_action_required',
+        issueStartedAtSource: 'provider_issue_time',
+        latestProviderEventId: 'evt_payment_action_required_verified',
+        latestInvoiceId: 'in_payment_action_required_verified',
+        latestPaymentIntentId: 'pi_payment_action_required_verified',
       });
 
       const notificationRows = await selectOrganizationBillingNotificationRows(organizationId);
@@ -3435,6 +3593,25 @@ describe('backend app', () => {
       expect(
         notificationRows.filter((row) => row.notificationKind === 'payment_action_required_email'),
       ).toHaveLength(4);
+      expect(await selectBillingNotificationRowsBySubject(organizationId)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            notificationKind: 'payment_failed_email',
+            deliveryStatus: 'sent',
+            recipientEmail: 'invoice-payment-verified-owner@example.com',
+            providerEventId: 'evt_payment_failed_verified',
+            providerInvoiceId: 'in_payment_failed_verified',
+          }),
+          expect.objectContaining({
+            notificationKind: 'payment_action_required_email',
+            deliveryStatus: 'sent',
+            recipientEmail: 'invoice-payment-second-verified-owner@example.com',
+            providerEventId: 'evt_payment_action_required_verified',
+            providerInvoiceId: 'in_payment_action_required_verified',
+          }),
+        ]),
+      );
+      expect(await selectBillingNotificationRowsBySubject(organizationId)).toHaveLength(4);
       expect(resendRequests).toHaveLength(4);
       expect(resendRequests.flatMap((request) => request.to).sort()).toEqual([
         'invoice-payment-second-verified-owner@example.com',
@@ -3495,6 +3672,15 @@ describe('backend app', () => {
           sourceKind: 'payment_failed_email',
           reason: 'verified_owner_not_found',
           stripeEventId: 'evt_payment_failed_unverified',
+        }),
+      ]);
+      expect(await selectBillingSignalRowsBySubject(unverifiedOrganizationId)).toEqual([
+        expect.objectContaining({
+          signalKind: 'notification_delivery',
+          signalStatus: 'unavailable',
+          sourceKind: 'payment_failed_email',
+          reason: 'verified_owner_not_found',
+          providerEventId: 'evt_payment_failed_unverified',
         }),
       ]);
       expect(resendRequests).toHaveLength(4);
@@ -3627,6 +3813,29 @@ describe('backend app', () => {
           stripeEventId: 'evt_stale_payment_failed_after_recovery',
         }),
       ]);
+      expect(await selectBillingSignalRowsBySubject(organizationId)).toEqual([
+        expect.objectContaining({
+          signalKind: 'reconciliation',
+          signalStatus: 'resolved',
+          sourceKind: 'webhook_payment_failed',
+          reason: 'stale_payment_issue_after_recovery',
+          providerEventId: 'evt_stale_payment_failed_after_recovery',
+        }),
+      ]);
+      expect(await selectBillingPaymentIssueEventRowsBySubject(organizationId)).toEqual([
+        expect.objectContaining({
+          eventType: 'stale_failure',
+          providerEventId: 'evt_stale_payment_failed_after_recovery',
+          providerInvoiceId: 'in_stale_payment_failed_after_recovery',
+          providerPaymentIntentId: 'pi_stale_payment_failed_after_recovery',
+        }),
+      ]);
+      expect(await selectBillingPaymentIssueRowBySubject(organizationId)).toMatchObject({
+        state: 'stale_failure_history_only',
+        latestProviderEventId: 'evt_stale_payment_failed_after_recovery',
+        latestInvoiceId: 'in_stale_payment_failed_after_recovery',
+        latestPaymentIntentId: 'pi_stale_payment_failed_after_recovery',
+      });
       expect(await selectOrganizationBillingRow(organizationId)).toMatchObject({
         subscriptionStatus: 'active',
         paymentIssueStartedAt: null,

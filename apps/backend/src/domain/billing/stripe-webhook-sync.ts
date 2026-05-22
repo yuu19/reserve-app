@@ -44,9 +44,21 @@ import {
   type StripeWebhookEvent,
   type StripeWebhookSignatureVerificationStatus,
 } from '../../infra/payment/stripe.js';
+import { createDrizzleBillingEventStore } from '../../infra/billing/drizzle-billing-event-store.js';
+import {
+  appendReserveAppBillingV2PaymentIssueEvent,
+  syncReserveAppBillingV2Projection,
+} from '../../infra/billing/reserve-app-billing-projection.js';
 
 const ORGANIZATION_BILLING_WEBHOOK_SCOPE = 'organization_billing';
 const STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS = 2 * 60 * 1000;
+
+const sha256Hex = async (value: string): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+};
 
 type StripeWebhookEventClaimResult =
   | { kind: 'claimed' }
@@ -190,14 +202,25 @@ const claimStripeWebhookEvent = async ({
   database,
   eventId,
   eventType,
+  payloadHash,
 }: {
   database: AuthRuntimeDatabase;
   eventId: string;
   eventType: string;
+  payloadHash: string;
 }): Promise<StripeWebhookEventClaimResult> => {
   // webhook 受領記録は event id + scope で冪等に claim する。失敗済み受領記録だけは
   // Stripe の再送で再処理できるよう processing に戻す。
   const now = new Date();
+  await createDrizzleBillingEventStore({ database }).claimProviderEvent({
+    provider: 'stripe',
+    providerEventId: eventId,
+    eventType,
+    payloadHash,
+    now,
+    staleProcessingAfterMs: STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS,
+  });
+
   const rows = await database
     .insert(dbSchema.stripeWebhookEvent)
     .values({
@@ -297,17 +320,33 @@ const claimStripeWebhookEvent = async ({
 
 const markStripeWebhookEventProcessed = async ({
   database,
+  env,
   eventId,
   organizationId,
   stripeCustomerId,
   stripeSubscriptionId,
 }: {
   database: AuthRuntimeDatabase;
+  env: AuthRuntimeEnv;
   eventId: string;
   organizationId?: string | null;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
 }) => {
+  if (organizationId) {
+    await syncReserveAppBillingV2Projection({
+      database,
+      env,
+      organizationId,
+    });
+  }
+
+  await createDrizzleBillingEventStore({ database }).markProviderEventProcessed({
+    provider: 'stripe',
+    providerEventId: eventId,
+    processedAt: new Date(),
+  });
+
   await database
     .update(dbSchema.stripeWebhookEvent)
     .set({
@@ -337,6 +376,13 @@ const markStripeWebhookEventFailed = async ({
   stripeSubscriptionId?: string | null;
   failureReason: StripeWebhookFailureReason;
 }) => {
+  await createDrizzleBillingEventStore({ database }).markProviderEventFailed({
+    provider: 'stripe',
+    providerEventId: eventId,
+    failedAt: new Date(),
+    errorMessage: failureReason,
+  });
+
   await database
     .update(dbSchema.stripeWebhookEvent)
     .set({
@@ -690,6 +736,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
   env: AuthRuntimeEnv;
   event: StripeWebhookEvent;
 }): Promise<StripeOrganizationBillingWebhookResult> => {
+  const payloadHash = await sha256Hex(JSON.stringify(event));
   const normalized = normalizeStripeOrganizationBillingWebhookEvent({
     event,
     env,
@@ -703,6 +750,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       database,
       eventId: normalized.eventId,
       eventType: normalized.eventType,
+      payloadHash,
     });
     if (claimed.kind === 'already_processed') {
       return createStripeWebhookHandledResult({ duplicate: true });
@@ -730,6 +778,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
     database,
     eventId: normalized.eventId,
     eventType: normalized.eventType,
+    payloadHash,
   });
   if (claimed.kind === 'already_processed') {
     return createStripeWebhookHandledResult({ duplicate: true });
@@ -778,6 +827,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       });
       await markStripeWebhookEventProcessed({
         database,
+        env,
         eventId: normalized.eventId,
         organizationId: normalized.organizationId,
         stripeCustomerId: normalized.stripeCustomerId,
@@ -894,6 +944,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       });
       await markStripeWebhookEventProcessed({
         database,
+        env,
         eventId: normalized.eventId,
         organizationId: normalized.organizationId,
         stripeCustomerId,
@@ -1031,6 +1082,18 @@ export const handleStripeOrganizationBillingWebhook = async ({
         }
       }
 
+      await appendReserveAppBillingV2PaymentIssueEvent({
+        database,
+        env,
+        organizationId: matchedBilling.organizationId,
+        invoiceEventType: normalized.invoiceEventType,
+        providerEventId: normalized.eventId,
+        providerInvoiceId: normalized.stripeInvoiceId,
+        providerPaymentIntentId: normalized.stripePaymentIntentId,
+        occurredAt: normalized.occurredAt,
+        stalePaymentIssueAfterRecovery,
+      });
+
       if (isPaymentIssueEvent && !stalePaymentIssueAfterRecovery) {
         const notification = await sendOrganizationPaymentIssueNotification({
           database,
@@ -1074,6 +1137,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       });
       await markStripeWebhookEventProcessed({
         database,
+        env,
         eventId: normalized.eventId,
         organizationId: matchedBilling.organizationId,
         stripeCustomerId: normalized.stripeCustomerId,
@@ -1379,6 +1443,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
 
     await markStripeWebhookEventProcessed({
       database,
+      env,
       eventId: normalized.eventId,
       organizationId: matchedBilling.organizationId,
       stripeCustomerId: latestSubscription.customerId,

@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
-import { createOrganizationBillingOperationStore } from '../../infra/billing/organization-billing-operation-store.js';
 import { createOrganizationBillingStore } from '../../infra/billing/organization-billing-store.js';
+import { createReserveAppBillingOperationStore } from '../../infra/billing/reserve-app-billing-operation-store.js';
 import { createStripeBillingProvider } from '../../infra/payment/stripe-billing-provider.js';
 import { jsonRouteResult } from '../../shared/route-result.js';
 import {
@@ -48,7 +48,7 @@ export const registerBillingRoutes = (
     database,
     env,
     store: createOrganizationBillingStore({ database, env }),
-    operationStore: createOrganizationBillingOperationStore({ database }),
+    operationStore: createReserveAppBillingOperationStore({ database }),
     createProvider: createStripeBillingProvider,
   });
 

@@ -7,6 +7,7 @@ import type {
   OrganizationBillingDocumentOwnerFacingStatus,
   OrganizationBillingProviderDocumentReference,
 } from './organization-billing-documents.js';
+import { upsertOrganizationBillingV2DocumentReferences } from './organization-billing-v2-bridge.js';
 
 export type OrganizationBillingInvoicePaymentEventType =
   | 'invoice_available'
@@ -205,6 +206,11 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
         },
       });
   }
+  await upsertOrganizationBillingV2DocumentReferences({
+    database,
+    organizationId,
+    documentReferences,
+  });
 
   return toInvoicePaymentEvent(eventRow);
 };

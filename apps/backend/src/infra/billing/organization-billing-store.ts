@@ -14,11 +14,14 @@ import {
 import {
   applyOrganizationPremiumTrialCompletion,
   hasOrganizationStartedPremiumTrial,
-  selectOrganizationBillingSummary,
   startOrganizationPremiumTrial,
   updateOrganizationBillingStripeCustomerId,
 } from '../../domain/billing/organization-billing.js';
 import type { OrganizationBillingStore } from '../../features/billing/billing.store.js';
+import {
+  readReserveAppBillingV2Summary,
+  syncReserveAppBillingV2Projection,
+} from './reserve-app-billing-projection.js';
 
 export const createOrganizationBillingStore = ({
   database,
@@ -27,7 +30,12 @@ export const createOrganizationBillingStore = ({
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
 }): OrganizationBillingStore => ({
-  selectSummary: (organizationId) => selectOrganizationBillingSummary(database, organizationId),
+  selectSummary: (organizationId) =>
+    readReserveAppBillingV2Summary({
+      database,
+      env,
+      organizationId,
+    }),
 
   hasStartedPremiumTrial: ({ organizationId }) =>
     hasOrganizationStartedPremiumTrial({
@@ -35,24 +43,46 @@ export const createOrganizationBillingStore = ({
       organizationId,
     }),
 
-  updateStripeCustomerId: (input) =>
-    updateOrganizationBillingStripeCustomerId({
+  async updateStripeCustomerId(input) {
+    await updateOrganizationBillingStripeCustomerId({
       database,
       ...input,
-    }),
+    });
+    await syncReserveAppBillingV2Projection({
+      database,
+      env,
+      organizationId: input.organizationId,
+    });
+  },
 
-  startPremiumTrial: (input) =>
-    startOrganizationPremiumTrial({
+  async startPremiumTrial(input) {
+    const result = await startOrganizationPremiumTrial({
       database,
       ...input,
-    }),
+    });
+    await syncReserveAppBillingV2Projection({
+      database,
+      env,
+      organizationId: input.organizationId,
+    });
+    return result;
+  },
 
-  applyTrialCompletion: ({ organizationId }) =>
-    applyOrganizationPremiumTrialCompletion({
+  async applyTrialCompletion({ organizationId }) {
+    const result = await applyOrganizationPremiumTrialCompletion({
       database,
       env,
       organizationId,
-    }),
+    });
+    if (result.ok) {
+      await syncReserveAppBillingV2Projection({
+        database,
+        env,
+        organizationId,
+      });
+    }
+    return result;
+  },
 
   readOwnerBillingHistory: ({ organizationId }) =>
     readOrganizationOwnerBillingHistory({

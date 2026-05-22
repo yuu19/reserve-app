@@ -14,6 +14,10 @@ import {
   type OrganizationBillingEntitlementState,
   type OrganizationBillingPaidTier,
 } from './organization-billing-policy.js';
+import {
+  appendOrganizationBillingV2AuditEvent,
+  appendOrganizationBillingV2Signal,
+} from './organization-billing-v2-bridge.js';
 import type { StripeSubscriptionSummary } from '../../infra/payment/stripe.js';
 
 export type OrganizationBillingObservationSnapshot = {
@@ -365,6 +369,15 @@ export const appendOrganizationBillingAuditEvent = async ({
     previousBillingInterval: previousSnapshot.billingInterval,
     nextBillingInterval: nextSnapshot.billingInterval,
   });
+  await appendOrganizationBillingV2AuditEvent({
+    database,
+    organizationId,
+    sourceKind,
+    previousSnapshot,
+    nextSnapshot,
+    stripeEventId,
+    sourceContext,
+  });
 
   return true;
 };
@@ -419,6 +432,20 @@ export const appendOrganizationBillingSignal = async ({
     appSubscriptionStatus: appSnapshot.subscriptionStatus,
     appPaymentMethodStatus: appSnapshot.paymentMethodStatus,
     appEntitlementState: appSnapshot.entitlementState,
+  });
+  await appendOrganizationBillingV2Signal({
+    database,
+    organizationId,
+    signalKind,
+    signalStatus,
+    sourceKind,
+    reason,
+    appSnapshot,
+    stripeEventId,
+    stripeCustomerId,
+    stripeSubscriptionId,
+    providerPlanState,
+    providerSubscriptionStatus,
   });
 };
 

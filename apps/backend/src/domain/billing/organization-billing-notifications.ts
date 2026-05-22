@@ -18,6 +18,7 @@ import {
   appendResolvedBillingSignalIfNeeded,
   readOrganizationBillingObservationSnapshot,
 } from './organization-billing-observability.js';
+import { upsertOrganizationBillingV2Notification } from './organization-billing-v2-bridge.js';
 
 export type OrganizationBillingNotificationKind =
   | 'trial_will_end_email'
@@ -531,6 +532,7 @@ const insertOrganizationBillingNotification = async ({
   stripeEventId,
   stripeCustomerId,
   stripeSubscriptionId,
+  stripeInvoiceId,
   planState,
   subscriptionStatus,
   paymentMethodStatus,
@@ -547,6 +549,7 @@ const insertOrganizationBillingNotification = async ({
   stripeEventId: string;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
+  stripeInvoiceId?: string | null;
   planState: OrganizationBillingPlanState;
   subscriptionStatus: OrganizationBillingSubscriptionStatus;
   paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
@@ -576,6 +579,19 @@ const insertOrganizationBillingNotification = async ({
     paymentMethodStatus,
     trialEndsAt: trialEndsAt ? new Date(trialEndsAt) : null,
     failureReason: failureReason ?? null,
+  });
+  await upsertOrganizationBillingV2Notification({
+    database,
+    organizationId,
+    notificationKind,
+    recipientUserId,
+    recipientEmail,
+    deliveryState,
+    failureReason,
+    stripeEventId,
+    stripeCustomerId,
+    stripeSubscriptionId,
+    stripeInvoiceId,
   });
 };
 
@@ -1084,6 +1100,7 @@ export const sendOrganizationPaymentIssueNotification = async ({
     stripeEventId,
     stripeCustomerId: stripeCustomerId ?? billing.stripeCustomerId,
     stripeSubscriptionId: stripeSubscriptionId ?? billing.stripeSubscriptionId,
+    stripeInvoiceId: stripeInvoiceId ?? null,
     planState: policy.planState,
     subscriptionStatus: billing.subscriptionStatus,
     paymentMethodStatus,
