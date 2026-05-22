@@ -11,6 +11,7 @@ import {
   reconcileProviderLinkedOrganizationBillingStates,
   reconcileRiskyOrganizationBillingStates,
 } from './domain/billing/organization-billing-maintenance.js';
+import { upsertReserveAppBillingV2SubscriptionState } from './infra/billing/reserve-app-billing-v2-source.js';
 
 type D1DatabaseBinding = Awaited<ReturnType<Miniflare['getD1Database']>>;
 
@@ -279,7 +280,7 @@ const selectOrganizationBillingRow = async (organizationId: string) => {
 const selectStripeWebhookEventRow = async (eventId: string) => {
   return d1
     .prepare(
-      'SELECT id, event_type as eventType, scope, processing_status as processingStatus, organization_id as organizationId, stripe_customer_id as stripeCustomerId, stripe_subscription_id as stripeSubscriptionId, failure_reason as failureReason, signature_verification_status as signatureVerificationStatus, duplicate_detected as duplicateDetected, receipt_status as receiptStatus FROM stripe_webhook_event WHERE id = ? LIMIT 1',
+      "SELECT e.provider_event_id as id, e.event_type as eventType, e.scope, e.processing_status as processingStatus, a.subject_id as organizationId, e.provider_customer_id as stripeCustomerId, e.provider_subscription_id as stripeSubscriptionId, e.failure_reason as failureReason, 'verified' as signatureVerificationStatus, e.duplicate_detected as duplicateDetected, e.receipt_status as receiptStatus FROM billing_provider_event e LEFT JOIN billing_account a ON a.id = e.billing_account_id WHERE e.provider = 'stripe' AND e.provider_event_id = ? AND e.scope = 'billing' LIMIT 1",
     )
     .bind(eventId)
     .first<{
@@ -319,7 +320,9 @@ const selectBillingProviderEventRow = async (eventId: string) => {
 
 const countStripeWebhookEventRows = async (eventId: string) => {
   const row = await d1
-    .prepare('SELECT COUNT(*) as count FROM stripe_webhook_event WHERE id = ?')
+    .prepare(
+      "SELECT COUNT(*) as count FROM billing_provider_event WHERE provider = 'stripe' AND provider_event_id = ? AND scope = 'billing'",
+    )
     .bind(eventId)
     .first<{ count: number | string }>();
 
@@ -635,6 +638,35 @@ const setUserEmailVerified = async ({
     .run();
 };
 
+type BillingV2SubscriptionStateFixture = Parameters<
+  typeof upsertReserveAppBillingV2SubscriptionState
+>[0];
+
+const toNullableDate = (value: number | string | null | undefined) =>
+  value == null ? null : new Date(Number(value));
+
+const normalizeBillingFixtureSubscriptionStatus = (
+  value: string,
+): BillingV2SubscriptionStateFixture['subscriptionStatus'] =>
+  value === 'trialing' ||
+  value === 'active' ||
+  value === 'past_due' ||
+  value === 'unpaid' ||
+  value === 'incomplete' ||
+  value === 'canceled'
+    ? value
+    : 'free';
+
+const buildBillingFixtureEnv = ({
+  billingInterval,
+  stripePriceId,
+}: {
+  billingInterval?: 'month' | 'year' | null;
+  stripePriceId?: string | null;
+}) =>
+  billingInterval === 'year'
+    ? { STRIPE_PREMIUM_YEARLY_PRICE_ID: stripePriceId ?? undefined }
+    : { STRIPE_PREMIUM_MONTHLY_PRICE_ID: stripePriceId ?? undefined };
 const setOrganizationBillingState = async ({
   organizationId,
   planCode,
@@ -703,6 +735,52 @@ const setOrganizationBillingState = async ({
       organizationId,
     )
     .run();
+
+  await upsertReserveAppBillingV2SubscriptionState({
+    database: drizzle(d1),
+    env: buildBillingFixtureEnv({ billingInterval, stripePriceId }),
+    organizationId,
+    planCode,
+    stripeCustomerId: stripeCustomerId ?? null,
+    stripeSubscriptionId: stripeSubscriptionId ?? null,
+    stripePriceId: stripePriceId ?? null,
+    billingInterval: billingInterval ?? null,
+    subscriptionStatus,
+    cancelAtPeriodEnd: cancelAtPeriodEnd ?? false,
+    currentPeriodStart: currentPeriodStart ?? null,
+    currentPeriodEnd: currentPeriodEnd ?? null,
+    paymentIssueOccurredAt: paymentIssueStartedAt ?? null,
+    pastDueGraceEndsAt,
+  });
+};
+
+const syncOrganizationBillingV2FixtureFromLegacyRow = async (organizationId: string) => {
+  const row = await selectOrganizationBillingRow(organizationId);
+  if (!row) {
+    return;
+  }
+
+  const billingInterval =
+    row.billingInterval === 'month' || row.billingInterval === 'year' ? row.billingInterval : null;
+
+  await upsertReserveAppBillingV2SubscriptionState({
+    database: drizzle(d1),
+    env: buildBillingFixtureEnv({ billingInterval, stripePriceId: row.stripePriceId }),
+    organizationId,
+    planCode: row.planCode === 'premium' ? 'premium' : 'free',
+    stripeCustomerId: row.stripeCustomerId,
+    stripeSubscriptionId: row.stripeSubscriptionId,
+    stripePriceId: row.stripePriceId,
+    billingInterval,
+    subscriptionStatus: normalizeBillingFixtureSubscriptionStatus(row.subscriptionStatus),
+    cancelAtPeriodEnd: Boolean(row.cancelAtPeriodEnd),
+    currentPeriodStart: toNullableDate(row.currentPeriodStart),
+    currentPeriodEnd: toNullableDate(row.currentPeriodEnd),
+    paymentIssueOccurredAt: toNullableDate(row.paymentIssueStartedAt),
+    pastDueGraceEndsAt: toNullableDate(row.pastDueGraceEndsAt),
+    trialStartedAt: toNullableDate(row.trialStartedAt),
+    trialEndedAt: toNullableDate(row.trialEndedAt),
+  });
 };
 
 const insertOrganizationBillingAuditEventRow = async ({
@@ -925,21 +1003,59 @@ const insertStripeWebhookEventRow = async ({
   createdAt?: Date;
 }) => {
   const timestamp = (createdAt ?? new Date()).getTime();
+  let billingAccountId: string | null = null;
+  if (organizationId) {
+    const existingAccount = await d1
+      .prepare(
+        "SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ? LIMIT 1",
+      )
+      .bind(organizationId)
+      .first<{ id: string }>();
+    billingAccountId = existingAccount?.id ?? crypto.randomUUID();
+    if (!existingAccount) {
+      await d1
+        .prepare(
+          'INSERT INTO billing_account (id, subject_type, subject_id, provider, provider_customer_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        )
+        .bind(
+          billingAccountId,
+          'organization',
+          organizationId,
+          'stripe',
+          stripeCustomerId,
+          timestamp,
+          timestamp,
+        )
+        .run();
+    }
+  }
+
   await d1
     .prepare(
-      'INSERT INTO stripe_webhook_event (id, event_type, scope, processing_status, organization_id, stripe_customer_id, stripe_subscription_id, failure_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO billing_provider_event (id, provider, provider_event_id, event_type, scope, payload_hash, processing_status, receipt_status, duplicate_detected, duplicate_detected_at, attempt_count, processing_started_at, last_attempt_at, processing_stale_after_ms, failure_reason, billing_account_id, provider_customer_id, provider_subscription_id, created_at, updated_at, processed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
+      crypto.randomUUID(),
+      'stripe',
       id,
       eventType,
-      scope,
+      scope === 'organization_billing' ? 'billing' : scope,
+      `fixture:${id}:${eventType}`,
       processingStatus,
-      organizationId,
+      processingStatus === 'processed' ? 'processed' : 'received',
+      false,
+      null,
+      1,
+      timestamp,
+      timestamp,
+      120_000,
+      failureReason,
+      billingAccountId,
       stripeCustomerId,
       stripeSubscriptionId,
-      failureReason,
       timestamp,
       timestamp,
+      processingStatus === 'processed' ? timestamp : null,
     )
     .run();
 };
@@ -2236,6 +2352,7 @@ describe('backend app', () => {
         )
         .bind('premium', 'active', 'cus_missing_subscription', null, organizationId)
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
       const missingSubscriptionPortalResponse = await owner.request(
         '/api/v1/auth/organizations/billing/portal',
         {
@@ -2258,6 +2375,7 @@ describe('backend app', () => {
         )
         .bind('premium', 'trialing', trialPeriodEnd, organizationId)
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const trialBillingResponse = await owner.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -2854,6 +2972,7 @@ describe('backend app', () => {
         .prepare('UPDATE organization_billing SET trial_started_at = ? WHERE organization_id = ?')
         .bind(Date.now() - 7 * 24 * 60 * 60 * 1000, checkoutOrganizationId)
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(checkoutOrganizationId);
 
       const trialUsedSummaryResponse = await checkoutOwner.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(checkoutOrganizationId)}`,
@@ -3876,6 +3995,30 @@ describe('backend app', () => {
       )
       .bind(targetedOrganizationId, fullOrganizationId)
       .run();
+    await d1
+      .prepare(
+        "UPDATE billing_subscription SET status = 'active', updated_at = ? WHERE status IN ('past_due', 'unpaid', 'incomplete')",
+      )
+      .bind(Date.now())
+      .run();
+    await d1
+      .prepare(
+        "UPDATE billing_payment_issue SET state = 'none', issue_started_at = NULL, issue_started_at_source = 'none', past_due_grace_ends_at = NULL, updated_at = ? WHERE state IN ('past_due_grace_active', 'past_due_grace_expired', 'unpaid', 'incomplete', 'payment_failed', 'payment_action_required')",
+      )
+      .bind(Date.now())
+      .run();
+    await d1
+      .prepare(
+        'UPDATE billing_subscription SET provider_subscription_id = NULL, updated_at = ? WHERE billing_account_id NOT IN (SELECT id FROM billing_account WHERE subject_type = ? AND subject_id IN (?, ?))',
+      )
+      .bind(Date.now(), 'organization', targetedOrganizationId, fullOrganizationId)
+      .run();
+    await d1
+      .prepare(
+        'UPDATE billing_account SET provider_customer_id = NULL, updated_at = ? WHERE subject_type = ? AND subject_id NOT IN (?, ?)',
+      )
+      .bind(Date.now(), 'organization', targetedOrganizationId, fullOrganizationId)
+      .run();
     await setOrganizationBillingState({
       organizationId: targetedOrganizationId,
       planCode: 'premium',
@@ -4188,6 +4331,7 @@ describe('backend app', () => {
       providerStatus: 'paid',
       occurredAt: recoveredAt,
     });
+    await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
     const response = await owner.request(
       `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -4655,6 +4799,7 @@ describe('backend app', () => {
           organizationId,
         )
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_webhook_pending',
@@ -4770,6 +4915,7 @@ describe('backend app', () => {
       .prepare('UPDATE organization_billing SET stripe_customer_id = ? WHERE organization_id = ?')
       .bind('cus_unexpected_processing', existingOrganizationId)
       .run();
+    await syncOrganizationBillingV2FixtureFromLegacyRow(existingOrganizationId);
 
     const webhookPayload = JSON.stringify({
       id: 'evt_unexpected_processing',
@@ -5107,6 +5253,7 @@ describe('backend app', () => {
           organizationId,
         )
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_reminder_success',
@@ -5319,6 +5466,7 @@ describe('backend app', () => {
           organizationId,
         )
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_reminder_registered',
@@ -5479,6 +5627,7 @@ describe('backend app', () => {
           organizationId,
         )
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_reminder_duplicate',
@@ -5633,6 +5782,7 @@ describe('backend app', () => {
           organizationId,
         )
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_reminder_retry',
@@ -5925,6 +6075,7 @@ describe('backend app', () => {
         )
         .bind('active', 'month', 1779000000000, organizationId)
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const activeConflictResponse = await owner.request(
         '/api/v1/auth/organizations/billing/trial',
@@ -6612,6 +6763,7 @@ describe('backend app', () => {
         .prepare('SELECT id FROM user WHERE email = ? LIMIT 1')
         .bind('trial-completion-owner@example.com')
         .first<{ id: string }>();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
       expect(ownerUserRow?.id).toBeTruthy();
 
       const classroomId = crypto.randomUUID();
@@ -6805,6 +6957,7 @@ describe('backend app', () => {
       .prepare('UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?')
       .bind(Date.now() - 60_000, organizationId)
       .run();
+    await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
     const completionResponse = await owner.request(
       '/api/v1/auth/organizations/billing/trial/complete',
@@ -6903,6 +7056,13 @@ describe('backend app', () => {
     await d1
       .prepare('UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?')
       .bind(maintenanceNow.getTime() - 1, organizationId)
+      .run();
+    await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+    await d1
+      .prepare(
+        "UPDATE billing_subscription SET status = 'active', updated_at = ? WHERE status = 'trialing' AND current_period_end IS NOT NULL AND current_period_end < ? AND billing_account_id NOT IN (SELECT id FROM billing_account WHERE subject_type = ? AND subject_id = ?)",
+      )
+      .bind(Date.now(), maintenanceNow.getTime(), 'organization', organizationId)
       .run();
 
     const result = await completeExpiredOrganizationPremiumTrials({
@@ -7073,6 +7233,7 @@ describe('backend app', () => {
         )
         .bind('cus_trial_completion_pending', Date.now() - 60_000, organizationId)
         .run();
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const completionResponse = await owner.request(
         '/api/v1/auth/organizations/billing/trial/complete',
@@ -7107,6 +7268,9 @@ describe('backend app', () => {
           )
           .bind(Date.now() + 7 * 24 * 60 * 60 * 1000, paymentMethodPendingTrialOrganizationId)
           .run();
+        await syncOrganizationBillingV2FixtureFromLegacyRow(
+          paymentMethodPendingTrialOrganizationId,
+        );
       }
       fetchSpy.mockRestore();
     }
@@ -10310,6 +10474,7 @@ describe('backend app', () => {
     expect(grantTicketResponse.status).toBe(200);
     const grantPayload = (await toJson(grantTicketResponse)) as Record<string, unknown>;
     const ticketPackId = grantPayload.id as string;
+    await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
     const makeSlot = async (serviceId: string, offsetMs: number) => {
       const startAt = new Date(Date.now() + offsetMs);
@@ -10644,6 +10809,7 @@ describe('backend app', () => {
       expect(serviceCreateResponse.status).toBe(200);
       const servicePayload = (await toJson(serviceCreateResponse)) as Record<string, unknown>;
       const serviceId = servicePayload.id as string;
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const makeSlot = async (offsetDays: number) => {
         const startAt = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
@@ -10876,6 +11042,7 @@ describe('backend app', () => {
       expect(serviceCreateResponse.status).toBe(200);
       const servicePayload = (await toJson(serviceCreateResponse)) as Record<string, unknown>;
       const serviceId = servicePayload.id as string;
+      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
 
       const makeSlot = async (offsetDays: number) => {
         const startAt = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
