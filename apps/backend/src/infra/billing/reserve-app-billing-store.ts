@@ -11,19 +11,16 @@ import {
   appendResolvedBillingSignalIfNeeded,
   readOrganizationBillingObservationSnapshot,
 } from '../../domain/billing/organization-billing-observability.js';
-import {
-  applyOrganizationPremiumTrialCompletion,
-  hasOrganizationStartedPremiumTrial,
-  startOrganizationPremiumTrial,
-  updateOrganizationBillingStripeCustomerId,
-} from '../../domain/billing/organization-billing.js';
 import type { OrganizationBillingStore } from '../../features/billing/billing.store.js';
 import {
+  applyReserveAppBillingV2TrialCompletion,
+  hasReserveAppBillingV2StartedPremiumTrial,
   readReserveAppBillingV2Summary,
-  syncReserveAppBillingV2Projection,
-} from './reserve-app-billing-projection.js';
+  startReserveAppBillingV2PremiumTrial,
+  updateReserveAppBillingV2CustomerId,
+} from './reserve-app-billing-v2-source.js';
 
-export const createOrganizationBillingStore = ({
+export const createReserveAppBillingStore = ({
   database,
   env,
 }: {
@@ -38,50 +35,34 @@ export const createOrganizationBillingStore = ({
     }),
 
   hasStartedPremiumTrial: ({ organizationId }) =>
-    hasOrganizationStartedPremiumTrial({
+    hasReserveAppBillingV2StartedPremiumTrial({
       database,
+      env,
       organizationId,
     }),
 
   async updateStripeCustomerId(input) {
-    await updateOrganizationBillingStripeCustomerId({
-      database,
-      ...input,
-    });
-    await syncReserveAppBillingV2Projection({
+    await updateReserveAppBillingV2CustomerId({
       database,
       env,
-      organizationId: input.organizationId,
+      ...input,
     });
   },
 
   async startPremiumTrial(input) {
-    const result = await startOrganizationPremiumTrial({
-      database,
-      ...input,
-    });
-    await syncReserveAppBillingV2Projection({
+    return startReserveAppBillingV2PremiumTrial({
       database,
       env,
-      organizationId: input.organizationId,
+      ...input,
     });
-    return result;
   },
 
   async applyTrialCompletion({ organizationId }) {
-    const result = await applyOrganizationPremiumTrialCompletion({
+    return applyReserveAppBillingV2TrialCompletion({
       database,
       env,
       organizationId,
     });
-    if (result.ok) {
-      await syncReserveAppBillingV2Projection({
-        database,
-        env,
-        organizationId,
-      });
-    }
-    return result;
   },
 
   readOwnerBillingHistory: ({ organizationId }) =>

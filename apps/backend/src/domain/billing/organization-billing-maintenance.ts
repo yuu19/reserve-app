@@ -2,11 +2,14 @@ import { and, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import {
-  applyOrganizationPremiumTrialCompletion,
   isBillingSubscriptionStatus,
   resolveBillingIntervalFromPriceId,
-  upsertOrganizationBillingByOrganizationId,
 } from './organization-billing.js';
+import {
+  applyReserveAppBillingV2TrialCompletion,
+  markReserveAppBillingV2Reconciled,
+  upsertReserveAppBillingV2SubscriptionState,
+} from '../../infra/billing/reserve-app-billing-v2-source.js';
 import {
   appendOrganizationBillingAuditEvent,
   appendOrganizationBillingSignal,
@@ -58,16 +61,21 @@ export const completeExpiredOrganizationPremiumTrials = async ({
 }) => {
   const rows = await database
     .select({
-      organizationId: dbSchema.organizationBilling.organizationId,
+      organizationId: dbSchema.billingAccount.subjectId,
     })
-    .from(dbSchema.organizationBilling)
+    .from(dbSchema.billingSubscription)
+    .innerJoin(
+      dbSchema.billingAccount,
+      eq(dbSchema.billingSubscription.billingAccountId, dbSchema.billingAccount.id),
+    )
     .where(
       and(
-        eq(dbSchema.organizationBilling.planCode, 'premium'),
-        eq(dbSchema.organizationBilling.subscriptionStatus, 'trialing'),
-        lte(dbSchema.organizationBilling.currentPeriodEnd, now),
-        isNull(dbSchema.organizationBilling.stripeCustomerId),
-        isNull(dbSchema.organizationBilling.stripeSubscriptionId),
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingSubscription.planCode, 'premium'),
+        eq(dbSchema.billingSubscription.status, 'trialing'),
+        lte(dbSchema.billingSubscription.currentPeriodEnd, now),
+        isNull(dbSchema.billingAccount.providerCustomerId),
+        isNull(dbSchema.billingSubscription.providerSubscriptionId),
       ),
     )
     .limit(limit);
@@ -81,7 +89,7 @@ export const completeExpiredOrganizationPremiumTrials = async ({
       env,
       organizationId: row.organizationId,
     });
-    const completion = await applyOrganizationPremiumTrialCompletion({
+    const completion = await applyReserveAppBillingV2TrialCompletion({
       database,
       env,
       organizationId: row.organizationId,
@@ -157,18 +165,28 @@ export const sendPastDueGraceExpiryReminders = async ({
   );
   const rows = await database
     .select({
-      organizationId: dbSchema.organizationBilling.organizationId,
-      stripeCustomerId: dbSchema.organizationBilling.stripeCustomerId,
-      stripeSubscriptionId: dbSchema.organizationBilling.stripeSubscriptionId,
-      pastDueGraceEndsAt: dbSchema.organizationBilling.pastDueGraceEndsAt,
+      organizationId: dbSchema.billingAccount.subjectId,
+      stripeCustomerId: dbSchema.billingAccount.providerCustomerId,
+      stripeSubscriptionId: dbSchema.billingSubscription.providerSubscriptionId,
+      pastDueGraceEndsAt: dbSchema.billingPaymentIssue.pastDueGraceEndsAt,
     })
-    .from(dbSchema.organizationBilling)
+    .from(dbSchema.billingPaymentIssue)
+    .innerJoin(
+      dbSchema.billingAccount,
+      eq(dbSchema.billingPaymentIssue.billingAccountId, dbSchema.billingAccount.id),
+    )
+    .innerJoin(
+      dbSchema.billingSubscription,
+      eq(dbSchema.billingPaymentIssue.billingSubscriptionId, dbSchema.billingSubscription.id),
+    )
     .where(
       and(
-        eq(dbSchema.organizationBilling.planCode, 'premium'),
-        eq(dbSchema.organizationBilling.subscriptionStatus, 'past_due'),
-        gte(dbSchema.organizationBilling.pastDueGraceEndsAt, reminderWindowStart),
-        lte(dbSchema.organizationBilling.pastDueGraceEndsAt, reminderWindowEnd),
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingSubscription.planCode, 'premium'),
+        eq(dbSchema.billingSubscription.status, 'past_due'),
+        eq(dbSchema.billingPaymentIssue.state, 'past_due_grace_active'),
+        gte(dbSchema.billingPaymentIssue.pastDueGraceEndsAt, reminderWindowStart),
+        lte(dbSchema.billingPaymentIssue.pastDueGraceEndsAt, reminderWindowEnd),
       ),
     )
     .limit(limit);
@@ -259,8 +277,9 @@ const reconcileOrganizationBillingProviderState = async ({
     }
 
     const isCanceled = subscriptionStatus === 'canceled';
-    await upsertOrganizationBillingByOrganizationId({
+    await upsertReserveAppBillingV2SubscriptionState({
       database,
+      env,
       organizationId,
       planCode: isCanceled ? 'free' : 'premium',
       stripeCustomerId: subscription.customerId,
@@ -275,13 +294,12 @@ const reconcileOrganizationBillingProviderState = async ({
       currentPeriodEnd: isCanceled ? null : subscription.currentPeriodEnd,
       now,
     });
-    await database
-      .update(dbSchema.organizationBilling)
-      .set({
-        lastReconciledAt: now,
-        lastReconciliationReason: sourceKind,
-      })
-      .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
+    await markReserveAppBillingV2Reconciled({
+      database,
+      organizationId,
+      now,
+      reason: sourceKind,
+    });
 
     const nextSnapshot = await readOrganizationBillingObservationSnapshot({
       database,
@@ -362,18 +380,19 @@ export const reconcileRiskyOrganizationBillingStates = async ({
 
   const rows = await database
     .select({
-      organizationId: dbSchema.organizationBilling.organizationId,
-      stripeSubscriptionId: dbSchema.organizationBilling.stripeSubscriptionId,
+      organizationId: dbSchema.billingAccount.subjectId,
+      stripeSubscriptionId: dbSchema.billingSubscription.providerSubscriptionId,
     })
-    .from(dbSchema.organizationBilling)
+    .from(dbSchema.billingSubscription)
+    .innerJoin(
+      dbSchema.billingAccount,
+      eq(dbSchema.billingSubscription.billingAccountId, dbSchema.billingAccount.id),
+    )
     .where(
       and(
-        inArray(dbSchema.organizationBilling.subscriptionStatus, [
-          'past_due',
-          'unpaid',
-          'incomplete',
-        ]),
-        isNotNull(dbSchema.organizationBilling.stripeSubscriptionId),
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        inArray(dbSchema.billingSubscription.status, ['past_due', 'unpaid', 'incomplete']),
+        isNotNull(dbSchema.billingSubscription.providerSubscriptionId),
       ),
     )
     .limit(limit);
@@ -420,11 +439,20 @@ export const reconcileProviderLinkedOrganizationBillingStates = async ({
 
   const rows = await database
     .select({
-      organizationId: dbSchema.organizationBilling.organizationId,
-      stripeSubscriptionId: dbSchema.organizationBilling.stripeSubscriptionId,
+      organizationId: dbSchema.billingAccount.subjectId,
+      stripeSubscriptionId: dbSchema.billingSubscription.providerSubscriptionId,
     })
-    .from(dbSchema.organizationBilling)
-    .where(isNotNull(dbSchema.organizationBilling.stripeSubscriptionId))
+    .from(dbSchema.billingSubscription)
+    .innerJoin(
+      dbSchema.billingAccount,
+      eq(dbSchema.billingSubscription.billingAccountId, dbSchema.billingAccount.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        isNotNull(dbSchema.billingSubscription.providerSubscriptionId),
+      ),
+    )
     .limit(limit);
 
   let reconciled = 0;

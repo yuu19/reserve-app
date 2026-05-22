@@ -2,7 +2,6 @@ import { and, asc, eq, gt, isNull, lte, or } from 'drizzle-orm';
 import type { AuthInstance, AuthRuntimeDatabase } from '../../auth-runtime.js';
 import type { AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
-  hasOrganizationBillingPaidTierCapability,
   readOrganizationPremiumEntitlementPolicy,
   type OrganizationPremiumEntitlementPolicyResult,
 } from '../billing/organization-billing-policy.js';
@@ -197,16 +196,6 @@ export const buildOrganizationPremiumFeatureDeniedPayload = (
   };
 };
 
-const organizationPremiumEntitlementKeys = new Set([
-  'organization.premium',
-  'classroom.multiple',
-  'staff.invite',
-  'booking.approval',
-  'ticket.enabled',
-]);
-
-const advancedBillingCommunicationEntitlementKeys = new Set(['billing.advanced_communications']);
-
 const hasActiveBillingEntitlement = async ({
   database,
   organizationId,
@@ -248,30 +237,6 @@ const hasActiveBillingEntitlement = async ({
   return Boolean(rows[0]);
 };
 
-const canFallbackToPremiumPolicy = ({
-  key,
-  policy,
-}: {
-  key: string;
-  policy: OrganizationPremiumEntitlementPolicyResult;
-}) => {
-  if (!policy.isPremiumEligible) {
-    return false;
-  }
-
-  if (advancedBillingCommunicationEntitlementKeys.has(key)) {
-    return hasOrganizationBillingPaidTierCapability(
-      policy.paidTier,
-      'advanced_billing_communications',
-    );
-  }
-
-  return (
-    organizationPremiumEntitlementKeys.has(key) &&
-    hasOrganizationBillingPaidTierCapability(policy.paidTier, 'organization_premium_features')
-  );
-};
-
 export const readOrganizationEntitlementGate = async ({
   database,
   env,
@@ -286,15 +251,7 @@ export const readOrganizationEntitlementGate = async ({
     now,
   });
 
-  if (
-    (await hasActiveBillingEntitlement({
-      database,
-      organizationId,
-      key,
-      now,
-    })) ||
-    canFallbackToPremiumPolicy({ key, policy })
-  ) {
+  if (await hasActiveBillingEntitlement({ database, organizationId, key, now })) {
     return {
       allowed: true,
       policy,

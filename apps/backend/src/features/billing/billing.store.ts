@@ -9,21 +9,50 @@ import type {
   readOrganizationBillingObservationSnapshot,
 } from '../../domain/billing/organization-billing-observability.js';
 import type {
-  applyOrganizationPremiumTrialCompletion,
-  selectOrganizationBillingSummary,
-  startOrganizationPremiumTrial,
+  OrganizationBillingPlanCode,
+  OrganizationBillingSubscriptionStatus,
 } from '../../domain/billing/organization-billing.js';
 
-export type OrganizationBillingSummaryRow = Awaited<
-  ReturnType<typeof selectOrganizationBillingSummary>
->;
-export type StartOrganizationPremiumTrialInput = Omit<
-  Parameters<typeof startOrganizationPremiumTrial>[0],
-  'database'
->;
-export type TrialCompletionResult = Awaited<
-  ReturnType<typeof applyOrganizationPremiumTrialCompletion>
->;
+export type OrganizationBillingSummaryRow = {
+  planCode: OrganizationBillingPlanCode;
+  billingInterval: 'month' | 'year' | null;
+  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  cancelAtPeriodEnd: boolean;
+  trialStartedAt: Date | null;
+  trialEndedAt: Date | null;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  paymentIssueStartedAt: Date | null;
+  pastDueGraceEndsAt: Date | null;
+  billingProfileReadiness: string;
+  billingProfileNextAction: string | null;
+  billingProfileCheckedAt: Date | null;
+  lastReconciledAt: Date | null;
+  lastReconciliationReason: string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripePriceId: string | null;
+} | null;
+export type StartOrganizationPremiumTrialInput = {
+  organizationId: string;
+  now?: Date;
+  trialStartedAt?: Date;
+  trialEndsAt?: Date;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  billingInterval?: 'month' | 'year' | null;
+};
+export type TrialCompletionResult =
+  | {
+      ok: true;
+      message: string;
+    }
+  | {
+      ok: false;
+      status: 409 | 422 | 503;
+      message: string;
+    };
 export type OrganizationBillingHistoryResult = Awaited<
   ReturnType<typeof readOrganizationOwnerBillingHistory>
 >;
@@ -48,10 +77,10 @@ export type AppendResolvedBillingSignalInput = Omit<
 export type InternalBillingInspection = Awaited<ReturnType<typeof readInternalBillingInspection>>;
 
 /**
- * reserve-app の organization billing aggregate を読むための Store 境界です。
+ * reserve-app の billing v2 tables を読むための Store 境界です。
  *
- * 汎用 billing store ではなく、現行 organization_billing 系テーブルと周辺 append-only table を
- * usecase から扱うための薄い adapter 契約に限定します。
+ * route/usecase は v2 tables を正本として扱い、旧 organization_billing 系 table は互換表示用の
+ * append/read surface に限定します。
  */
 export type OrganizationBillingStore = {
   selectSummary(organizationId: string): Promise<OrganizationBillingSummaryRow>;

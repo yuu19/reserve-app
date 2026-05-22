@@ -2,12 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import {
-  applyOrganizationPremiumTrialCompletion,
   resolveBillingIntervalFromPriceId,
-  selectOrganizationBillingSummary,
-  selectOrganizationBillingByStripeIdentifiers,
-  updateOrganizationBillingStripeCustomerId,
-  upsertOrganizationBillingByOrganizationId,
   type OrganizationBillingSubscriptionStatus,
 } from './organization-billing.js';
 import {
@@ -47,10 +42,16 @@ import {
 import { createDrizzleBillingEventStore } from '../../infra/billing/drizzle-billing-event-store.js';
 import {
   appendReserveAppBillingV2PaymentIssueEvent,
-  syncReserveAppBillingV2Projection,
-} from '../../infra/billing/reserve-app-billing-projection.js';
+  applyReserveAppBillingV2TrialCompletion,
+  findReserveAppBillingV2ByStripeIdentifiers,
+  readReserveAppBillingV2Summary,
+  syncReserveAppBillingV2DerivedState,
+  updateReserveAppBillingV2CustomerId,
+  upsertReserveAppBillingV2SubscriptionState,
+} from '../../infra/billing/reserve-app-billing-v2-source.js';
 
 const ORGANIZATION_BILLING_WEBHOOK_SCOPE = 'organization_billing';
+const BILLING_PROVIDER_EVENT_SCOPE = 'billing';
 const STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS = 2 * 60 * 1000;
 
 const sha256Hex = async (value: string): Promise<string> => {
@@ -209,10 +210,10 @@ const claimStripeWebhookEvent = async ({
   eventType: string;
   payloadHash: string;
 }): Promise<StripeWebhookEventClaimResult> => {
-  // webhook 受領記録は event id + scope で冪等に claim する。失敗済み受領記録だけは
+  // webhook 受領記録は billing_provider_event を正本にする。失敗済み受領記録だけは
   // Stripe の再送で再処理できるよう processing に戻す。
   const now = new Date();
-  await createDrizzleBillingEventStore({ database }).claimProviderEvent({
+  const providerEventClaim = await createDrizzleBillingEventStore({ database }).claimProviderEvent({
     provider: 'stripe',
     providerEventId: eventId,
     eventType,
@@ -221,101 +222,60 @@ const claimStripeWebhookEvent = async ({
     staleProcessingAfterMs: STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS,
   });
 
+  return { kind: providerEventClaim.kind };
+};
+
+const readBillingAccountIdByOrganizationId = async ({
+  database,
+  organizationId,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+}) => {
   const rows = await database
-    .insert(dbSchema.stripeWebhookEvent)
-    .values({
-      id: eventId,
-      eventType,
-      scope: ORGANIZATION_BILLING_WEBHOOK_SCOPE,
-      processingStatus: 'processing',
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing()
-    .returning({
-      id: dbSchema.stripeWebhookEvent.id,
-    });
-
-  if (rows[0]) {
-    return { kind: 'claimed' };
-  }
-
-  const existingRows = await database
-    .select({
-      processingStatus: dbSchema.stripeWebhookEvent.processingStatus,
-      updatedAt: dbSchema.stripeWebhookEvent.updatedAt,
-      createdAt: dbSchema.stripeWebhookEvent.createdAt,
-    })
-    .from(dbSchema.stripeWebhookEvent)
+    .select({ id: dbSchema.billingAccount.id })
+    .from(dbSchema.billingAccount)
     .where(
       and(
-        eq(dbSchema.stripeWebhookEvent.id, eventId),
-        eq(dbSchema.stripeWebhookEvent.scope, ORGANIZATION_BILLING_WEBHOOK_SCOPE),
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingAccount.subjectId, organizationId),
       ),
     )
     .limit(1);
-  const existing = existingRows[0];
-  if (!existing) {
-    return { kind: 'claimed' };
-  }
 
-  if (existing.processingStatus === 'processed') {
-    await database
-      .update(dbSchema.stripeWebhookEvent)
-      .set({
-        duplicateDetected: true,
-        duplicateDetectedAt: now,
-        receiptStatus: 'duplicate',
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(dbSchema.stripeWebhookEvent.id, eventId),
-          eq(dbSchema.stripeWebhookEvent.scope, ORGANIZATION_BILLING_WEBHOOK_SCOPE),
-        ),
-      );
-    return { kind: 'already_processed' };
-  }
+  return rows[0]?.id ?? null;
+};
 
-  const processingReferenceTime = existing.updatedAt ?? existing.createdAt;
-  const stale =
-    existing.processingStatus === 'failed' ||
-    processingReferenceTime.getTime() <= now.getTime() - STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS;
-
-  if (stale) {
-    await database
-      .update(dbSchema.stripeWebhookEvent)
-      .set({
-        processingStatus: 'processing',
-        failureReason: null,
-        processedAt: null,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(dbSchema.stripeWebhookEvent.id, eventId),
-          eq(dbSchema.stripeWebhookEvent.scope, ORGANIZATION_BILLING_WEBHOOK_SCOPE),
-        ),
-      );
-    return { kind: 'already_processing_stale_claimed' };
-  }
-
+const updateStripeBillingProviderEventLinkage = async ({
+  database,
+  eventId,
+  billingAccountId,
+  stripeCustomerId,
+  stripeSubscriptionId,
+  updatedAt,
+}: {
+  database: AuthRuntimeDatabase;
+  eventId: string;
+  billingAccountId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  updatedAt: Date;
+}) => {
   await database
-    .update(dbSchema.stripeWebhookEvent)
+    .update(dbSchema.billingProviderEvent)
     .set({
-      duplicateDetected: true,
-      duplicateDetectedAt: now,
-      receiptStatus: 'duplicate_processing',
-      updatedAt: now,
+      billingAccountId: billingAccountId ?? null,
+      providerCustomerId: stripeCustomerId ?? null,
+      providerSubscriptionId: stripeSubscriptionId ?? null,
+      updatedAt,
     })
     .where(
       and(
-        eq(dbSchema.stripeWebhookEvent.id, eventId),
-        eq(dbSchema.stripeWebhookEvent.scope, ORGANIZATION_BILLING_WEBHOOK_SCOPE),
+        eq(dbSchema.billingProviderEvent.provider, 'stripe'),
+        eq(dbSchema.billingProviderEvent.providerEventId, eventId),
+        eq(dbSchema.billingProviderEvent.scope, BILLING_PROVIDER_EVENT_SCOPE),
       ),
     );
-
-  return { kind: 'already_processing_fresh' };
 };
 
 const markStripeWebhookEventProcessed = async ({
@@ -333,32 +293,29 @@ const markStripeWebhookEventProcessed = async ({
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
 }) => {
-  if (organizationId) {
-    await syncReserveAppBillingV2Projection({
-      database,
-      env,
-      organizationId,
-    });
-  }
+  const processedAt = new Date();
+  const projection = organizationId
+    ? await syncReserveAppBillingV2DerivedState({
+        database,
+        env,
+        organizationId,
+      })
+    : null;
 
   await createDrizzleBillingEventStore({ database }).markProviderEventProcessed({
     provider: 'stripe',
     providerEventId: eventId,
-    processedAt: new Date(),
+    processedAt,
   });
 
-  await database
-    .update(dbSchema.stripeWebhookEvent)
-    .set({
-      processingStatus: 'processed',
-      organizationId: organizationId ?? null,
-      stripeCustomerId: stripeCustomerId ?? null,
-      stripeSubscriptionId: stripeSubscriptionId ?? null,
-      failureReason: null,
-      receiptStatus: 'processed',
-      processedAt: new Date(),
-    })
-    .where(eq(dbSchema.stripeWebhookEvent.id, eventId));
+  await updateStripeBillingProviderEventLinkage({
+    database,
+    eventId,
+    billingAccountId: projection?.account.id ?? null,
+    stripeCustomerId,
+    stripeSubscriptionId,
+    updatedAt: processedAt,
+  });
 };
 
 const markStripeWebhookEventFailed = async ({
@@ -376,24 +333,24 @@ const markStripeWebhookEventFailed = async ({
   stripeSubscriptionId?: string | null;
   failureReason: StripeWebhookFailureReason;
 }) => {
+  const failedAt = new Date();
   await createDrizzleBillingEventStore({ database }).markProviderEventFailed({
     provider: 'stripe',
     providerEventId: eventId,
-    failedAt: new Date(),
+    failedAt,
     errorMessage: failureReason,
   });
 
-  await database
-    .update(dbSchema.stripeWebhookEvent)
-    .set({
-      processingStatus: 'failed',
-      organizationId: organizationId ?? null,
-      stripeCustomerId: stripeCustomerId ?? null,
-      stripeSubscriptionId: stripeSubscriptionId ?? null,
-      failureReason,
-      processedAt: null,
-    })
-    .where(eq(dbSchema.stripeWebhookEvent.id, eventId));
+  await updateStripeBillingProviderEventLinkage({
+    database,
+    eventId,
+    billingAccountId: organizationId
+      ? await readBillingAccountIdByOrganizationId({ database, organizationId })
+      : null,
+    stripeCustomerId,
+    stripeSubscriptionId,
+    updatedAt: failedAt,
+  });
 };
 
 type StripeOrganizationBillingWebhookResult =
@@ -798,8 +755,9 @@ export const handleStripeOrganizationBillingWebhook = async ({
         env,
         organizationId: normalized.organizationId,
       });
-      await upsertOrganizationBillingByOrganizationId({
+      await upsertReserveAppBillingV2SubscriptionState({
         database,
+        env,
         organizationId: normalized.organizationId,
         planCode: 'premium',
         stripeCustomerId: normalized.stripeCustomerId,
@@ -837,7 +795,11 @@ export const handleStripeOrganizationBillingWebhook = async ({
     }
 
     if (normalized.kind === 'payment_method_setup_completed') {
-      const billing = await selectOrganizationBillingSummary(database, normalized.organizationId);
+      const billing = await readReserveAppBillingV2Summary({
+        database,
+        env,
+        organizationId: normalized.organizationId,
+      });
       if (!billing || billing.planCode !== 'premium') {
         return failStripeWebhookEvent({
           database,
@@ -910,8 +872,9 @@ export const handleStripeOrganizationBillingWebhook = async ({
         organizationId: normalized.organizationId,
       });
       if (billing.stripeCustomerId !== stripeCustomerId) {
-        await updateOrganizationBillingStripeCustomerId({
+        await updateReserveAppBillingV2CustomerId({
           database,
+          env,
           organizationId: normalized.organizationId,
           stripeCustomerId,
         });
@@ -954,7 +917,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
     }
 
     if (normalized.kind === 'invoice_payment_event') {
-      const matchedBilling = await selectOrganizationBillingByStripeIdentifiers({
+      const matchedBilling = await findReserveAppBillingV2ByStripeIdentifiers({
         database,
         stripeCustomerId: normalized.stripeCustomerId,
         stripeSubscriptionId: normalized.stripeSubscriptionId,
@@ -1027,8 +990,9 @@ export const handleStripeOrganizationBillingWebhook = async ({
           stalePaymentIssueAfterRecovery =
             isPaymentIssueEvent && isProviderRecoveredSubscriptionStatus(latestSubscriptionStatus);
 
-          await upsertOrganizationBillingByOrganizationId({
+          await upsertReserveAppBillingV2SubscriptionState({
             database,
+            env,
             organizationId: matchedBilling.organizationId,
             planCode: isFreeOrCanceled ? 'free' : 'premium',
             stripeCustomerId: latestSubscription.customerId,
@@ -1146,7 +1110,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       return createStripeWebhookHandledResult({ duplicate: false });
     }
 
-    const matchedBilling = await selectOrganizationBillingByStripeIdentifiers({
+    const matchedBilling = await findReserveAppBillingV2ByStripeIdentifiers({
       database,
       stripeCustomerId: normalized.stripeCustomerId,
       stripeSubscriptionId: normalized.stripeSubscriptionId,
@@ -1242,8 +1206,9 @@ export const handleStripeOrganizationBillingWebhook = async ({
       });
     }
     const isCanceled = subscriptionStatus === 'canceled';
-    await upsertOrganizationBillingByOrganizationId({
+    await upsertReserveAppBillingV2SubscriptionState({
       database,
+      env,
       organizationId: matchedBilling.organizationId,
       planCode: isCanceled ? 'free' : 'premium',
       stripeCustomerId: latestSubscription.customerId,
@@ -1347,7 +1312,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       latestSubscription.currentPeriodEnd &&
       latestSubscription.currentPeriodEnd.getTime() <= Date.now()
     ) {
-      const completion = await applyOrganizationPremiumTrialCompletion({
+      const completion = await applyReserveAppBillingV2TrialCompletion({
         database,
         env,
         organizationId: matchedBilling.organizationId,

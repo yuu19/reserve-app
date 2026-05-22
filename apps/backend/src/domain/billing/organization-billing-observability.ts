@@ -1,9 +1,9 @@
 import { and, desc, eq, or, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import * as dbSchema from '../../infra/db/schema.js';
+import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import {
   resolveOrganizationBillingPaymentMethodStatus,
-  selectOrganizationBillingSummary,
   type OrganizationBillingPaymentMethodStatus,
   type OrganizationBillingPlanCode,
   type OrganizationBillingPlanState,
@@ -269,7 +269,7 @@ export const readOrganizationBillingObservationSnapshot = async ({
   env: AuthRuntimeEnv;
   organizationId: string;
 }) => {
-  const billing = await selectOrganizationBillingSummary(database, organizationId);
+  const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
   const planCode: OrganizationBillingPlanCode =
     billing?.planCode === 'premium' ? 'premium' : 'free';
   const billingInterval =
@@ -620,28 +620,31 @@ export const readInternalBillingReconciliationInspection = async ({
       .limit(5),
     database
       .select({
-        id: dbSchema.stripeWebhookEvent.id,
-        eventType: dbSchema.stripeWebhookEvent.eventType,
-        processingStatus: dbSchema.stripeWebhookEvent.processingStatus,
-        failureReason: dbSchema.stripeWebhookEvent.failureReason,
-        signatureVerificationStatus: dbSchema.stripeWebhookEvent.signatureVerificationStatus,
-        duplicateDetected: dbSchema.stripeWebhookEvent.duplicateDetected,
-        duplicateDetectedAt: dbSchema.stripeWebhookEvent.duplicateDetectedAt,
-        receiptStatus: dbSchema.stripeWebhookEvent.receiptStatus,
-        createdAt: dbSchema.stripeWebhookEvent.createdAt,
-        processedAt: dbSchema.stripeWebhookEvent.processedAt,
+        id: dbSchema.billingProviderEvent.providerEventId,
+        eventType: dbSchema.billingProviderEvent.eventType,
+        processingStatus: dbSchema.billingProviderEvent.processingStatus,
+        failureReason: dbSchema.billingProviderEvent.failureReason,
+        signatureVerificationStatus: sql<string>`'verified'`,
+        duplicateDetected: dbSchema.billingProviderEvent.duplicateDetected,
+        duplicateDetectedAt: dbSchema.billingProviderEvent.duplicateDetectedAt,
+        receiptStatus: dbSchema.billingProviderEvent.receiptStatus,
+        createdAt: dbSchema.billingProviderEvent.createdAt,
+        processedAt: dbSchema.billingProviderEvent.processedAt,
       })
-      .from(dbSchema.stripeWebhookEvent)
+      .from(dbSchema.billingProviderEvent)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingProviderEvent.billingAccountId, dbSchema.billingAccount.id),
+      )
       .where(
         and(
-          eq(dbSchema.stripeWebhookEvent.organizationId, organizationId),
-          or(
-            eq(dbSchema.stripeWebhookEvent.scope, 'billing'),
-            eq(dbSchema.stripeWebhookEvent.scope, 'organization_billing'),
-          ),
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
+          eq(dbSchema.billingProviderEvent.provider, 'stripe'),
+          eq(dbSchema.billingProviderEvent.scope, 'billing'),
         ),
       )
-      .orderBy(desc(dbSchema.stripeWebhookEvent.createdAt))
+      .orderBy(desc(dbSchema.billingProviderEvent.createdAt))
       .limit(5),
     database
       .select({

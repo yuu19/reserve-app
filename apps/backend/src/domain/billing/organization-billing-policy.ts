@@ -1,9 +1,9 @@
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
+import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import {
   resolveOrganizationBillingPaymentMethodStatus,
   resolveOrganizationBillingPlanState,
   resolveOrganizationBillingTrialEndsAt,
-  selectOrganizationBillingSummary,
   type OrganizationBillingPaymentMethodStatus,
   type OrganizationBillingPlanCode,
   type OrganizationBillingPlanState,
@@ -409,7 +409,7 @@ export const readOrganizationPremiumEntitlementPolicy = async ({
   organizationId: string;
   now?: Date;
 }) => {
-  const billing = await selectOrganizationBillingSummary(database, organizationId);
+  const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
   const planCode: OrganizationBillingPlanCode =
     billing?.planCode === 'premium' ? 'premium' : 'free';
   const subscriptionStatus: OrganizationBillingSubscriptionStatus =

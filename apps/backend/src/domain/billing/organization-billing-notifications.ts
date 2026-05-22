@@ -1,9 +1,9 @@
 import { and, count, desc, eq, or, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
+import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import {
   resolveOrganizationBillingPaymentMethodStatus,
-  selectOrganizationBillingSummary,
   type OrganizationBillingPaymentMethodStatus,
   type OrganizationBillingPlanState,
   type OrganizationBillingSubscriptionStatus,
@@ -605,7 +605,7 @@ export const resolveOrganizationTrialReminderContext = async ({
   env: AuthRuntimeEnv;
   organizationId: string;
 }): Promise<OrganizationBillingReminderContext | null> => {
-  const billing = await selectOrganizationBillingSummary(database, organizationId);
+  const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
   if (!billing) {
     return null;
   }
@@ -698,19 +698,26 @@ export const readTrialReminderDeliveryAuditInspection = async ({
       .limit(1),
     database
       .select({
-        id: dbSchema.stripeWebhookEvent.id,
-        processingStatus: dbSchema.stripeWebhookEvent.processingStatus,
-        failureReason: dbSchema.stripeWebhookEvent.failureReason,
-        createdAt: dbSchema.stripeWebhookEvent.createdAt,
+        id: dbSchema.billingProviderEvent.providerEventId,
+        processingStatus: dbSchema.billingProviderEvent.processingStatus,
+        failureReason: dbSchema.billingProviderEvent.failureReason,
+        createdAt: dbSchema.billingProviderEvent.createdAt,
       })
-      .from(dbSchema.stripeWebhookEvent)
+      .from(dbSchema.billingProviderEvent)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingProviderEvent.billingAccountId, dbSchema.billingAccount.id),
+      )
       .where(
         and(
-          eq(dbSchema.stripeWebhookEvent.organizationId, organizationId),
-          eq(dbSchema.stripeWebhookEvent.eventType, 'customer.subscription.trial_will_end'),
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
+          eq(dbSchema.billingProviderEvent.provider, 'stripe'),
+          eq(dbSchema.billingProviderEvent.scope, 'billing'),
+          eq(dbSchema.billingProviderEvent.eventType, 'customer.subscription.trial_will_end'),
         ),
       )
-      .orderBy(desc(dbSchema.stripeWebhookEvent.createdAt))
+      .orderBy(desc(dbSchema.billingProviderEvent.createdAt))
       .limit(1),
   ]);
 
@@ -1064,7 +1071,7 @@ export const sendOrganizationPaymentIssueNotification = async ({
   | { ok: true; notificationSent: false }
   | { ok: false; retryable: boolean; message: string; failureReason: string }
 > => {
-  const billing = await selectOrganizationBillingSummary(database, organizationId);
+  const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
   if (!billing) {
     return { ok: true, notificationSent: false };
   }

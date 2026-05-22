@@ -65,6 +65,24 @@ const normalizeState = (value: string): OrganizationBillingOperationState =>
 const normalizeBillingInterval = (value: string | null): 'month' | 'year' | null =>
   value === 'month' || value === 'year' ? value : null;
 
+const normalizeGenericPurpose = (value: string): OrganizationBillingOperationPurpose => {
+  if (value === 'start_trial_subscription') {
+    return 'trial_start';
+  }
+  if (value === 'create_setup_checkout') {
+    return 'payment_method_setup';
+  }
+  if (value === 'create_portal_session') {
+    return 'billing_portal';
+  }
+  return 'paid_checkout';
+};
+
+const resolveBillingIntervalFromReuseKey = (reuseKey: string | null): 'month' | 'year' | null => {
+  const lastSegment = reuseKey?.split(':').at(-1);
+  return lastSegment === 'month' || lastSegment === 'year' ? lastSegment : null;
+};
+
 const toAttempt = (
   row: typeof dbSchema.organizationBillingOperationAttempt.$inferSelect,
 ): OrganizationBillingOperationAttempt => ({
@@ -472,11 +490,58 @@ export const readRecentBillingOperationAttempts = async ({
   limit?: number;
 }) => {
   const rows = await database
-    .select()
-    .from(dbSchema.organizationBillingOperationAttempt)
-    .where(eq(dbSchema.organizationBillingOperationAttempt.organizationId, organizationId))
-    .orderBy(desc(dbSchema.organizationBillingOperationAttempt.createdAt))
+    .select({
+      id: dbSchema.billingOperationAttempt.id,
+      organizationId: dbSchema.billingAccount.subjectId,
+      purpose: dbSchema.billingOperationAttempt.purpose,
+      state: dbSchema.billingOperationAttempt.state,
+      handoffUrl: dbSchema.billingOperationAttempt.handoffUrl,
+      handoffExpiresAt: dbSchema.billingOperationAttempt.handoffExpiresAt,
+      stripeCustomerId: dbSchema.billingOperationAttempt.providerCustomerId,
+      stripeSubscriptionId: dbSchema.billingOperationAttempt.providerSubscriptionId,
+      stripeCheckoutSessionId: dbSchema.billingOperationAttempt.providerCheckoutSessionId,
+      stripePortalSessionId: dbSchema.billingOperationAttempt.providerPortalSessionId,
+      reuseKey: dbSchema.billingOperationAttempt.reuseKey,
+      idempotencyKey: dbSchema.billingOperationAttempt.idempotencyKey,
+      failureReason: dbSchema.billingOperationAttempt.failureReason,
+      createdByUserId: dbSchema.billingOperationAttempt.createdByUserId,
+      createdAt: dbSchema.billingOperationAttempt.createdAt,
+      updatedAt: dbSchema.billingOperationAttempt.updatedAt,
+    })
+    .from(dbSchema.billingOperationAttempt)
+    .innerJoin(
+      dbSchema.billingAccount,
+      eq(dbSchema.billingOperationAttempt.billingAccountId, dbSchema.billingAccount.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingAccount.subjectId, organizationId),
+      ),
+    )
+    .orderBy(desc(dbSchema.billingOperationAttempt.createdAt))
     .limit(Math.max(1, Math.min(Math.trunc(limit), 50)));
 
-  return rows.map(toAttempt);
+  return rows.map(
+    (row: (typeof rows)[number]): OrganizationBillingOperationAttempt => ({
+      id: row.id,
+      organizationId: row.organizationId,
+      purpose: normalizeGenericPurpose(row.purpose),
+      billingInterval: resolveBillingIntervalFromReuseKey(row.reuseKey),
+      state: normalizeState(row.state),
+      handoffUrl: row.handoffUrl ?? null,
+      handoffExpiresAt: row.handoffExpiresAt ?? null,
+      provider: 'stripe',
+      stripeCustomerId: row.stripeCustomerId ?? null,
+      stripeSubscriptionId: row.stripeSubscriptionId ?? null,
+      stripeCheckoutSessionId: row.stripeCheckoutSessionId ?? null,
+      stripePortalSessionId: row.stripePortalSessionId ?? null,
+      reuseKey: row.reuseKey as BillingOperationReuseKey | null,
+      idempotencyKey: row.idempotencyKey,
+      failureReason: row.failureReason ?? null,
+      createdByUserId: row.createdByUserId ?? null,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }),
+  );
 };

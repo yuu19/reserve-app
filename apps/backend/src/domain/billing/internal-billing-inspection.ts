@@ -1,5 +1,6 @@
 import { and, desc, eq, or } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
+import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import {
   isBillingInterval,
@@ -7,7 +8,6 @@ import {
   resolveOrganizationBillingPaymentIssueState,
   resolveOrganizationBillingPaymentMethodStatus,
   resolveOrganizationBillingProfileReadiness,
-  selectOrganizationBillingSummary,
   type OrganizationBillingPlanState,
   type OrganizationBillingSubscriptionStatus,
 } from './organization-billing.js';
@@ -415,7 +415,7 @@ export const readInternalBillingInspection = async ({
     return null;
   }
 
-  const billing = await selectOrganizationBillingSummary(database, organizationId);
+  const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
   const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
   const billingInterval = isBillingInterval(billing?.billingInterval ?? null);
   const subscriptionStatus =

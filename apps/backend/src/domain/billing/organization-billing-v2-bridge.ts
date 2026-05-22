@@ -195,7 +195,7 @@ export const upsertOrganizationBillingV2Notification = async ({
   failureReason,
   stripeEventId,
   stripeCustomerId,
-  stripeSubscriptionId,
+  stripeSubscriptionId: _stripeSubscriptionId,
   stripeInvoiceId,
 }: {
   database: AuthRuntimeDatabase;
