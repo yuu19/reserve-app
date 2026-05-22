@@ -5,6 +5,7 @@ import {
   findParticipantsByUserAndOrganization,
   getSessionIdentity,
   hasAdminOrOwnerAccess,
+  readOrganizationEntitlementGate,
   readOrganizationPremiumFeatureGate,
   resolveOrganizationClassroomAccess,
   resolveOrganizationClassroomContext,
@@ -93,6 +94,10 @@ export type BookingRouteContext = BookingRouteDeps & {
   requireOrganizationPremiumFeature: (
     organizationId: string,
   ) => ReturnType<typeof readOrganizationPremiumFeatureGate>;
+  requireOrganizationEntitlement: (input: {
+    organizationId: string;
+    key: string;
+  }) => ReturnType<typeof readOrganizationEntitlementGate>;
 };
 
 /**
@@ -304,6 +309,13 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
         database,
         env,
         organizationId,
+      }),
+    requireOrganizationEntitlement: ({ organizationId, key }) =>
+      readOrganizationEntitlementGate({
+        database,
+        env,
+        organizationId,
+        key,
       }),
   };
 };

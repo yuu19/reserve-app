@@ -3,7 +3,7 @@ import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
 import {
   canManageParticipantsByRole,
   listOrganizationClassroomContexts,
-  readOrganizationPremiumFeatureGate,
+  readOrganizationEntitlementGate,
   resolveOrganizationClassroomAccess,
   resolveOrganizationClassroomContext,
 } from '../domain/booking/authorization.js';
@@ -15,6 +15,7 @@ import {
   type AuthRuntimeEnv,
 } from '../auth-runtime.js';
 import { ensureOrganizationBillingRow } from '../domain/billing/organization-billing.js';
+import { RESERVE_APP_ENTITLEMENTS } from '../features/billing/policies/reserve-app-billing-policy.js';
 import { registerBillingRoutes } from '../features/billing/billing.routes.js';
 import * as dbSchema from '../infra/db/schema.js';
 import {
@@ -2371,10 +2372,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const premiumGate = await readOrganizationPremiumFeatureGate({
+      const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
         organizationId: organization.id,
+        key: RESERVE_APP_ENTITLEMENTS.CLASSROOM_MULTIPLE,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -2767,10 +2769,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const premiumGate = await readOrganizationPremiumFeatureGate({
+      const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
         organizationId: organization.id,
+        key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -2882,10 +2885,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const premiumGate = await readOrganizationPremiumFeatureGate({
+      const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
         organizationId: organization.id,
+        key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -2940,10 +2944,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const premiumGate = await readOrganizationPremiumFeatureGate({
+      const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
         organizationId: classroomContext.organizationId,
+        key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -3065,10 +3070,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const premiumGate = await readOrganizationPremiumFeatureGate({
+      const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
         organizationId: classroomContext.organizationId,
+        key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -3161,10 +3167,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         invitation.subjectKind === 'org_operator' ||
         invitation.subjectKind === 'classroom_operator'
       ) {
-        const premiumGate = await readOrganizationPremiumFeatureGate({
+        const premiumGate = await readOrganizationEntitlementGate({
           database,
           env,
           organizationId: invitation.organizationId,
+          key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
         });
         if (!premiumGate.allowed) {
           return c.json(premiumGate.body, premiumGate.status);
@@ -3369,10 +3376,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         }
       }
 
-      const premiumGate = await readOrganizationPremiumFeatureGate({
+      const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
         organizationId,
+        key: RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);

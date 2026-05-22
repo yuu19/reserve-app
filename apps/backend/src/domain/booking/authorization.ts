@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, lte, or } from 'drizzle-orm';
 import type { AuthInstance, AuthRuntimeDatabase } from '../../auth-runtime.js';
 import type { AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
@@ -173,6 +173,16 @@ export type OrganizationPremiumFeatureGate =
       body: OrganizationPremiumFeatureDeniedPayload;
     };
 
+export type OrganizationEntitlementGateInput = {
+  database: AuthRuntimeDatabase;
+  env: AuthRuntimeEnv;
+  organizationId: string;
+  key: string;
+  now?: Date;
+};
+
+export type OrganizationEntitlementGate = OrganizationPremiumFeatureGate;
+
 export const buildOrganizationPremiumFeatureDeniedPayload = (
   policy: OrganizationPremiumEntitlementPolicyResult,
 ): OrganizationPremiumFeatureDeniedPayload => {
@@ -184,6 +194,118 @@ export const buildOrganizationPremiumFeatureDeniedPayload = (
     entitlementState: policy.entitlementState,
     planState: policy.planState,
     trialEndsAt: policy.trialEndsAt,
+  };
+};
+
+const organizationPremiumEntitlementKeys = new Set([
+  'organization.premium',
+  'classroom.multiple',
+  'staff.invite',
+  'booking.approval',
+  'ticket.enabled',
+]);
+
+const advancedBillingCommunicationEntitlementKeys = new Set(['billing.advanced_communications']);
+
+const hasActiveBillingEntitlement = async ({
+  database,
+  organizationId,
+  key,
+  now,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  key: string;
+  now: Date;
+}) => {
+  const rows = await database
+    .select({
+      id: dbSchema.billingEntitlement.id,
+    })
+    .from(dbSchema.billingAccount)
+    .innerJoin(
+      dbSchema.billingEntitlement,
+      eq(dbSchema.billingEntitlement.billingAccountId, dbSchema.billingAccount.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingAccount.subjectId, organizationId),
+        eq(dbSchema.billingEntitlement.key, key),
+        eq(dbSchema.billingEntitlement.active, true),
+        or(
+          isNull(dbSchema.billingEntitlement.validFrom),
+          lte(dbSchema.billingEntitlement.validFrom, now),
+        ),
+        or(
+          isNull(dbSchema.billingEntitlement.validUntil),
+          gt(dbSchema.billingEntitlement.validUntil, now),
+        ),
+      ),
+    )
+    .limit(1);
+
+  return Boolean(rows[0]);
+};
+
+const canFallbackToPremiumPolicy = ({
+  key,
+  policy,
+}: {
+  key: string;
+  policy: OrganizationPremiumEntitlementPolicyResult;
+}) => {
+  if (!policy.isPremiumEligible) {
+    return false;
+  }
+
+  if (advancedBillingCommunicationEntitlementKeys.has(key)) {
+    return hasOrganizationBillingPaidTierCapability(
+      policy.paidTier,
+      'advanced_billing_communications',
+    );
+  }
+
+  return (
+    organizationPremiumEntitlementKeys.has(key) &&
+    hasOrganizationBillingPaidTierCapability(policy.paidTier, 'organization_premium_features')
+  );
+};
+
+export const readOrganizationEntitlementGate = async ({
+  database,
+  env,
+  organizationId,
+  key,
+  now = new Date(),
+}: OrganizationEntitlementGateInput): Promise<OrganizationEntitlementGate> => {
+  const policy = await readOrganizationPremiumEntitlementPolicy({
+    database,
+    env,
+    organizationId,
+    now,
+  });
+
+  if (
+    (await hasActiveBillingEntitlement({
+      database,
+      organizationId,
+      key,
+      now,
+    })) ||
+    canFallbackToPremiumPolicy({ key, policy })
+  ) {
+    return {
+      allowed: true,
+      policy,
+    };
+  }
+
+  return {
+    allowed: false,
+    policy,
+    status: 403,
+    body: buildOrganizationPremiumFeatureDeniedPayload(policy),
   };
 };
 
@@ -199,29 +321,13 @@ export const readOrganizationPremiumFeatureGate = async ({
   organizationId: string;
   now?: Date;
 }): Promise<OrganizationPremiumFeatureGate> => {
-  const policy = await readOrganizationPremiumEntitlementPolicy({
+  return readOrganizationEntitlementGate({
     database,
     env,
     organizationId,
+    key: 'organization.premium',
     now,
   });
-
-  if (
-    policy.isPremiumEligible &&
-    hasOrganizationBillingPaidTierCapability(policy.paidTier, 'organization_premium_features')
-  ) {
-    return {
-      allowed: true,
-      policy,
-    };
-  }
-
-  return {
-    allowed: false,
-    policy,
-    status: 403,
-    body: buildOrganizationPremiumFeatureDeniedPayload(policy),
-  };
 };
 
 const buildDisplayBadges = ({

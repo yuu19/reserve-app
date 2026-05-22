@@ -10,6 +10,7 @@ import {
   type JsonRouteResult,
 } from '../../shared/route-result.js';
 import type { BookingRouteContext } from './booking-route-context.js';
+import { RESERVE_APP_ENTITLEMENTS } from '../billing/policies/reserve-app-billing-policy.js';
 import {
   approvePendingBooking,
   consumeBookingTicketLedger,
@@ -64,7 +65,10 @@ export const approveBookingByStaff = async (
     return conflict('Only pending approval booking can be approved.');
   }
 
-  const premiumGate = await ctx.requireOrganizationPremiumFeature(booking.organizationId);
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId: booking.organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.BOOKING_APPROVAL,
+  });
   if (!premiumGate.allowed) {
     return jsonResult(premiumGate.body, premiumGate.status);
   }
@@ -229,7 +233,10 @@ export const rejectBookingByStaff = async (
     return conflict('Only pending approval booking can be rejected.');
   }
 
-  const premiumGate = await ctx.requireOrganizationPremiumFeature(booking.organizationId);
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId: booking.organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.BOOKING_APPROVAL,
+  });
   if (!premiumGate.allowed) {
     return jsonResult(premiumGate.body, premiumGate.status);
   }

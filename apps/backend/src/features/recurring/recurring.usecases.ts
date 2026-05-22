@@ -20,6 +20,7 @@ import {
   type JsonRouteResult,
 } from '../../shared/route-result.js';
 import type { BookingRouteContext } from '../booking/booking-route-context.js';
+import { RESERVE_APP_ENTITLEMENTS } from '../billing/policies/reserve-app-billing-policy.js';
 import {
   findRecurringException,
   findRecurringScheduleScope,
@@ -73,7 +74,10 @@ const ensureCanManageSchedule = async ({
     return { result: forbidden(), identity, schedule };
   }
 
-  const premiumGate = await ctx.requireOrganizationPremiumFeature(schedule.organizationId);
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId: schedule.organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM,
+  });
   if (!premiumGate.allowed) {
     return { result: jsonResult(premiumGate.body, premiumGate.status), identity, schedule };
   }
@@ -122,7 +126,10 @@ export const createRecurringSchedule = async (
     return forbidden();
   }
 
-  const premiumGate = await ctx.requireOrganizationPremiumFeature(organizationId);
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM,
+  });
   if (!premiumGate.allowed) {
     return jsonResult(premiumGate.body, premiumGate.status);
   }

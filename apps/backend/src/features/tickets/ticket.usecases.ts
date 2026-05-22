@@ -19,6 +19,7 @@ import {
   type JsonRouteResult,
 } from '../../shared/route-result.js';
 import type { BookingRouteContext } from '../booking/booking-route-context.js';
+import { RESERVE_APP_ENTITLEMENTS } from '../billing/policies/reserve-app-billing-policy.js';
 import {
   cancelTicketPurchase,
   countServicesByIds,
@@ -97,7 +98,10 @@ export const createTicketType = async (
     return forbidden();
   }
 
-  const premiumGate = await ctx.requireOrganizationPremiumFeature(organizationId);
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.TICKET_ENABLED,
+  });
   if (!premiumGate.allowed) {
     return jsonResult(premiumGate.body, premiumGate.status);
   }
@@ -411,7 +415,10 @@ export const approveTicketPurchase = async (
     return forbidden();
   }
 
-  const premiumGate = await ctx.requireOrganizationPremiumFeature(purchase.organizationId);
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId: purchase.organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.TICKET_ENABLED,
+  });
   if (!premiumGate.allowed) {
     return jsonResult(premiumGate.body, premiumGate.status);
   }
@@ -473,7 +480,10 @@ export const rejectExistingTicketPurchase = async (
     return conflict('Only pending approval purchase can be rejected.');
   }
 
-  const premiumGate = await ctx.requireOrganizationPremiumFeature(purchase.organizationId);
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId: purchase.organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.TICKET_ENABLED,
+  });
   if (!premiumGate.allowed) {
     return jsonResult(premiumGate.body, premiumGate.status);
   }
@@ -567,7 +577,10 @@ export const grantTicketPack = async (
     return forbidden();
   }
 
-  const premiumGate = await ctx.requireOrganizationPremiumFeature(organizationId);
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.TICKET_ENABLED,
+  });
   if (!premiumGate.allowed) {
     return jsonResult(premiumGate.body, premiumGate.status);
   }

@@ -12,6 +12,7 @@ import {
   type JsonRouteResult,
 } from '../../shared/route-result.js';
 import type { BookingRouteContext } from '../booking/booking-route-context.js';
+import { RESERVE_APP_ENTITLEMENTS } from '../billing/policies/reserve-app-billing-policy.js';
 import {
   archiveService,
   findServiceForUpdate,
@@ -49,6 +50,38 @@ const serviceConfigurationRequiresPremium = ({
   requiresTicket: boolean;
 }) => {
   return bookingPolicy === 'approval' || requiresTicket;
+};
+
+const requireServiceConfigurationEntitlements = async ({
+  ctx,
+  organizationId,
+  bookingPolicy,
+  requiresTicket,
+}: {
+  ctx: BookingRouteContext;
+  organizationId: string;
+  bookingPolicy: 'instant' | 'approval' | string;
+  requiresTicket: boolean;
+}) => {
+  const requiredKeys: string[] = [];
+  if (bookingPolicy === 'approval') {
+    requiredKeys.push(RESERVE_APP_ENTITLEMENTS.BOOKING_APPROVAL);
+  }
+  if (requiresTicket) {
+    requiredKeys.push(RESERVE_APP_ENTITLEMENTS.TICKET_ENABLED);
+  }
+
+  for (const key of requiredKeys) {
+    const gate = await ctx.requireOrganizationEntitlement({
+      organizationId,
+      key,
+    });
+    if (!gate.allowed) {
+      return gate;
+    }
+  }
+
+  return { allowed: true as const };
 };
 
 const serializeService = (row: Record<string, unknown> | undefined) => ({
@@ -103,7 +136,12 @@ export const createService = async (
       requiresTicket: body.requiresTicket ?? false,
     })
   ) {
-    const premiumGate = await ctx.requireOrganizationPremiumFeature(organizationId);
+    const premiumGate = await requireServiceConfigurationEntitlements({
+      ctx,
+      organizationId,
+      bookingPolicy: body.bookingPolicy ?? 'instant',
+      requiresTicket: body.requiresTicket ?? false,
+    });
     if (!premiumGate.allowed) {
       return jsonResult(premiumGate.body, premiumGate.status);
     }
@@ -208,7 +246,12 @@ export const updateExistingService = async (
       requiresTicket: body.requiresTicket ?? current.requiresTicket,
     })
   ) {
-    const premiumGate = await ctx.requireOrganizationPremiumFeature(current.organizationId);
+    const premiumGate = await requireServiceConfigurationEntitlements({
+      ctx,
+      organizationId: current.organizationId,
+      bookingPolicy: body.bookingPolicy ?? current.bookingPolicy,
+      requiresTicket: body.requiresTicket ?? current.requiresTicket,
+    });
     if (!premiumGate.allowed) {
       return jsonResult(premiumGate.body, premiumGate.status);
     }

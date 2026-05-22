@@ -66,6 +66,11 @@ const createContext = (): BookingRouteContext =>
       body: { allowed: true },
       status: 200,
     })),
+    requireOrganizationEntitlement: vi.fn(async () => ({
+      allowed: true,
+      body: { allowed: true },
+      status: 200,
+    })),
   }) as unknown as BookingRouteContext;
 
 describe('booking usecases', () => {
