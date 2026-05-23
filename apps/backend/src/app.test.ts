@@ -385,11 +385,11 @@ const selectStripeWebhookFailureRows = async (eventId: string | null = null) => 
   const statement = eventId
     ? d1
         .prepare(
-          "SELECT CASE WHEN e.provider_event_id LIKE 'stripe_webhook_failure:%' OR e.provider_event_id LIKE 'legacy_failure:%' THEN NULL ELSE e.provider_event_id END as eventId, e.event_type as eventType, e.failure_stage as failureStage, coalesce(e.last_failure_reason, e.failure_reason) as failureReason, a.subject_id as organizationId FROM billing_provider_event e LEFT JOIN billing_account a ON a.id = e.billing_account_id WHERE e.provider = 'stripe' AND e.scope = 'billing' AND e.failure_stage IS NOT NULL AND e.provider_event_id = ? ORDER BY e.last_failure_at ASC",
+          "SELECT CASE WHEN e.provider_event_id LIKE 'stripe_billing_failure:%' OR e.provider_event_id LIKE 'legacy_failure:%' THEN NULL ELSE e.provider_event_id END as eventId, e.event_type as eventType, e.failure_stage as failureStage, coalesce(e.last_failure_reason, e.failure_reason) as failureReason, a.subject_id as organizationId FROM billing_provider_event e LEFT JOIN billing_account a ON a.id = e.billing_account_id WHERE e.provider = 'stripe' AND e.scope = 'billing' AND e.failure_stage IS NOT NULL AND e.provider_event_id = ? ORDER BY e.last_failure_at ASC",
         )
         .bind(eventId)
     : d1.prepare(
-        "SELECT CASE WHEN e.provider_event_id LIKE 'stripe_webhook_failure:%' OR e.provider_event_id LIKE 'legacy_failure:%' THEN NULL ELSE e.provider_event_id END as eventId, e.event_type as eventType, e.failure_stage as failureStage, coalesce(e.last_failure_reason, e.failure_reason) as failureReason, a.subject_id as organizationId FROM billing_provider_event e LEFT JOIN billing_account a ON a.id = e.billing_account_id WHERE e.provider = 'stripe' AND e.scope = 'billing' AND e.failure_stage IS NOT NULL ORDER BY e.last_failure_at ASC",
+        "SELECT CASE WHEN e.provider_event_id LIKE 'stripe_billing_failure:%' OR e.provider_event_id LIKE 'legacy_failure:%' THEN NULL ELSE e.provider_event_id END as eventId, e.event_type as eventType, e.failure_stage as failureStage, coalesce(e.last_failure_reason, e.failure_reason) as failureReason, a.subject_id as organizationId FROM billing_provider_event e LEFT JOIN billing_account a ON a.id = e.billing_account_id WHERE e.provider = 'stripe' AND e.scope = 'billing' AND e.failure_stage IS NOT NULL ORDER BY e.last_failure_at ASC",
       );
 
   const result = await statement.all<{
@@ -1334,7 +1334,7 @@ const insertStripeWebhookFailureRow = async ({
   const billingAccountId = organizationId
     ? await ensureBillingFixtureAccountId(organizationId, stripeCustomerId)
     : null;
-  const providerEventId = eventId ?? `stripe_webhook_failure:${crypto.randomUUID()}`;
+  const providerEventId = eventId ?? `stripe_billing_failure:${crypto.randomUUID()}`;
   const timestamp = (createdAt ?? new Date()).getTime();
   await d1
     .prepare(

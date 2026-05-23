@@ -1,10 +1,10 @@
 import { and, eq } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
-import * as dbSchema from '../../infra/db/schema.js';
 import {
-  resolveBillingIntervalFromPriceId,
-  type OrganizationBillingSubscriptionStatus,
-} from './organization-billing.js';
+  resolveReserveAppBillingIntervalFromPriceId,
+  type ReserveAppBillingSubscriptionStatus,
+} from '../../features/billing/policies/reserve-app-billing-policy.js';
+import * as dbSchema from '../../infra/db/schema.js';
 import {
   normalizeStripeChargeReceiptDocument,
   normalizeStripeInvoiceDocument,
@@ -15,16 +15,16 @@ import {
   type OrganizationBillingInvoicePaymentOwnerFacingStatus,
 } from './organization-billing-invoice-events.js';
 import {
-  appendOrganizationBillingAuditEvent,
-  appendOrganizationBillingSignal,
-  appendResolvedBillingSignalIfNeeded,
+  appendReserveAppBillingAuditEvent,
+  appendReserveAppBillingSignal,
+  appendResolvedReserveAppBillingSignalIfNeeded,
   evaluateReconciliationMismatchReason,
-  readOrganizationBillingObservationSnapshot,
-} from './organization-billing-observability.js';
+  readReserveAppBillingObservationSnapshot,
+} from './reserve-app-billing-observability.js';
 import {
-  sendOrganizationPaymentIssueNotification,
-  sendOrganizationTrialWillEndReminder,
-} from './organization-billing-notifications.js';
+  sendReserveAppPaymentIssueNotification,
+  sendReserveAppTrialWillEndReminder,
+} from './reserve-app-billing-notifications.js';
 import {
   readStripeBillingCheckoutMetadata,
   readStripeCheckoutSessionSummary,
@@ -186,7 +186,7 @@ const recordStripeWebhookFailure = async ({
   stripeSubscriptionId?: string | null;
 }) => {
   const now = new Date();
-  const providerEventId = eventId ?? `stripe_webhook_failure:${crypto.randomUUID()}`;
+  const providerEventId = eventId ?? `stripe_billing_failure:${crypto.randomUUID()}`;
   const failureEventType = eventType ?? `stripe.webhook.${failureStage}`;
   const billingAccountId = organizationId
     ? await readBillingAccountIdByOrganizationId({ database, organizationId })
@@ -471,7 +471,7 @@ const failStripeWebhookEvent = async ({
 
 const normalizeSubscriptionStatus = (
   value: string | null,
-): OrganizationBillingSubscriptionStatus | null => {
+): ReserveAppBillingSubscriptionStatus | null => {
   switch (value) {
     case 'free':
     case 'trialing':
@@ -711,7 +711,7 @@ const resolveLatestSubscriptionSummaryForInvoiceEvent = async ({
 };
 
 const isProviderRecoveredSubscriptionStatus = (
-  subscriptionStatus: OrganizationBillingSubscriptionStatus,
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus,
 ) => {
   return (
     subscriptionStatus === 'active' ||
@@ -792,7 +792,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
 
   try {
     if (normalized.kind === 'checkout_completed') {
-      const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      const previousBillingSnapshot = await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId: normalized.organizationId,
@@ -811,12 +811,12 @@ export const handleStripeOrganizationBillingWebhook = async ({
         currentPeriodStart: null,
         currentPeriodEnd: null,
       });
-      const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      const nextBillingSnapshot = await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId: normalized.organizationId,
       });
-      await appendOrganizationBillingAuditEvent({
+      await appendReserveAppBillingAuditEvent({
         database,
         organizationId: normalized.organizationId,
         sourceKind: 'webhook_checkout_completed',
@@ -908,7 +908,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
         });
       }
 
-      const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      const previousBillingSnapshot = await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId: normalized.organizationId,
@@ -933,12 +933,12 @@ export const handleStripeOrganizationBillingWebhook = async ({
           paymentMethodId,
         });
       }
-      const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      const nextBillingSnapshot = await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId: normalized.organizationId,
       });
-      await appendOrganizationBillingAuditEvent({
+      await appendReserveAppBillingAuditEvent({
         database,
         organizationId: normalized.organizationId,
         sourceKind: 'payment_method_registered',
@@ -1010,7 +1010,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       const isPaymentIssueEvent =
         normalized.invoiceEventType === 'payment_failed' ||
         normalized.invoiceEventType === 'payment_action_required';
-      const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      const previousBillingSnapshot = await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId: matchedBilling.organizationId,
@@ -1042,21 +1042,21 @@ export const handleStripeOrganizationBillingWebhook = async ({
             stripePriceId: isFreeOrCanceled ? null : latestSubscription.priceId,
             billingInterval: isFreeOrCanceled
               ? null
-              : resolveBillingIntervalFromPriceId(env, latestSubscription.priceId),
+              : resolveReserveAppBillingIntervalFromPriceId(env, latestSubscription.priceId),
             subscriptionStatus: latestSubscriptionStatus,
             cancelAtPeriodEnd: isFreeOrCanceled ? false : latestSubscription.cancelAtPeriodEnd,
             currentPeriodStart: isFreeOrCanceled ? null : latestSubscription.currentPeriodStart,
             currentPeriodEnd: isFreeOrCanceled ? null : latestSubscription.currentPeriodEnd,
             paymentIssueOccurredAt: isPaymentIssueEvent ? normalized.occurredAt : null,
           });
-          nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+          nextBillingSnapshot = await readReserveAppBillingObservationSnapshot({
             database,
             env,
             organizationId: matchedBilling.organizationId,
           });
 
           if (stalePaymentIssueAfterRecovery) {
-            await appendOrganizationBillingSignal({
+            await appendReserveAppBillingSignal({
               database,
               organizationId: matchedBilling.organizationId,
               signalKind: 'reconciliation',
@@ -1072,7 +1072,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
             });
           }
         } else {
-          await appendOrganizationBillingSignal({
+          await appendReserveAppBillingSignal({
             database,
             organizationId: matchedBilling.organizationId,
             signalKind: 'reconciliation',
@@ -1101,7 +1101,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       });
 
       if (isPaymentIssueEvent && !stalePaymentIssueAfterRecovery) {
-        const notification = await sendOrganizationPaymentIssueNotification({
+        const notification = await sendReserveAppPaymentIssueNotification({
           database,
           env,
           organizationId: matchedBilling.organizationId,
@@ -1130,7 +1130,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
         }
       }
 
-      await appendOrganizationBillingAuditEvent({
+      await appendReserveAppBillingAuditEvent({
         database,
         organizationId: matchedBilling.organizationId,
         sourceKind,
@@ -1177,12 +1177,12 @@ export const handleStripeOrganizationBillingWebhook = async ({
       fallback: normalized.subscription,
     });
     if (!latestSubscription) {
-      const currentBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      const currentBillingSnapshot = await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId: matchedBilling.organizationId,
       });
-      await appendOrganizationBillingSignal({
+      await appendReserveAppBillingSignal({
         database,
         organizationId: matchedBilling.organizationId,
         signalKind: 'reconciliation',
@@ -1222,7 +1222,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       });
     }
 
-    const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+    const previousBillingSnapshot = await readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId: matchedBilling.organizationId,
@@ -1232,7 +1232,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       providerSubscription: latestSubscription,
     });
     if (preSyncReconciliationCheck.reason) {
-      await appendOrganizationBillingSignal({
+      await appendReserveAppBillingSignal({
         database,
         organizationId: matchedBilling.organizationId,
         signalKind: 'reconciliation',
@@ -1258,7 +1258,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       stripePriceId: isCanceled ? null : latestSubscription.priceId,
       billingInterval: isCanceled
         ? null
-        : resolveBillingIntervalFromPriceId(env, latestSubscription.priceId),
+        : resolveReserveAppBillingIntervalFromPriceId(env, latestSubscription.priceId),
       subscriptionStatus: isCanceled ? 'canceled' : subscriptionStatus,
       cancelAtPeriodEnd: isCanceled ? false : latestSubscription.cancelAtPeriodEnd,
       currentPeriodStart: isCanceled ? null : latestSubscription.currentPeriodStart,
@@ -1270,12 +1270,12 @@ export const handleStripeOrganizationBillingWebhook = async ({
           ? normalized.occurredAt
           : null,
     });
-    const syncedBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+    const syncedBillingSnapshot = await readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId: matchedBilling.organizationId,
     });
-    await appendOrganizationBillingAuditEvent({
+    await appendReserveAppBillingAuditEvent({
       database,
       organizationId: matchedBilling.organizationId,
       sourceKind: 'webhook_subscription_lifecycle',
@@ -1290,7 +1290,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
       providerSubscription: latestSubscription,
     });
     if (reconciliationCheck.reason) {
-      await appendOrganizationBillingSignal({
+      await appendReserveAppBillingSignal({
         database,
         organizationId: matchedBilling.organizationId,
         signalKind: 'reconciliation',
@@ -1305,7 +1305,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
         providerSubscriptionStatus: latestSubscription.status,
       });
     } else {
-      await appendResolvedBillingSignalIfNeeded({
+      await appendResolvedReserveAppBillingSignalIfNeeded({
         database,
         organizationId: matchedBilling.organizationId,
         signalKind: 'reconciliation',
@@ -1321,7 +1321,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
     }
 
     if (normalized.kind === 'trial_will_end') {
-      const reminder = await sendOrganizationTrialWillEndReminder({
+      const reminder = await sendReserveAppTrialWillEndReminder({
         database,
         env,
         organizationId: matchedBilling.organizationId,
@@ -1360,12 +1360,12 @@ export const handleStripeOrganizationBillingWebhook = async ({
         organizationId: matchedBilling.organizationId,
       });
       if (!completion.ok) {
-        const currentBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+        const currentBillingSnapshot = await readReserveAppBillingObservationSnapshot({
           database,
           env,
           organizationId: matchedBilling.organizationId,
         });
-        await appendOrganizationBillingSignal({
+        await appendReserveAppBillingSignal({
           database,
           organizationId: matchedBilling.organizationId,
           signalKind: 'reconciliation',
@@ -1397,12 +1397,12 @@ export const handleStripeOrganizationBillingWebhook = async ({
         });
       }
 
-      const completedBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      const completedBillingSnapshot = await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId: matchedBilling.organizationId,
       });
-      await appendOrganizationBillingAuditEvent({
+      await appendReserveAppBillingAuditEvent({
         database,
         organizationId: matchedBilling.organizationId,
         sourceKind: 'webhook_trial_completion',
@@ -1417,7 +1417,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
         providerSubscription: latestSubscription,
       });
       if (postCompletionReconciliationCheck.reason) {
-        await appendOrganizationBillingSignal({
+        await appendReserveAppBillingSignal({
           database,
           organizationId: matchedBilling.organizationId,
           signalKind: 'reconciliation',
@@ -1432,7 +1432,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
           providerSubscriptionStatus: latestSubscription.status,
         });
       } else {
-        await appendResolvedBillingSignalIfNeeded({
+        await appendResolvedReserveAppBillingSignalIfNeeded({
           database,
           organizationId: matchedBilling.organizationId,
           signalKind: 'reconciliation',

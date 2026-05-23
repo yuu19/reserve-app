@@ -1,23 +1,23 @@
 import { and, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
-import * as dbSchema from '../../infra/db/schema.js';
 import {
-  isBillingSubscriptionStatus,
-  resolveBillingIntervalFromPriceId,
-} from './organization-billing.js';
+  isReserveAppBillingSubscriptionStatus,
+  resolveReserveAppBillingIntervalFromPriceId,
+} from '../../features/billing/policies/reserve-app-billing-policy.js';
+import * as dbSchema from '../../infra/db/schema.js';
 import {
   applyReserveAppBillingV2TrialCompletion,
   upsertReserveAppBillingV2SubscriptionState,
 } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import {
-  appendOrganizationBillingAuditEvent,
-  appendOrganizationBillingSignal,
-  appendResolvedBillingSignalIfNeeded,
+  appendReserveAppBillingAuditEvent,
+  appendReserveAppBillingSignal,
+  appendResolvedReserveAppBillingSignalIfNeeded,
   evaluateReconciliationMismatchReason,
-  readOrganizationBillingObservationSnapshot,
-} from './organization-billing-observability.js';
+  readReserveAppBillingObservationSnapshot,
+} from './reserve-app-billing-observability.js';
 import { readStripeSubscriptionSummaryById } from '../../infra/payment/stripe.js';
-import { sendOrganizationPaymentIssueNotification } from './organization-billing-notifications.js';
+import { sendReserveAppPaymentIssueNotification } from './reserve-app-billing-notifications.js';
 
 const PAST_DUE_GRACE_REMINDER_OFFSET_MS = 3 * 24 * 60 * 60 * 1000;
 const PAST_DUE_GRACE_REMINDER_WINDOW_MS = 60 * 60 * 1000;
@@ -83,7 +83,7 @@ export const completeExpiredOrganizationPremiumTrials = async ({
   let failed = 0;
 
   for (const row of rows) {
-    const previousBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+    const previousBillingSnapshot = await readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId: row.organizationId,
@@ -96,12 +96,12 @@ export const completeExpiredOrganizationPremiumTrials = async ({
     });
     if (!completion.ok) {
       failed += 1;
-      const currentBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+      const currentBillingSnapshot = await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId: row.organizationId,
       });
-      await appendOrganizationBillingSignal({
+      await appendReserveAppBillingSignal({
         database,
         organizationId: row.organizationId,
         signalKind: 'reconciliation',
@@ -117,12 +117,12 @@ export const completeExpiredOrganizationPremiumTrials = async ({
     }
 
     completed += 1;
-    const nextBillingSnapshot = await readOrganizationBillingObservationSnapshot({
+    const nextBillingSnapshot = await readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId: row.organizationId,
     });
-    await appendOrganizationBillingAuditEvent({
+    await appendReserveAppBillingAuditEvent({
       database,
       organizationId: row.organizationId,
       sourceKind: 'trial_completion',
@@ -130,7 +130,7 @@ export const completeExpiredOrganizationPremiumTrials = async ({
       nextSnapshot: nextBillingSnapshot,
       sourceContext: completion.message,
     });
-    await appendResolvedBillingSignalIfNeeded({
+    await appendResolvedReserveAppBillingSignalIfNeeded({
       database,
       organizationId: row.organizationId,
       signalKind: 'reconciliation',
@@ -200,7 +200,7 @@ export const sendPastDueGraceExpiryReminders = async ({
       continue;
     }
 
-    const notification = await sendOrganizationPaymentIssueNotification({
+    const notification = await sendReserveAppPaymentIssueNotification({
       database,
       env,
       organizationId: row.organizationId,
@@ -247,7 +247,7 @@ const reconcileOrganizationBillingProviderState = async ({
   sourceKind: 'reconciliation_targeted' | 'reconciliation_full';
   now: Date;
 }) => {
-  const previousSnapshot = await readOrganizationBillingObservationSnapshot({
+  const previousSnapshot = await readReserveAppBillingObservationSnapshot({
     database,
     env,
     organizationId,
@@ -258,9 +258,9 @@ const reconcileOrganizationBillingProviderState = async ({
       env,
       subscriptionId: stripeSubscriptionId,
     });
-    const subscriptionStatus = isBillingSubscriptionStatus(subscription.status);
+    const subscriptionStatus = isReserveAppBillingSubscriptionStatus(subscription.status);
     if (!subscriptionStatus) {
-      await appendOrganizationBillingSignal({
+      await appendReserveAppBillingSignal({
         database,
         organizationId,
         signalKind: 'reconciliation',
@@ -286,19 +286,19 @@ const reconcileOrganizationBillingProviderState = async ({
       stripePriceId: isCanceled ? null : subscription.priceId,
       billingInterval: isCanceled
         ? null
-        : resolveBillingIntervalFromPriceId(env, subscription.priceId),
+        : resolveReserveAppBillingIntervalFromPriceId(env, subscription.priceId),
       subscriptionStatus: isCanceled ? 'canceled' : subscriptionStatus,
       cancelAtPeriodEnd: isCanceled ? false : subscription.cancelAtPeriodEnd,
       currentPeriodStart: isCanceled ? null : subscription.currentPeriodStart,
       currentPeriodEnd: isCanceled ? null : subscription.currentPeriodEnd,
       now,
     });
-    const nextSnapshot = await readOrganizationBillingObservationSnapshot({
+    const nextSnapshot = await readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId,
     });
-    await appendOrganizationBillingAuditEvent({
+    await appendReserveAppBillingAuditEvent({
       database,
       organizationId,
       sourceKind,
@@ -312,7 +312,7 @@ const reconcileOrganizationBillingProviderState = async ({
       providerSubscription: subscription,
     });
     if (mismatch.reason) {
-      await appendOrganizationBillingSignal({
+      await appendReserveAppBillingSignal({
         database,
         organizationId,
         signalKind: 'reconciliation',
@@ -326,7 +326,7 @@ const reconcileOrganizationBillingProviderState = async ({
         providerSubscriptionStatus: subscription.status,
       });
     } else {
-      await appendOrganizationBillingSignal({
+      await appendReserveAppBillingSignal({
         database,
         organizationId,
         signalKind: 'reconciliation',
@@ -342,7 +342,7 @@ const reconcileOrganizationBillingProviderState = async ({
     }
     return true;
   } catch {
-    await appendOrganizationBillingSignal({
+    await appendReserveAppBillingSignal({
       database,
       organizationId,
       signalKind: 'reconciliation',

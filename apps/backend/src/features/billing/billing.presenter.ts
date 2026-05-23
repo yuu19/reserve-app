@@ -7,20 +7,22 @@ import type {
 } from '../../domain/billing/organization-billing-operations.js';
 import { resolveOrganizationPremiumEntitlementPolicy } from '../../domain/billing/organization-billing-policy.js';
 import {
-  isBillingInterval,
-  isBillingSubscriptionStatus,
   resolveOrganizationBillingActionAvailability,
-  resolveOrganizationBillingPaymentIssueState,
-  resolveOrganizationBillingPaymentIssueTiming,
-  resolveOrganizationBillingPaymentMethodStatus,
   resolveOrganizationBillingProfileReadiness,
-  type OrganizationBillingSubscriptionStatus,
 } from '../../domain/billing/organization-billing.js';
 import type { AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
   buildOrganizationBillingCatalog,
   listOrganizationBillingCatalogIntervals,
 } from './billing.catalog.js';
+import {
+  isReserveAppBillingInterval,
+  isReserveAppBillingSubscriptionStatus,
+  resolveReserveAppBillingPaymentIssueState,
+  resolveReserveAppBillingPaymentIssueTiming,
+  resolveReserveAppBillingPaymentMethodStatus,
+  type ReserveAppBillingSubscriptionStatus,
+} from './policies/reserve-app-billing-policy.js';
 import type { OrganizationBillingStore } from './billing.store.js';
 
 export const toIsoDateString = (value: unknown): string | null => {
@@ -88,7 +90,7 @@ export const resolvePaymentIssueContext = ({
   pastDueGraceEndsAt,
   invoicePaymentEvents,
 }: {
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   entitlementReason: string;
   paymentIssueStartedAt: unknown;
   pastDueGraceEndsAt: unknown;
@@ -137,14 +139,14 @@ export const resolvePaymentIssueContext = ({
       : (latestIssueEvent?.eventType ?? null);
 
   return {
-    paymentIssueState: resolveOrganizationBillingPaymentIssueState({
+    paymentIssueState: resolveReserveAppBillingPaymentIssueState({
       subscriptionStatus,
       entitlementReason,
       latestPaymentIssueEventType,
       hasRecoveredPaymentIssueHistory,
       hasStaleFailureHistory,
     }),
-    paymentIssueTiming: resolveOrganizationBillingPaymentIssueTiming({
+    paymentIssueTiming: resolveReserveAppBillingPaymentIssueTiming({
       paymentIssueStartedAt: toIsoDateString(paymentIssueStartedAt),
       pastDueGraceEndsAt: toIsoDateString(pastDueGraceEndsAt),
       providerIssueStartedAt: latestIssueEvent?.occurredAt ?? null,
@@ -169,13 +171,13 @@ export const readOrganizationBillingSummaryPayload = async ({
 }) => {
   const billing = await store.selectSummary(organizationId);
   const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
-  const billingInterval = isBillingInterval(billing?.billingInterval ?? null);
+  const billingInterval = isReserveAppBillingInterval(billing?.billingInterval ?? null);
   const subscriptionStatus =
-    isBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
+    isReserveAppBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
   const trialStartedAt = toIsoDateString(billing?.trialStartedAt);
   const currentPeriodEnd = toIsoDateString(billing?.currentPeriodEnd);
   const pastDueGraceEndsAt = toIsoDateString(billing?.pastDueGraceEndsAt);
-  const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+  const paymentMethodStatus = await resolveReserveAppBillingPaymentMethodStatus({
     env,
     planCode,
     stripeCustomerId: billing?.stripeCustomerId ?? null,

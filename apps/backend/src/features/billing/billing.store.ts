@@ -3,20 +3,20 @@ import type { buildBillingDocumentReadiness } from '../../domain/billing/organiz
 import type { readOrganizationOwnerBillingHistory } from '../../domain/billing/organization-billing-history.js';
 import type { OrganizationBillingInvoicePaymentEvent } from '../../domain/billing/organization-billing-invoice-events.js';
 import type {
-  appendOrganizationBillingAuditEvent,
-  appendOrganizationBillingSignal,
-  appendResolvedBillingSignalIfNeeded,
-  readOrganizationBillingObservationSnapshot,
-} from '../../domain/billing/organization-billing-observability.js';
+  appendReserveAppBillingAuditEvent,
+  appendReserveAppBillingSignal,
+  appendResolvedReserveAppBillingSignalIfNeeded,
+  readReserveAppBillingObservationSnapshot,
+} from '../../domain/billing/reserve-app-billing-observability.js';
 import type {
-  OrganizationBillingPlanCode,
-  OrganizationBillingSubscriptionStatus,
-} from '../../domain/billing/organization-billing.js';
+  ReserveAppBillingPlanCode,
+  ReserveAppBillingSubscriptionStatus,
+} from './policies/reserve-app-billing-policy.js';
 
 export type OrganizationBillingSummaryRow = {
-  planCode: OrganizationBillingPlanCode;
+  planCode: ReserveAppBillingPlanCode;
   billingInterval: 'month' | 'year' | null;
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   cancelAtPeriodEnd: boolean;
   trialStartedAt: Date | null;
   trialEndedAt: Date | null;
@@ -59,19 +59,19 @@ export type OrganizationBillingHistoryResult = Awaited<
 export type OrganizationBillingDocumentReferences = Parameters<
   typeof buildBillingDocumentReadiness
 >[0]['documents'];
-export type OrganizationBillingObservationSnapshot = Awaited<
-  ReturnType<typeof readOrganizationBillingObservationSnapshot>
+export type ReserveAppBillingObservationSnapshot = Awaited<
+  ReturnType<typeof readReserveAppBillingObservationSnapshot>
 >;
 export type AppendOrganizationBillingAuditEventInput = Omit<
-  Parameters<typeof appendOrganizationBillingAuditEvent>[0],
+  Parameters<typeof appendReserveAppBillingAuditEvent>[0],
   'database'
 >;
 export type AppendOrganizationBillingSignalInput = Omit<
-  Parameters<typeof appendOrganizationBillingSignal>[0],
+  Parameters<typeof appendReserveAppBillingSignal>[0],
   'database'
 >;
 export type AppendResolvedBillingSignalInput = Omit<
-  Parameters<typeof appendResolvedBillingSignalIfNeeded>[0],
+  Parameters<typeof appendResolvedReserveAppBillingSignalIfNeeded>[0],
   'database'
 >;
 export type InternalBillingInspection = Awaited<ReturnType<typeof readInternalBillingInspection>>;
@@ -112,7 +112,7 @@ export type OrganizationBillingStore = {
 
   readObservationSnapshot(input: {
     organizationId: string;
-  }): Promise<OrganizationBillingObservationSnapshot>;
+  }): Promise<ReserveAppBillingObservationSnapshot>;
 
   appendAuditEvent(input: AppendOrganizationBillingAuditEventInput): Promise<void>;
 

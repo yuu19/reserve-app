@@ -4,9 +4,9 @@ import {
   type OrganizationBillingOperationPurpose,
 } from '../../domain/billing/organization-billing-operations.js';
 import {
-  ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
-  ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
-} from '../../domain/billing/organization-billing.js';
+  RESERVE_APP_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
+  RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS,
+} from './policies/reserve-app-billing-policy.js';
 import {
   forbidden,
   jsonResult,
@@ -393,7 +393,7 @@ export const startTrialSubscription = async ({
         organizationId,
         role,
         status: 'conflict',
-        message: ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
+        message: RESERVE_APP_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
       }),
       409,
     );
@@ -404,7 +404,7 @@ export const startTrialSubscription = async ({
         organizationId,
         role,
         status: 'conflict',
-        message: ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
+        message: RESERVE_APP_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
       }),
       409,
     );
@@ -469,7 +469,7 @@ export const startTrialSubscription = async ({
       const subscription = await provider.createTrialSubscription({
         customerId: stripeCustomerId,
         priceId: defaultTrialPrice.priceId,
-        trialDays: ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
+        trialDays: RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS,
         idempotencyKey: operation.attempt.idempotencyKey,
         metadata: {
           billingPurpose: 'organization_plan',
@@ -516,7 +516,7 @@ export const startTrialSubscription = async ({
         organizationId,
         role,
         status: 'succeeded',
-        message: `Started a ${ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS}-day premium trial.`,
+        message: `Started a ${RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS}-day premium trial.`,
       }),
       200,
     );

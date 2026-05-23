@@ -1,19 +1,19 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
-import * as dbSchema from '../../infra/db/schema.js';
 import type {
-  OrganizationBillingPaymentMethodStatus,
-  OrganizationBillingPlanState,
-  OrganizationBillingSubscriptionStatus,
-} from './organization-billing.js';
+  ReserveAppBillingPaymentMethodStatus,
+  ReserveAppBillingPlanState,
+  ReserveAppBillingSubscriptionStatus,
+} from '../../features/billing/policies/reserve-app-billing-policy.js';
+import * as dbSchema from '../../infra/db/schema.js';
 import {
-  normalizeOrganizationBillingNotificationChannel,
-  normalizeOrganizationBillingNotificationDeliveryState,
-  normalizeOrganizationBillingNotificationKind,
-  resolveOrganizationBillingCommunicationType,
-  resolveOrganizationBillingNotificationChannelLabel,
-  type OrganizationBillingNotificationDeliveryState,
-} from './organization-billing-notifications.js';
+  normalizeReserveAppBillingNotificationChannel,
+  normalizeReserveAppBillingNotificationDeliveryState,
+  normalizeReserveAppBillingNotificationKind,
+  resolveReserveAppBillingCommunicationType,
+  resolveReserveAppBillingNotificationChannelLabel,
+  type ReserveAppBillingNotificationDeliveryState,
+} from './reserve-app-billing-notifications.js';
 import {
   readOrganizationBillingInvoicePaymentEvents,
   type OrganizationBillingInvoicePaymentEvent,
@@ -42,13 +42,13 @@ type SortableOwnerBillingHistoryEntry = OrganizationOwnerBillingHistoryEntry & {
 
 const OWNER_BILLING_HISTORY_ENTRY_LIMIT = 20;
 
-const planStateLabelMap: Record<OrganizationBillingPlanState, string> = {
+const planStateLabelMap: Record<ReserveAppBillingPlanState, string> = {
   free: '無料プラン',
   premium_trial: 'Premiumトライアル',
   premium_paid: 'Premiumプラン',
 };
 
-const subscriptionStatusLabelMap: Record<OrganizationBillingSubscriptionStatus, string> = {
+const subscriptionStatusLabelMap: Record<ReserveAppBillingSubscriptionStatus, string> = {
   free: 'Free',
   trialing: 'トライアル中',
   active: '有効',
@@ -58,7 +58,7 @@ const subscriptionStatusLabelMap: Record<OrganizationBillingSubscriptionStatus, 
   incomplete: '処理中',
 };
 
-const paymentMethodStatusLabelMap: Record<OrganizationBillingPaymentMethodStatus, string> = {
+const paymentMethodStatusLabelMap: Record<ReserveAppBillingPaymentMethodStatus, string> = {
   not_started: '未登録',
   pending: '確認中',
   registered: '登録済み',
@@ -119,9 +119,9 @@ const buildBillingContext = ({
   paymentMethodStatus,
   billingInterval,
 }: {
-  planState: OrganizationBillingPlanState;
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
-  paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+  planState: ReserveAppBillingPlanState;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
+  paymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
   billingInterval?: 'month' | 'year' | null;
 }) => {
   const parts = [
@@ -137,11 +137,11 @@ const buildBillingContext = ({
   return parts.join(' / ');
 };
 
-const normalizePlanState = (value: unknown): OrganizationBillingPlanState => {
+const normalizePlanState = (value: unknown): ReserveAppBillingPlanState => {
   return value === 'premium_trial' || value === 'premium_paid' ? value : 'free';
 };
 
-const normalizeSubscriptionStatus = (value: unknown): OrganizationBillingSubscriptionStatus => {
+const normalizeSubscriptionStatus = (value: unknown): ReserveAppBillingSubscriptionStatus => {
   return value === 'trialing' ||
     value === 'active' ||
     value === 'past_due' ||
@@ -152,7 +152,7 @@ const normalizeSubscriptionStatus = (value: unknown): OrganizationBillingSubscri
     : 'free';
 };
 
-const normalizePaymentMethodStatus = (value: unknown): OrganizationBillingPaymentMethodStatus => {
+const normalizePaymentMethodStatus = (value: unknown): ReserveAppBillingPaymentMethodStatus => {
   return value === 'pending' || value === 'registered' ? value : 'not_started';
 };
 
@@ -178,8 +178,8 @@ const resolvePlanTransitionTitle = ({
   nextPlanState,
 }: {
   sourceKind: string;
-  previousPlanState: OrganizationBillingPlanState;
-  nextPlanState: OrganizationBillingPlanState;
+  previousPlanState: ReserveAppBillingPlanState;
+  nextPlanState: ReserveAppBillingPlanState;
 }) => {
   if (sourceKind === 'trial_start') {
     return 'Premiumトライアルを開始しました';
@@ -212,10 +212,10 @@ const resolvePlanTransitionSummary = ({
   nextSubscriptionStatus,
 }: {
   sourceKind: string;
-  previousPlanState: OrganizationBillingPlanState;
-  nextPlanState: OrganizationBillingPlanState;
-  previousSubscriptionStatus: OrganizationBillingSubscriptionStatus;
-  nextSubscriptionStatus: OrganizationBillingSubscriptionStatus;
+  previousPlanState: ReserveAppBillingPlanState;
+  nextPlanState: ReserveAppBillingPlanState;
+  previousSubscriptionStatus: ReserveAppBillingSubscriptionStatus;
+  nextSubscriptionStatus: ReserveAppBillingSubscriptionStatus;
 }) => {
   if (sourceKind === 'trial_start') {
     return '7日間のPremiumトライアルを開始しました。契約ページから状態の変化を確認できます。';
@@ -238,7 +238,7 @@ const resolveNotificationTitle = ({
   deliveryState,
   channelLabel,
 }: {
-  deliveryState: OrganizationBillingNotificationDeliveryState;
+  deliveryState: ReserveAppBillingNotificationDeliveryState;
   channelLabel: string;
 }) => {
   switch (deliveryState) {
@@ -262,7 +262,7 @@ const resolveNotificationSummary = ({
   trialEndsAt,
   channelLabel,
 }: {
-  deliveryState: OrganizationBillingNotificationDeliveryState;
+  deliveryState: ReserveAppBillingNotificationDeliveryState;
   trialEndsAt: string | null;
   channelLabel: string;
 }) => {
@@ -299,7 +299,7 @@ const resolvePaymentIssueNotificationTitle = ({
   channelLabel,
 }: {
   notificationKind: string;
-  deliveryState: OrganizationBillingNotificationDeliveryState;
+  deliveryState: ReserveAppBillingNotificationDeliveryState;
   channelLabel: string;
 }) => {
   const issueLabel =
@@ -329,7 +329,7 @@ const resolvePaymentIssueNotificationSummary = ({
   deliveryState,
   channelLabel,
 }: {
-  deliveryState: OrganizationBillingNotificationDeliveryState;
+  deliveryState: ReserveAppBillingNotificationDeliveryState;
   channelLabel: string;
 }) => {
   if (deliveryState === 'sent') {
@@ -442,11 +442,11 @@ const buildNotificationEntry = (row: {
   const subscriptionStatus = normalizeSubscriptionStatus(row.subscriptionStatus);
   const paymentMethodStatus = normalizePaymentMethodStatus(row.paymentMethodStatus);
   const trialEndsAt = toIsoDateString(row.trialEndsAt);
-  const notificationKind = normalizeOrganizationBillingNotificationKind(row.notificationKind);
-  const channel = normalizeOrganizationBillingNotificationChannel(row.channel);
-  const channelLabel = resolveOrganizationBillingNotificationChannelLabel(channel);
-  const deliveryState = normalizeOrganizationBillingNotificationDeliveryState(row.deliveryState);
-  const communicationType = resolveOrganizationBillingCommunicationType({
+  const notificationKind = normalizeReserveAppBillingNotificationKind(row.notificationKind);
+  const channel = normalizeReserveAppBillingNotificationChannel(row.channel);
+  const channelLabel = resolveReserveAppBillingNotificationChannelLabel(channel);
+  const deliveryState = normalizeReserveAppBillingNotificationDeliveryState(row.deliveryState);
+  const communicationType = resolveReserveAppBillingCommunicationType({
     notificationKind,
     channel,
   });
@@ -762,19 +762,17 @@ export const readOrganizationOwnerBillingHistory = async ({
           row.signalStatus === 'unavailable' ||
           row.signalStatus === 'resolved',
       )
-      .map((row: (typeof reconciliationSignalRows)[number]) =>
-        {
-          const appSnapshot = parseSnapshotJson(row.appSnapshotJson);
-          return buildReconciliationEntry({
-            sequenceNumber: row.sequenceNumber,
-            signalStatus: row.signalStatus,
-            appPlanState: appSnapshot.planState,
-            appSubscriptionStatus: appSnapshot.subscriptionStatus,
-            appPaymentMethodStatus: appSnapshot.paymentMethodStatus,
-            createdAt: row.createdAt,
-          });
-        },
-      ),
+      .map((row: (typeof reconciliationSignalRows)[number]) => {
+        const appSnapshot = parseSnapshotJson(row.appSnapshotJson);
+        return buildReconciliationEntry({
+          sequenceNumber: row.sequenceNumber,
+          signalStatus: row.signalStatus,
+          appPlanState: appSnapshot.planState,
+          appSubscriptionStatus: appSnapshot.subscriptionStatus,
+          appPaymentMethodStatus: appSnapshot.paymentMethodStatus,
+          createdAt: row.createdAt,
+        });
+      }),
     ...invoicePaymentEvents.map((event: OrganizationBillingInvoicePaymentEvent, index: number) =>
       buildInvoicePaymentHistoryEntry(event, index, invoicePaymentEvents),
     ),

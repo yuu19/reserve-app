@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveOrganizationBillingPaymentIssueNotificationRecipientPlans } from './organization-billing-notifications.js';
+import { resolveReserveAppPaymentIssueNotificationRecipientPlans } from './reserve-app-billing-notifications.js';
 
 describe('organization billing payment issue notification planning', () => {
   const owners = [
@@ -21,7 +21,7 @@ describe('organization billing payment issue notification planning', () => {
   ];
 
   it('retries only failed verified-owner recipients and skips recipients already sent', () => {
-    const plans = resolveOrganizationBillingPaymentIssueNotificationRecipientPlans({
+    const plans = resolveReserveAppPaymentIssueNotificationRecipientPlans({
       owners,
       attempts: [
         {

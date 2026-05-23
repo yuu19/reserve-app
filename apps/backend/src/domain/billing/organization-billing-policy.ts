@@ -1,14 +1,14 @@
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
-import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import {
-  resolveOrganizationBillingPaymentMethodStatus,
-  resolveOrganizationBillingPlanState,
-  resolveOrganizationBillingTrialEndsAt,
-  type OrganizationBillingPaymentMethodStatus,
-  type OrganizationBillingPlanCode,
-  type OrganizationBillingPlanState,
-  type OrganizationBillingSubscriptionStatus,
-} from './organization-billing.js';
+  resolveReserveAppBillingPaymentMethodStatus as resolveOrganizationBillingPaymentMethodStatus,
+  resolveReserveAppBillingPlanState as resolveOrganizationBillingPlanState,
+  resolveReserveAppBillingTrialEndsAt as resolveOrganizationBillingTrialEndsAt,
+  type ReserveAppBillingPaymentMethodStatus as OrganizationBillingPaymentMethodStatus,
+  type ReserveAppBillingPlanCode as OrganizationBillingPlanCode,
+  type ReserveAppBillingPlanState as OrganizationBillingPlanState,
+  type ReserveAppBillingSubscriptionStatus as OrganizationBillingSubscriptionStatus,
+} from '../../features/billing/policies/reserve-app-billing-policy.js';
+import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
 
 export type OrganizationBillingEntitlementState = 'free_only' | 'premium_enabled';
 export type OrganizationBillingPaidTierCode =

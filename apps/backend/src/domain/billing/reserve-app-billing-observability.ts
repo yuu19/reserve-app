@@ -6,12 +6,12 @@ import {
   readReserveAppBillingV2Summary,
 } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import {
-  resolveOrganizationBillingPaymentMethodStatus,
-  type OrganizationBillingPaymentMethodStatus,
-  type OrganizationBillingPlanCode,
-  type OrganizationBillingPlanState,
-  type OrganizationBillingSubscriptionStatus,
-} from './organization-billing.js';
+  resolveReserveAppBillingPaymentMethodStatus,
+  type ReserveAppBillingPaymentMethodStatus,
+  type ReserveAppBillingPlanCode,
+  type ReserveAppBillingPlanState,
+  type ReserveAppBillingSubscriptionStatus,
+} from '../../features/billing/policies/reserve-app-billing-policy.js';
 import {
   resolveOrganizationPremiumEntitlementPolicy,
   type OrganizationBillingEntitlementState,
@@ -19,11 +19,11 @@ import {
 } from './organization-billing-policy.js';
 import type { StripeSubscriptionSummary } from '../../infra/payment/stripe.js';
 
-export type OrganizationBillingObservationSnapshot = {
-  planCode: OrganizationBillingPlanCode;
-  planState: OrganizationBillingPlanState;
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
-  paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+export type ReserveAppBillingObservationSnapshot = {
+  planCode: ReserveAppBillingPlanCode;
+  planState: ReserveAppBillingPlanState;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
+  paymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
   entitlementState: OrganizationBillingEntitlementState;
   paidTier: OrganizationBillingPaidTier | null;
   billingInterval: 'month' | 'year' | null;
@@ -32,7 +32,7 @@ export type OrganizationBillingObservationSnapshot = {
   stripePriceId: string | null;
 };
 
-export type OrganizationBillingAuditSourceKind =
+export type ReserveAppBillingAuditSourceKind =
   | 'trial_start'
   | 'paid_checkout_started'
   | 'payment_method_setup_started'
@@ -52,12 +52,12 @@ export type OrganizationBillingAuditSourceKind =
   | 'payment_issue_notification'
   | 'billing_profile_readiness_changed';
 
-export type OrganizationBillingSignalKind =
+export type ReserveAppBillingSignalKind =
   | 'reconciliation'
   | 'notification_delivery'
   | 'billing_profile'
   | 'security_audit';
-export type OrganizationBillingSignalStatus = 'pending' | 'mismatch' | 'unavailable' | 'resolved';
+export type ReserveAppBillingSignalStatus = 'pending' | 'mismatch' | 'unavailable' | 'resolved';
 export type InternalBillingReconciliationStatus =
   | 'not_applicable'
   | 'aligned'
@@ -68,15 +68,15 @@ export type InternalBillingReconciliationStatus =
 
 type InternalBillingReconciliationSignalEntry = {
   sequenceNumber: number;
-  signalStatus: OrganizationBillingSignalStatus;
+  signalStatus: ReserveAppBillingSignalStatus;
   sourceKind: string;
   reason: string;
   stripeEventId: string | null;
-  providerPlanState: OrganizationBillingPlanState | null;
-  providerSubscriptionStatus: OrganizationBillingSubscriptionStatus | null;
-  appPlanState: OrganizationBillingPlanState;
-  appSubscriptionStatus: OrganizationBillingSubscriptionStatus;
-  appPaymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+  providerPlanState: ReserveAppBillingPlanState | null;
+  providerSubscriptionStatus: ReserveAppBillingSubscriptionStatus | null;
+  appPlanState: ReserveAppBillingPlanState;
+  appSubscriptionStatus: ReserveAppBillingSubscriptionStatus;
+  appPaymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
   appEntitlementState: OrganizationBillingEntitlementState;
   createdAt: string | null;
 };
@@ -107,14 +107,14 @@ type BillingSnapshotJson = Record<string, unknown>;
 export type InternalBillingReconciliationInspection = {
   status: InternalBillingReconciliationStatus;
   comparable: boolean;
-  latestSignalStatus: OrganizationBillingSignalStatus | null;
+  latestSignalStatus: ReserveAppBillingSignalStatus | null;
   latestSignalReason: string | null;
   currentComparison: {
-    providerPlanState: OrganizationBillingPlanState | null;
-    providerSubscriptionStatus: OrganizationBillingSubscriptionStatus | null;
-    appPlanState: OrganizationBillingPlanState;
-    appSubscriptionStatus: OrganizationBillingSubscriptionStatus;
-    appPaymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+    providerPlanState: ReserveAppBillingPlanState | null;
+    providerSubscriptionStatus: ReserveAppBillingSubscriptionStatus | null;
+    appPlanState: ReserveAppBillingPlanState;
+    appSubscriptionStatus: ReserveAppBillingSubscriptionStatus;
+    appPaymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
     appEntitlementState: OrganizationBillingEntitlementState;
   };
   recentSignals: InternalBillingReconciliationSignalEntry[];
@@ -124,7 +124,7 @@ export type InternalBillingReconciliationInspection = {
 
 const resolveProviderPlanState = (
   subscriptionStatus: string | null,
-): OrganizationBillingPlanState | null => {
+): ReserveAppBillingPlanState | null => {
   if (subscriptionStatus === 'trialing') {
     return 'premium_trial';
   }
@@ -171,13 +171,13 @@ const parseSnapshotJson = (value: unknown): BillingSnapshotJson => {
   }
 };
 
-const normalizeSignalProviderPlanState = (value: unknown): OrganizationBillingPlanState | null => {
+const normalizeSignalProviderPlanState = (value: unknown): ReserveAppBillingPlanState | null => {
   return value === 'free' || value === 'premium_trial' || value === 'premium_paid' ? value : null;
 };
 
 const normalizeSignalProviderSubscriptionStatus = (
   value: unknown,
-): OrganizationBillingSubscriptionStatus | null => {
+): ReserveAppBillingSubscriptionStatus | null => {
   return value === 'free' ||
     value === 'trialing' ||
     value === 'active' ||
@@ -189,13 +189,13 @@ const normalizeSignalProviderSubscriptionStatus = (
     : null;
 };
 
-const normalizeSignalAppPlanState = (value: unknown): OrganizationBillingPlanState => {
+const normalizeSignalAppPlanState = (value: unknown): ReserveAppBillingPlanState => {
   return value === 'premium_trial' || value === 'premium_paid' ? value : 'free';
 };
 
 const normalizeSignalAppSubscriptionStatus = (
   value: unknown,
-): OrganizationBillingSubscriptionStatus => {
+): ReserveAppBillingSubscriptionStatus => {
   return value === 'trialing' ||
     value === 'active' ||
     value === 'past_due' ||
@@ -208,7 +208,7 @@ const normalizeSignalAppSubscriptionStatus = (
 
 const normalizeSignalAppPaymentMethodStatus = (
   value: unknown,
-): OrganizationBillingPaymentMethodStatus => {
+): ReserveAppBillingPaymentMethodStatus => {
   return value === 'pending' || value === 'registered' ? value : 'not_started';
 };
 
@@ -253,8 +253,8 @@ const selectNextBillingSignalSequenceNumber = async ({
 };
 
 const areBillingSnapshotsEqual = (
-  previousSnapshot: OrganizationBillingObservationSnapshot,
-  nextSnapshot: OrganizationBillingObservationSnapshot,
+  previousSnapshot: ReserveAppBillingObservationSnapshot,
+  nextSnapshot: ReserveAppBillingObservationSnapshot,
 ) => {
   return (
     previousSnapshot.planCode === nextSnapshot.planCode &&
@@ -275,7 +275,7 @@ const areBillingSnapshotsEqual = (
 /**
  * audit/signal 比較用に、現在の billing aggregate と entitlement policy を同じ形へ正規化する。
  */
-export const readOrganizationBillingObservationSnapshot = async ({
+export const readReserveAppBillingObservationSnapshot = async ({
   database,
   env,
   organizationId,
@@ -285,13 +285,12 @@ export const readOrganizationBillingObservationSnapshot = async ({
   organizationId: string;
 }) => {
   const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
-  const planCode: OrganizationBillingPlanCode =
-    billing?.planCode === 'premium' ? 'premium' : 'free';
+  const planCode: ReserveAppBillingPlanCode = billing?.planCode === 'premium' ? 'premium' : 'free';
   const billingInterval =
     billing?.billingInterval === 'month' || billing?.billingInterval === 'year'
       ? billing.billingInterval
       : null;
-  const subscriptionStatus: OrganizationBillingSubscriptionStatus =
+  const subscriptionStatus: ReserveAppBillingSubscriptionStatus =
     billing?.subscriptionStatus === 'trialing' ||
     billing?.subscriptionStatus === 'active' ||
     billing?.subscriptionStatus === 'past_due' ||
@@ -300,7 +299,7 @@ export const readOrganizationBillingObservationSnapshot = async ({
     billing?.subscriptionStatus === 'incomplete'
       ? billing.subscriptionStatus
       : 'free';
-  const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+  const paymentMethodStatus = await resolveReserveAppBillingPaymentMethodStatus({
     env,
     planCode,
     stripeCustomerId: billing?.stripeCustomerId ?? null,
@@ -329,13 +328,13 @@ export const readOrganizationBillingObservationSnapshot = async ({
     stripeCustomerId: billing?.stripeCustomerId ?? null,
     stripeSubscriptionId: billing?.stripeSubscriptionId ?? null,
     stripePriceId: billing?.stripePriceId ?? null,
-  } satisfies OrganizationBillingObservationSnapshot;
+  } satisfies ReserveAppBillingObservationSnapshot;
 };
 
 /**
  * billing state が実際に変わった場合だけ、sequence 付き audit event を追記する。
  */
-export const appendOrganizationBillingAuditEvent = async ({
+export const appendReserveAppBillingAuditEvent = async ({
   database,
   organizationId,
   sourceKind,
@@ -346,9 +345,9 @@ export const appendOrganizationBillingAuditEvent = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  sourceKind: OrganizationBillingAuditSourceKind;
-  previousSnapshot: OrganizationBillingObservationSnapshot;
-  nextSnapshot: OrganizationBillingObservationSnapshot;
+  sourceKind: ReserveAppBillingAuditSourceKind;
+  previousSnapshot: ReserveAppBillingObservationSnapshot;
+  nextSnapshot: ReserveAppBillingObservationSnapshot;
   stripeEventId?: string | null;
   sourceContext?: string | null;
 }) => {
@@ -386,7 +385,7 @@ export const appendOrganizationBillingAuditEvent = async ({
 };
 
 /** mismatch、通知失敗、profile 不備など、状態遷移とは別の調査 signal を追記する。 */
-export const appendOrganizationBillingSignal = async ({
+export const appendReserveAppBillingSignal = async ({
   database,
   organizationId,
   signalKind,
@@ -402,15 +401,15 @@ export const appendOrganizationBillingSignal = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  signalKind: OrganizationBillingSignalKind;
-  signalStatus: OrganizationBillingSignalStatus;
+  signalKind: ReserveAppBillingSignalKind;
+  signalStatus: ReserveAppBillingSignalStatus;
   sourceKind: string;
   reason: string;
-  appSnapshot: OrganizationBillingObservationSnapshot;
+  appSnapshot: ReserveAppBillingObservationSnapshot;
   stripeEventId?: string | null;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
-  providerPlanState?: OrganizationBillingPlanState | null;
+  providerPlanState?: ReserveAppBillingPlanState | null;
   providerSubscriptionStatus?: string | null;
 }) => {
   const state = await ensureReserveAppBillingV2State({
@@ -445,7 +444,7 @@ export const appendOrganizationBillingSignal = async ({
 /**
  * 直近の同種 signal が未解決の場合だけ resolved signal を追記し、調査 timeline を閉じる。
  */
-export const appendResolvedBillingSignalIfNeeded = async ({
+export const appendResolvedReserveAppBillingSignalIfNeeded = async ({
   database,
   organizationId,
   signalKind,
@@ -460,14 +459,14 @@ export const appendResolvedBillingSignalIfNeeded = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  signalKind: OrganizationBillingSignalKind;
+  signalKind: ReserveAppBillingSignalKind;
   sourceKind: string;
   reason: string;
-  appSnapshot: OrganizationBillingObservationSnapshot;
+  appSnapshot: ReserveAppBillingObservationSnapshot;
   stripeEventId?: string | null;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
-  providerPlanState?: OrganizationBillingPlanState | null;
+  providerPlanState?: ReserveAppBillingPlanState | null;
   providerSubscriptionStatus?: string | null;
 }) => {
   const state = await ensureReserveAppBillingV2State({
@@ -486,8 +485,8 @@ export const appendResolvedBillingSignalIfNeeded = async ({
 
   const latestSameKind = latestSignal.find(
     (row: {
-      signalKind: OrganizationBillingSignalKind;
-      signalStatus: OrganizationBillingSignalStatus;
+      signalKind: ReserveAppBillingSignalKind;
+      signalStatus: ReserveAppBillingSignalStatus;
     }) => row.signalKind === signalKind,
   );
   if (
@@ -499,7 +498,7 @@ export const appendResolvedBillingSignalIfNeeded = async ({
     return false;
   }
 
-  await appendOrganizationBillingSignal({
+  await appendReserveAppBillingSignal({
     database,
     organizationId,
     signalKind,
@@ -523,7 +522,7 @@ export const evaluateReconciliationMismatchReason = ({
   appSnapshot,
   providerSubscription,
 }: {
-  appSnapshot: OrganizationBillingObservationSnapshot;
+  appSnapshot: ReserveAppBillingObservationSnapshot;
   providerSubscription: StripeSubscriptionSummary;
 }) => {
   const providerPlanState = resolveProviderPlanState(providerSubscription.status);
@@ -586,7 +585,7 @@ export const readInternalBillingReconciliationInspection = async ({
   organizationId: string;
   stripeLinked: boolean;
   appSnapshot: Pick<
-    OrganizationBillingObservationSnapshot,
+    ReserveAppBillingObservationSnapshot,
     'planState' | 'subscriptionStatus' | 'paymentMethodStatus' | 'entitlementState'
   >;
 }) => {
@@ -677,7 +676,7 @@ export const readInternalBillingReconciliationInspection = async ({
       const appSnapshot = parseSnapshotJson(row.appSnapshotJson);
       return {
         sequenceNumber: row.sequenceNumber,
-        signalStatus: row.signalStatus as OrganizationBillingSignalStatus,
+        signalStatus: row.signalStatus as ReserveAppBillingSignalStatus,
         sourceKind: row.sourceKind,
         reason: row.reason,
         stripeEventId: row.stripeEventId ?? null,
@@ -715,7 +714,7 @@ export const readInternalBillingReconciliationInspection = async ({
       row: (typeof webhookFailureRows)[number],
     ): InternalBillingReconciliationWebhookFailureEntry => ({
       eventId:
-        row.eventId.startsWith('stripe_webhook_failure:') ||
+        row.eventId.startsWith('stripe_billing_failure:') ||
         row.eventId.startsWith('legacy_failure:')
           ? null
           : row.eventId,

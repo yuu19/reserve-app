@@ -2,22 +2,20 @@ import type { BillingPaymentIssue, BillingSubscription } from '@repo/saas-billin
 import { and, count, desc, eq } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
-  ORGANIZATION_BILLING_PAST_DUE_GRACE_DAYS,
-  ORGANIZATION_PREMIUM_TRIAL_COMPLETION_CONFLICT_MESSAGE,
-  ORGANIZATION_PREMIUM_TRIAL_COMPLETION_NOT_READY_MESSAGE,
-  ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
-  ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS,
-  resolveBillingIntervalFromPriceId,
-  resolveOrganizationBillingPaymentMethodEvaluation,
-  type OrganizationBillingPaymentIssueState,
-  type OrganizationBillingPlanCode,
-  type OrganizationBillingSubscriptionStatus,
-} from '../../domain/billing/organization-billing.js';
-import type { OrganizationBillingInvoicePaymentEventType } from '../../domain/billing/organization-billing-invoice-events.js';
-import {
+  RESERVE_APP_BILLING_PAST_DUE_GRACE_DAYS,
+  RESERVE_APP_PREMIUM_TRIAL_COMPLETION_CONFLICT_MESSAGE,
+  RESERVE_APP_PREMIUM_TRIAL_COMPLETION_NOT_READY_MESSAGE,
+  RESERVE_APP_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
+  RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS,
   projectReserveAppEntitlements,
   reserveAppBillingSubject,
+  resolveReserveAppBillingIntervalFromPriceId,
+  resolveReserveAppBillingPaymentMethodEvaluation,
+  type ReserveAppBillingPaymentIssueState,
+  type ReserveAppBillingPlanCode,
+  type ReserveAppBillingSubscriptionStatus,
 } from '../../features/billing/policies/reserve-app-billing-policy.js';
+import type { OrganizationBillingInvoicePaymentEventType } from '../../domain/billing/organization-billing-invoice-events.js';
 import * as dbSchema from '../db/schema.js';
 import { readStripeSubscriptionSummaryById } from '../payment/stripe.js';
 import { createDrizzleBillingStore } from './drizzle-billing-store.js';
@@ -31,7 +29,7 @@ type ReserveAppBillingV2State = {
 
 const normalizeSubscriptionStatus = (
   value: string | null | undefined,
-): OrganizationBillingSubscriptionStatus => {
+): ReserveAppBillingSubscriptionStatus => {
   if (
     value === 'trialing' ||
     value === 'active' ||
@@ -45,7 +43,7 @@ const normalizeSubscriptionStatus = (
   return 'free';
 };
 
-const resolvePlanCode = (value: string | null | undefined): OrganizationBillingPlanCode =>
+const resolvePlanCode = (value: string | null | undefined): ReserveAppBillingPlanCode =>
   value === 'premium' ? 'premium' : 'free';
 
 const resolveBillingInterval = (value: string | null | undefined): 'month' | 'year' | null =>
@@ -56,10 +54,10 @@ const resolvePaymentIssueState = ({
   pastDueGraceEndsAt,
   now,
 }: {
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   pastDueGraceEndsAt?: Date | null;
   now: Date;
-}): OrganizationBillingPaymentIssueState => {
+}): ReserveAppBillingPaymentIssueState => {
   if (subscriptionStatus === 'past_due') {
     return pastDueGraceEndsAt && pastDueGraceEndsAt.getTime() > now.getTime()
       ? 'past_due_grace_active'
@@ -74,7 +72,7 @@ const resolvePaymentIssueState = ({
   return 'none';
 };
 
-const isCurrentPaymentIssueState = (state: OrganizationBillingPaymentIssueState) =>
+const isCurrentPaymentIssueState = (state: ReserveAppBillingPaymentIssueState) =>
   state !== 'none' && state !== 'recovered' && state !== 'stale_failure_history_only';
 
 const currentPaymentIssueStartedAt = (paymentIssue: BillingPaymentIssue) =>
@@ -91,7 +89,7 @@ const isUnknownPremiumPrice = ({
   stripePriceId,
 }: {
   env: AuthRuntimeEnv;
-  planCode: OrganizationBillingPlanCode;
+  planCode: ReserveAppBillingPlanCode;
   stripePriceId?: string | null;
 }) => {
   if (planCode !== 'premium') {
@@ -114,7 +112,7 @@ const resolvePaymentIssueFields = ({
   explicitPastDueGraceEndsAt,
   now,
 }: {
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   existingPaymentIssue: BillingPaymentIssue | null;
   providerPaymentIssueStartedAt?: Date | null;
   explicitPastDueGraceEndsAt?: Date | null;
@@ -139,7 +137,7 @@ const resolvePaymentIssueFields = ({
         : ((canKeepExistingGrace ? existingPaymentIssue.pastDueGraceEndsAt : null) ??
           new Date(
             paymentIssueStartedAt.getTime() +
-              ORGANIZATION_BILLING_PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
+              RESERVE_APP_BILLING_PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
           ));
 
     return {
@@ -315,7 +313,7 @@ export const startReserveAppBillingV2PremiumTrial = async ({
   now = new Date(),
   trialStartedAt = now,
   trialEndsAt = new Date(
-    trialStartedAt.getTime() + ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
+    trialStartedAt.getTime() + RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
   ),
   stripeCustomerId = null,
   stripeSubscriptionId = null,
@@ -401,12 +399,12 @@ export const upsertReserveAppBillingV2SubscriptionState = async ({
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
   organizationId: string;
-  planCode: OrganizationBillingPlanCode;
+  planCode: ReserveAppBillingPlanCode;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   stripePriceId?: string | null;
   billingInterval?: 'month' | 'year' | null;
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   cancelAtPeriodEnd?: boolean;
   currentPeriodStart?: Date | null;
   currentPeriodEnd?: Date | null;
@@ -507,7 +505,7 @@ export const applyReserveAppBillingV2TrialCompletion = async ({
     return {
       ok: false,
       status: 409,
-      message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_CONFLICT_MESSAGE,
+      message: RESERVE_APP_PREMIUM_TRIAL_COMPLETION_CONFLICT_MESSAGE,
     };
   }
 
@@ -516,11 +514,11 @@ export const applyReserveAppBillingV2TrialCompletion = async ({
     return {
       ok: false,
       status: 409,
-      message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_NOT_READY_MESSAGE,
+      message: RESERVE_APP_PREMIUM_TRIAL_COMPLETION_NOT_READY_MESSAGE,
     };
   }
 
-  const paymentMethod = await resolveOrganizationBillingPaymentMethodEvaluation({
+  const paymentMethod = await resolveReserveAppBillingPaymentMethodEvaluation({
     env,
     planCode: 'premium',
     stripeCustomerId: billing.stripeCustomerId ?? null,
@@ -545,7 +543,7 @@ export const applyReserveAppBillingV2TrialCompletion = async ({
           stripePriceId: isCanceled ? null : latestSubscription.priceId,
           billingInterval: isCanceled
             ? null
-            : resolveBillingIntervalFromPriceId(env, latestSubscription.priceId),
+            : resolveReserveAppBillingIntervalFromPriceId(env, latestSubscription.priceId),
           subscriptionStatus: isCanceled ? 'free' : latestSubscriptionStatus,
           cancelAtPeriodEnd: isCanceled ? false : latestSubscription.cancelAtPeriodEnd,
           currentPeriodStart: isCanceled ? null : latestSubscription.currentPeriodStart,
@@ -565,14 +563,14 @@ export const applyReserveAppBillingV2TrialCompletion = async ({
       return {
         ok: false,
         status: 503,
-        message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
+        message: RESERVE_APP_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
       };
     }
 
     return {
       ok: false,
       status: 503,
-      message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
+      message: RESERVE_APP_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
     };
   }
 
@@ -637,7 +635,7 @@ export const applyReserveAppBillingV2TrialCompletion = async ({
     : {
         ok: false,
         status: 503,
-        message: ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
+        message: RESERVE_APP_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE,
       };
 };
 
@@ -658,7 +656,10 @@ export const hasReserveAppBillingV2StartedPremiumTrial = async ({
   const auditRows = await database
     .select({ count: count() })
     .from(dbSchema.billingAuditEvent)
-    .innerJoin(dbSchema.billingAccount, eq(dbSchema.billingAuditEvent.billingAccountId, dbSchema.billingAccount.id))
+    .innerJoin(
+      dbSchema.billingAccount,
+      eq(dbSchema.billingAuditEvent.billingAccountId, dbSchema.billingAccount.id),
+    )
     .where(
       and(
         eq(dbSchema.billingAccount.subjectType, 'organization'),
@@ -728,9 +729,9 @@ const resolveIssueEventState = ({
   stalePaymentIssueAfterRecovery,
 }: {
   invoiceEventType: OrganizationBillingInvoicePaymentEventType;
-  projectedPaymentIssueState: OrganizationBillingPaymentIssueState;
+  projectedPaymentIssueState: ReserveAppBillingPaymentIssueState;
   stalePaymentIssueAfterRecovery?: boolean;
-}): OrganizationBillingPaymentIssueState | null => {
+}): ReserveAppBillingPaymentIssueState | null => {
   if (stalePaymentIssueAfterRecovery) {
     return 'stale_failure_history_only';
   }

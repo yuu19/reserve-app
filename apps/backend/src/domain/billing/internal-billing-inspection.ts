@@ -1,16 +1,16 @@
 import { and, desc, eq, or } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
+import {
+  isReserveAppBillingInterval,
+  isReserveAppBillingSubscriptionStatus,
+  resolveReserveAppBillingPaymentIssueState,
+  resolveReserveAppBillingPaymentMethodStatus,
+  type ReserveAppBillingPlanState,
+  type ReserveAppBillingSubscriptionStatus,
+} from '../../features/billing/policies/reserve-app-billing-policy.js';
 import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import * as dbSchema from '../../infra/db/schema.js';
-import {
-  isBillingInterval,
-  isBillingSubscriptionStatus,
-  resolveOrganizationBillingPaymentIssueState,
-  resolveOrganizationBillingPaymentMethodStatus,
-  resolveOrganizationBillingProfileReadiness,
-  type OrganizationBillingPlanState,
-  type OrganizationBillingSubscriptionStatus,
-} from './organization-billing.js';
+import { resolveOrganizationBillingProfileReadiness } from './organization-billing.js';
 import {
   buildBillingDocumentReadiness,
   buildInternalBillingDocumentInspection,
@@ -22,10 +22,10 @@ import {
 } from './organization-billing-invoice-events.js';
 import { readRecentBillingOperationAttempts } from './organization-billing-operations.js';
 import {
-  normalizeOrganizationBillingNotificationDeliveryState,
+  normalizeReserveAppBillingNotificationDeliveryState,
   readTrialReminderDeliveryAuditInspection,
-} from './organization-billing-notifications.js';
-import { readInternalBillingReconciliationInspection } from './organization-billing-observability.js';
+} from './reserve-app-billing-notifications.js';
+import { readInternalBillingReconciliationInspection } from './reserve-app-billing-observability.js';
 import { resolveOrganizationPremiumEntitlementPolicy } from './organization-billing-policy.js';
 
 const toIsoDateString = (value: unknown): string | null => {
@@ -67,14 +67,14 @@ const toLifecycleStage = (
   return 'free';
 };
 
-const normalizeProviderPlanState = (value: unknown): OrganizationBillingPlanState | null => {
+const normalizeProviderPlanState = (value: unknown): ReserveAppBillingPlanState | null => {
   return value === 'free' || value === 'premium_trial' || value === 'premium_paid' ? value : null;
 };
 
 const normalizeProviderSubscriptionStatus = (
   value: unknown,
-): OrganizationBillingSubscriptionStatus | null => {
-  return typeof value === 'string' ? isBillingSubscriptionStatus(value) : null;
+): ReserveAppBillingSubscriptionStatus | null => {
+  return typeof value === 'string' ? isReserveAppBillingSubscriptionStatus(value) : null;
 };
 
 const toTimestamp = (value: string | null | undefined) => {
@@ -93,7 +93,7 @@ const resolveInspectionPaymentIssueState = ({
   entitlementReason,
   invoicePaymentEvents,
 }: {
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   entitlementReason: string;
   invoicePaymentEvents: OrganizationBillingInvoicePaymentEvent[];
 }) => {
@@ -139,7 +139,7 @@ const resolveInspectionPaymentIssueState = ({
       ? 'payment_succeeded'
       : (latestIssueEvent?.eventType ?? null);
 
-  return resolveOrganizationBillingPaymentIssueState({
+  return resolveReserveAppBillingPaymentIssueState({
     subscriptionStatus,
     entitlementReason,
     latestPaymentIssueEventType,
@@ -152,9 +152,9 @@ const resolveInspectionSummaryPlanState = ({
   planState,
   isPremiumEligible,
 }: {
-  planState: OrganizationBillingPlanState;
+  planState: ReserveAppBillingPlanState;
   isPremiumEligible: boolean;
-}): OrganizationBillingPlanState => {
+}): ReserveAppBillingPlanState => {
   return isPremiumEligible ? planState : 'free';
 };
 
@@ -429,11 +429,11 @@ export const readInternalBillingInspection = async ({
 
   const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
   const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
-  const billingInterval = isBillingInterval(billing?.billingInterval ?? null);
+  const billingInterval = isReserveAppBillingInterval(billing?.billingInterval ?? null);
   const subscriptionStatus =
-    isBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
+    isReserveAppBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
   const currentPeriodEnd = toIsoDateString(billing?.currentPeriodEnd);
-  const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+  const paymentMethodStatus = await resolveReserveAppBillingPaymentMethodStatus({
     env,
     planCode,
     stripeCustomerId: billing?.stripeCustomerId ?? null,
@@ -679,7 +679,7 @@ export const readInternalBillingInspection = async ({
     }
   }
   const notificationRecipients = [...latestRecipientNotifications.values()].map((row) => {
-    const normalizedDeliveryState = normalizeOrganizationBillingNotificationDeliveryState(
+    const normalizedDeliveryState = normalizeReserveAppBillingNotificationDeliveryState(
       row.deliveryState,
     );
     const deliveryState =

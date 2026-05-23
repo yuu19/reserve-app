@@ -2,7 +2,7 @@ import {
   createActiveEntitlementInput,
   type BillingEntitlementInput,
 } from '@repo/saas-billing-core';
-import type { OrganizationBillingPaymentIssueState } from '../../../domain/billing/organization-billing.js';
+import type { ReserveAppBillingPaymentIssueState } from './reserve-app-payment-policy.js';
 
 export const RESERVE_APP_ENTITLEMENTS = {
   ORGANIZATION_PREMIUM: 'organization.premium',
@@ -34,7 +34,7 @@ export type ReserveAppBillingProjectionInput = {
   trialEnd?: Date | null;
   currentPeriodEnd?: Date | null;
   paymentIssue?: {
-    state: OrganizationBillingPaymentIssueState;
+    state: ReserveAppBillingPaymentIssueState;
     pastDueGraceEndsAt?: Date | null;
   } | null;
   unknownPrice?: boolean;

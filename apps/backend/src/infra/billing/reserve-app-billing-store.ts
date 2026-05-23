@@ -6,11 +6,11 @@ import {
   readOrganizationBillingInvoicePaymentEvents,
 } from '../../domain/billing/organization-billing-invoice-events.js';
 import {
-  appendOrganizationBillingAuditEvent,
-  appendOrganizationBillingSignal,
-  appendResolvedBillingSignalIfNeeded,
-  readOrganizationBillingObservationSnapshot,
-} from '../../domain/billing/organization-billing-observability.js';
+  appendReserveAppBillingAuditEvent,
+  appendReserveAppBillingSignal,
+  appendResolvedReserveAppBillingSignalIfNeeded,
+  readReserveAppBillingObservationSnapshot,
+} from '../../domain/billing/reserve-app-billing-observability.js';
 import type { OrganizationBillingStore } from '../../features/billing/billing.store.js';
 import {
   applyReserveAppBillingV2TrialCompletion,
@@ -84,28 +84,28 @@ export const createReserveAppBillingStore = ({
     }),
 
   readObservationSnapshot: ({ organizationId }) =>
-    readOrganizationBillingObservationSnapshot({
+    readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId,
     }),
 
   async appendAuditEvent(input) {
-    await appendOrganizationBillingAuditEvent({
+    await appendReserveAppBillingAuditEvent({
       database,
       ...input,
     });
   },
 
   async appendSignal(input) {
-    await appendOrganizationBillingSignal({
+    await appendReserveAppBillingSignal({
       database,
       ...input,
     });
   },
 
   async appendResolvedSignalIfNeeded(input) {
-    await appendResolvedBillingSignalIfNeeded({
+    await appendResolvedReserveAppBillingSignalIfNeeded({
       database,
       ...input,
     });

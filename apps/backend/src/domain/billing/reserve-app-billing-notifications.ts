@@ -6,39 +6,39 @@ import {
 } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import {
-  resolveOrganizationBillingPaymentMethodStatus,
-  type OrganizationBillingPaymentMethodStatus,
-  type OrganizationBillingPlanState,
-  type OrganizationBillingSubscriptionStatus,
-} from './organization-billing.js';
+  resolveReserveAppBillingPaymentMethodStatus,
+  type ReserveAppBillingPaymentMethodStatus,
+  type ReserveAppBillingPlanState,
+  type ReserveAppBillingSubscriptionStatus,
+} from '../../features/billing/policies/reserve-app-billing-policy.js';
 import { resolveOrganizationPremiumEntitlementPolicy } from './organization-billing-policy.js';
 import {
   sendBillingPaymentIssueEmail,
   sendTrialEndingReminderEmail,
 } from '../../infra/email/resend.js';
 import {
-  appendOrganizationBillingSignal,
-  appendResolvedBillingSignalIfNeeded,
-  readOrganizationBillingObservationSnapshot,
-} from './organization-billing-observability.js';
+  appendReserveAppBillingSignal,
+  appendResolvedReserveAppBillingSignalIfNeeded,
+  readReserveAppBillingObservationSnapshot,
+} from './reserve-app-billing-observability.js';
 
-export type OrganizationBillingNotificationKind =
+export type ReserveAppBillingNotificationKind =
   | 'trial_will_end_email'
   | 'trial_will_end'
   | 'payment_failed_email'
   | 'payment_action_required_email'
   | 'past_due_grace_reminder_email'
   | 'unknown';
-export type OrganizationBillingCommunicationType = 'trial_will_end' | 'payment_issue' | 'unknown';
-export type OrganizationBillingNotificationChannel = 'email' | 'in_app' | 'web_push' | 'unknown';
-export type OrganizationBillingNotificationDeliveryState =
+export type ReserveAppBillingCommunicationType = 'trial_will_end' | 'payment_issue' | 'unknown';
+export type ReserveAppBillingNotificationChannel = 'email' | 'in_app' | 'web_push' | 'unknown';
+export type ReserveAppBillingNotificationDeliveryState =
   | 'requested'
   | 'retried'
   | 'sent'
   | 'failed'
   | 'skipped'
   | 'unknown';
-export type OrganizationBillingNotificationDeliveryOutcome =
+export type ReserveAppBillingNotificationDeliveryOutcome =
   | 'pending'
   | 'delivered'
   | 'failed'
@@ -51,31 +51,31 @@ export type InternalTrialReminderDeliveryStatus =
   | 'failed'
   | 'unknown';
 
-export type OrganizationBillingOwnerContact = {
+export type ReserveAppBillingOwnerContact = {
   userId: string;
   email: string;
   name: string;
 };
 
-export type OrganizationBillingPaymentIssueNotificationRecipientAttempt = {
+export type ReserveAppBillingPaymentIssueNotificationRecipientAttempt = {
   sequenceNumber?: number | null;
   recipientUserId?: string | null;
   recipientEmail?: string | null;
-  deliveryState: OrganizationBillingNotificationDeliveryState | string;
+  deliveryState: ReserveAppBillingNotificationDeliveryState | string;
   attemptNumber: number;
 };
 
-export type OrganizationBillingPaymentIssueNotificationRecipientPlan = {
-  owner: OrganizationBillingOwnerContact;
+export type ReserveAppBillingPaymentIssueNotificationRecipientPlan = {
+  owner: ReserveAppBillingOwnerContact;
   action: 'send' | 'skip';
   deliveryState: 'requested' | 'retried' | 'skipped';
   attemptNumber: number;
 };
 
-type OrganizationBillingReminderContext = {
-  planState: OrganizationBillingPlanState;
-  paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
+type ReserveAppBillingReminderContext = {
+  planState: ReserveAppBillingPlanState;
+  paymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   trialEndsAt: string | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
@@ -88,18 +88,18 @@ type TrialReminderCopy = {
 
 type TrialReminderDeliveryAuditHistoryEntry = {
   sequenceNumber: number;
-  notificationKind: OrganizationBillingNotificationKind;
-  communicationType: OrganizationBillingCommunicationType;
-  channel: OrganizationBillingNotificationChannel;
+  notificationKind: ReserveAppBillingNotificationKind;
+  communicationType: ReserveAppBillingCommunicationType;
+  channel: ReserveAppBillingNotificationChannel;
   channelLabel: string;
-  deliveryState: OrganizationBillingNotificationDeliveryState;
-  deliveryOutcome: OrganizationBillingNotificationDeliveryOutcome;
+  deliveryState: ReserveAppBillingNotificationDeliveryState;
+  deliveryOutcome: ReserveAppBillingNotificationDeliveryOutcome;
   attemptNumber: number;
   stripeEventId: string | null;
   recipientEmail: string | null;
-  planState: OrganizationBillingPlanState;
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
-  paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+  planState: ReserveAppBillingPlanState;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
+  paymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
   trialEndsAt: string | null;
   failureReason: string | null;
   createdAt: string | null;
@@ -118,50 +118,48 @@ type TrialReminderWebhookEventSummary = {
   createdAt: string | null;
 };
 
-const TRIAL_WILL_END_NOTIFICATION_KIND: OrganizationBillingNotificationKind =
-  'trial_will_end_email';
-const paymentIssueNotificationKinds = new Set<OrganizationBillingNotificationKind>([
+const TRIAL_WILL_END_NOTIFICATION_KIND: ReserveAppBillingNotificationKind = 'trial_will_end_email';
+const paymentIssueNotificationKinds = new Set<ReserveAppBillingNotificationKind>([
   'payment_failed_email',
   'payment_action_required_email',
   'past_due_grace_reminder_email',
 ]);
 type TrialWillEndCommunicationKind = Extract<
-  OrganizationBillingNotificationKind,
+  ReserveAppBillingNotificationKind,
   'trial_will_end_email' | 'trial_will_end'
 >;
 const TRIAL_REMINDER_EXPECTATION_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 const isTrialWillEndCommunicationKind = (
-  value: OrganizationBillingNotificationKind,
+  value: ReserveAppBillingNotificationKind,
 ): value is TrialWillEndCommunicationKind => {
   return value === 'trial_will_end_email' || value === 'trial_will_end';
 };
 
-const paymentMethodStatusLabelMap: Record<OrganizationBillingPaymentMethodStatus, string> = {
+const paymentMethodStatusLabelMap: Record<ReserveAppBillingPaymentMethodStatus, string> = {
   not_started: '未登録',
   pending: '確認中',
   registered: '登録済み',
 };
 
-const paymentMethodStatusCopyMap: Record<
-  OrganizationBillingPaymentMethodStatus,
-  TrialReminderCopy
-> = {
-  not_started: {
-    actionText: '契約ページで支払い方法の登録を完了してください',
-    noteText:
-      '支払い方法の登録が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
-  },
-  pending: {
-    actionText: '契約ページで登録状況を確認し、未完了であれば支払い方法の登録を完了してください',
-    noteText:
-      '支払い方法の登録状況の反映が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
-  },
-  registered: {
-    actionText: '追加の登録は不要です。契約ページで継続予定と登録済みの支払い方法をご確認ください',
-    noteText: '現在の支払い方法は登録済みです。トライアル終了前に契約内容をご確認ください。',
-  },
-};
+const paymentMethodStatusCopyMap: Record<ReserveAppBillingPaymentMethodStatus, TrialReminderCopy> =
+  {
+    not_started: {
+      actionText: '契約ページで支払い方法の登録を完了してください',
+      noteText:
+        '支払い方法の登録が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
+    },
+    pending: {
+      actionText: '契約ページで登録状況を確認し、未完了であれば支払い方法の登録を完了してください',
+      noteText:
+        '支払い方法の登録状況の反映が完了していない場合、トライアル終了後に無料プランへ戻ることがあります。',
+    },
+    registered: {
+      actionText:
+        '追加の登録は不要です。契約ページで継続予定と登録済みの支払い方法をご確認ください',
+      noteText: '現在の支払い方法は登録済みです。トライアル終了前に契約内容をご確認ください。',
+    },
+  };
 
 const trialReminderFailureReasonFromError = (error: unknown): string => {
   if (!(error instanceof Error)) {
@@ -184,9 +182,9 @@ const trialReminderFailureReasonFromError = (error: unknown): string => {
 };
 
 /** 保存済み notification kind を UI/inspection が扱える既知値へ正規化する。 */
-export const normalizeOrganizationBillingNotificationKind = (
+export const normalizeReserveAppBillingNotificationKind = (
   value: unknown,
-): OrganizationBillingNotificationKind => {
+): ReserveAppBillingNotificationKind => {
   return value === 'trial_will_end_email' ||
     value === 'trial_will_end' ||
     value === 'payment_failed_email' ||
@@ -196,15 +194,15 @@ export const normalizeOrganizationBillingNotificationKind = (
     : 'unknown';
 };
 
-export const normalizeOrganizationBillingNotificationChannel = (
+export const normalizeReserveAppBillingNotificationChannel = (
   value: unknown,
-): OrganizationBillingNotificationChannel => {
+): ReserveAppBillingNotificationChannel => {
   return value === 'email' || value === 'in_app' || value === 'web_push' ? value : 'unknown';
 };
 
-export const normalizeOrganizationBillingNotificationDeliveryState = (
+export const normalizeReserveAppBillingNotificationDeliveryState = (
   value: unknown,
-): OrganizationBillingNotificationDeliveryState => {
+): ReserveAppBillingNotificationDeliveryState => {
   return value === 'requested' ||
     value === 'retried' ||
     value === 'sent' ||
@@ -214,9 +212,9 @@ export const normalizeOrganizationBillingNotificationDeliveryState = (
     : 'unknown';
 };
 
-export const resolveOrganizationBillingNotificationDeliveryOutcome = (
-  deliveryState: OrganizationBillingNotificationDeliveryState,
-): OrganizationBillingNotificationDeliveryOutcome => {
+export const resolveReserveAppBillingNotificationDeliveryOutcome = (
+  deliveryState: ReserveAppBillingNotificationDeliveryState,
+): ReserveAppBillingNotificationDeliveryOutcome => {
   switch (deliveryState) {
     case 'sent':
       return 'delivered';
@@ -232,13 +230,13 @@ export const resolveOrganizationBillingNotificationDeliveryOutcome = (
   }
 };
 
-export const resolveOrganizationBillingCommunicationType = ({
+export const resolveReserveAppBillingCommunicationType = ({
   notificationKind,
   channel,
 }: {
-  notificationKind: OrganizationBillingNotificationKind;
-  channel: OrganizationBillingNotificationChannel;
-}): OrganizationBillingCommunicationType => {
+  notificationKind: ReserveAppBillingNotificationKind;
+  channel: ReserveAppBillingNotificationChannel;
+}): ReserveAppBillingCommunicationType => {
   if (channel === 'unknown') {
     return 'unknown';
   }
@@ -251,8 +249,8 @@ export const resolveOrganizationBillingCommunicationType = ({
   return 'unknown';
 };
 
-export const resolveOrganizationBillingNotificationChannelLabel = (
-  channel: OrganizationBillingNotificationChannel,
+export const resolveReserveAppBillingNotificationChannelLabel = (
+  channel: ReserveAppBillingNotificationChannel,
 ) => {
   switch (channel) {
     case 'email':
@@ -294,7 +292,7 @@ const isTrialReminderExpected = ({
   trialEndsAt,
   now,
 }: {
-  planState: OrganizationBillingPlanState;
+  planState: ReserveAppBillingPlanState;
   trialEndsAt: string | null;
   now: Date;
 }) => {
@@ -345,13 +343,13 @@ const resolveTrialReminderDeliveryStatus = ({
   return 'unknown';
 };
 
-const selectOrganizationBillingOwnerContact = async ({
+const selectReserveAppBillingOwnerContact = async ({
   database,
   organizationId,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-}): Promise<OrganizationBillingOwnerContact | null> => {
+}): Promise<ReserveAppBillingOwnerContact | null> => {
   const rows = await database
     .select({
       userId: dbSchema.user.id,
@@ -374,7 +372,7 @@ const selectOrganizationBillingVerifiedOwnerContacts = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-}): Promise<OrganizationBillingOwnerContact[]> => {
+}): Promise<ReserveAppBillingOwnerContact[]> => {
   return database
     .select({
       userId: dbSchema.user.id,
@@ -393,8 +391,8 @@ const selectOrganizationBillingVerifiedOwnerContacts = async ({
 };
 
 const matchesNotificationRecipient = (
-  attempt: OrganizationBillingPaymentIssueNotificationRecipientAttempt,
-  owner: Pick<OrganizationBillingOwnerContact, 'userId' | 'email'>,
+  attempt: ReserveAppBillingPaymentIssueNotificationRecipientAttempt,
+  owner: Pick<ReserveAppBillingOwnerContact, 'userId' | 'email'>,
 ) => {
   return attempt.recipientUserId === owner.userId || attempt.recipientEmail === owner.email;
 };
@@ -404,13 +402,13 @@ const matchesNotificationRecipient = (
  *
  * 既に送信済み/skip 済みの recipient には同じ Stripe event で再送せず、未完了分だけ再試行する。
  */
-export const resolveOrganizationBillingPaymentIssueNotificationRecipientPlans = ({
+export const resolveReserveAppPaymentIssueNotificationRecipientPlans = ({
   owners,
   attempts,
 }: {
-  owners: OrganizationBillingOwnerContact[];
-  attempts: OrganizationBillingPaymentIssueNotificationRecipientAttempt[];
-}): OrganizationBillingPaymentIssueNotificationRecipientPlan[] => {
+  owners: ReserveAppBillingOwnerContact[];
+  attempts: ReserveAppBillingPaymentIssueNotificationRecipientAttempt[];
+}): ReserveAppBillingPaymentIssueNotificationRecipientPlan[] => {
   return owners.map((owner) => {
     const ownerAttempts = attempts
       .filter((attempt) => matchesNotificationRecipient(attempt, owner))
@@ -419,7 +417,7 @@ export const resolveOrganizationBillingPaymentIssueNotificationRecipientPlans = 
         return sequenceDelta !== 0 ? sequenceDelta : second.attemptNumber - first.attemptNumber;
       });
     const latestDeliveryState = ownerAttempts[0]
-      ? normalizeOrganizationBillingNotificationDeliveryState(ownerAttempts[0].deliveryState)
+      ? normalizeReserveAppBillingNotificationDeliveryState(ownerAttempts[0].deliveryState)
       : null;
     const maxAttemptNumber = ownerAttempts.reduce(
       (maxAttempt, attempt) => Math.max(maxAttempt, attempt.attemptNumber),
@@ -454,7 +452,7 @@ const selectNextOrganizationBillingNotificationAttempt = async ({
   database: AuthRuntimeDatabase;
   organizationId: string;
   stripeEventId: string;
-  notificationKind?: OrganizationBillingNotificationKind;
+  notificationKind?: ReserveAppBillingNotificationKind;
 }) => {
   const state = await ensureReserveAppBillingV2State({
     database,
@@ -489,7 +487,7 @@ const selectPaymentIssueNotificationRecipientAttempts = async ({
   database: AuthRuntimeDatabase;
   organizationId: string;
   stripeEventId: string;
-  notificationKind: OrganizationBillingNotificationKind;
+  notificationKind: ReserveAppBillingNotificationKind;
 }) => {
   const state = await ensureReserveAppBillingV2State({
     database,
@@ -557,16 +555,16 @@ const insertOrganizationBillingNotification = async ({
   organizationId: string;
   recipientUserId?: string | null;
   recipientEmail?: string | null;
-  deliveryState: OrganizationBillingNotificationDeliveryState;
+  deliveryState: ReserveAppBillingNotificationDeliveryState;
   attemptNumber: number;
-  notificationKind?: OrganizationBillingNotificationKind;
+  notificationKind?: ReserveAppBillingNotificationKind;
   stripeEventId: string;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   stripeInvoiceId?: string | null;
-  planState: OrganizationBillingPlanState;
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
-  paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+  planState: ReserveAppBillingPlanState;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
+  paymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
   trialEndsAt: string | null;
   failureReason?: string | null;
 }) => {
@@ -615,13 +613,13 @@ export const resolveOrganizationTrialReminderContext = async ({
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
   organizationId: string;
-}): Promise<OrganizationBillingReminderContext | null> => {
+}): Promise<ReserveAppBillingReminderContext | null> => {
   const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
   if (!billing) {
     return null;
   }
 
-  const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+  const paymentMethodStatus = await resolveReserveAppBillingPaymentMethodStatus({
     env,
     planCode: billing.planCode,
     stripeCustomerId: billing.stripeCustomerId ?? null,
@@ -659,7 +657,7 @@ export const readTrialReminderDeliveryAuditInspection = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  planState: OrganizationBillingPlanState;
+  planState: ReserveAppBillingPlanState;
   trialEndsAt: string | null;
   now?: Date;
 }) => {
@@ -744,29 +742,27 @@ export const readTrialReminderDeliveryAuditInspection = async ({
 
   const history = historyRows.map(
     (row: (typeof historyRows)[number]): TrialReminderDeliveryAuditHistoryEntry => {
-      const notificationKind = normalizeOrganizationBillingNotificationKind(row.notificationKind);
-      const channel = normalizeOrganizationBillingNotificationChannel(row.channel);
-      const deliveryState = normalizeOrganizationBillingNotificationDeliveryState(
-        row.deliveryState,
-      );
+      const notificationKind = normalizeReserveAppBillingNotificationKind(row.notificationKind);
+      const channel = normalizeReserveAppBillingNotificationChannel(row.channel);
+      const deliveryState = normalizeReserveAppBillingNotificationDeliveryState(row.deliveryState);
 
       return {
         sequenceNumber: row.sequenceNumber,
         notificationKind,
-        communicationType: resolveOrganizationBillingCommunicationType({
+        communicationType: resolveReserveAppBillingCommunicationType({
           notificationKind,
           channel,
         }),
         channel,
-        channelLabel: resolveOrganizationBillingNotificationChannelLabel(channel),
+        channelLabel: resolveReserveAppBillingNotificationChannelLabel(channel),
         deliveryState,
-        deliveryOutcome: resolveOrganizationBillingNotificationDeliveryOutcome(deliveryState),
+        deliveryOutcome: resolveReserveAppBillingNotificationDeliveryOutcome(deliveryState),
         attemptNumber: row.attemptNumber,
         stripeEventId: row.stripeEventId ?? null,
         recipientEmail: row.recipientEmail ?? null,
-        planState: row.planState as OrganizationBillingPlanState,
-        subscriptionStatus: row.subscriptionStatus as OrganizationBillingSubscriptionStatus,
-        paymentMethodStatus: row.paymentMethodStatus as OrganizationBillingPaymentMethodStatus,
+        planState: row.planState as ReserveAppBillingPlanState,
+        subscriptionStatus: row.subscriptionStatus as ReserveAppBillingSubscriptionStatus,
+        paymentMethodStatus: row.paymentMethodStatus as ReserveAppBillingPaymentMethodStatus,
         trialEndsAt: toIsoDateString(row.trialEndsAt),
         failureReason: row.failureReason ?? null,
         createdAt: toIsoDateString(row.createdAt),
@@ -845,7 +841,7 @@ export const readTrialReminderDeliveryAuditInspection = async ({
  *
  * Resend の一時的な配送失敗だけ再試行可能として返し、所有者不在や設定不備は調査 signal に寄せる。
  */
-export const sendOrganizationTrialWillEndReminder = async ({
+export const sendReserveAppTrialWillEndReminder = async ({
   database,
   env,
   organizationId,
@@ -877,12 +873,12 @@ export const sendOrganizationTrialWillEndReminder = async ({
     return { ok: true, reminderSent: false };
   }
 
-  const owner = await selectOrganizationBillingOwnerContact({
+  const owner = await selectReserveAppBillingOwnerContact({
     database,
     organizationId,
   });
   if (!owner) {
-    const appSnapshot = await readOrganizationBillingObservationSnapshot({
+    const appSnapshot = await readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId,
@@ -920,7 +916,7 @@ export const sendOrganizationTrialWillEndReminder = async ({
       trialEndsAt: reminderContext.trialEndsAt,
       failureReason: 'owner_not_found',
     });
-    await appendOrganizationBillingSignal({
+    await appendReserveAppBillingSignal({
       database,
       organizationId,
       signalKind: 'notification_delivery',
@@ -997,12 +993,12 @@ export const sendOrganizationTrialWillEndReminder = async ({
       trialEndsAt: reminderContext.trialEndsAt,
     });
 
-    const appSnapshot = await readOrganizationBillingObservationSnapshot({
+    const appSnapshot = await readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId,
     });
-    await appendResolvedBillingSignalIfNeeded({
+    await appendResolvedReserveAppBillingSignalIfNeeded({
       database,
       organizationId,
       signalKind: 'notification_delivery',
@@ -1034,12 +1030,12 @@ export const sendOrganizationTrialWillEndReminder = async ({
       failureReason,
     });
 
-    const appSnapshot = await readOrganizationBillingObservationSnapshot({
+    const appSnapshot = await readReserveAppBillingObservationSnapshot({
       database,
       env,
       organizationId,
     });
-    await appendOrganizationBillingSignal({
+    await appendReserveAppBillingSignal({
       database,
       organizationId,
       signalKind: 'notification_delivery',
@@ -1066,7 +1062,7 @@ export const sendOrganizationTrialWillEndReminder = async ({
  *
  * recipient 単位で過去 attempt を見て再送範囲を絞り、部分失敗は再試行可能/終端失敗を分けて返す。
  */
-export const sendOrganizationPaymentIssueNotification = async ({
+export const sendReserveAppPaymentIssueNotification = async ({
   database,
   env,
   organizationId,
@@ -1097,7 +1093,7 @@ export const sendOrganizationPaymentIssueNotification = async ({
     return { ok: true, notificationSent: false };
   }
 
-  const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+  const paymentMethodStatus = await resolveReserveAppBillingPaymentMethodStatus({
     env,
     planCode: billing.planCode,
     stripeCustomerId: billing.stripeCustomerId ?? null,
@@ -1154,14 +1150,14 @@ export const sendOrganizationPaymentIssueNotification = async ({
       deliveryState: 'failed',
       failureReason: 'verified_owner_not_found',
     });
-    await appendOrganizationBillingSignal({
+    await appendReserveAppBillingSignal({
       database,
       organizationId,
       signalKind: 'notification_delivery',
       signalStatus: 'unavailable',
       sourceKind: notificationKind,
       reason: 'verified_owner_not_found',
-      appSnapshot: await readOrganizationBillingObservationSnapshot({
+      appSnapshot: await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId,
@@ -1216,7 +1212,7 @@ export const sendOrganizationPaymentIssueNotification = async ({
     stripeEventId,
     notificationKind,
   });
-  const recipientPlans = resolveOrganizationBillingPaymentIssueNotificationRecipientPlans({
+  const recipientPlans = resolveReserveAppPaymentIssueNotificationRecipientPlans({
     owners,
     attempts: previousAttempts,
   });
@@ -1273,14 +1269,14 @@ export const sendOrganizationPaymentIssueNotification = async ({
         deliveryState: 'failed',
         failureReason,
       });
-      await appendOrganizationBillingSignal({
+      await appendReserveAppBillingSignal({
         database,
         organizationId,
         signalKind: 'notification_delivery',
         signalStatus: failureReason === 'resend_delivery_failed' ? 'pending' : 'unavailable',
         sourceKind: notificationKind,
         reason: failureReason,
-        appSnapshot: await readOrganizationBillingObservationSnapshot({
+        appSnapshot: await readReserveAppBillingObservationSnapshot({
           database,
           env,
           organizationId,
@@ -1309,13 +1305,13 @@ export const sendOrganizationPaymentIssueNotification = async ({
   }
 
   if (sentCount > 0) {
-    await appendResolvedBillingSignalIfNeeded({
+    await appendResolvedReserveAppBillingSignalIfNeeded({
       database,
       organizationId,
       signalKind: 'notification_delivery',
       sourceKind: notificationKind,
       reason: 'payment_issue_notification_delivery_succeeded',
-      appSnapshot: await readOrganizationBillingObservationSnapshot({
+      appSnapshot: await readReserveAppBillingObservationSnapshot({
         database,
         env,
         organizationId,
