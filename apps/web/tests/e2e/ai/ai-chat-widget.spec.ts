@@ -4,6 +4,7 @@ import {
 	syncRequestCookiesToBrowser,
 	uniqueToken
 } from '../helpers/test-data';
+import { AiChatWidgetPage } from '../pages';
 
 test.describe('AI chat widget', () => {
 	test('shows grounded answers and records feedback without calling real AI services', async ({
@@ -14,6 +15,7 @@ test.describe('AI chat widget', () => {
 		const token = uniqueToken(testInfo, 'ai-chat');
 		const { organization } = await createOwnerOrganization({ request, context, token });
 		await syncRequestCookiesToBrowser(request, context);
+		const aiChatWidget = new AiChatWidgetPage(page);
 
 		await page.route('**/api/v1/ai/chat', async (route) => {
 			const payload = route.request().postDataJSON() as { message?: string; currentPage?: string };
@@ -63,21 +65,10 @@ test.describe('AI chat widget', () => {
 			});
 		});
 
-		await page.goto(`/${organization.slug}/${organization.classroomSlug}/admin/dashboard`);
-		await page.getByRole('button', { name: 'AIサポートを開く' }).click();
-		await page
-			.getByRole('textbox', { name: 'AIサポートへの質問' })
-			.pressSequentially('予約枠を作るには？');
-		const sendButton = page.getByRole('button', { name: 'AIサポートへ送信' });
-		await expect(sendButton).toBeEnabled();
-		await sendButton.click();
+		await aiChatWidget.gotoDashboard(organization);
+		await aiChatWidget.ask('予約枠を作るには？');
 
-		await expect(page.getByText('単発Slot作成から予約枠を作成できます。')).toBeVisible();
-		await expect(page.getByLabel('回答の参照元')).toContainText('予約枠作成ガイド');
-		await expect(page.getByLabel('次のアクション')).toContainText('単発Slot作成を開く');
-		await expect(page.getByText('信頼度 86%')).toBeVisible();
-
-		await page.getByRole('button', { name: '役に立った' }).click();
-		await expect(page.getByText('フィードバックを送信しました。')).toBeVisible();
+		await aiChatWidget.expectGroundedAnswer();
+		await aiChatWidget.markHelpful();
 	});
 });

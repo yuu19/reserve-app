@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { test } from '@playwright/test';
 import {
 	createAccount,
 	createOrganizationInvitation,
@@ -8,6 +8,7 @@ import {
 	syncRequestCookiesToBrowser,
 	uniqueToken
 } from '../helpers/test-data';
+import { InvitationAcceptancePage } from '../pages';
 
 test.describe('organization invitation acceptance', () => {
 	test('allows only the addressed recipient to view and accept an organization invitation', async ({
@@ -26,9 +27,10 @@ test.describe('organization invitation acceptance', () => {
 			email: recipient.email,
 			role: 'member'
 		});
+		const invitationPage = new InvitationAcceptancePage(page);
 
-		await page.goto(`/invitations/accept?invitationId=${encodeURIComponent(invitation.id)}`);
-		await expect(page).toHaveURL(/\/admin\/login/);
+		await invitationPage.gotoInvitation(invitation.id);
+		await invitationPage.expectRedirectedToAdminLogin();
 
 		const recipientRequest = await playwright.request.newContext();
 		try {
@@ -38,14 +40,10 @@ test.describe('organization invitation acceptance', () => {
 			await recipientRequest.dispose();
 		}
 
-		await page.goto(`/invitations/accept?invitationId=${encodeURIComponent(invitation.id)}`);
-		await expect(page).toHaveURL(/\/invitations\/accept/);
-		await expect(page.getByRole('heading', { name: '招待内容の確認' })).toBeVisible();
-		await expect(page.getByText(organization.name)).toBeVisible();
+		await invitationPage.gotoInvitation(invitation.id);
+		await invitationPage.expectInvitationDetails(organization.name);
 
-		await page.getByRole('button', { name: '承諾' }).click();
-		await expect(page.getByText('管理者招待を承諾しました。')).toBeVisible();
-		await expect(page.getByRole('button', { name: '承諾' })).toBeDisabled();
+		await invitationPage.acceptInvitation();
 	});
 
 	test('does not show invitation details to a different signed-in email', async ({
@@ -65,6 +63,7 @@ test.describe('organization invitation acceptance', () => {
 			email: recipient.email,
 			role: 'member'
 		});
+		const invitationPage = new InvitationAcceptancePage(page);
 
 		const wrongUserRequest = await playwright.request.newContext();
 		try {
@@ -74,10 +73,7 @@ test.describe('organization invitation acceptance', () => {
 			await wrongUserRequest.dispose();
 		}
 
-		await page.goto(`/invitations/accept?invitationId=${encodeURIComponent(invitation.id)}`);
-		await expect(page.getByRole('heading', { name: '招待内容の確認' })).toBeVisible();
-		await expect(page.getByText('表示できる招待情報がありません。')).toBeVisible();
-		await expect(page.getByText(/Forbidden|権限|招待情報の取得に失敗/)).toBeVisible();
-		await expect(page.getByRole('button', { name: '承諾' })).toBeDisabled();
+		await invitationPage.gotoInvitation(invitation.id);
+		await invitationPage.expectUnavailableInvitation();
 	});
 });

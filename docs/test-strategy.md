@@ -152,6 +152,8 @@ pnpm --filter @apps/web test:e2e
 
 通常の web E2E は Stripe test mode を使わない。
 public event 用の組織 slug と教室 slug は Playwright 設定で worker ごとに生成し、環境変数で明示されている場合はその値を使う。
+spec は利用者の流れと検証内容を中心に書く。
+画面操作は `apps/web/tests/e2e/pages`、認証や seed data は `apps/web/tests/e2e/helpers` に分ける。
 
 ### Docs Playwright E2E
 

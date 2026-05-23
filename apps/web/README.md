@@ -147,7 +147,8 @@ pnpm --filter @apps/web run cf:dev
 
 ## Full-stack E2E
 
-web の E2E は、実ブラウザで管理者の初回登録から組織・教室作成までを確認します。
+web の E2E は、実ブラウザで主要な利用導線を確認します。
+管理者の初回登録と組織作成、公開イベントの予約、管理者招待の承諾、AI サポートの表示とフィードバック送信を対象にします。
 テスト実行時に backend Worker と web の Vite dev server を起動します。
 backend は local D1 を使い、永続化先はリポジトリ直下の `.wrangler/e2e` です。
 
