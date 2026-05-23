@@ -1,4 +1,5 @@
 export * from './answer-generator.js';
+export * from './answer-provider.js';
 export * from './business-facts.js';
 export * from './context-resolver.js';
 export * from './conversation-store.js';

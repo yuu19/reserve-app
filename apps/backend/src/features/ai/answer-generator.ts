@@ -1,4 +1,5 @@
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import { createWorkersAiAnswerModelProvider, type AiAnswerEnv } from './answer-provider.js';
 import {
   buildAiSystemPrompt,
   buildAnswerPrompt,
@@ -8,18 +9,7 @@ import {
 } from './prompt.js';
 import type { AiSourceReference } from './source-visibility.js';
 
-export type AiAnswerEnv = {
-  AI?: {
-    run: (
-      model: string,
-      inputs: Record<string, unknown>,
-      options?: Record<string, unknown>,
-    ) => Promise<unknown>;
-    aiGatewayLogId?: string | null;
-  };
-  AI_ANSWER_MODEL?: string;
-  AI_GATEWAY_ID?: string;
-};
+export type { AiAnswerEnv } from './answer-provider.js';
 
 export type AiSuggestedAction = {
   label: string;
@@ -44,8 +34,6 @@ export type GeneratedAiAnswer = {
   errorSummary?: string | null;
   aiGatewayLogId?: string | null;
 };
-
-const DEFAULT_ANSWER_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -89,45 +77,6 @@ const sanitizeSuggestedActionHref = (value: unknown): string | null => {
   } catch {
     return null;
   }
-};
-
-const readHeaderValue = (headers: unknown, name: string): string | null => {
-  if (!headers) {
-    return null;
-  }
-
-  if (typeof (headers as { get?: unknown }).get === 'function') {
-    const value = (headers as { get: (key: string) => string | null }).get(name);
-    return value && value.trim().length > 0 ? value.trim() : null;
-  }
-
-  if (isRecord(headers)) {
-    const value = headers[name] ?? headers[name.toLowerCase()];
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-  }
-
-  return null;
-};
-
-const readAiGatewayLogId = ({
-  env,
-  result,
-}: {
-  env: AiAnswerEnv;
-  result: unknown;
-}): string | null => {
-  // Workers AI は最新の AI Gateway ログ ID を binding に出す一方、レスポンスヘッダーに
-  // 出る形もあり得るため、デプロイ差分に備えて両方を読む。
-  const bindingLogId = env.AI?.aiGatewayLogId;
-  if (typeof bindingLogId === 'string' && bindingLogId.trim().length > 0) {
-    return bindingLogId.trim();
-  }
-
-  if (isRecord(result)) {
-    return readHeaderValue(result.headers, 'cf-aig-log-id');
-  }
-
-  return null;
 };
 
 const normalizeSuggestedActions = (value: unknown): AiSuggestedAction[] => {
@@ -274,9 +223,10 @@ export const generateAnswer = async ({
   businessFacts: BusinessFactSummary | null;
   retrievalErrorSummary?: string | null;
 }): Promise<GeneratedAiAnswer> => {
-  const model = env.AI_ANSWER_MODEL?.trim() || DEFAULT_ANSWER_MODEL;
   const sources = buildAnswerSources({ retrievedContexts, businessFacts });
   const hasGrounding = retrievedContexts.length > 0 || Boolean(businessFacts?.factKeys.length);
+  const answerProvider = createWorkersAiAnswerModelProvider({ env });
+  const model = answerProvider.model;
 
   if (retrievalErrorSummary) {
     return {
@@ -293,7 +243,7 @@ export const generateAnswer = async ({
     };
   }
 
-  if (!hasGrounding || !env.AI) {
+  if (!hasGrounding || !answerProvider.isConfigured) {
     // 検索済み文書や許可済み DB 由来の事実がない状態で業務案内を作らない。
     // AI binding 不足は、根拠がある場合だけやや軽い代替応答として扱う。
     const answer = hasGrounding
@@ -312,47 +262,36 @@ export const generateAnswer = async ({
     };
   }
 
-  let result: unknown;
+  let generation: Awaited<ReturnType<typeof answerProvider.generate>>;
   const generationStartedAt = Date.now();
   try {
-    result = await env.AI.run(
+    generation = await answerProvider.generate({
       model,
-      {
-        messages: [
-          { role: 'system', content: buildAiSystemPrompt() },
-          {
-            role: 'user',
-            content: buildAnswerPrompt({
-              userId,
-              access,
-              currentPage,
-              retrievedContexts,
-              businessFacts,
-              message,
-            }),
-          },
-        ],
+      messages: [
+        { role: 'system', content: buildAiSystemPrompt() },
+        {
+          role: 'user',
+          content: buildAnswerPrompt({
+            userId,
+            access,
+            currentPage,
+            retrievedContexts,
+            businessFacts,
+            message,
+          }),
+        },
+      ],
+      skipCache: shouldSkipAiGatewayCache(message, businessFacts),
+      cacheTtl: shouldSkipAiGatewayCache(message, businessFacts) ? undefined : 60,
+      // 組織・教室のメタデータは AI Gateway の観測用に限定し、
+      // プロンプト側にはアクセスフィルター済みの業務コンテキストだけを渡す。
+      metadata: {
+        organizationId: access.organizationId,
+        classroomId: access.classroomId,
       },
-      env.AI_GATEWAY_ID
-        ? {
-            gateway: {
-              id: env.AI_GATEWAY_ID,
-              skipCache: shouldSkipAiGatewayCache(message, businessFacts),
-              cacheTtl: shouldSkipAiGatewayCache(message, businessFacts) ? undefined : 60,
-              // 組織・教室のメタデータは AI Gateway の観測用に限定し、
-              // プロンプト側にはアクセスフィルター済みの業務コンテキストだけを渡す。
-              metadata: {
-                purpose: 'ai-chat-answer',
-                organizationId: access.organizationId,
-                classroomId: access.classroomId,
-              },
-            },
-          }
-        : undefined,
-    );
+    });
   } catch (error) {
     console.warn('[ai-chat] answer generation failed', error);
-    const latencyMs = Date.now() - generationStartedAt;
     return {
       answer:
         '現在の情報を確認しましたが、AI回答生成が一時的に利用できません。表示中の画面または管理者に確認してください。',
@@ -361,15 +300,14 @@ export const generateAnswer = async ({
       confidence: 35,
       needsHumanSupport: true,
       model,
-      latencyMs,
+      latencyMs: Date.now() - generationStartedAt,
       generationStatus: 'generation_failed',
       errorSummary: summarizeAiError(error),
-      aiGatewayLogId: readAiGatewayLogId({ env, result: null }),
+      aiGatewayLogId: answerProvider.readAiGatewayLogId(null),
     };
   }
-  const latencyMs = Date.now() - generationStartedAt;
 
-  const parsed = parseAnswerPayload(result);
+  const parsed = parseAnswerPayload(generation.result);
   const confidence = clampConfidence(parsed.confidence ?? (hasGrounding ? 70 : 20));
   const needsHumanSupport = parsed.needsHumanSupport === true || confidence < 50;
 
@@ -385,9 +323,9 @@ export const generateAnswer = async ({
     confidence,
     needsHumanSupport,
     model,
-    latencyMs,
+    latencyMs: generation.latencyMs,
     generationStatus: 'generated',
     errorSummary: null,
-    aiGatewayLogId: readAiGatewayLogId({ env, result }),
+    aiGatewayLogId: generation.aiGatewayLogId,
   };
 };
