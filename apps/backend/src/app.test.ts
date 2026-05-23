@@ -385,11 +385,11 @@ const selectStripeWebhookFailureRows = async (eventId: string | null = null) => 
   const statement = eventId
     ? d1
         .prepare(
-          'SELECT event_id as eventId, event_type as eventType, failure_stage as failureStage, failure_reason as failureReason, organization_id as organizationId FROM stripe_webhook_failure WHERE event_id = ? ORDER BY created_at ASC',
+          "SELECT CASE WHEN e.provider_event_id LIKE 'stripe_webhook_failure:%' OR e.provider_event_id LIKE 'legacy_failure:%' THEN NULL ELSE e.provider_event_id END as eventId, e.event_type as eventType, e.failure_stage as failureStage, coalesce(e.last_failure_reason, e.failure_reason) as failureReason, a.subject_id as organizationId FROM billing_provider_event e LEFT JOIN billing_account a ON a.id = e.billing_account_id WHERE e.provider = 'stripe' AND e.scope = 'billing' AND e.failure_stage IS NOT NULL AND e.provider_event_id = ? ORDER BY e.last_failure_at ASC",
         )
         .bind(eventId)
     : d1.prepare(
-        'SELECT event_id as eventId, event_type as eventType, failure_stage as failureStage, failure_reason as failureReason, organization_id as organizationId FROM stripe_webhook_failure ORDER BY created_at ASC',
+        "SELECT CASE WHEN e.provider_event_id LIKE 'stripe_webhook_failure:%' OR e.provider_event_id LIKE 'legacy_failure:%' THEN NULL ELSE e.provider_event_id END as eventId, e.event_type as eventType, e.failure_stage as failureStage, coalesce(e.last_failure_reason, e.failure_reason) as failureReason, a.subject_id as organizationId FROM billing_provider_event e LEFT JOIN billing_account a ON a.id = e.billing_account_id WHERE e.provider = 'stripe' AND e.scope = 'billing' AND e.failure_stage IS NOT NULL ORDER BY e.last_failure_at ASC",
       );
 
   const result = await statement.all<{
@@ -1331,21 +1331,38 @@ const insertStripeWebhookFailureRow = async ({
   stripeSubscriptionId?: string | null;
   createdAt?: Date;
 }) => {
+  const billingAccountId = organizationId
+    ? await ensureBillingFixtureAccountId(organizationId, stripeCustomerId)
+    : null;
+  const providerEventId = eventId ?? `stripe_webhook_failure:${crypto.randomUUID()}`;
+  const timestamp = (createdAt ?? new Date()).getTime();
   await d1
     .prepare(
-      'INSERT INTO stripe_webhook_failure (id, event_id, event_type, scope, failure_stage, failure_reason, organization_id, stripe_customer_id, stripe_subscription_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO billing_provider_event (id, provider, provider_event_id, event_type, scope, payload_hash, processing_status, receipt_status, duplicate_detected, attempt_count, processing_started_at, last_attempt_at, processing_stale_after_ms, failure_reason, failure_stage, last_failure_reason, last_failure_at, billing_account_id, provider_customer_id, provider_subscription_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(provider, provider_event_id, scope) DO UPDATE SET event_type = excluded.event_type, processing_status = excluded.processing_status, receipt_status = excluded.receipt_status, last_attempt_at = excluded.last_attempt_at, failure_reason = excluded.failure_reason, failure_stage = excluded.failure_stage, last_failure_reason = excluded.last_failure_reason, last_failure_at = excluded.last_failure_at, billing_account_id = excluded.billing_account_id, provider_customer_id = excluded.provider_customer_id, provider_subscription_id = excluded.provider_subscription_id, updated_at = excluded.updated_at',
     )
     .bind(
       crypto.randomUUID(),
-      eventId,
-      eventType,
+      'stripe',
+      providerEventId,
+      eventType ?? `stripe.webhook.${failureStage}`,
       scope,
+      'test-unavailable',
+      'failed',
+      failureStage === 'signature_verification' ? 'rejected' : 'received',
+      0,
+      1,
+      timestamp,
+      timestamp,
+      120000,
+      failureReason,
       failureStage,
       failureReason,
-      organizationId,
+      timestamp,
+      billingAccountId,
       stripeCustomerId,
       stripeSubscriptionId,
-      (createdAt ?? new Date()).getTime(),
+      timestamp,
+      timestamp,
     )
     .run();
 };
@@ -2570,9 +2587,17 @@ describe('backend app', () => {
     const expiredGraceEnd = new Date(now - 60_000);
 
     const legacyTableInfo = await d1
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'organization_billing'")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'organization_billing'",
+      )
       .all<{ name: string }>();
     expect(legacyTableInfo.results).toHaveLength(0);
+    const legacyWebhookTableInfo = await d1
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('stripe_webhook_event', 'stripe_webhook_failure')",
+      )
+      .all<{ name: string }>();
+    expect(legacyWebhookTableInfo.results).toHaveLength(0);
     const billingAccountTableInfo = await d1
       .prepare('PRAGMA table_info(billing_account)')
       .all<{ name: string }>();
@@ -3014,11 +3039,7 @@ describe('backend app', () => {
         .prepare(
           "UPDATE billing_subscription SET trial_start = ?, updated_at = ? WHERE billing_account_id = (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ? LIMIT 1)",
         )
-        .bind(
-          Date.now() - 7 * 24 * 60 * 60 * 1000,
-          Date.now(),
-          checkoutOrganizationId,
-        )
+        .bind(Date.now() - 7 * 24 * 60 * 60 * 1000, Date.now(), checkoutOrganizationId)
         .run();
       await syncOrganizationBillingV2FixtureFromLegacyRow(checkoutOrganizationId);
 

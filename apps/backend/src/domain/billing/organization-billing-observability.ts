@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import {
@@ -647,25 +647,33 @@ export const readInternalBillingReconciliationInspection = async ({
       .limit(5),
     database
       .select({
-        eventId: dbSchema.stripeWebhookFailure.eventId,
-        eventType: dbSchema.stripeWebhookFailure.eventType,
-        failureStage: dbSchema.stripeWebhookFailure.failureStage,
-        failureReason: dbSchema.stripeWebhookFailure.failureReason,
-        createdAt: dbSchema.stripeWebhookFailure.createdAt,
+        eventId: dbSchema.billingProviderEvent.providerEventId,
+        eventType: dbSchema.billingProviderEvent.eventType,
+        failureStage: dbSchema.billingProviderEvent.failureStage,
+        failureReason: dbSchema.billingProviderEvent.lastFailureReason,
+        createdAt: dbSchema.billingProviderEvent.lastFailureAt,
       })
-      .from(dbSchema.stripeWebhookFailure)
+      .from(dbSchema.billingProviderEvent)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingProviderEvent.billingAccountId, dbSchema.billingAccount.id),
+      )
       .where(
         and(
-          eq(dbSchema.stripeWebhookFailure.organizationId, organizationId),
-          eq(dbSchema.stripeWebhookFailure.scope, 'billing'),
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
+          eq(dbSchema.billingProviderEvent.provider, 'stripe'),
+          eq(dbSchema.billingProviderEvent.scope, 'billing'),
+          isNotNull(dbSchema.billingProviderEvent.failureStage),
         ),
       )
-      .orderBy(desc(dbSchema.stripeWebhookFailure.createdAt))
+      .orderBy(desc(dbSchema.billingProviderEvent.lastFailureAt))
       .limit(5),
   ]);
 
-  const recentSignals = signalRows.reverse().map(
-    (row: (typeof signalRows)[number]): InternalBillingReconciliationSignalEntry => {
+  const recentSignals = signalRows
+    .reverse()
+    .map((row: (typeof signalRows)[number]): InternalBillingReconciliationSignalEntry => {
       const appSnapshot = parseSnapshotJson(row.appSnapshotJson);
       return {
         sequenceNumber: row.sequenceNumber,
@@ -678,17 +686,14 @@ export const readInternalBillingReconciliationInspection = async ({
           row.providerSubscriptionStatus,
         ),
         appPlanState: normalizeSignalAppPlanState(appSnapshot.planState),
-        appSubscriptionStatus: normalizeSignalAppSubscriptionStatus(
-          appSnapshot.subscriptionStatus,
-        ),
+        appSubscriptionStatus: normalizeSignalAppSubscriptionStatus(appSnapshot.subscriptionStatus),
         appPaymentMethodStatus: normalizeSignalAppPaymentMethodStatus(
           appSnapshot.paymentMethodStatus,
         ),
         appEntitlementState: normalizeSignalAppEntitlementState(appSnapshot.entitlementState),
         createdAt: toIsoDateString(row.createdAt),
       };
-    },
-  );
+    });
 
   const recentWebhookEvents = webhookEventRows.reverse().map(
     (row: (typeof webhookEventRows)[number]): InternalBillingReconciliationWebhookEventEntry => ({
@@ -709,10 +714,14 @@ export const readInternalBillingReconciliationInspection = async ({
     (
       row: (typeof webhookFailureRows)[number],
     ): InternalBillingReconciliationWebhookFailureEntry => ({
-      eventId: row.eventId ?? null,
+      eventId:
+        row.eventId.startsWith('stripe_webhook_failure:') ||
+        row.eventId.startsWith('legacy_failure:')
+          ? null
+          : row.eventId,
       eventType: row.eventType ?? null,
-      failureStage: row.failureStage,
-      failureReason: row.failureReason,
+      failureStage: row.failureStage ?? 'event_processing',
+      failureReason: row.failureReason ?? 'unknown_failure',
       createdAt: toIsoDateString(row.createdAt),
     }),
   );

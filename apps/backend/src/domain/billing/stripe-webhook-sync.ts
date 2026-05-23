@@ -185,17 +185,60 @@ const recordStripeWebhookFailure = async ({
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
 }) => {
-  await database.insert(dbSchema.stripeWebhookFailure).values({
-    id: crypto.randomUUID(),
-    eventId: eventId ?? null,
-    eventType: eventType ?? null,
-    scope: BILLING_PROVIDER_EVENT_SCOPE,
-    failureStage,
-    failureReason,
-    organizationId: organizationId ?? null,
-    stripeCustomerId: stripeCustomerId ?? null,
-    stripeSubscriptionId: stripeSubscriptionId ?? null,
-  });
+  const now = new Date();
+  const providerEventId = eventId ?? `stripe_webhook_failure:${crypto.randomUUID()}`;
+  const failureEventType = eventType ?? `stripe.webhook.${failureStage}`;
+  const billingAccountId = organizationId
+    ? await readBillingAccountIdByOrganizationId({ database, organizationId })
+    : null;
+  await database
+    .insert(dbSchema.billingProviderEvent)
+    .values({
+      id: crypto.randomUUID(),
+      provider: 'stripe',
+      providerEventId,
+      eventType: failureEventType,
+      scope: BILLING_PROVIDER_EVENT_SCOPE,
+      payloadHash: 'unavailable',
+      processingStatus: 'failed',
+      receiptStatus: failureStage === 'signature_verification' ? 'rejected' : 'received',
+      duplicateDetected: false,
+      attemptCount: 1,
+      processingStartedAt: now,
+      lastAttemptAt: now,
+      processingStaleAfterMs: STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS,
+      failureReason,
+      failureStage,
+      lastFailureReason: failureReason,
+      lastFailureAt: now,
+      billingAccountId,
+      providerCustomerId: stripeCustomerId ?? null,
+      providerSubscriptionId: stripeSubscriptionId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        dbSchema.billingProviderEvent.provider,
+        dbSchema.billingProviderEvent.providerEventId,
+        dbSchema.billingProviderEvent.scope,
+      ],
+      set: {
+        eventType: failureEventType,
+        processingStatus: 'failed',
+        receiptStatus: failureStage === 'signature_verification' ? 'rejected' : 'received',
+        failureReason,
+        failureStage,
+        lastFailureReason: failureReason,
+        lastFailureAt: now,
+        billingAccountId,
+        providerCustomerId: stripeCustomerId ?? null,
+        providerSubscriptionId: stripeSubscriptionId ?? null,
+        lastAttemptAt: now,
+        updatedAt: now,
+        processedAt: null,
+      },
+    });
 };
 
 const claimStripeWebhookEvent = async ({

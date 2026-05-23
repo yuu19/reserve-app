@@ -271,6 +271,9 @@ export const billingProviderEvent = sqliteTable(
     lastAttemptAt: integer('last_attempt_at', { mode: 'timestamp_ms' }),
     processingStaleAfterMs: integer('processing_stale_after_ms').notNull(),
     failureReason: text('failure_reason'),
+    failureStage: text('failure_stage'),
+    lastFailureReason: text('last_failure_reason'),
+    lastFailureAt: integer('last_failure_at', { mode: 'timestamp_ms' }),
     billingAccountId: text('billing_account_id').references(() => billingAccount.id, {
       onDelete: 'set null',
     }),
@@ -468,66 +471,6 @@ export const billingDocumentReference = sqliteTable(
       table.documentKind,
     ),
     index('billing_document_reference_account_idx').on(table.billingAccountId),
-  ],
-);
-
-export const stripeWebhookEvent = sqliteTable(
-  'stripe_webhook_event',
-  {
-    id: text('id').primaryKey(),
-    eventType: text('event_type').notNull(),
-    scope: text('scope').notNull(),
-    processingStatus: text('processing_status').default('processing').notNull(),
-    organizationId: text('organization_id').references(() => organization.id, {
-      onDelete: 'set null',
-    }),
-    stripeCustomerId: text('stripe_customer_id'),
-    stripeSubscriptionId: text('stripe_subscription_id'),
-    failureReason: text('failure_reason'),
-    signatureVerificationStatus: text('signature_verification_status')
-      .default('verified')
-      .notNull(),
-    duplicateDetected: integer('duplicate_detected', { mode: 'boolean' }).default(false).notNull(),
-    duplicateDetectedAt: integer('duplicate_detected_at', { mode: 'timestamp_ms' }),
-    receiptStatus: text('receipt_status').default('accepted').notNull(),
-    processedAt: integer('processed_at', { mode: 'timestamp_ms' }),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    index('stripe_webhook_event_scope_idx').on(table.scope),
-    index('stripe_webhook_event_organization_idx').on(table.organizationId),
-    index('stripe_webhook_event_subscription_idx').on(table.stripeSubscriptionId),
-  ],
-);
-
-export const stripeWebhookFailure = sqliteTable(
-  'stripe_webhook_failure',
-  {
-    id: text('id').primaryKey(),
-    eventId: text('event_id'),
-    eventType: text('event_type'),
-    scope: text('scope').notNull(),
-    failureStage: text('failure_stage').notNull(),
-    failureReason: text('failure_reason').notNull(),
-    organizationId: text('organization_id').references(() => organization.id, {
-      onDelete: 'set null',
-    }),
-    stripeCustomerId: text('stripe_customer_id'),
-    stripeSubscriptionId: text('stripe_subscription_id'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-  },
-  (table) => [
-    index('stripe_webhook_failure_event_idx').on(table.eventId),
-    index('stripe_webhook_failure_scope_idx').on(table.scope),
-    index('stripe_webhook_failure_organization_idx').on(table.organizationId),
   ],
 );
 

@@ -159,6 +159,8 @@ export const createDrizzleBillingEventStore = ({
         processingStatus: 'failed',
         receiptStatus: 'received',
         failureReason: errorMessage,
+        lastFailureReason: errorMessage,
+        lastFailureAt: failedAt,
         lastAttemptAt: failedAt,
         updatedAt: failedAt,
         processedAt: null,
