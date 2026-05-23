@@ -47,18 +47,28 @@ const buildAccess = ({
 
 const createDatabase = (results: unknown[][]) => {
   let index = 0;
+  const consumeResult = () => results[index++] ?? [];
+  const executableQuery = (result: unknown[]) => ({
+    then: (resolve: (value: unknown[]) => unknown) => resolve(result),
+    limit: async () => result,
+  });
+
+  type MockQuery = {
+    from: () => MockQuery;
+    leftJoin: () => MockQuery;
+    where: () => ReturnType<typeof executableQuery>;
+  };
+
   return {
-    select: () => ({
-      from: () => ({
-        where: () => {
-          const result = results[index++] ?? [];
-          return {
-            then: (resolve: (value: unknown[]) => unknown) => resolve(result),
-            limit: async () => result,
-          };
-        },
-      }),
-    }),
+    select: () => {
+      const query: MockQuery = {
+        from: () => query,
+        leftJoin: () => query,
+        where: () => executableQuery(consumeResult()),
+      };
+
+      return query;
+    },
   } as unknown as AuthRuntimeDatabase;
 };
 

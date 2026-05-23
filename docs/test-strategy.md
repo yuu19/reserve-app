@@ -1,6 +1,6 @@
 # テスト戦略
 
-最終更新: 2026-05-19
+最終更新: 2026-05-23
 
 ## 1. 目的
 
@@ -123,6 +123,7 @@ pnpm test:watch
 
 ```bash
 pnpm --filter @apps/backend test
+pnpm --filter @apps/backend test:coverage
 pnpm --filter @apps/backend test:watch
 ```
 
@@ -130,10 +131,12 @@ pnpm --filter @apps/backend test:watch
 
 ```bash
 pnpm --filter @apps/web test
+pnpm --filter @apps/web test:coverage
 pnpm --filter @apps/web test:watch
 ```
 
 `apps/web` の `test` は `vitest run --project server`。CI でもこの project を実行する。
+`test:coverage` は同じ server project を coverage 付きで実行する。
 
 ### Web browser
 
@@ -193,8 +196,8 @@ pnpm --filter @apps/mobile lint
 
 GitHub Actions `.github/workflows/ci-tests.yml` では次を実行する。
 
-- `pnpm --filter @apps/backend test`
-- `pnpm --filter @apps/web test`
+- `pnpm --filter @apps/backend test:coverage`
+- `pnpm --filter @apps/web test:coverage`
 - `pnpm --filter @apps/docs build`
 - `pnpm --filter @apps/docs test:e2e`
 - `pnpm --filter @apps/web test:e2e`
@@ -208,6 +211,10 @@ GitHub Actions `.github/workflows/ci-tests.yml` では次を実行する。
 - web Playwright E2E は PR / `main` push ごとに必須
 - web browser component test は手動実行
 - mobile は自動テスト未導入
+
+backend 統合テストと web server test は、CI の job summary に coverage 表を出す。
+HTML / LCOV / JSON summary は `vitest-coverage` artifact として保存する。
+現時点では coverage の閾値による CI 失敗は設定しない。
 
 Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行する。
 手動実行と毎日 03:30 JST の定期実行を行う。
@@ -329,6 +336,6 @@ Stripe 課金 E2E は `.github/workflows/stripe-billing-e2e.yml` で別に実行
 - mobile の自動テストがない
 - web Playwright E2E の対象は主要導線に限定している
 - web browser component test は CI の必須ではない
-- coverage の閾値は未設定
+- coverage の閾値は未設定。CI では数値を表示するが、閾値による失敗判定はまだ行わない
 
 このため、認可・招待・予約のような高リスク変更は、backend 統合テストを最優先に厚くする。
