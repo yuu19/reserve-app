@@ -14,10 +14,10 @@ import {
   type ReserveAppBillingSubscriptionStatus,
 } from '../../features/billing/policies/reserve-app-billing-policy.js';
 import {
-  resolveOrganizationPremiumEntitlementPolicy,
-  type OrganizationBillingEntitlementState,
-  type OrganizationBillingPaidTier,
-} from './organization-billing-policy.js';
+  resolveReserveAppPremiumEntitlementPolicy,
+  type ReserveAppBillingEntitlementState,
+  type ReserveAppBillingPaidTier,
+} from './reserve-app-billing-entitlement-policy.js';
 import type { StripeSubscriptionSummary } from '../../infra/payment/stripe.js';
 
 export type ReserveAppBillingObservationSnapshot = {
@@ -25,8 +25,8 @@ export type ReserveAppBillingObservationSnapshot = {
   planState: ReserveAppBillingPlanState;
   subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   paymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
-  entitlementState: OrganizationBillingEntitlementState;
-  paidTier: OrganizationBillingPaidTier | null;
+  entitlementState: ReserveAppBillingEntitlementState;
+  paidTier: ReserveAppBillingPaidTier | null;
   billingInterval: 'month' | 'year' | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
@@ -78,7 +78,7 @@ type InternalBillingReconciliationSignalEntry = {
   appPlanState: ReserveAppBillingPlanState;
   appSubscriptionStatus: ReserveAppBillingSubscriptionStatus;
   appPaymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
-  appEntitlementState: OrganizationBillingEntitlementState;
+  appEntitlementState: ReserveAppBillingEntitlementState;
   createdAt: string | null;
 };
 
@@ -116,7 +116,7 @@ export type InternalBillingReconciliationInspection = {
     appPlanState: ReserveAppBillingPlanState;
     appSubscriptionStatus: ReserveAppBillingSubscriptionStatus;
     appPaymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
-    appEntitlementState: OrganizationBillingEntitlementState;
+    appEntitlementState: ReserveAppBillingEntitlementState;
   };
   recentSignals: InternalBillingReconciliationSignalEntry[];
   recentWebhookEvents: InternalBillingReconciliationWebhookEventEntry[];
@@ -215,7 +215,7 @@ const normalizeSignalAppPaymentMethodStatus = (
 
 const normalizeSignalAppEntitlementState = (
   value: unknown,
-): OrganizationBillingEntitlementState => {
+): ReserveAppBillingEntitlementState => {
   return value === 'premium_enabled' ? value : 'free_only';
 };
 
@@ -305,7 +305,7 @@ export const readReserveAppBillingObservationSnapshot = async ({
     planCode,
     stripeCustomerId: billing?.stripeCustomerId ?? null,
   });
-  const policy = resolveOrganizationPremiumEntitlementPolicy({
+  const policy = resolveReserveAppPremiumEntitlementPolicy({
     planCode,
     subscriptionStatus,
     paymentMethodStatus,

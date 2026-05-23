@@ -2,9 +2,9 @@ import { and, asc, eq, gt, isNull, lte, or } from 'drizzle-orm';
 import type { AuthInstance, AuthRuntimeDatabase } from '../../auth-runtime.js';
 import type { AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
-  readOrganizationPremiumEntitlementPolicy,
-  type OrganizationPremiumEntitlementPolicyResult,
-} from '../billing/organization-billing-policy.js';
+  readReserveAppPremiumEntitlementPolicy,
+  type ReserveAppPremiumEntitlementPolicyResult,
+} from '../billing/reserve-app-billing-entitlement-policy.js';
 import * as dbSchema from '../../infra/db/schema.js';
 
 export type SessionIdentity = {
@@ -153,21 +153,21 @@ export const ORGANIZATION_PREMIUM_REQUIRED_MESSAGE =
 export type OrganizationPremiumFeatureDeniedPayload = {
   message: typeof ORGANIZATION_PREMIUM_REQUIRED_MESSAGE;
   code: 'organization_premium_required';
-  source: OrganizationPremiumEntitlementPolicyResult['source'];
-  reason: OrganizationPremiumEntitlementPolicyResult['reason'];
-  entitlementState: OrganizationPremiumEntitlementPolicyResult['entitlementState'];
-  planState: OrganizationPremiumEntitlementPolicyResult['planState'];
-  trialEndsAt: OrganizationPremiumEntitlementPolicyResult['trialEndsAt'];
+  source: ReserveAppPremiumEntitlementPolicyResult['source'];
+  reason: ReserveAppPremiumEntitlementPolicyResult['reason'];
+  entitlementState: ReserveAppPremiumEntitlementPolicyResult['entitlementState'];
+  planState: ReserveAppPremiumEntitlementPolicyResult['planState'];
+  trialEndsAt: ReserveAppPremiumEntitlementPolicyResult['trialEndsAt'];
 };
 
 export type OrganizationPremiumFeatureGate =
   | {
       allowed: true;
-      policy: OrganizationPremiumEntitlementPolicyResult;
+      policy: ReserveAppPremiumEntitlementPolicyResult;
     }
   | {
       allowed: false;
-      policy: OrganizationPremiumEntitlementPolicyResult;
+      policy: ReserveAppPremiumEntitlementPolicyResult;
       status: 403;
       body: OrganizationPremiumFeatureDeniedPayload;
     };
@@ -183,7 +183,7 @@ export type OrganizationEntitlementGateInput = {
 export type OrganizationEntitlementGate = OrganizationPremiumFeatureGate;
 
 export const buildOrganizationPremiumFeatureDeniedPayload = (
-  policy: OrganizationPremiumEntitlementPolicyResult,
+  policy: ReserveAppPremiumEntitlementPolicyResult,
 ): OrganizationPremiumFeatureDeniedPayload => {
   return {
     message: ORGANIZATION_PREMIUM_REQUIRED_MESSAGE,
@@ -244,7 +244,7 @@ export const readOrganizationEntitlementGate = async ({
   key,
   now = new Date(),
 }: OrganizationEntitlementGateInput): Promise<OrganizationEntitlementGate> => {
-  const policy = await readOrganizationPremiumEntitlementPolicy({
+  const policy = await readReserveAppPremiumEntitlementPolicy({
     database,
     env,
     organizationId,

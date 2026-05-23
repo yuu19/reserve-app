@@ -1,5 +1,5 @@
 import type { readInternalBillingInspection } from '../../domain/billing/internal-billing-inspection.js';
-import type { buildBillingDocumentReadiness } from '../../domain/billing/organization-billing-documents.js';
+import type { buildBillingDocumentReadiness } from '../../domain/billing/reserve-app-billing-documents.js';
 import type { readReserveAppOwnerBillingHistory } from '../../domain/billing/reserve-app-billing-history.js';
 import type { ReserveAppBillingInvoiceEvent } from '../../domain/billing/reserve-app-billing-invoice-events.js';
 import type {

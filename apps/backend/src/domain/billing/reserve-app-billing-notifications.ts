@@ -11,7 +11,7 @@ import {
   type ReserveAppBillingPlanState,
   type ReserveAppBillingSubscriptionStatus,
 } from '../../features/billing/policies/reserve-app-billing-policy.js';
-import { resolveOrganizationPremiumEntitlementPolicy } from './organization-billing-policy.js';
+import { resolveReserveAppPremiumEntitlementPolicy } from './reserve-app-billing-entitlement-policy.js';
 import {
   sendBillingPaymentIssueEmail,
   sendTrialEndingReminderEmail,
@@ -367,7 +367,7 @@ const selectReserveAppBillingOwnerContact = async ({
   return rows[0] ?? null;
 };
 
-const selectOrganizationBillingVerifiedOwnerContacts = async ({
+const selectReserveAppBillingVerifiedOwnerContacts = async ({
   database,
   organizationId,
 }: {
@@ -444,7 +444,7 @@ export const resolveReserveAppPaymentIssueNotificationRecipientPlans = ({
   });
 };
 
-const selectNextOrganizationBillingNotificationAttempt = async ({
+const selectNextReserveAppBillingNotificationAttempt = async ({
   database,
   organizationId,
   stripeEventId,
@@ -513,7 +513,7 @@ const selectPaymentIssueNotificationRecipientAttempts = async ({
     .orderBy(desc(dbSchema.billingNotification.sequenceNumber));
 };
 
-const selectNextOrganizationBillingNotificationSequence = async ({
+const selectNextReserveAppBillingNotificationSequence = async ({
   database,
   organizationId,
 }: {
@@ -534,7 +534,7 @@ const selectNextOrganizationBillingNotificationSequence = async ({
   return Number(rows[0]?.maxSequenceNumber ?? 0) + 1;
 };
 
-const insertOrganizationBillingNotification = async ({
+const insertReserveAppBillingNotification = async ({
   database,
   organizationId,
   recipientUserId,
@@ -577,7 +577,7 @@ const insertOrganizationBillingNotification = async ({
   await retryBillingSequenceInsert({
     tableName: 'billing_notification',
     operation: async () => {
-      const sequenceNumber = await selectNextOrganizationBillingNotificationSequence({
+      const sequenceNumber = await selectNextReserveAppBillingNotificationSequence({
         database,
         organizationId,
       });
@@ -611,7 +611,7 @@ const insertOrganizationBillingNotification = async ({
 };
 
 /** trial reminder 送信に必要な billing context を、entitlement policy と payment method 状態から作る。 */
-export const resolveOrganizationTrialReminderContext = async ({
+export const resolveReserveAppBillingTrialReminderContext = async ({
   database,
   env,
   organizationId,
@@ -630,7 +630,7 @@ export const resolveOrganizationTrialReminderContext = async ({
     planCode: billing.planCode,
     stripeCustomerId: billing.stripeCustomerId ?? null,
   });
-  const policy = resolveOrganizationPremiumEntitlementPolicy({
+  const policy = resolveReserveAppPremiumEntitlementPolicy({
     planCode: billing.planCode,
     subscriptionStatus: billing.subscriptionStatus,
     paymentMethodStatus,
@@ -866,7 +866,7 @@ export const sendReserveAppTrialWillEndReminder = async ({
   | { ok: true; reminderSent: false }
   | { ok: false; retryable: boolean; message: string; failureReason: string }
 > => {
-  const reminderContext = await resolveOrganizationTrialReminderContext({
+  const reminderContext = await resolveReserveAppBillingTrialReminderContext({
     database,
     env,
     organizationId,
@@ -889,12 +889,12 @@ export const sendReserveAppTrialWillEndReminder = async ({
       env,
       organizationId,
     });
-    const attemptNumber = await selectNextOrganizationBillingNotificationAttempt({
+    const attemptNumber = await selectNextReserveAppBillingNotificationAttempt({
       database,
       organizationId,
       stripeEventId,
     });
-    await insertOrganizationBillingNotification({
+    await insertReserveAppBillingNotification({
       database,
       organizationId,
       deliveryState: attemptNumber === 1 ? 'requested' : 'retried',
@@ -908,7 +908,7 @@ export const sendReserveAppTrialWillEndReminder = async ({
       trialEndsAt: reminderContext.trialEndsAt,
       failureReason: 'owner_not_found',
     });
-    await insertOrganizationBillingNotification({
+    await insertReserveAppBillingNotification({
       database,
       organizationId,
       deliveryState: 'failed',
@@ -942,12 +942,12 @@ export const sendReserveAppTrialWillEndReminder = async ({
     };
   }
 
-  const attemptNumber = await selectNextOrganizationBillingNotificationAttempt({
+  const attemptNumber = await selectNextReserveAppBillingNotificationAttempt({
     database,
     organizationId,
     stripeEventId,
   });
-  await insertOrganizationBillingNotification({
+  await insertReserveAppBillingNotification({
     database,
     organizationId,
     recipientUserId: owner.userId,
@@ -983,7 +983,7 @@ export const sendReserveAppTrialWillEndReminder = async ({
       noteText: reminderCopy.noteText,
     });
 
-    await insertOrganizationBillingNotification({
+    await insertReserveAppBillingNotification({
       database,
       organizationId,
       recipientUserId: owner.userId,
@@ -1019,7 +1019,7 @@ export const sendReserveAppTrialWillEndReminder = async ({
     return { ok: true, reminderSent: true };
   } catch (error) {
     const failureReason = trialReminderFailureReasonFromError(error);
-    await insertOrganizationBillingNotification({
+    await insertReserveAppBillingNotification({
       database,
       organizationId,
       recipientUserId: owner.userId,
@@ -1108,7 +1108,7 @@ export const sendReserveAppPaymentIssueNotification = async ({
     billing.currentPeriodEnd instanceof Date ? billing.currentPeriodEnd.toISOString() : null;
   const pastDueGraceEndsAt =
     billing.pastDueGraceEndsAt instanceof Date ? billing.pastDueGraceEndsAt.toISOString() : null;
-  const policy = resolveOrganizationPremiumEntitlementPolicy({
+  const policy = resolveReserveAppPremiumEntitlementPolicy({
     planCode: billing.planCode,
     subscriptionStatus: billing.subscriptionStatus,
     paymentMethodStatus,
@@ -1119,7 +1119,7 @@ export const sendReserveAppPaymentIssueNotification = async ({
     env,
   });
 
-  const owners = await selectOrganizationBillingVerifiedOwnerContacts({
+  const owners = await selectReserveAppBillingVerifiedOwnerContacts({
     database,
     organizationId,
   });
@@ -1138,19 +1138,19 @@ export const sendReserveAppPaymentIssueNotification = async ({
   };
 
   if (owners.length === 0) {
-    const attemptNumber = await selectNextOrganizationBillingNotificationAttempt({
+    const attemptNumber = await selectNextReserveAppBillingNotificationAttempt({
       database,
       organizationId,
       stripeEventId,
       notificationKind,
     });
-    await insertOrganizationBillingNotification({
+    await insertReserveAppBillingNotification({
       ...commonNotificationInput,
       deliveryState: attemptNumber === 1 ? 'requested' : 'retried',
       attemptNumber,
       failureReason: 'verified_owner_not_found',
     });
-    await insertOrganizationBillingNotification({
+    await insertReserveAppBillingNotification({
       ...commonNotificationInput,
       attemptNumber,
       deliveryState: 'failed',
@@ -1226,7 +1226,7 @@ export const sendReserveAppPaymentIssueNotification = async ({
   for (const plan of recipientPlans) {
     const owner = plan.owner;
     if (plan.action === 'skip') {
-      await insertOrganizationBillingNotification({
+      await insertReserveAppBillingNotification({
         ...commonNotificationInput,
         recipientUserId: owner.userId,
         recipientEmail: owner.email,
@@ -1236,7 +1236,7 @@ export const sendReserveAppPaymentIssueNotification = async ({
       continue;
     }
 
-    await insertOrganizationBillingNotification({
+    await insertReserveAppBillingNotification({
       ...commonNotificationInput,
       recipientUserId: owner.userId,
       recipientEmail: owner.email,
@@ -1257,7 +1257,7 @@ export const sendReserveAppPaymentIssueNotification = async ({
         graceEndsAtLabel: pastDueGraceEndsAt ? formatTrialEndsAtLabel(pastDueGraceEndsAt) : null,
       });
 
-      await insertOrganizationBillingNotification({
+      await insertReserveAppBillingNotification({
         ...commonNotificationInput,
         recipientUserId: owner.userId,
         recipientEmail: owner.email,
@@ -1267,7 +1267,7 @@ export const sendReserveAppPaymentIssueNotification = async ({
       sentCount += 1;
     } catch (error) {
       const failureReason = trialReminderFailureReasonFromError(error);
-      await insertOrganizationBillingNotification({
+      await insertReserveAppBillingNotification({
         ...commonNotificationInput,
         recipientUserId: owner.userId,
         recipientEmail: owner.email,

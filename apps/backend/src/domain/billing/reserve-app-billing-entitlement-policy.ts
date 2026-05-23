@@ -1,46 +1,46 @@
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
-  resolveReserveAppBillingPaymentMethodStatus as resolveOrganizationBillingPaymentMethodStatus,
-  resolveReserveAppBillingPlanState as resolveOrganizationBillingPlanState,
-  resolveReserveAppBillingTrialEndsAt as resolveOrganizationBillingTrialEndsAt,
-  type ReserveAppBillingPaymentMethodStatus as OrganizationBillingPaymentMethodStatus,
-  type ReserveAppBillingPlanCode as OrganizationBillingPlanCode,
-  type ReserveAppBillingPlanState as OrganizationBillingPlanState,
-  type ReserveAppBillingSubscriptionStatus as OrganizationBillingSubscriptionStatus,
+  resolveReserveAppBillingPaymentMethodStatus,
+  resolveReserveAppBillingPlanState,
+  resolveReserveAppBillingTrialEndsAt,
+  type ReserveAppBillingPaymentMethodStatus,
+  type ReserveAppBillingPlanCode,
+  type ReserveAppBillingPlanState,
+  type ReserveAppBillingSubscriptionStatus,
 } from '../../features/billing/policies/reserve-app-billing-policy.js';
 import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
 
-export type OrganizationBillingEntitlementState = 'free_only' | 'premium_enabled';
-export type OrganizationBillingPaidTierCode =
+export type ReserveAppBillingEntitlementState = 'free_only' | 'premium_enabled';
+export type ReserveAppBillingPaidTierCode =
   | 'premium_default'
   | 'premium_growth'
   | 'premium_scale'
   | 'premium_unknown';
-export type OrganizationBillingPaidTierCapability =
+export type ReserveAppBillingPaidTierCapability =
   | 'organization_premium_features'
   | 'advanced_billing_communications';
-export type OrganizationBillingPaidTierResolution =
+export type ReserveAppBillingPaidTierResolution =
   | 'not_paid'
   | 'legacy_default'
   | 'known_price'
   | 'unknown_price';
 
-export type OrganizationBillingPaidTierCatalogEntry = {
-  code: Exclude<OrganizationBillingPaidTierCode, 'premium_unknown'>;
+export type ReserveAppBillingPaidTierCatalogEntry = {
+  code: Exclude<ReserveAppBillingPaidTierCode, 'premium_unknown'>;
   label: string;
-  capabilities: OrganizationBillingPaidTierCapability[];
+  capabilities: ReserveAppBillingPaidTierCapability[];
   priceIds: string[];
 };
 
-export type OrganizationBillingPaidTier = {
-  code: OrganizationBillingPaidTierCode;
+export type ReserveAppBillingPaidTier = {
+  code: ReserveAppBillingPaidTierCode;
   label: string;
-  resolution: OrganizationBillingPaidTierResolution;
-  capabilities: OrganizationBillingPaidTierCapability[];
+  resolution: ReserveAppBillingPaidTierResolution;
+  capabilities: ReserveAppBillingPaidTierCapability[];
   diagnosticReason: string | null;
 };
 
-export type OrganizationPremiumEntitlementReason =
+export type ReserveAppPremiumEntitlementReason =
   | 'organization_plan_is_free'
   | 'premium_trial_active'
   | 'premium_trial_active_with_payment_method_registered'
@@ -57,10 +57,10 @@ export type OrganizationPremiumEntitlementReason =
   | 'premium_paid_canceled'
   | 'premium_paid_state_unexpected';
 
-export type OrganizationPremiumEntitlementPolicyInput = {
-  planCode: OrganizationBillingPlanCode;
-  subscriptionStatus: OrganizationBillingSubscriptionStatus;
-  paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+export type ReserveAppPremiumEntitlementPolicyInput = {
+  planCode: ReserveAppBillingPlanCode;
+  subscriptionStatus: ReserveAppBillingSubscriptionStatus;
+  paymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
   currentPeriodEnd: string | null;
   pastDueGraceEndsAt?: string | null;
   cancelAtPeriodEnd?: boolean;
@@ -68,27 +68,27 @@ export type OrganizationPremiumEntitlementPolicyInput = {
   env?: Partial<
     Pick<AuthRuntimeEnv, 'STRIPE_PREMIUM_MONTHLY_PRICE_ID' | 'STRIPE_PREMIUM_YEARLY_PRICE_ID'>
   >;
-  additionalTierCatalogEntries?: OrganizationBillingPaidTierCatalogEntry[];
+  additionalTierCatalogEntries?: ReserveAppBillingPaidTierCatalogEntry[];
   now?: Date;
 };
 
-export type OrganizationPremiumEntitlementPolicyResult = {
+export type ReserveAppPremiumEntitlementPolicyResult = {
   scope: 'organization';
   source: 'application_billing_state';
-  planState: OrganizationBillingPlanState;
-  paymentMethodStatus: OrganizationBillingPaymentMethodStatus;
+  planState: ReserveAppBillingPlanState;
+  paymentMethodStatus: ReserveAppBillingPaymentMethodStatus;
   trialEndsAt: string | null;
-  entitlementState: OrganizationBillingEntitlementState;
+  entitlementState: ReserveAppBillingEntitlementState;
   isPremiumEligible: boolean;
-  paidTier: OrganizationBillingPaidTier | null;
-  reason: OrganizationPremiumEntitlementReason;
+  paidTier: ReserveAppBillingPaidTier | null;
+  reason: ReserveAppPremiumEntitlementReason;
 };
 
 const defaultPaidTierCapabilities = [
   'organization_premium_features',
-] satisfies OrganizationBillingPaidTierCapability[];
+] satisfies ReserveAppBillingPaidTierCapability[];
 
-export const ORGANIZATION_BILLING_DEFAULT_PAID_TIER: OrganizationBillingPaidTierCatalogEntry = {
+export const RESERVE_APP_BILLING_DEFAULT_PAID_TIER: ReserveAppBillingPaidTierCatalogEntry = {
   code: 'premium_default',
   label: 'Premium',
   capabilities: [...defaultPaidTierCapabilities],
@@ -105,25 +105,25 @@ const normalizePriceIds = (priceIds: Array<string | undefined>): string[] =>
  *
  * 未知の price は premium_unknown として扱い、意図しない entitlement 付与を避ける。
  */
-export const resolveOrganizationBillingPaidTier = ({
+export const resolveReserveAppBillingPaidTier = ({
   planCode,
   stripePriceId,
   env,
   additionalCatalogEntries = [],
 }: {
-  planCode: OrganizationBillingPlanCode;
+  planCode: ReserveAppBillingPlanCode;
   stripePriceId?: string | null;
   env?: Partial<
     Pick<AuthRuntimeEnv, 'STRIPE_PREMIUM_MONTHLY_PRICE_ID' | 'STRIPE_PREMIUM_YEARLY_PRICE_ID'>
   >;
-  additionalCatalogEntries?: OrganizationBillingPaidTierCatalogEntry[];
-}): OrganizationBillingPaidTier | null => {
+  additionalCatalogEntries?: ReserveAppBillingPaidTierCatalogEntry[];
+}): ReserveAppBillingPaidTier | null => {
   if (planCode !== 'premium') {
     return null;
   }
 
   const defaultEntry = {
-    ...ORGANIZATION_BILLING_DEFAULT_PAID_TIER,
+    ...RESERVE_APP_BILLING_DEFAULT_PAID_TIER,
     priceIds: normalizePriceIds([
       env?.STRIPE_PREMIUM_MONTHLY_PRICE_ID,
       env?.STRIPE_PREMIUM_YEARLY_PRICE_ID,
@@ -165,9 +165,9 @@ export const resolveOrganizationBillingPaidTier = ({
 };
 
 /** paid tier が指定 capability を持つかを、null-safe に判定する。 */
-export const hasOrganizationBillingPaidTierCapability = (
-  paidTier: OrganizationBillingPaidTier | null,
-  capability: OrganizationBillingPaidTierCapability,
+export const hasReserveAppBillingPaidTierCapability = (
+  paidTier: ReserveAppBillingPaidTier | null,
+  capability: ReserveAppBillingPaidTierCapability,
 ): boolean => paidTier?.capabilities.includes(capability) ?? false;
 
 const isFutureIsoDate = (value: string | null | undefined, now: Date) => {
@@ -179,12 +179,12 @@ const isFutureIsoDate = (value: string | null | undefined, now: Date) => {
 };
 
 /**
- * organization billing aggregate から Premium 利用可否を決める唯一の policy 関数。
+ * reserve-app billing aggregate から Premium 利用可否を決める唯一の policy 関数。
  *
  * trial、paid、past_due grace、unknown price を route 側で個別判断しないために、
  * UI 表示用の reason もここで揃える。
  */
-export const resolveOrganizationPremiumEntitlementPolicy = ({
+export const resolveReserveAppPremiumEntitlementPolicy = ({
   planCode,
   subscriptionStatus,
   paymentMethodStatus,
@@ -195,16 +195,16 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
   env,
   additionalTierCatalogEntries,
   now = new Date(),
-}: OrganizationPremiumEntitlementPolicyInput): OrganizationPremiumEntitlementPolicyResult => {
-  const planState = resolveOrganizationBillingPlanState({
+}: ReserveAppPremiumEntitlementPolicyInput): ReserveAppPremiumEntitlementPolicyResult => {
+  const planState = resolveReserveAppBillingPlanState({
     planCode,
     subscriptionStatus,
   });
-  const trialEndsAt = resolveOrganizationBillingTrialEndsAt({
+  const trialEndsAt = resolveReserveAppBillingTrialEndsAt({
     planState,
     currentPeriodEnd,
   });
-  const paidTier = resolveOrganizationBillingPaidTier({
+  const paidTier = resolveReserveAppBillingPaidTier({
     planCode,
     stripePriceId,
     env,
@@ -398,7 +398,7 @@ export const resolveOrganizationPremiumEntitlementPolicy = ({
 };
 
 /** D1 の billing aggregate と Stripe payment method 状態を読み、現在の Premium policy を返す。 */
-export const readOrganizationPremiumEntitlementPolicy = async ({
+export const readReserveAppPremiumEntitlementPolicy = async ({
   database,
   env,
   organizationId,
@@ -410,9 +410,9 @@ export const readOrganizationPremiumEntitlementPolicy = async ({
   now?: Date;
 }) => {
   const billing = await readReserveAppBillingV2Summary({ database, env, organizationId });
-  const planCode: OrganizationBillingPlanCode =
+  const planCode: ReserveAppBillingPlanCode =
     billing?.planCode === 'premium' ? 'premium' : 'free';
-  const subscriptionStatus: OrganizationBillingSubscriptionStatus =
+  const subscriptionStatus: ReserveAppBillingSubscriptionStatus =
     billing?.subscriptionStatus === 'trialing' ||
     billing?.subscriptionStatus === 'active' ||
     billing?.subscriptionStatus === 'past_due' ||
@@ -421,13 +421,13 @@ export const readOrganizationPremiumEntitlementPolicy = async ({
     billing?.subscriptionStatus === 'incomplete'
       ? billing.subscriptionStatus
       : 'free';
-  const paymentMethodStatus = await resolveOrganizationBillingPaymentMethodStatus({
+  const paymentMethodStatus = await resolveReserveAppBillingPaymentMethodStatus({
     env,
     planCode,
     stripeCustomerId: billing?.stripeCustomerId ?? null,
   });
 
-  return resolveOrganizationPremiumEntitlementPolicy({
+  return resolveReserveAppPremiumEntitlementPolicy({
     planCode,
     subscriptionStatus,
     paymentMethodStatus,

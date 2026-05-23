@@ -955,7 +955,7 @@ const insertOrganizationBillingSignalRow = async ({
     .run();
 };
 
-const insertOrganizationBillingNotificationRow = async ({
+const insertReserveAppBillingNotificationRow = async ({
   organizationId,
   sequenceNumber,
   deliveryState,
@@ -1202,7 +1202,7 @@ const insertOrganizationBillingInvoiceEventRow = async ({
     .run();
 };
 
-const selectOrganizationBillingDocumentReferenceRows = async (organizationId: string) => {
+const selectReserveAppBillingDocumentReferenceRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
       "SELECT d.document_kind as documentKind, d.provider_document_id as providerDocumentId, d.hosted_invoice_url as hostedInvoiceUrl, d.invoice_pdf_url as invoicePdfUrl, d.receipt_url as receiptUrl, d.availability, d.owner_facing_status as ownerFacingStatus, d.provider_derived as providerDerived FROM billing_document_reference d INNER JOIN billing_account a ON a.id = d.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? ORDER BY d.created_at ASC",
@@ -3658,7 +3658,7 @@ describe('backend app', () => {
         ]),
       );
       expect(await selectOrganizationBillingInvoiceEventRows(organizationId)).toHaveLength(4);
-      expect(await selectOrganizationBillingDocumentReferenceRows(organizationId)).toEqual(
+      expect(await selectReserveAppBillingDocumentReferenceRows(organizationId)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             documentKind: 'invoice',
@@ -4268,7 +4268,7 @@ describe('backend app', () => {
       stripeCustomerId: 'cus_owner_billing_history',
       createdAt: new Date(now - 300_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId,
       sequenceNumber: 1,
       deliveryState: 'failed',
@@ -4281,7 +4281,7 @@ describe('backend app', () => {
       failureReason: 'owner_not_found',
       createdAt: new Date(now - 200_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId,
       sequenceNumber: 2,
       notificationKind: 'trial_will_end',
@@ -11431,7 +11431,7 @@ describe('backend app', () => {
       providerStatus: 'paid',
       occurredAt: recoveredAt,
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId,
       sequenceNumber: 1,
       notificationKind: 'payment_failed_email',
@@ -11444,7 +11444,7 @@ describe('backend app', () => {
       subscriptionStatus: 'past_due',
       paymentMethodStatus: 'registered',
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId,
       sequenceNumber: 2,
       notificationKind: 'payment_failed_email',
@@ -12064,7 +12064,7 @@ describe('backend app', () => {
       });
     }
 
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: deliveredOrganizationId,
       sequenceNumber: 1,
       deliveryState: 'requested',
@@ -12076,7 +12076,7 @@ describe('backend app', () => {
       trialEndsAt: deliveredTrialEndsAt,
       createdAt: new Date(now - 120_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: deliveredOrganizationId,
       sequenceNumber: 2,
       deliveryState: 'sent',
@@ -12088,7 +12088,7 @@ describe('backend app', () => {
       trialEndsAt: deliveredTrialEndsAt,
       createdAt: new Date(now - 90_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: deliveredOrganizationId,
       sequenceNumber: 3,
       notificationKind: 'trial_will_end',
@@ -12128,7 +12128,7 @@ describe('backend app', () => {
       createdAt: new Date(now - 95_000),
     });
 
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: pendingOrganizationId,
       sequenceNumber: 1,
       deliveryState: 'requested',
@@ -12140,7 +12140,7 @@ describe('backend app', () => {
       trialEndsAt: pendingTrialEndsAt,
       createdAt: new Date(now - 110_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: pendingOrganizationId,
       sequenceNumber: 2,
       deliveryState: 'failed',
@@ -12153,7 +12153,7 @@ describe('backend app', () => {
       failureReason: 'resend_delivery_failed',
       createdAt: new Date(now - 100_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: pendingOrganizationId,
       sequenceNumber: 3,
       deliveryState: 'retried',
@@ -12192,7 +12192,7 @@ describe('backend app', () => {
       createdAt: new Date(now - 92_000),
     });
 
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: failedOrganizationId,
       sequenceNumber: 1,
       deliveryState: 'requested',
@@ -12204,7 +12204,7 @@ describe('backend app', () => {
       trialEndsAt: failedTrialEndsAt,
       createdAt: new Date(now - 75_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: failedOrganizationId,
       sequenceNumber: 2,
       deliveryState: 'failed',
@@ -12253,7 +12253,7 @@ describe('backend app', () => {
       stripeSubscriptionId: 'sub_unknown_audit',
       createdAt: new Date(now - 55_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: unknownOrganizationId,
       sequenceNumber: 1,
       notificationKind: 'trial_will_end',
@@ -13037,7 +13037,7 @@ describe('backend app', () => {
       stripeSubscriptionId: 'sub_timeline_inspection',
       createdAt: new Date(now - 250_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: timelineOrganizationId,
       sequenceNumber: 1,
       deliveryState: 'requested',
@@ -13049,7 +13049,7 @@ describe('backend app', () => {
       trialEndsAt: reminderTrialEnd,
       createdAt: new Date(now - 240_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: timelineOrganizationId,
       sequenceNumber: 2,
       deliveryState: 'sent',
@@ -13061,7 +13061,7 @@ describe('backend app', () => {
       trialEndsAt: reminderTrialEnd,
       createdAt: new Date(now - 230_000),
     });
-    await insertOrganizationBillingNotificationRow({
+    await insertReserveAppBillingNotificationRow({
       organizationId: timelineOrganizationId,
       sequenceNumber: 3,
       notificationKind: 'trial_will_end',

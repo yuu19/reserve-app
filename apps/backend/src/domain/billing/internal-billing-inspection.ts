@@ -14,7 +14,7 @@ import { resolveOrganizationBillingProfileReadiness } from './organization-billi
 import {
   buildBillingDocumentReadiness,
   buildInternalBillingDocumentInspection,
-} from './organization-billing-documents.js';
+} from './reserve-app-billing-documents.js';
 import {
   readReserveAppBillingDocumentReferences,
   readReserveAppBillingInvoiceEvents,
@@ -26,7 +26,7 @@ import {
   readTrialReminderDeliveryAuditInspection,
 } from './reserve-app-billing-notifications.js';
 import { readInternalBillingReconciliationInspection } from './reserve-app-billing-observability.js';
-import { resolveOrganizationPremiumEntitlementPolicy } from './organization-billing-policy.js';
+import { resolveReserveAppPremiumEntitlementPolicy } from './reserve-app-billing-entitlement-policy.js';
 
 const toIsoDateString = (value: unknown): string | null => {
   const candidate =
@@ -438,7 +438,7 @@ export const readInternalBillingInspection = async ({
     planCode,
     stripeCustomerId: billing?.stripeCustomerId ?? null,
   });
-  const entitlementPolicy = resolveOrganizationPremiumEntitlementPolicy({
+  const entitlementPolicy = resolveReserveAppPremiumEntitlementPolicy({
     planCode,
     subscriptionStatus,
     paymentMethodStatus,

@@ -4,9 +4,9 @@ import {
   buildInternalBillingDocumentInspection,
   normalizeStripeChargeReceiptDocument,
   normalizeStripeInvoiceDocument,
-} from './organization-billing-documents.js';
+} from './reserve-app-billing-documents.js';
 
-describe('organization billing document readiness', () => {
+describe('reserve-app billing document readiness', () => {
   it('normalizes available invoice and receipt document references from provider payloads', () => {
     const invoice = normalizeStripeInvoiceDocument({
       id: 'in_available',

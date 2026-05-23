@@ -1,11 +1,11 @@
 import type { OrganizationRole } from '../../domain/booking/authorization.js';
-import { buildBillingDocumentReadiness } from '../../domain/billing/organization-billing-documents.js';
+import { buildBillingDocumentReadiness } from '../../domain/billing/reserve-app-billing-documents.js';
 import type { ReserveAppBillingInvoiceEvent } from '../../domain/billing/reserve-app-billing-invoice-events.js';
 import type {
   OrganizationBillingOperationAttempt,
   OrganizationBillingOperationPurpose,
 } from '../../domain/billing/organization-billing-operations.js';
-import { resolveOrganizationPremiumEntitlementPolicy } from '../../domain/billing/organization-billing-policy.js';
+import { resolveReserveAppPremiumEntitlementPolicy } from '../../domain/billing/reserve-app-billing-entitlement-policy.js';
 import {
   resolveOrganizationBillingActionAvailability,
   resolveOrganizationBillingProfileReadiness,
@@ -182,7 +182,7 @@ export const readOrganizationBillingSummaryPayload = async ({
     planCode,
     stripeCustomerId: billing?.stripeCustomerId ?? null,
   });
-  const entitlementPolicy = resolveOrganizationPremiumEntitlementPolicy({
+  const entitlementPolicy = resolveReserveAppPremiumEntitlementPolicy({
     planCode,
     subscriptionStatus,
     paymentMethodStatus,

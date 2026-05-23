@@ -1,5 +1,5 @@
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
-import { buildBillingDocumentReadiness } from '../../domain/billing/organization-billing-documents.js';
+import { buildBillingDocumentReadiness } from '../../domain/billing/reserve-app-billing-documents.js';
 import { readReserveAppBillingDocumentReferences } from '../../domain/billing/reserve-app-billing-invoice-events.js';
 
 export const createReserveAppBillingDocumentStore = (database: AuthRuntimeDatabase) => ({

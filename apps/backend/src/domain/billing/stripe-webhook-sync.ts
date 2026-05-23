@@ -8,7 +8,7 @@ import * as dbSchema from '../../infra/db/schema.js';
 import {
   normalizeStripeChargeReceiptDocument,
   normalizeStripeInvoiceDocument,
-} from './organization-billing-documents.js';
+} from './reserve-app-billing-documents.js';
 import {
   appendReserveAppBillingInvoiceEvent,
   type ReserveAppBillingInvoiceEventType,

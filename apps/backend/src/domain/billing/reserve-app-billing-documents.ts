@@ -1,20 +1,20 @@
-export type OrganizationBillingDocumentKind = 'invoice' | 'receipt';
-export type OrganizationBillingDocumentConcept =
+export type ReserveAppBillingDocumentKind = 'invoice' | 'receipt';
+export type ReserveAppBillingDocumentConcept =
   | 'invoice'
   | 'receipt'
   | 'payment_document'
   | 'provider_document';
-export type OrganizationBillingDocumentAvailability =
+export type ReserveAppBillingDocumentAvailability =
   | 'available'
   | 'unavailable'
   | 'missing'
   | 'checking';
-export type OrganizationBillingDocumentOwnerFacingStatus = 'available' | 'unavailable' | 'checking';
+export type ReserveAppBillingDocumentOwnerFacingStatus = 'available' | 'unavailable' | 'checking';
 
-export type OrganizationBillingProviderDocumentReference = {
+export type ReserveAppBillingProviderDocumentReference = {
   aggregateRoot: 'billing_account';
-  documentKind: OrganizationBillingDocumentKind;
-  documentConcepts: OrganizationBillingDocumentConcept[];
+  documentKind: ReserveAppBillingDocumentKind;
+  documentConcepts: ReserveAppBillingDocumentConcept[];
   provider: 'stripe';
   providerDocumentId: string;
   stripeCustomerId: string | null;
@@ -22,11 +22,11 @@ export type OrganizationBillingProviderDocumentReference = {
   hostedInvoiceUrl: string | null;
   invoicePdfUrl: string | null;
   receiptUrl: string | null;
-  availability: OrganizationBillingDocumentAvailability;
-  ownerFacingStatus: OrganizationBillingDocumentOwnerFacingStatus;
+  availability: ReserveAppBillingDocumentAvailability;
+  ownerFacingStatus: ReserveAppBillingDocumentOwnerFacingStatus;
 };
 
-export type OrganizationBillingDocumentReadiness = {
+export type ReserveAppBillingDocumentReadiness = {
   aggregateRoot: 'billing_account';
   organizationId: string;
   provider: 'stripe';
@@ -35,17 +35,17 @@ export type OrganizationBillingDocumentReadiness = {
   ownerAccess: 'owner_only';
   persistenceStrategy: 'provider_reference_only';
   documents: Array<{
-    documentKind: OrganizationBillingDocumentKind;
+    documentKind: ReserveAppBillingDocumentKind;
     providerDocumentId: string;
     hostedInvoiceUrl: string | null;
     invoicePdfUrl: string | null;
     receiptUrl: string | null;
-    availability: OrganizationBillingDocumentAvailability;
-    ownerFacingStatus: OrganizationBillingDocumentOwnerFacingStatus;
+    availability: ReserveAppBillingDocumentAvailability;
+    ownerFacingStatus: ReserveAppBillingDocumentOwnerFacingStatus;
   }>;
 };
 
-export type OrganizationBillingPaymentDocumentHistoryEntry = {
+export type ReserveAppBillingPaymentDocumentHistoryEntry = {
   id: string;
   eventType: 'payment_document';
   occurredAt: string | null;
@@ -72,8 +72,8 @@ const readStripeId = (value: unknown): string | null => {
 };
 
 const resolveOwnerFacingStatus = (
-  availability: OrganizationBillingDocumentAvailability,
-): OrganizationBillingDocumentOwnerFacingStatus =>
+  availability: ReserveAppBillingDocumentAvailability,
+): ReserveAppBillingDocumentOwnerFacingStatus =>
   availability === 'available'
     ? 'available'
     : availability === 'checking'
@@ -88,7 +88,7 @@ const resolveInvoiceAvailability = ({
   providerDocumentId: string | null;
   hostedInvoiceUrl: string | null;
   invoicePdfUrl: string | null;
-}): OrganizationBillingDocumentAvailability => {
+}): ReserveAppBillingDocumentAvailability => {
   if (!providerDocumentId) {
     return 'missing';
   }
@@ -101,7 +101,7 @@ const resolveReceiptAvailability = ({
 }: {
   providerDocumentId: string | null;
   receiptUrl: string | null;
-}): OrganizationBillingDocumentAvailability => {
+}): ReserveAppBillingDocumentAvailability => {
   if (!providerDocumentId) {
     return 'missing';
   }
@@ -110,7 +110,7 @@ const resolveReceiptAvailability = ({
 
 export const normalizeStripeInvoiceDocument = (
   value: unknown,
-): OrganizationBillingProviderDocumentReference => {
+): ReserveAppBillingProviderDocumentReference => {
   const payload = isRecord(value) ? value : {};
   const providerDocumentId = readString(payload.id);
   const hostedInvoiceUrl = readString(payload.hosted_invoice_url);
@@ -139,7 +139,7 @@ export const normalizeStripeInvoiceDocument = (
 
 export const normalizeStripeChargeReceiptDocument = (
   value: unknown,
-): OrganizationBillingProviderDocumentReference => {
+): ReserveAppBillingProviderDocumentReference => {
   const payload = isRecord(value) ? value : {};
   const providerDocumentId = readString(payload.id);
   const receiptUrl = readString(payload.receipt_url);
@@ -173,8 +173,8 @@ export const buildBillingDocumentReadiness = ({
   organizationId: string;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
-  documents?: OrganizationBillingProviderDocumentReference[];
-}): OrganizationBillingDocumentReadiness => ({
+  documents?: ReserveAppBillingProviderDocumentReference[];
+}): ReserveAppBillingDocumentReadiness => ({
   aggregateRoot: 'billing_account',
   organizationId,
   provider: 'stripe',
@@ -194,8 +194,8 @@ export const buildBillingDocumentReadiness = ({
 });
 
 export const buildOwnerSafeBillingDocumentHistoryEntry = (
-  readiness: OrganizationBillingDocumentReadiness,
-): OrganizationBillingPaymentDocumentHistoryEntry => {
+  readiness: ReserveAppBillingDocumentReadiness,
+): ReserveAppBillingPaymentDocumentHistoryEntry => {
   const availableCount = readiness.documents.filter(
     (document) => document.ownerFacingStatus === 'available',
   ).length;
@@ -231,7 +231,7 @@ export const buildInternalBillingDocumentInspection = ({
   readiness,
   diagnosticReason,
 }: {
-  readiness: OrganizationBillingDocumentReadiness;
+  readiness: ReserveAppBillingDocumentReadiness;
   diagnosticReason?: string | null;
 }) => ({
   aggregateRoot: 'billing_account' as const,

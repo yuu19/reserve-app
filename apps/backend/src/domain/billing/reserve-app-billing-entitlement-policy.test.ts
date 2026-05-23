@@ -4,15 +4,15 @@ import {
   resolveOrganizationBillingPaymentIssueTiming,
 } from './organization-billing.js';
 import {
-  resolveOrganizationBillingPaidTier,
-  resolveOrganizationPremiumEntitlementPolicy,
-} from './organization-billing-policy.js';
+  resolveReserveAppBillingPaidTier,
+  resolveReserveAppPremiumEntitlementPolicy,
+} from './reserve-app-billing-entitlement-policy.js';
 
-describe('organization billing premium entitlement policy', () => {
+describe('reserve-app billing premium entitlement policy', () => {
   const now = new Date('2026-04-09T12:00:00.000Z');
 
   it('returns a free-only entitlement for free organizations', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'free',
       subscriptionStatus: 'free',
       paymentMethodStatus: 'not_started',
@@ -32,7 +32,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('keeps active premium trials eligible for the whole organization', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'trialing',
       paymentMethodStatus: 'pending',
@@ -52,7 +52,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('exposes a distinct reason when the active trial already has a payment method', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'trialing',
       paymentMethodStatus: 'registered',
@@ -69,7 +69,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('removes premium eligibility once the trial end has passed even if billing state is still trialing', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'trialing',
       paymentMethodStatus: 'pending',
@@ -87,7 +87,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('treats missing trial end information as ineligible instead of assuming premium access', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'trialing',
       paymentMethodStatus: 'pending',
@@ -104,7 +104,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('keeps active paid subscriptions eligible', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'active',
       paymentMethodStatus: 'registered',
@@ -127,7 +127,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('keeps past_due eligible during the seven-day grace window', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'past_due',
       paymentMethodStatus: 'registered',
@@ -145,7 +145,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('stops premium after past_due grace expires', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'past_due',
       paymentMethodStatus: 'registered',
@@ -168,7 +168,7 @@ describe('organization billing premium entitlement policy', () => {
       ['incomplete', 'premium_paid_incomplete'],
       ['canceled', 'premium_paid_canceled'],
     ] as const) {
-      const result = resolveOrganizationPremiumEntitlementPolicy({
+      const result = resolveReserveAppPremiumEntitlementPolicy({
         planCode: 'premium',
         subscriptionStatus,
         paymentMethodStatus: 'registered',
@@ -252,7 +252,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('keeps scheduled period-end cancellation eligible until provider state changes', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'active',
       paymentMethodStatus: 'registered',
@@ -270,7 +270,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('maps existing premium price ids to the default paid tier without leaking provider ids to consumers', () => {
-    const result = resolveOrganizationBillingPaidTier({
+    const result = resolveReserveAppBillingPaidTier({
       planCode: 'premium',
       stripePriceId: 'price_current_monthly',
       env: {
@@ -288,7 +288,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('supports future tier capability bundles through explicit catalog entries', () => {
-    const result = resolveOrganizationBillingPaidTier({
+    const result = resolveReserveAppBillingPaidTier({
       planCode: 'premium',
       stripePriceId: 'price_growth_monthly',
       env: {
@@ -313,7 +313,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('exposes unknown paid provider prices without granting capabilities', () => {
-    const result = resolveOrganizationBillingPaidTier({
+    const result = resolveReserveAppBillingPaidTier({
       planCode: 'premium',
       stripePriceId: 'price_unmapped_provider_value',
       env: {
@@ -332,7 +332,7 @@ describe('organization billing premium entitlement policy', () => {
   });
 
   it('stops premium eligibility for unknown paid provider prices', () => {
-    const result = resolveOrganizationPremiumEntitlementPolicy({
+    const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'active',
       paymentMethodStatus: 'registered',

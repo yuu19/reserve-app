@@ -3,11 +3,11 @@ import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import { ensureReserveAppBillingV2State } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import type {
-  OrganizationBillingDocumentAvailability,
-  OrganizationBillingDocumentKind,
-  OrganizationBillingDocumentOwnerFacingStatus,
-  OrganizationBillingProviderDocumentReference,
-} from './organization-billing-documents.js';
+  ReserveAppBillingDocumentAvailability,
+  ReserveAppBillingDocumentKind,
+  ReserveAppBillingDocumentOwnerFacingStatus,
+  ReserveAppBillingProviderDocumentReference,
+} from './reserve-app-billing-documents.js';
 
 export type ReserveAppBillingInvoiceEventType =
   | 'invoice_available'
@@ -76,10 +76,10 @@ export const normalizeInvoicePaymentOwnerFacingStatus = (
     : 'checking';
 };
 
-const normalizeDocumentKind = (value: unknown): OrganizationBillingDocumentKind =>
+const normalizeDocumentKind = (value: unknown): ReserveAppBillingDocumentKind =>
   value === 'receipt' ? 'receipt' : 'invoice';
 
-const normalizeDocumentAvailability = (value: unknown): OrganizationBillingDocumentAvailability => {
+const normalizeDocumentAvailability = (value: unknown): ReserveAppBillingDocumentAvailability => {
   return value === 'available' ||
     value === 'unavailable' ||
     value === 'missing' ||
@@ -90,7 +90,7 @@ const normalizeDocumentAvailability = (value: unknown): OrganizationBillingDocum
 
 const normalizeDocumentOwnerFacingStatus = (
   value: unknown,
-): OrganizationBillingDocumentOwnerFacingStatus => {
+): ReserveAppBillingDocumentOwnerFacingStatus => {
   return value === 'available' || value === 'unavailable' || value === 'checking'
     ? value
     : 'checking';
@@ -149,7 +149,7 @@ export const appendReserveAppBillingInvoiceEvent = async ({
   providerStatus?: string | null;
   ownerFacingStatus: ReserveAppBillingInvoiceEventOwnerFacingStatus;
   occurredAt?: Date | null;
-  documentReferences?: OrganizationBillingProviderDocumentReference[];
+  documentReferences?: ReserveAppBillingProviderDocumentReference[];
 }) => {
   const state = await ensureReserveAppBillingV2State({
     database,
