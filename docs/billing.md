@@ -315,7 +315,7 @@ owner は、Stripe が提供する請求書または領収書の参照を契約�
 
 - 請求書・支払いイベント履歴: [`billing_invoice_event`](../apps/backend/src/infra/db/schema.ts)
 - 請求書・領収書の参照: [`billing_document_reference`](../apps/backend/src/infra/db/schema.ts)
-- 請求書・領収書の表示判定: [`apps/backend/src/domain/billing/organization-billing-documents.ts`](../apps/backend/src/domain/billing/organization-billing-documents.ts)
+- 請求書・領収書の表示判定: [`apps/backend/src/domain/billing/reserve-app-billing-documents.ts`](../apps/backend/src/domain/billing/reserve-app-billing-documents.ts)
 - 請求書・支払いイベント: [`apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts`](../apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts)
 
 ## 12. 請求先情報と価格
@@ -427,11 +427,11 @@ Stripe Dashboard では、次の状態を確認する。
 
 ### 関連コード
 
-- 契約状態の判定: [`apps/backend/src/domain/billing/organization-billing-policy.ts`](../apps/backend/src/domain/billing/organization-billing-policy.ts)
+- 契約状態の判定: [`apps/backend/src/domain/billing/reserve-app-billing-entitlement-policy.ts`](../apps/backend/src/domain/billing/reserve-app-billing-entitlement-policy.ts)
 - Stripe 通知の同期: [`apps/backend/src/domain/billing/stripe-webhook-sync.ts`](../apps/backend/src/domain/billing/stripe-webhook-sync.ts)
 - 課金操作の再利用: [`apps/backend/src/domain/billing/organization-billing-operations.ts`](../apps/backend/src/domain/billing/organization-billing-operations.ts)
 - 請求書・支払いイベント: [`apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts`](../apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts)
-- 請求書・領収書の表示判定: [`apps/backend/src/domain/billing/organization-billing-documents.ts`](../apps/backend/src/domain/billing/organization-billing-documents.ts)
+- 請求書・領収書の表示判定: [`apps/backend/src/domain/billing/reserve-app-billing-documents.ts`](../apps/backend/src/domain/billing/reserve-app-billing-documents.ts)
 - 請求先情報の状態: [`apps/backend/src/domain/billing/organization-billing-profile.ts`](../apps/backend/src/domain/billing/organization-billing-profile.ts)
 - 定期照合: [`apps/backend/src/domain/billing/organization-billing-maintenance.ts`](../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
 - 通知履歴: [`apps/backend/src/domain/billing/reserve-app-billing-notifications.ts`](../apps/backend/src/domain/billing/reserve-app-billing-notifications.ts)
