@@ -1,9 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { test } from '@playwright/test';
 import {
 	createAccount,
 	createOwnerOrganization,
 	createService,
 	createSlot,
+	expectPublicEventCapacity,
 	futureSlotRange,
 	publicEventsClassroomSlug,
 	publicEventsOrgSlug,
@@ -11,8 +12,7 @@ import {
 	syncRequestCookiesToBrowser,
 	uniqueToken
 } from '../helpers/test-data';
-
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+import { PublicEventsPage, ScopedAdminPages } from '../pages';
 
 test.describe('booking and public event flows', () => {
 	test('shows seeded services and slots in scoped admin pages', async ({
@@ -36,18 +36,19 @@ test.describe('booking and public event flows', () => {
 			endAt: slotRange.endAt
 		});
 		await syncRequestCookiesToBrowser(request, context);
+		const scopedAdminPages = new ScopedAdminPages(page);
 
-		await page.goto(`/${organization.slug}/${organization.classroomSlug}/admin/services`);
-		await expect(page.getByRole('heading', { name: 'サービス一覧' })).toBeVisible();
-		await expect(
-			page.getByRole('row', { name: new RegExp(escapeRegex(service.name)) })
-		).toBeVisible({ timeout: 15_000 });
-
-		await page.goto(`/${organization.slug}/${organization.classroomSlug}/admin/schedules/slots`);
-		await expect(page.getByRole('heading', { name: '単発Slot一覧' })).toBeVisible();
-		const slotRow = page.getByRole('row', { name: new RegExp(escapeRegex(service.name)) });
-		await expect(slotRow).toBeVisible({ timeout: 15_000 });
-		await expect(slotRow).toContainText('E2E Room');
+		await scopedAdminPages.expectServiceVisible({
+			orgSlug: organization.slug,
+			classroomSlug: organization.classroomSlug,
+			serviceName: service.name
+		});
+		await scopedAdminPages.expectSlotVisible({
+			orgSlug: organization.slug,
+			classroomSlug: organization.classroomSlug,
+			serviceName: service.name,
+			locationLabel: 'E2E Room'
+		});
 	});
 
 	test('lets a participant sign up and reserve a public event', async ({
@@ -77,18 +78,18 @@ test.describe('booking and public event flows', () => {
 			startAt: slotRange.startAt,
 			endAt: slotRange.endAt
 		});
+		const publicEventsPage = new PublicEventsPage(page);
 
-		await page.goto('/events');
-		await expect(page.getByRole('heading', { name: '公開イベント' })).toBeVisible();
-		const eventCard = page.locator('article, div, section').filter({ hasText: service.name }).first();
-		await expect(eventCard).toBeVisible({ timeout: 15_000 });
-		await eventCard.getByRole('button', { name: 'イベント詳細へ' }).click();
-		await expect(page).toHaveURL(
-			new RegExp(`/${publicEventsOrgSlug}/${publicEventsClassroomSlug}/events/${slot.id}`)
-		);
+		await publicEventsPage.gotoEvents();
+		await publicEventsPage.openEventDetails({
+			serviceName: service.name,
+			orgSlug: publicEventsOrgSlug,
+			classroomSlug: publicEventsClassroomSlug,
+			slotId: slot.id
+		});
 
-		await page.getByRole('button', { name: '参加登録して予約する' }).click();
-		await expect(page).toHaveURL(/\/participant\/login/);
+		await publicEventsPage.reserveAsParticipant();
+		await publicEventsPage.expectParticipantLogin();
 
 		const participantRequest = await playwright.request.newContext();
 		try {
@@ -97,21 +98,24 @@ test.describe('booking and public event flows', () => {
 		} finally {
 			await participantRequest.dispose();
 		}
-		await page.goto('/events');
+		await publicEventsPage.gotoEvents();
 
-		const signedInEventCard = page
-			.locator('article, div, section')
-			.filter({ hasText: service.name })
-			.first();
-		await expect(signedInEventCard).toBeVisible({ timeout: 15_000 });
-		await signedInEventCard.getByRole('button', { name: 'イベント詳細へ' }).click();
-		await expect(page).toHaveURL(
-			new RegExp(`/${publicEventsOrgSlug}/${publicEventsClassroomSlug}/events/${slot.id}`)
-		);
-		await page.getByRole('button', { name: '参加登録して予約する' }).click();
+		await publicEventsPage.openEventDetails({
+			serviceName: service.name,
+			orgSlug: publicEventsOrgSlug,
+			classroomSlug: publicEventsClassroomSlug,
+			slotId: slot.id
+		});
+		await publicEventsPage.reserveAsParticipant();
 
-		await expect(page.getByText('参加登録が完了しました。')).toBeVisible();
-		await expect(page.getByText('予約を申し込みました。')).toBeVisible();
-		await expect(page.getByText('残枠: 2 / 3')).toBeVisible();
+		await publicEventsPage.expectReservationComplete();
+		await expectPublicEventCapacity({
+			request,
+			orgSlug: publicEventsOrgSlug,
+			classroomSlug: publicEventsClassroomSlug,
+			slotId: slot.id,
+			remainingCount: 2,
+			capacity: 3
+		});
 	});
 });
