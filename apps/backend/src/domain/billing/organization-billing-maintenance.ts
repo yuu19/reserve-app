@@ -7,7 +7,6 @@ import {
 } from './organization-billing.js';
 import {
   applyReserveAppBillingV2TrialCompletion,
-  markReserveAppBillingV2Reconciled,
   upsertReserveAppBillingV2SubscriptionState,
 } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import {
@@ -294,13 +293,6 @@ const reconcileOrganizationBillingProviderState = async ({
       currentPeriodEnd: isCanceled ? null : subscription.currentPeriodEnd,
       now,
     });
-    await markReserveAppBillingV2Reconciled({
-      database,
-      organizationId,
-      now,
-      reason: sourceKind,
-    });
-
     const nextSnapshot = await readOrganizationBillingObservationSnapshot({
       database,
       env,
@@ -334,10 +326,11 @@ const reconcileOrganizationBillingProviderState = async ({
         providerSubscriptionStatus: subscription.status,
       });
     } else {
-      await appendResolvedBillingSignalIfNeeded({
+      await appendOrganizationBillingSignal({
         database,
         organizationId,
         signalKind: 'reconciliation',
+        signalStatus: 'resolved',
         sourceKind,
         reason: 'provider_and_app_state_aligned',
         appSnapshot: nextSnapshot,

@@ -11,7 +11,10 @@ import {
   reconcileProviderLinkedOrganizationBillingStates,
   reconcileRiskyOrganizationBillingStates,
 } from './domain/billing/organization-billing-maintenance.js';
-import { upsertReserveAppBillingV2SubscriptionState } from './infra/billing/reserve-app-billing-v2-source.js';
+import {
+  syncReserveAppBillingV2DerivedState,
+  upsertReserveAppBillingV2SubscriptionState,
+} from './infra/billing/reserve-app-billing-v2-source.js';
 
 type D1DatabaseBinding = Awaited<ReturnType<Miniflare['getD1Database']>>;
 
@@ -249,10 +252,59 @@ const countTicketPurchasesForParticipantAndType = async (
   return Number(row?.count ?? 0);
 };
 
+const ensureBillingFixtureAccountId = async (
+  organizationId: string,
+  stripeCustomerId: string | null = null,
+) => {
+  const existing = await d1
+    .prepare(
+      "SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ? LIMIT 1",
+    )
+    .bind(organizationId)
+    .first<{ id: string }>();
+
+  if (existing?.id) {
+    if (stripeCustomerId) {
+      await d1
+        .prepare('UPDATE billing_account SET provider_customer_id = ?, updated_at = ? WHERE id = ?')
+        .bind(stripeCustomerId, Date.now(), existing.id)
+        .run();
+    }
+    return existing.id;
+  }
+
+  const accountId = crypto.randomUUID();
+  await d1
+    .prepare(
+      'INSERT INTO billing_account (id, subject_type, subject_id, provider, provider_customer_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      accountId,
+      'organization',
+      organizationId,
+      'stripe',
+      stripeCustomerId,
+      Date.now(),
+      Date.now(),
+    )
+    .run();
+  return accountId;
+};
+
+const selectBillingFixtureSubscriptionId = async (organizationId: string) => {
+  const row = await d1
+    .prepare(
+      "SELECT s.id FROM billing_subscription s INNER JOIN billing_account a ON a.id = s.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? ORDER BY s.updated_at DESC LIMIT 1",
+    )
+    .bind(organizationId)
+    .first<{ id: string }>();
+  return row?.id ?? null;
+};
+
 const selectOrganizationBillingRow = async (organizationId: string) => {
   return d1
     .prepare(
-      'SELECT plan_code as planCode, stripe_customer_id as stripeCustomerId, stripe_subscription_id as stripeSubscriptionId, stripe_price_id as stripePriceId, billing_interval as billingInterval, subscription_status as subscriptionStatus, cancel_at_period_end as cancelAtPeriodEnd, trial_started_at as trialStartedAt, trial_ended_at as trialEndedAt, current_period_start as currentPeriodStart, current_period_end as currentPeriodEnd, payment_issue_started_at as paymentIssueStartedAt, past_due_grace_ends_at as pastDueGraceEndsAt, billing_profile_readiness as billingProfileReadiness, billing_profile_next_action as billingProfileNextAction, billing_profile_checked_at as billingProfileCheckedAt, last_reconciled_at as lastReconciledAt, last_reconciliation_reason as lastReconciliationReason FROM organization_billing WHERE organization_id = ? LIMIT 1',
+      "SELECT s.plan_code as planCode, a.provider_customer_id as stripeCustomerId, s.provider_subscription_id as stripeSubscriptionId, s.price_code as stripePriceId, s.interval as billingInterval, s.status as subscriptionStatus, s.cancel_at_period_end as cancelAtPeriodEnd, s.trial_start as trialStartedAt, CASE WHEN s.trial_start IS NOT NULL AND s.status != 'trialing' THEN s.trial_end ELSE NULL END as trialEndedAt, s.current_period_start as currentPeriodStart, s.current_period_end as currentPeriodEnd, CASE WHEN i.state IN ('past_due_grace_active', 'past_due_grace_expired', 'unpaid', 'incomplete') THEN i.issue_started_at ELSE NULL END as paymentIssueStartedAt, CASE WHEN i.state IN ('past_due_grace_active', 'past_due_grace_expired') THEN i.past_due_grace_ends_at ELSE NULL END as pastDueGraceEndsAt, 'not_required' as billingProfileReadiness, NULL as billingProfileNextAction, NULL as billingProfileCheckedAt, (SELECT bs.created_at FROM billing_signal bs WHERE bs.billing_account_id = a.id AND bs.signal_kind = 'reconciliation' ORDER BY bs.sequence_number DESC, bs.created_at DESC LIMIT 1) as lastReconciledAt, (SELECT bs.source_kind FROM billing_signal bs WHERE bs.billing_account_id = a.id AND bs.signal_kind = 'reconciliation' ORDER BY bs.sequence_number DESC, bs.created_at DESC LIMIT 1) as lastReconciliationReason FROM billing_account a LEFT JOIN billing_subscription s ON s.billing_account_id = a.id LEFT JOIN billing_payment_issue i ON i.billing_account_id = a.id WHERE a.subject_type = 'organization' AND a.subject_id = ? ORDER BY s.updated_at DESC LIMIT 1",
     )
     .bind(organizationId)
     .first<{
@@ -354,7 +406,7 @@ const selectStripeWebhookFailureRows = async (eventId: string | null = null) => 
 const selectOrganizationBillingNotificationRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT notification_kind as notificationKind, channel, sequence_number as sequenceNumber, delivery_state as deliveryState, attempt_number as attemptNumber, stripe_event_id as stripeEventId, recipient_email as recipientEmail, plan_state as planState, subscription_status as subscriptionStatus, payment_method_status as paymentMethodStatus, failure_reason as failureReason FROM organization_billing_notification WHERE organization_id = ? ORDER BY sequence_number ASC',
+      "SELECT n.notification_kind as notificationKind, n.channel, n.sequence_number as sequenceNumber, n.delivery_status as deliveryState, n.attempt_number as attemptNumber, n.provider_event_id as stripeEventId, NULLIF(n.recipient_email, 'unassigned') as recipientEmail, n.plan_state as planState, n.subscription_status as subscriptionStatus, n.payment_method_status as paymentMethodStatus, n.failure_reason as failureReason FROM billing_notification n INNER JOIN billing_account a ON a.id = n.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? ORDER BY n.sequence_number ASC",
     )
     .bind(organizationId)
     .all<{
@@ -381,7 +433,7 @@ const selectOrganizationBillingNotificationRows = async (organizationId: string)
 const selectOrganizationBillingAuditEventRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT sequence_number as sequenceNumber, source_kind as sourceKind, stripe_event_id as stripeEventId, source_context as sourceContext, previous_plan_state as previousPlanState, next_plan_state as nextPlanState, previous_subscription_status as previousSubscriptionStatus, next_subscription_status as nextSubscriptionStatus, previous_payment_method_status as previousPaymentMethodStatus, next_payment_method_status as nextPaymentMethodStatus, previous_entitlement_state as previousEntitlementState, next_entitlement_state as nextEntitlementState FROM organization_billing_audit_event WHERE organization_id = ? ORDER BY sequence_number ASC',
+      "SELECT e.sequence_number as sequenceNumber, e.source_kind as sourceKind, e.provider_event_id as stripeEventId, e.source_context as sourceContext, json_extract(e.previous_snapshot_json, '$.planState') as previousPlanState, json_extract(e.next_snapshot_json, '$.planState') as nextPlanState, json_extract(e.previous_snapshot_json, '$.subscriptionStatus') as previousSubscriptionStatus, json_extract(e.next_snapshot_json, '$.subscriptionStatus') as nextSubscriptionStatus, json_extract(e.previous_snapshot_json, '$.paymentMethodStatus') as previousPaymentMethodStatus, json_extract(e.next_snapshot_json, '$.paymentMethodStatus') as nextPaymentMethodStatus, json_extract(e.previous_snapshot_json, '$.entitlementState') as previousEntitlementState, json_extract(e.next_snapshot_json, '$.entitlementState') as nextEntitlementState FROM billing_audit_event e INNER JOIN billing_account a ON a.id = e.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? ORDER BY e.sequence_number ASC",
     )
     .bind(organizationId)
     .all<{
@@ -408,7 +460,7 @@ const selectOrganizationBillingAuditEventRows = async (organizationId: string) =
 const selectOrganizationBillingSignalRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT sequence_number as sequenceNumber, signal_kind as signalKind, signal_status as signalStatus, source_kind as sourceKind, reason, stripe_event_id as stripeEventId, provider_plan_state as providerPlanState, provider_subscription_status as providerSubscriptionStatus, app_plan_state as appPlanState, app_subscription_status as appSubscriptionStatus, app_payment_method_status as appPaymentMethodStatus, app_entitlement_state as appEntitlementState FROM organization_billing_signal WHERE organization_id = ? ORDER BY sequence_number ASC',
+      "SELECT s.sequence_number as sequenceNumber, s.signal_kind as signalKind, s.signal_status as signalStatus, s.source_kind as sourceKind, s.reason, s.provider_event_id as stripeEventId, s.provider_plan_state as providerPlanState, s.provider_subscription_status as providerSubscriptionStatus, json_extract(s.app_snapshot_json, '$.planState') as appPlanState, json_extract(s.app_snapshot_json, '$.subscriptionStatus') as appSubscriptionStatus, json_extract(s.app_snapshot_json, '$.paymentMethodStatus') as appPaymentMethodStatus, json_extract(s.app_snapshot_json, '$.entitlementState') as appEntitlementState FROM billing_signal s INNER JOIN billing_account a ON a.id = s.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? ORDER BY s.sequence_number ASC",
     )
     .bind(organizationId)
     .all<{
@@ -680,11 +732,6 @@ const setOrganizationBillingState = async ({
   currentPeriodStart,
   paymentIssueStartedAt,
   pastDueGraceEndsAt,
-  billingProfileReadiness = 'not_required',
-  billingProfileNextAction = null,
-  billingProfileCheckedAt = null,
-  lastReconciledAt = null,
-  lastReconciliationReason = null,
 }: {
   organizationId: string;
   planCode: 'free' | 'premium';
@@ -711,31 +758,6 @@ const setOrganizationBillingState = async ({
   lastReconciledAt?: Date | null;
   lastReconciliationReason?: string | null;
 }) => {
-  await d1
-    .prepare(
-      'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, billing_interval = ?, current_period_start = ?, current_period_end = ?, stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, cancel_at_period_end = ?, payment_issue_started_at = ?, past_due_grace_ends_at = ?, billing_profile_readiness = ?, billing_profile_next_action = ?, billing_profile_checked_at = ?, last_reconciled_at = ?, last_reconciliation_reason = ? WHERE organization_id = ?',
-    )
-    .bind(
-      planCode,
-      subscriptionStatus,
-      billingInterval ?? null,
-      currentPeriodStart ? currentPeriodStart.getTime() : null,
-      currentPeriodEnd ? currentPeriodEnd.getTime() : null,
-      stripeCustomerId ?? null,
-      stripeSubscriptionId ?? null,
-      stripePriceId ?? null,
-      cancelAtPeriodEnd ?? false,
-      paymentIssueStartedAt ? paymentIssueStartedAt.getTime() : null,
-      pastDueGraceEndsAt ? pastDueGraceEndsAt.getTime() : null,
-      billingProfileReadiness,
-      billingProfileNextAction,
-      billingProfileCheckedAt ? billingProfileCheckedAt.getTime() : null,
-      lastReconciledAt ? lastReconciledAt.getTime() : null,
-      lastReconciliationReason,
-      organizationId,
-    )
-    .run();
-
   await upsertReserveAppBillingV2SubscriptionState({
     database: drizzle(d1),
     env: buildBillingFixtureEnv({ billingInterval, stripePriceId }),
@@ -826,31 +848,41 @@ const insertOrganizationBillingAuditEventRow = async ({
   sourceContext?: string | null;
   createdAt?: Date;
 }) => {
+  const billingAccountId = await ensureBillingFixtureAccountId(organizationId, stripeCustomerId);
   await d1
     .prepare(
-      'INSERT INTO organization_billing_audit_event (id, organization_id, sequence_number, source_kind, stripe_event_id, stripe_customer_id, stripe_subscription_id, source_context, previous_plan_code, next_plan_code, previous_plan_state, next_plan_state, previous_subscription_status, next_subscription_status, previous_payment_method_status, next_payment_method_status, previous_entitlement_state, next_entitlement_state, previous_billing_interval, next_billing_interval, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO billing_audit_event (id, billing_account_id, sequence_number, source_kind, source_context, previous_snapshot_json, next_snapshot_json, provider, provider_event_id, provider_customer_id, provider_subscription_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       crypto.randomUUID(),
-      organizationId,
+      billingAccountId,
       sequenceNumber,
       sourceKind,
+      sourceContext,
+      JSON.stringify({
+        planCode: previousPlanCode,
+        planState: previousPlanState,
+        subscriptionStatus: previousSubscriptionStatus,
+        paymentMethodStatus: previousPaymentMethodStatus,
+        entitlementState: previousEntitlementState,
+        billingInterval: previousBillingInterval,
+        stripeCustomerId,
+        stripeSubscriptionId,
+      }),
+      JSON.stringify({
+        planCode: nextPlanCode,
+        planState: nextPlanState,
+        subscriptionStatus: nextSubscriptionStatus,
+        paymentMethodStatus: nextPaymentMethodStatus,
+        entitlementState: nextEntitlementState,
+        billingInterval: nextBillingInterval,
+        stripeCustomerId,
+        stripeSubscriptionId,
+      }),
+      stripeCustomerId || stripeSubscriptionId || stripeEventId ? 'stripe' : null,
       stripeEventId,
       stripeCustomerId,
       stripeSubscriptionId,
-      sourceContext,
-      previousPlanCode,
-      nextPlanCode,
-      previousPlanState,
-      nextPlanState,
-      previousSubscriptionStatus,
-      nextSubscriptionStatus,
-      previousPaymentMethodStatus,
-      nextPaymentMethodStatus,
-      previousEntitlementState,
-      nextEntitlementState,
-      previousBillingInterval,
-      nextBillingInterval,
       (createdAt ?? new Date()).getTime(),
     )
     .run();
@@ -891,27 +923,33 @@ const insertOrganizationBillingSignalRow = async ({
   stripeEventId?: string | null;
   createdAt?: Date;
 }) => {
+  const billingAccountId = await ensureBillingFixtureAccountId(organizationId, stripeCustomerId);
   await d1
     .prepare(
-      'INSERT INTO organization_billing_signal (id, organization_id, sequence_number, signal_kind, signal_status, source_kind, reason, stripe_event_id, stripe_customer_id, stripe_subscription_id, provider_plan_state, provider_subscription_status, app_plan_state, app_subscription_status, app_payment_method_status, app_entitlement_state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO billing_signal (id, billing_account_id, sequence_number, signal_kind, signal_status, source_kind, reason, app_snapshot_json, provider, provider_event_id, provider_customer_id, provider_subscription_id, provider_plan_state, provider_subscription_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       crypto.randomUUID(),
-      organizationId,
+      billingAccountId,
       sequenceNumber,
       signalKind,
       signalStatus,
       sourceKind,
       reason,
+      JSON.stringify({
+        planState: appPlanState,
+        subscriptionStatus: appSubscriptionStatus,
+        paymentMethodStatus: appPaymentMethodStatus,
+        entitlementState: appEntitlementState,
+        stripeCustomerId,
+        stripeSubscriptionId,
+      }),
+      stripeCustomerId || stripeSubscriptionId || stripeEventId ? 'stripe' : null,
       stripeEventId,
       stripeCustomerId,
       stripeSubscriptionId,
       providerPlanState,
       providerSubscriptionStatus,
-      appPlanState,
-      appSubscriptionStatus,
-      appPaymentMethodStatus,
-      appEntitlementState,
       (createdAt ?? new Date()).getTime(),
     )
     .run();
@@ -954,29 +992,33 @@ const insertOrganizationBillingNotificationRow = async ({
   stripeSubscriptionId?: string | null;
   createdAt?: Date;
 }) => {
+  const billingAccountId = await ensureBillingFixtureAccountId(organizationId, stripeCustomerId);
   await d1
     .prepare(
-      'INSERT INTO organization_billing_notification (id, organization_id, recipient_user_id, notification_kind, channel, sequence_number, delivery_state, attempt_number, stripe_event_id, stripe_customer_id, stripe_subscription_id, recipient_email, plan_state, subscription_status, payment_method_status, trial_ends_at, failure_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO billing_notification (id, billing_account_id, recipient_user_id, notification_kind, channel, sequence_number, delivery_status, attempt_number, provider, provider_event_id, provider_customer_id, provider_subscription_id, recipient_email, plan_state, subscription_status, payment_method_status, trial_ends_at, failure_reason, created_at, sent_at, failed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       crypto.randomUUID(),
-      organizationId,
+      billingAccountId,
       recipientUserId,
       notificationKind,
       channel,
       sequenceNumber,
       deliveryState,
       attemptNumber,
+      stripeCustomerId || stripeSubscriptionId || stripeEventId ? 'stripe' : null,
       stripeEventId,
       stripeCustomerId,
       stripeSubscriptionId,
-      recipientEmail,
+      recipientEmail ?? 'unassigned',
       planState,
       subscriptionStatus,
       paymentMethodStatus,
       trialEndsAt ? trialEndsAt.getTime() : null,
       failureReason,
       (createdAt ?? new Date()).getTime(),
+      deliveryState === 'sent' ? (createdAt ?? new Date()).getTime() : null,
+      deliveryState === 'failed' ? (createdAt ?? new Date()).getTime() : null,
     )
     .run();
 };
@@ -1039,7 +1081,7 @@ const insertStripeWebhookEventRow = async ({
       'stripe',
       id,
       eventType,
-      scope === 'organization_billing' ? 'billing' : scope,
+      scope,
       `fixture:${id}:${eventType}`,
       processingStatus,
       processingStatus === 'processed' ? 'processed' : 'received',
@@ -1085,7 +1127,7 @@ const selectOrganizationBillingOperationAttemptRows = async (organizationId: str
 const selectOrganizationBillingInvoiceEventRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT id, stripe_event_id as stripeEventId, event_type as eventType, stripe_invoice_id as stripeInvoiceId, stripe_payment_intent_id as stripePaymentIntentId, provider_status as providerStatus, owner_facing_status as ownerFacingStatus, occurred_at as occurredAt, created_at as createdAt FROM organization_billing_invoice_event WHERE organization_id = ? ORDER BY created_at ASC',
+      "SELECT e.id, e.provider_event_id as stripeEventId, e.event_type as eventType, e.provider_invoice_id as stripeInvoiceId, e.provider_payment_intent_id as stripePaymentIntentId, e.provider_status as providerStatus, e.owner_facing_status as ownerFacingStatus, e.occurred_at as occurredAt, e.created_at as createdAt FROM billing_payment_issue_event e INNER JOIN billing_account a ON a.id = e.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? AND e.event_type IN ('invoice_available', 'payment_succeeded', 'payment_failed', 'payment_action_required') ORDER BY e.created_at ASC",
     )
     .bind(organizationId)
     .all<{
@@ -1109,7 +1151,6 @@ const insertOrganizationBillingInvoiceEventRow = async ({
   eventType,
   ownerFacingStatus,
   stripeCustomerId = null,
-  stripeSubscriptionId = null,
   stripeInvoiceId = null,
   stripePaymentIntentId = null,
   providerStatus = null,
@@ -1138,17 +1179,19 @@ const insertOrganizationBillingInvoiceEventRow = async ({
   occurredAt?: Date | null;
   createdAt?: Date;
 }) => {
+  const billingAccountId = await ensureBillingFixtureAccountId(organizationId, stripeCustomerId);
+  const billingSubscriptionId = await selectBillingFixtureSubscriptionId(organizationId);
   await d1
     .prepare(
-      'INSERT INTO organization_billing_invoice_event (id, organization_id, stripe_event_id, event_type, stripe_customer_id, stripe_subscription_id, stripe_invoice_id, stripe_payment_intent_id, provider_status, owner_facing_status, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO billing_payment_issue_event (id, billing_account_id, billing_subscription_id, event_type, provider, provider_event_id, provider_invoice_id, provider_payment_intent_id, provider_status, owner_facing_status, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       crypto.randomUUID(),
-      organizationId,
-      stripeEventId ?? null,
+      billingAccountId,
+      billingSubscriptionId,
       eventType,
-      stripeCustomerId,
-      stripeSubscriptionId,
+      'stripe',
+      stripeEventId ?? null,
       stripeInvoiceId,
       stripePaymentIntentId,
       providerStatus,
@@ -1162,7 +1205,7 @@ const insertOrganizationBillingInvoiceEventRow = async ({
 const selectOrganizationBillingDocumentReferenceRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT document_kind as documentKind, provider_document_id as providerDocumentId, hosted_invoice_url as hostedInvoiceUrl, invoice_pdf_url as invoicePdfUrl, receipt_url as receiptUrl, availability, owner_facing_status as ownerFacingStatus, provider_derived as providerDerived FROM organization_billing_document_reference WHERE organization_id = ? ORDER BY created_at ASC',
+      "SELECT d.document_kind as documentKind, d.provider_document_id as providerDocumentId, d.hosted_invoice_url as hostedInvoiceUrl, d.invoice_pdf_url as invoicePdfUrl, d.receipt_url as receiptUrl, d.availability, d.owner_facing_status as ownerFacingStatus, d.provider_derived as providerDerived FROM billing_document_reference d INNER JOIN billing_account a ON a.id = d.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? ORDER BY d.created_at ASC",
     )
     .bind(organizationId)
     .all<{
@@ -1216,7 +1259,7 @@ const selectBillingPaymentIssueEventRowsBySubject = async (organizationId: strin
 const selectBillingNotificationRowsBySubject = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT n.notification_kind as notificationKind, n.recipient_email as recipientEmail, n.delivery_status as deliveryStatus, n.failure_reason as failureReason, n.provider_event_id as providerEventId, n.provider_invoice_id as providerInvoiceId FROM billing_notification n INNER JOIN billing_account a ON a.id = n.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? ORDER BY n.created_at ASC',
+      "SELECT n.notification_kind as notificationKind, n.recipient_email as recipientEmail, n.delivery_status as deliveryStatus, n.failure_reason as failureReason, n.provider_event_id as providerEventId, n.provider_invoice_id as providerInvoiceId FROM billing_notification n INNER JOIN billing_account a ON a.id = n.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? AND n.delivery_status = 'sent' ORDER BY n.created_at ASC",
     )
     .bind('organization', organizationId)
     .all<{
@@ -1979,7 +2022,7 @@ describe('backend app', () => {
       expect(ownerBillingPayload.trialEndsAt).toBeNull();
       expect(ownerBillingPayload.history).toEqual([]);
       expect(ownerBillingPayload.paymentDocuments).toEqual({
-        aggregateRoot: 'organization_billing',
+        aggregateRoot: 'billing_account',
         organizationId,
         provider: 'stripe',
         stripeCustomerId: null,
@@ -2346,13 +2389,13 @@ describe('backend app', () => {
       });
       expect(freePortalResponse.status).toBe(409);
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, stripe_customer_id = ?, stripe_subscription_id = ? WHERE organization_id = ?',
-        )
-        .bind('premium', 'active', 'cus_missing_subscription', null, organizationId)
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'active',
+        stripeCustomerId: 'cus_missing_subscription',
+        stripeSubscriptionId: null,
+      });
       const missingSubscriptionPortalResponse = await owner.request(
         '/api/v1/auth/organizations/billing/portal',
         {
@@ -2369,13 +2412,12 @@ describe('backend app', () => {
       expect(billingAfterMissingSubscriptionPortal?.stripeSubscriptionId).toBeNull();
 
       const trialPeriodEnd = Date.now() + 7 * 24 * 60 * 60 * 1000;
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET plan_code = ?, subscription_status = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind('premium', 'trialing', trialPeriodEnd, organizationId)
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        currentPeriodEnd: new Date(trialPeriodEnd),
+      });
 
       const trialBillingResponse = await owner.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -2527,12 +2569,16 @@ describe('backend app', () => {
     const futureGraceEnd = new Date(now + 2 * 24 * 60 * 60 * 1000);
     const expiredGraceEnd = new Date(now - 60_000);
 
-    const tableInfo = await d1
-      .prepare('PRAGMA table_info(organization_billing)')
+    const legacyTableInfo = await d1
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'organization_billing'")
       .all<{ name: string }>();
-    const organizationBillingColumns = tableInfo.results.map((row) => row.name);
-    expect(organizationBillingColumns).toContain('organization_id');
-    expect(organizationBillingColumns).not.toContain('classroom_id');
+    expect(legacyTableInfo.results).toHaveLength(0);
+    const billingAccountTableInfo = await d1
+      .prepare('PRAGMA table_info(billing_account)')
+      .all<{ name: string }>();
+    const billingAccountColumns = billingAccountTableInfo.results.map((row) => row.name);
+    expect(billingAccountColumns).toContain('subject_id');
+    expect(billingAccountColumns).not.toContain('classroom_id');
 
     const assertPremiumGate = async ({
       subscriptionStatus,
@@ -2614,12 +2660,6 @@ describe('backend app', () => {
       expectedStatus: 200,
     });
 
-    await d1
-      .prepare(
-        'UPDATE organization_billing SET billing_profile_readiness = ?, billing_profile_next_action = ? WHERE organization_id = ?',
-      )
-      .bind('incomplete', '請求先情報は Stripe Checkout で確認してください。', organizationId)
-      .run();
     const profileGapAllowedResponse = await createPremiumGatedApprovalService({
       agent: owner,
       organizationId,
@@ -2633,7 +2673,9 @@ describe('backend app', () => {
       .first<{ id: string }>();
     expect(defaultClassroom?.id).toBeTruthy();
     const accidentalClassroomBillingRows = await d1
-      .prepare('SELECT COUNT(*) as count FROM organization_billing WHERE organization_id = ?')
+      .prepare(
+        "SELECT COUNT(*) as count FROM billing_account WHERE subject_type = 'organization' AND subject_id = ?",
+      )
       .bind(defaultClassroom?.id)
       .first<{ count: number | string }>();
     if (defaultClassroom?.id !== organizationId) {
@@ -2969,8 +3011,14 @@ describe('backend app', () => {
           slug: `billing-checkout-handoff-${crypto.randomUUID().slice(0, 8)}`,
         });
       await d1
-        .prepare('UPDATE organization_billing SET trial_started_at = ? WHERE organization_id = ?')
-        .bind(Date.now() - 7 * 24 * 60 * 60 * 1000, checkoutOrganizationId)
+        .prepare(
+          "UPDATE billing_subscription SET trial_start = ?, updated_at = ? WHERE billing_account_id = (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ? LIMIT 1)",
+        )
+        .bind(
+          Date.now() - 7 * 24 * 60 * 60 * 1000,
+          Date.now(),
+          checkoutOrganizationId,
+        )
         .run();
       await syncOrganizationBillingV2FixtureFromLegacyRow(checkoutOrganizationId);
 
@@ -3635,6 +3683,12 @@ describe('backend app', () => {
       });
       expect(await selectBillingPaymentIssueEventRowsBySubject(organizationId)).toEqual([
         expect.objectContaining({
+          eventType: 'invoice_available',
+          providerEventId: 'evt_invoice_available_verified',
+          providerInvoiceId: 'in_invoice_available_verified',
+          providerPaymentIntentId: 'pi_invoice_available_verified',
+        }),
+        expect.objectContaining({
           eventType: 'payment_succeeded',
           providerEventId: 'evt_payment_succeeded_verified',
           providerInvoiceId: 'in_payment_succeeded_verified',
@@ -3943,6 +3997,12 @@ describe('backend app', () => {
       ]);
       expect(await selectBillingPaymentIssueEventRowsBySubject(organizationId)).toEqual([
         expect.objectContaining({
+          eventType: 'payment_failed',
+          providerEventId: 'evt_stale_payment_failed_after_recovery',
+          providerInvoiceId: 'in_stale_payment_failed_after_recovery',
+          providerPaymentIntentId: 'pi_stale_payment_failed_after_recovery',
+        }),
+        expect.objectContaining({
           eventType: 'stale_failure',
           providerEventId: 'evt_stale_payment_failed_after_recovery',
           providerInvoiceId: 'in_stale_payment_failed_after_recovery',
@@ -3986,20 +4046,15 @@ describe('backend app', () => {
     });
     await d1
       .prepare(
-        "UPDATE organization_billing SET subscription_status = 'active' WHERE subscription_status IN ('past_due', 'unpaid', 'incomplete')",
-      )
-      .run();
-    await d1
-      .prepare(
-        'UPDATE organization_billing SET stripe_subscription_id = NULL WHERE organization_id NOT IN (?, ?)',
-      )
-      .bind(targetedOrganizationId, fullOrganizationId)
-      .run();
-    await d1
-      .prepare(
         "UPDATE billing_subscription SET status = 'active', updated_at = ? WHERE status IN ('past_due', 'unpaid', 'incomplete')",
       )
       .bind(Date.now())
+      .run();
+    await d1
+      .prepare(
+        "UPDATE billing_subscription SET provider_subscription_id = NULL, updated_at = ? WHERE billing_account_id NOT IN (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id IN (?, ?))",
+      )
+      .bind(Date.now(), targetedOrganizationId, fullOrganizationId)
       .run();
     await d1
       .prepare(
@@ -4445,14 +4500,14 @@ describe('backend app', () => {
       expect(await selectStripeWebhookEventRow('evt_unmatched_subscription')).toMatchObject({
         id: 'evt_unmatched_subscription',
         processingStatus: 'failed',
-        failureReason: 'organization_billing_not_found',
+        failureReason: 'billing_account_not_found',
       });
       expect(await selectStripeWebhookFailureRows('evt_unmatched_subscription')).toEqual([
         expect.objectContaining({
           eventId: 'evt_unmatched_subscription',
           eventType: 'customer.subscription.updated',
           failureStage: 'organization_linkage',
-          failureReason: 'organization_billing_not_found',
+          failureReason: 'billing_account_not_found',
         }),
       ]);
 
@@ -4513,7 +4568,7 @@ describe('backend app', () => {
           eventId: 'evt_unmatched_subscription',
           eventType: 'customer.subscription.updated',
           failureStage: 'organization_linkage',
-          failureReason: 'organization_billing_not_found',
+          failureReason: 'billing_account_not_found',
         }),
       ]);
     } finally {
@@ -4787,19 +4842,16 @@ describe('backend app', () => {
       });
       expect(ownerTrialResponse.status).toBe(200);
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind(
-          'cus_trial_webhook_pending',
-          'sub_trial_webhook_pending',
-          stripeMonthlyPriceId,
-          Date.now() - 60_000,
-          organizationId,
-        )
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        stripeCustomerId: 'cus_trial_webhook_pending',
+        stripeSubscriptionId: 'sub_trial_webhook_pending',
+        stripePriceId: stripeMonthlyPriceId,
+        billingInterval: 'month',
+        currentPeriodEnd: new Date(Date.now() - 60_000),
+      });
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_webhook_pending',
@@ -4911,11 +4963,12 @@ describe('backend app', () => {
       slug: 'unexpected-processing-target-org',
     });
 
-    await d1
-      .prepare('UPDATE organization_billing SET stripe_customer_id = ? WHERE organization_id = ?')
-      .bind('cus_unexpected_processing', existingOrganizationId)
-      .run();
-    await syncOrganizationBillingV2FixtureFromLegacyRow(existingOrganizationId);
+    await setOrganizationBillingState({
+      organizationId: existingOrganizationId,
+      planCode: 'free',
+      subscriptionStatus: 'free',
+      stripeCustomerId: 'cus_unexpected_processing',
+    });
 
     const webhookPayload = JSON.stringify({
       id: 'evt_unexpected_processing',
@@ -4992,7 +5045,7 @@ describe('backend app', () => {
     await insertStripeWebhookEventRow({
       id: 'evt_processing_duplicate',
       eventType: 'checkout.session.completed',
-      scope: 'organization_billing',
+      scope: 'billing',
       processingStatus: 'processing',
       createdAt: new Date(),
     });
@@ -5069,7 +5122,7 @@ describe('backend app', () => {
     await insertStripeWebhookEventRow({
       id: 'evt_stale_processing',
       eventType: 'checkout.session.completed',
-      scope: 'organization_billing',
+      scope: 'billing',
       processingStatus: 'processing',
       createdAt: new Date(Date.now() - 5 * 60 * 1000),
     });
@@ -5241,19 +5294,16 @@ describe('backend app', () => {
       });
       expect(ownerTrialResponse.status).toBe(200);
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind(
-          'cus_trial_reminder',
-          'sub_trial_reminder',
-          stripeMonthlyPriceId,
-          Date.now() + 3 * 24 * 60 * 60 * 1000,
-          organizationId,
-        )
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        stripeCustomerId: 'cus_trial_reminder',
+        stripeSubscriptionId: 'sub_trial_reminder',
+        stripePriceId: stripeMonthlyPriceId,
+        billingInterval: 'month',
+        currentPeriodEnd: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      });
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_reminder_success',
@@ -5454,19 +5504,16 @@ describe('backend app', () => {
       });
       expect(ownerTrialResponse.status).toBe(200);
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind(
-          'cus_trial_reminder_registered',
-          'sub_trial_reminder_registered',
-          stripeMonthlyPriceId,
-          Date.now() + 3 * 24 * 60 * 60 * 1000,
-          organizationId,
-        )
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        stripeCustomerId: 'cus_trial_reminder_registered',
+        stripeSubscriptionId: 'sub_trial_reminder_registered',
+        stripePriceId: stripeMonthlyPriceId,
+        billingInterval: 'month',
+        currentPeriodEnd: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      });
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_reminder_registered',
@@ -5615,19 +5662,16 @@ describe('backend app', () => {
       });
       expect(ownerTrialResponse.status).toBe(200);
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind(
-          'cus_trial_reminder_duplicate',
-          'sub_trial_reminder_duplicate',
-          stripeMonthlyPriceId,
-          Date.now() + 3 * 24 * 60 * 60 * 1000,
-          organizationId,
-        )
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        stripeCustomerId: 'cus_trial_reminder_duplicate',
+        stripeSubscriptionId: 'sub_trial_reminder_duplicate',
+        stripePriceId: stripeMonthlyPriceId,
+        billingInterval: 'month',
+        currentPeriodEnd: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      });
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_reminder_duplicate',
@@ -5770,19 +5814,16 @@ describe('backend app', () => {
       });
       expect(ownerTrialResponse.status).toBe(200);
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_price_id = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind(
-          'cus_trial_reminder_retry',
-          'sub_trial_reminder_retry',
-          stripeMonthlyPriceId,
-          Date.now() + 3 * 24 * 60 * 60 * 1000,
-          organizationId,
-        )
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        stripeCustomerId: 'cus_trial_reminder_retry',
+        stripeSubscriptionId: 'sub_trial_reminder_retry',
+        stripePriceId: stripeMonthlyPriceId,
+        billingInterval: 'month',
+        currentPeriodEnd: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      });
 
       const webhookPayload = JSON.stringify({
         id: 'evt_trial_reminder_retry',
@@ -6069,13 +6110,13 @@ describe('backend app', () => {
         'Organization already has an active premium trial or paid subscription.',
       );
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET subscription_status = ?, billing_interval = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind('active', 'month', 1779000000000, organizationId)
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'active',
+        billingInterval: 'month',
+        currentPeriodEnd: new Date(1779000000000),
+      });
 
       const activeConflictResponse = await owner.request(
         '/api/v1/auth/organizations/billing/trial',
@@ -6752,18 +6793,18 @@ describe('backend app', () => {
       const billingBeforeCompletion = await selectOrganizationBillingRow(organizationId);
       expect(billingBeforeCompletion?.subscriptionStatus).toBe('trialing');
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET stripe_customer_id = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind('cus_trial_completion_paid', Date.now() - 60_000, organizationId)
-        .run();
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        stripeCustomerId: 'cus_trial_completion_paid',
+        currentPeriodEnd: new Date(Date.now() - 60_000),
+      });
 
       const ownerUserRow = await d1
         .prepare('SELECT id FROM user WHERE email = ? LIMIT 1')
         .bind('trial-completion-owner@example.com')
         .first<{ id: string }>();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
       expect(ownerUserRow?.id).toBeTruthy();
 
       const classroomId = crypto.randomUUID();
@@ -6953,11 +6994,12 @@ describe('backend app', () => {
     });
     expect(ownerTrialResponse.status).toBe(200);
 
-    await d1
-      .prepare('UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?')
-      .bind(Date.now() - 60_000, organizationId)
-      .run();
-    await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'trialing',
+      currentPeriodEnd: new Date(Date.now() - 60_000),
+    });
 
     const completionResponse = await owner.request(
       '/api/v1/auth/organizations/billing/trial/complete',
@@ -7053,11 +7095,12 @@ describe('backend app', () => {
     expect(trialResponse.status).toBe(200);
 
     const maintenanceNow = new Date(Date.now() + 60_000);
-    await d1
-      .prepare('UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?')
-      .bind(maintenanceNow.getTime() - 1, organizationId)
-      .run();
-    await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'trialing',
+      currentPeriodEnd: new Date(maintenanceNow.getTime() - 1),
+    });
     await d1
       .prepare(
         "UPDATE billing_subscription SET status = 'active', updated_at = ? WHERE status = 'trialing' AND current_period_end IS NOT NULL AND current_period_end < ? AND billing_account_id NOT IN (SELECT id FROM billing_account WHERE subject_type = ? AND subject_id = ?)",
@@ -7227,13 +7270,13 @@ describe('backend app', () => {
       });
       expect(ownerTrialResponse.status).toBe(200);
 
-      await d1
-        .prepare(
-          'UPDATE organization_billing SET stripe_customer_id = ?, current_period_end = ? WHERE organization_id = ?',
-        )
-        .bind('cus_trial_completion_pending', Date.now() - 60_000, organizationId)
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(organizationId);
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        stripeCustomerId: 'cus_trial_completion_pending',
+        currentPeriodEnd: new Date(Date.now() - 60_000),
+      });
 
       const completionResponse = await owner.request(
         '/api/v1/auth/organizations/billing/trial/complete',
@@ -7262,15 +7305,12 @@ describe('backend app', () => {
       expect(summaryPayload.paymentMethodStatus).toBe('pending');
     } finally {
       if (paymentMethodPendingTrialOrganizationId) {
-        await d1
-          .prepare(
-            'UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?',
-          )
-          .bind(Date.now() + 7 * 24 * 60 * 60 * 1000, paymentMethodPendingTrialOrganizationId)
-          .run();
-        await syncOrganizationBillingV2FixtureFromLegacyRow(
-          paymentMethodPendingTrialOrganizationId,
-        );
+        await setOrganizationBillingState({
+          organizationId: paymentMethodPendingTrialOrganizationId,
+          planCode: 'premium',
+          subscriptionStatus: 'trialing',
+          currentPeriodEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        });
       }
       fetchSpy.mockRestore();
     }
@@ -11667,8 +11707,10 @@ describe('backend app', () => {
       stripePriceId: 'price_malformed_inspection',
     });
     await d1
-      .prepare('UPDATE organization_billing SET current_period_end = ? WHERE organization_id = ?')
-      .bind('not-a-real-timestamp', malformedOrganizationId)
+      .prepare(
+        "UPDATE billing_subscription SET current_period_end = ?, updated_at = ? WHERE billing_account_id = (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ? LIMIT 1)",
+      )
+      .bind('not-a-real-timestamp', Date.now(), malformedOrganizationId)
       .run();
     await insertOrganizationBillingSignalRow({
       organizationId: malformedOrganizationId,
@@ -11757,7 +11799,7 @@ describe('backend app', () => {
     expect(trialPayload).toHaveProperty('lifecycle.recentEvents');
     expect(trialPayload).toHaveProperty('lifecycle.latestSignal');
     expect(trialPayload).toHaveProperty('paymentDocuments', {
-      aggregateRoot: 'organization_billing',
+      aggregateRoot: 'billing_account',
       provider: 'stripe',
       ownerAccess: 'owner_only',
       persistenceStrategy: 'provider_reference_only',

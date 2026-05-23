@@ -14,7 +14,7 @@ import {
   type AuthRuntimeDatabase,
   type AuthRuntimeEnv,
 } from '../auth-runtime.js';
-import { ensureOrganizationBillingRow } from '../domain/billing/organization-billing.js';
+import { syncReserveAppBillingV2DerivedState } from '../infra/billing/reserve-app-billing-v2-source.js';
 import { RESERVE_APP_ENTITLEMENTS } from '../features/billing/policies/reserve-app-billing-policy.js';
 import { registerBillingRoutes } from '../features/billing/billing.routes.js';
 import * as dbSchema from '../infra/db/schema.js';
@@ -2301,7 +2301,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           })
           .onConflictDoNothing();
 
-        await ensureOrganizationBillingRow(database, organizationId);
+        await syncReserveAppBillingV2DerivedState({ database, env, organizationId });
       }
 
       return response;

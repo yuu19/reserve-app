@@ -43,6 +43,18 @@ const toIsoDateString = (value: unknown): string | null => {
   return candidate.toISOString();
 };
 
+const parseSnapshotJson = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== 'string' || value.length === 0) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
 const toLifecycleStage = (
   planState: 'free' | 'premium_trial' | 'premium_paid',
 ): 'free' | 'trial' | 'paid' => {
@@ -457,40 +469,50 @@ export const readInternalBillingInspection = async ({
   ] = await Promise.all([
     database
       .select({
-        sequenceNumber: dbSchema.organizationBillingAuditEvent.sequenceNumber,
-        sourceKind: dbSchema.organizationBillingAuditEvent.sourceKind,
-        sourceContext: dbSchema.organizationBillingAuditEvent.sourceContext,
-        stripeEventId: dbSchema.organizationBillingAuditEvent.stripeEventId,
-        createdAt: dbSchema.organizationBillingAuditEvent.createdAt,
-        previousPlanState: dbSchema.organizationBillingAuditEvent.previousPlanState,
-        nextPlanState: dbSchema.organizationBillingAuditEvent.nextPlanState,
-        previousSubscriptionStatus:
-          dbSchema.organizationBillingAuditEvent.previousSubscriptionStatus,
-        nextSubscriptionStatus: dbSchema.organizationBillingAuditEvent.nextSubscriptionStatus,
-        previousPaymentMethodStatus:
-          dbSchema.organizationBillingAuditEvent.previousPaymentMethodStatus,
-        nextPaymentMethodStatus: dbSchema.organizationBillingAuditEvent.nextPaymentMethodStatus,
-        previousEntitlementState: dbSchema.organizationBillingAuditEvent.previousEntitlementState,
-        nextEntitlementState: dbSchema.organizationBillingAuditEvent.nextEntitlementState,
+        sequenceNumber: dbSchema.billingAuditEvent.sequenceNumber,
+        sourceKind: dbSchema.billingAuditEvent.sourceKind,
+        sourceContext: dbSchema.billingAuditEvent.sourceContext,
+        stripeEventId: dbSchema.billingAuditEvent.providerEventId,
+        createdAt: dbSchema.billingAuditEvent.createdAt,
+        previousSnapshotJson: dbSchema.billingAuditEvent.previousSnapshotJson,
+        nextSnapshotJson: dbSchema.billingAuditEvent.nextSnapshotJson,
       })
-      .from(dbSchema.organizationBillingAuditEvent)
-      .where(eq(dbSchema.organizationBillingAuditEvent.organizationId, organizationId))
-      .orderBy(desc(dbSchema.organizationBillingAuditEvent.sequenceNumber))
+      .from(dbSchema.billingAuditEvent)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingAuditEvent.billingAccountId, dbSchema.billingAccount.id),
+      )
+      .where(
+        and(
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
+        ),
+      )
+      .orderBy(desc(dbSchema.billingAuditEvent.sequenceNumber))
       .limit(5),
     database
       .select({
-        sequenceNumber: dbSchema.organizationBillingSignal.sequenceNumber,
-        signalKind: dbSchema.organizationBillingSignal.signalKind,
-        signalStatus: dbSchema.organizationBillingSignal.signalStatus,
-        sourceKind: dbSchema.organizationBillingSignal.sourceKind,
-        reason: dbSchema.organizationBillingSignal.reason,
-        providerPlanState: dbSchema.organizationBillingSignal.providerPlanState,
-        providerSubscriptionStatus: dbSchema.organizationBillingSignal.providerSubscriptionStatus,
-        createdAt: dbSchema.organizationBillingSignal.createdAt,
+        sequenceNumber: dbSchema.billingSignal.sequenceNumber,
+        signalKind: dbSchema.billingSignal.signalKind,
+        signalStatus: dbSchema.billingSignal.signalStatus,
+        sourceKind: dbSchema.billingSignal.sourceKind,
+        reason: dbSchema.billingSignal.reason,
+        providerPlanState: dbSchema.billingSignal.providerPlanState,
+        providerSubscriptionStatus: dbSchema.billingSignal.providerSubscriptionStatus,
+        createdAt: dbSchema.billingSignal.createdAt,
       })
-      .from(dbSchema.organizationBillingSignal)
-      .where(eq(dbSchema.organizationBillingSignal.organizationId, organizationId))
-      .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+      .from(dbSchema.billingSignal)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingSignal.billingAccountId, dbSchema.billingAccount.id),
+      )
+      .where(
+        and(
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
+        ),
+      )
+      .orderBy(desc(dbSchema.billingSignal.sequenceNumber))
       .limit(1),
     readTrialReminderDeliveryAuditInspection({
       database,
@@ -525,53 +547,76 @@ export const readInternalBillingInspection = async ({
     }),
     database
       .select({
-        sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
-        recipientUserId: dbSchema.organizationBillingNotification.recipientUserId,
-        recipientEmail: dbSchema.organizationBillingNotification.recipientEmail,
-        deliveryState: dbSchema.organizationBillingNotification.deliveryState,
-        failureReason: dbSchema.organizationBillingNotification.failureReason,
-        notificationKind: dbSchema.organizationBillingNotification.notificationKind,
-        stripeEventId: dbSchema.organizationBillingNotification.stripeEventId,
+        sequenceNumber: dbSchema.billingNotification.sequenceNumber,
+        recipientUserId: dbSchema.billingNotification.recipientUserId,
+        recipientEmail: dbSchema.billingNotification.recipientEmail,
+        deliveryState: dbSchema.billingNotification.deliveryStatus,
+        failureReason: dbSchema.billingNotification.failureReason,
+        notificationKind: dbSchema.billingNotification.notificationKind,
+        stripeEventId: dbSchema.billingNotification.providerEventId,
       })
-      .from(dbSchema.organizationBillingNotification)
+      .from(dbSchema.billingNotification)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingNotification.billingAccountId, dbSchema.billingAccount.id),
+      )
       .where(
         and(
-          eq(dbSchema.organizationBillingNotification.organizationId, organizationId),
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
           or(
-            eq(dbSchema.organizationBillingNotification.notificationKind, 'payment_failed_email'),
-            eq(
-              dbSchema.organizationBillingNotification.notificationKind,
-              'payment_action_required_email',
-            ),
-            eq(
-              dbSchema.organizationBillingNotification.notificationKind,
-              'past_due_grace_reminder_email',
-            ),
+            eq(dbSchema.billingNotification.notificationKind, 'payment_failed_email'),
+            eq(dbSchema.billingNotification.notificationKind, 'payment_action_required_email'),
+            eq(dbSchema.billingNotification.notificationKind, 'past_due_grace_reminder_email'),
           ),
         ),
       )
-      .orderBy(desc(dbSchema.organizationBillingNotification.sequenceNumber))
+      .orderBy(desc(dbSchema.billingNotification.sequenceNumber))
       .limit(50),
     database
       .select({
-        reason: dbSchema.organizationBillingSignal.reason,
-        status: dbSchema.organizationBillingSignal.signalStatus,
+        reason: dbSchema.billingSignal.reason,
+        status: dbSchema.billingSignal.signalStatus,
       })
-      .from(dbSchema.organizationBillingSignal)
+      .from(dbSchema.billingSignal)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingSignal.billingAccountId, dbSchema.billingAccount.id),
+      )
       .where(
         and(
-          eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
           or(
-            eq(dbSchema.organizationBillingSignal.sourceKind, 'payment_failed_email'),
-            eq(dbSchema.organizationBillingSignal.sourceKind, 'payment_action_required_email'),
-            eq(dbSchema.organizationBillingSignal.sourceKind, 'past_due_grace_reminder_email'),
-            eq(dbSchema.organizationBillingSignal.reason, 'stale_payment_issue_after_recovery'),
+            eq(dbSchema.billingSignal.sourceKind, 'payment_failed_email'),
+            eq(dbSchema.billingSignal.sourceKind, 'payment_action_required_email'),
+            eq(dbSchema.billingSignal.sourceKind, 'past_due_grace_reminder_email'),
+            eq(dbSchema.billingSignal.reason, 'stale_payment_issue_after_recovery'),
           ),
         ),
       )
-      .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+      .orderBy(desc(dbSchema.billingSignal.sequenceNumber))
       .limit(10),
   ]);
+  const recentAuditEvents = recentAuditRows.map((row: (typeof recentAuditRows)[number]) => {
+    const previousSnapshot = parseSnapshotJson(row.previousSnapshotJson);
+    const nextSnapshot = parseSnapshotJson(row.nextSnapshotJson);
+    return {
+      sequenceNumber: row.sequenceNumber,
+      sourceKind: row.sourceKind,
+      sourceContext: row.sourceContext,
+      stripeEventId: row.stripeEventId ?? null,
+      createdAt: row.createdAt,
+      previousPlanState: String(previousSnapshot.planState ?? 'free'),
+      nextPlanState: String(nextSnapshot.planState ?? 'free'),
+      previousSubscriptionStatus: String(previousSnapshot.subscriptionStatus ?? 'free'),
+      nextSubscriptionStatus: String(nextSnapshot.subscriptionStatus ?? 'free'),
+      previousPaymentMethodStatus: String(previousSnapshot.paymentMethodStatus ?? 'not_started'),
+      nextPaymentMethodStatus: String(nextSnapshot.paymentMethodStatus ?? 'not_started'),
+      previousEntitlementState: String(previousSnapshot.entitlementState ?? 'free_only'),
+      nextEntitlementState: String(nextSnapshot.entitlementState ?? 'free_only'),
+    };
+  });
   const paymentDocumentReadiness = buildBillingDocumentReadiness({
     organizationId,
     stripeCustomerId: billing?.stripeCustomerId ?? null,
@@ -681,7 +726,7 @@ export const readInternalBillingInspection = async ({
         }
       : null,
     lifecycle: {
-      recentEvents: recentAuditRows.reverse().map((row: (typeof recentAuditRows)[number]) => ({
+      recentEvents: recentAuditEvents.reverse().map((row: (typeof recentAuditEvents)[number]) => ({
         sequenceNumber: row.sequenceNumber,
         sourceKind: row.sourceKind,
         sourceContext: row.sourceContext,
@@ -734,7 +779,7 @@ export const readInternalBillingInspection = async ({
     })),
     timeline: {
       entries: buildInternalBillingInvestigationTimeline({
-        auditRows: recentAuditRows,
+        auditRows: recentAuditEvents,
         reconciliation,
         notifications,
       }),

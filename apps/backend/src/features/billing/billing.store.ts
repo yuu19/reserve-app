@@ -79,8 +79,7 @@ export type InternalBillingInspection = Awaited<ReturnType<typeof readInternalBi
 /**
  * reserve-app の billing v2 tables を読むための Store 境界です。
  *
- * route/usecase は v2 tables を正本として扱い、旧 organization_billing 系 table は互換表示用の
- * append/read surface に限定します。
+ * route/usecase は v2 tables を正本として扱い、organization 固有の表現は presenter 側で組み立てます。
  */
 export type OrganizationBillingStore = {
   selectSummary(organizationId: string): Promise<OrganizationBillingSummaryRow>;

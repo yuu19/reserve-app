@@ -1,5 +1,6 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, or } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
+import { ensureReserveAppBillingV2State } from '../../infra/billing/reserve-app-billing-v2-source.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import type {
   OrganizationBillingDocumentAvailability,
@@ -7,7 +8,6 @@ import type {
   OrganizationBillingDocumentOwnerFacingStatus,
   OrganizationBillingProviderDocumentReference,
 } from './organization-billing-documents.js';
-import { upsertOrganizationBillingV2DocumentReferences } from './organization-billing-v2-bridge.js';
 
 export type OrganizationBillingInvoicePaymentEventType =
   | 'invoice_available'
@@ -96,9 +96,20 @@ const normalizeDocumentOwnerFacingStatus = (
     : 'checking';
 };
 
-const toInvoicePaymentEvent = (
-  row: typeof dbSchema.organizationBillingInvoiceEvent.$inferSelect,
-): OrganizationBillingInvoicePaymentEvent => ({
+const toInvoicePaymentEvent = (row: {
+  id: string;
+  organizationId: string;
+  stripeEventId: string | null;
+  eventType: string;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripeInvoiceId: string | null;
+  stripePaymentIntentId: string | null;
+  providerStatus: string | null;
+  ownerFacingStatus: string | null;
+  occurredAt: unknown;
+  createdAt: unknown;
+}): OrganizationBillingInvoicePaymentEvent => ({
   id: row.id,
   organizationId: row.organizationId,
   stripeEventId: row.stripeEventId ?? null,
@@ -140,17 +151,21 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
   occurredAt?: Date | null;
   documentReferences?: OrganizationBillingProviderDocumentReference[];
 }) => {
+  const state = await ensureReserveAppBillingV2State({
+    database,
+    organizationId,
+  });
   const insertedRows = await database
-    .insert(dbSchema.organizationBillingInvoiceEvent)
+    .insert(dbSchema.billingPaymentIssueEvent)
     .values({
       id: crypto.randomUUID(),
-      organizationId,
-      stripeEventId,
+      billingAccountId: state.account.id,
+      billingSubscriptionId: state.subscription.id,
+      provider: 'stripe',
+      providerEventId: stripeEventId,
       eventType,
-      stripeCustomerId,
-      stripeSubscriptionId,
-      stripeInvoiceId,
-      stripePaymentIntentId,
+      providerInvoiceId: stripeInvoiceId,
+      providerPaymentIntentId: stripePaymentIntentId,
       providerStatus,
       ownerFacingStatus,
       occurredAt,
@@ -163,8 +178,8 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
     (stripeEventId
       ? await database
           .select()
-          .from(dbSchema.organizationBillingInvoiceEvent)
-          .where(eq(dbSchema.organizationBillingInvoiceEvent.stripeEventId, stripeEventId))
+          .from(dbSchema.billingPaymentIssueEvent)
+          .where(eq(dbSchema.billingPaymentIssueEvent.providerEventId, stripeEventId))
           .limit(1)
       : [])[0];
 
@@ -174,13 +189,15 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
 
   for (const document of documentReferences) {
     await database
-      .insert(dbSchema.organizationBillingDocumentReference)
+      .insert(dbSchema.billingDocumentReference)
       .values({
         id: crypto.randomUUID(),
-        organizationId,
-        invoiceEventId: eventRow.id,
+        billingAccountId: state.account.id,
         documentKind: normalizeDocumentKind(document.documentKind),
+        provider: 'stripe',
         providerDocumentId: document.providerDocumentId,
+        providerCustomerId: document.stripeCustomerId ?? stripeCustomerId ?? null,
+        providerSubscriptionId: document.stripeSubscriptionId ?? stripeSubscriptionId ?? null,
         hostedInvoiceUrl: document.hostedInvoiceUrl,
         invoicePdfUrl: document.invoicePdfUrl,
         receiptUrl: document.receiptUrl,
@@ -190,12 +207,14 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
       })
       .onConflictDoUpdate({
         target: [
-          dbSchema.organizationBillingDocumentReference.organizationId,
-          dbSchema.organizationBillingDocumentReference.documentKind,
-          dbSchema.organizationBillingDocumentReference.providerDocumentId,
+          dbSchema.billingDocumentReference.provider,
+          dbSchema.billingDocumentReference.providerDocumentId,
+          dbSchema.billingDocumentReference.documentKind,
         ],
         set: {
-          invoiceEventId: eventRow.id,
+          billingAccountId: state.account.id,
+          providerCustomerId: document.stripeCustomerId ?? stripeCustomerId ?? null,
+          providerSubscriptionId: document.stripeSubscriptionId ?? stripeSubscriptionId ?? null,
           hostedInvoiceUrl: document.hostedInvoiceUrl,
           invoicePdfUrl: document.invoicePdfUrl,
           receiptUrl: document.receiptUrl,
@@ -206,13 +225,21 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
         },
       });
   }
-  await upsertOrganizationBillingV2DocumentReferences({
-    database,
-    organizationId,
-    documentReferences,
-  });
 
-  return toInvoicePaymentEvent(eventRow);
+  return toInvoicePaymentEvent({
+    id: eventRow.id,
+    organizationId,
+    stripeEventId: eventRow.providerEventId ?? null,
+    eventType: eventRow.eventType,
+    stripeCustomerId,
+    stripeSubscriptionId,
+    stripeInvoiceId: eventRow.providerInvoiceId ?? null,
+    stripePaymentIntentId: eventRow.providerPaymentIntentId ?? null,
+    providerStatus: eventRow.providerStatus ?? null,
+    ownerFacingStatus: eventRow.ownerFacingStatus ?? null,
+    occurredAt: eventRow.occurredAt,
+    createdAt: eventRow.createdAt,
+  });
 };
 
 export const readOrganizationBillingInvoicePaymentEvents = async ({
@@ -225,10 +252,45 @@ export const readOrganizationBillingInvoicePaymentEvents = async ({
   limit?: number;
 }) => {
   const rows = await database
-    .select()
-    .from(dbSchema.organizationBillingInvoiceEvent)
-    .where(eq(dbSchema.organizationBillingInvoiceEvent.organizationId, organizationId))
-    .orderBy(desc(dbSchema.organizationBillingInvoiceEvent.createdAt))
+    .select({
+      id: dbSchema.billingPaymentIssueEvent.id,
+      organizationId: dbSchema.billingAccount.subjectId,
+      stripeEventId: dbSchema.billingPaymentIssueEvent.providerEventId,
+      eventType: dbSchema.billingPaymentIssueEvent.eventType,
+      stripeCustomerId: dbSchema.billingAccount.providerCustomerId,
+      stripeSubscriptionId: dbSchema.billingSubscription.providerSubscriptionId,
+      stripeInvoiceId: dbSchema.billingPaymentIssueEvent.providerInvoiceId,
+      stripePaymentIntentId: dbSchema.billingPaymentIssueEvent.providerPaymentIntentId,
+      providerStatus: dbSchema.billingPaymentIssueEvent.providerStatus,
+      ownerFacingStatus: dbSchema.billingPaymentIssueEvent.ownerFacingStatus,
+      occurredAt: dbSchema.billingPaymentIssueEvent.occurredAt,
+      createdAt: dbSchema.billingPaymentIssueEvent.createdAt,
+    })
+    .from(dbSchema.billingPaymentIssueEvent)
+    .innerJoin(
+      dbSchema.billingAccount,
+      eq(dbSchema.billingPaymentIssueEvent.billingAccountId, dbSchema.billingAccount.id),
+    )
+    .leftJoin(
+      dbSchema.billingSubscription,
+      eq(
+        dbSchema.billingPaymentIssueEvent.billingSubscriptionId,
+        dbSchema.billingSubscription.id,
+      ),
+    )
+    .where(
+      and(
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingAccount.subjectId, organizationId),
+        or(
+          eq(dbSchema.billingPaymentIssueEvent.eventType, 'invoice_available'),
+          eq(dbSchema.billingPaymentIssueEvent.eventType, 'payment_succeeded'),
+          eq(dbSchema.billingPaymentIssueEvent.eventType, 'payment_failed'),
+          eq(dbSchema.billingPaymentIssueEvent.eventType, 'payment_action_required'),
+        ),
+      ),
+    )
+    .orderBy(desc(dbSchema.billingPaymentIssueEvent.createdAt))
     .limit(Math.max(1, Math.min(Math.trunc(limit), 50)));
 
   return rows.map(toInvoicePaymentEvent);
@@ -242,13 +304,33 @@ export const readOrganizationBillingDocumentReferences = async ({
   organizationId: string;
 }) => {
   const rows = await database
-    .select()
-    .from(dbSchema.organizationBillingDocumentReference)
-    .where(eq(dbSchema.organizationBillingDocumentReference.organizationId, organizationId))
-    .orderBy(desc(dbSchema.organizationBillingDocumentReference.createdAt));
+    .select({
+      documentKind: dbSchema.billingDocumentReference.documentKind,
+      providerDocumentId: dbSchema.billingDocumentReference.providerDocumentId,
+      providerCustomerId: dbSchema.billingDocumentReference.providerCustomerId,
+      accountProviderCustomerId: dbSchema.billingAccount.providerCustomerId,
+      providerSubscriptionId: dbSchema.billingDocumentReference.providerSubscriptionId,
+      hostedInvoiceUrl: dbSchema.billingDocumentReference.hostedInvoiceUrl,
+      invoicePdfUrl: dbSchema.billingDocumentReference.invoicePdfUrl,
+      receiptUrl: dbSchema.billingDocumentReference.receiptUrl,
+      availability: dbSchema.billingDocumentReference.availability,
+      ownerFacingStatus: dbSchema.billingDocumentReference.ownerFacingStatus,
+    })
+    .from(dbSchema.billingDocumentReference)
+    .innerJoin(
+      dbSchema.billingAccount,
+      eq(dbSchema.billingDocumentReference.billingAccountId, dbSchema.billingAccount.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingAccount.subjectId, organizationId),
+      ),
+    )
+    .orderBy(desc(dbSchema.billingDocumentReference.createdAt));
 
   return rows.map((row: (typeof rows)[number]) => ({
-    aggregateRoot: 'organization_billing' as const,
+    aggregateRoot: 'billing_account' as const,
     documentKind: normalizeDocumentKind(row.documentKind),
     documentConcepts: [
       row.documentKind === 'receipt' ? 'receipt' : 'invoice',
@@ -257,8 +339,8 @@ export const readOrganizationBillingDocumentReferences = async ({
     ] as const,
     provider: 'stripe' as const,
     providerDocumentId: row.providerDocumentId,
-    stripeCustomerId: null,
-    stripeSubscriptionId: null,
+    stripeCustomerId: row.providerCustomerId ?? row.accountProviderCustomerId,
+    stripeSubscriptionId: row.providerSubscriptionId ?? null,
     hostedInvoiceUrl: row.hostedInvoiceUrl ?? null,
     invoicePdfUrl: row.invoicePdfUrl ?? null,
     receiptUrl: row.receiptUrl ?? null,

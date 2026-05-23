@@ -50,7 +50,6 @@ import {
   upsertReserveAppBillingV2SubscriptionState,
 } from '../../infra/billing/reserve-app-billing-v2-source.js';
 
-const ORGANIZATION_BILLING_WEBHOOK_SCOPE = 'organization_billing';
 const BILLING_PROVIDER_EVENT_SCOPE = 'billing';
 const STRIPE_WEBHOOK_PROCESSING_STALE_AFTER_MS = 2 * 60 * 1000;
 
@@ -85,7 +84,7 @@ type StripeWebhookFailureReason =
   | 'invalid_subscription_payload'
   | 'invalid_invoice_payload'
   | 'unsupported_subscription_status'
-  | 'organization_billing_not_found'
+  | 'billing_account_not_found'
   | 'latest_subscription_lookup_failed'
   | 'setup_payment_method_missing'
   | 'setup_customer_missing'
@@ -158,7 +157,7 @@ type NormalizedStripeOrganizationBillingWebhookEvent =
       failureStage: Exclude<StripeWebhookFailureStage, 'signature_verification' | 'payload_parse'>;
       failureReason: Exclude<
         StripeWebhookFailureReason,
-        'invalid_signature' | 'invalid_payload' | 'organization_billing_not_found'
+        'invalid_signature' | 'invalid_payload' | 'billing_account_not_found'
       >;
       stripeCustomerId?: string | null;
       stripeSubscriptionId?: string | null;
@@ -190,7 +189,7 @@ const recordStripeWebhookFailure = async ({
     id: crypto.randomUUID(),
     eventId: eventId ?? null,
     eventType: eventType ?? null,
-    scope: ORGANIZATION_BILLING_WEBHOOK_SCOPE,
+    scope: BILLING_PROVIDER_EVENT_SCOPE,
     failureStage,
     failureReason,
     organizationId: organizationId ?? null,
@@ -806,7 +805,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
           eventId: normalized.eventId,
           eventType: normalized.eventType,
           failureStage: 'organization_linkage',
-          failureReason: 'organization_billing_not_found',
+          failureReason: 'billing_account_not_found',
           organizationId: normalized.organizationId,
           stripeCustomerId: normalized.stripeCustomerId,
           retryable: true,
@@ -928,7 +927,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
           eventId: normalized.eventId,
           eventType: normalized.eventType,
           failureStage: 'organization_linkage',
-          failureReason: 'organization_billing_not_found',
+          failureReason: 'billing_account_not_found',
           stripeCustomerId: normalized.stripeCustomerId,
           stripeSubscriptionId: normalized.stripeSubscriptionId,
           retryable: true,
@@ -1121,7 +1120,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
         eventId: normalized.eventId,
         eventType: normalized.eventType,
         failureStage: 'organization_linkage',
-        failureReason: 'organization_billing_not_found',
+        failureReason: 'billing_account_not_found',
         stripeCustomerId: normalized.stripeCustomerId,
         stripeSubscriptionId: normalized.stripeSubscriptionId,
         retryable: true,

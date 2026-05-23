@@ -1,5 +1,5 @@
 import type { BillingPaymentIssue, BillingSubscription } from '@repo/saas-billing-core';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, desc, eq } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
   ORGANIZATION_BILLING_PAST_DUE_GRACE_DAYS,
@@ -27,15 +27,6 @@ type ReserveAppBillingV2State = {
   account: Awaited<ReturnType<ReturnType<typeof createDrizzleBillingStore>['ensureAccount']>>;
   subscription: BillingSubscription;
   paymentIssue: BillingPaymentIssue;
-};
-
-type LegacyBillingCompatibilityRow = {
-  trialEndedAt: Date | null;
-  billingProfileReadiness: string;
-  billingProfileNextAction: string | null;
-  billingProfileCheckedAt: Date | null;
-  lastReconciledAt: Date | null;
-  lastReconciliationReason: string | null;
 };
 
 const normalizeSubscriptionStatus = (
@@ -181,30 +172,7 @@ const resolvePaymentIssueFields = ({
   } as const;
 };
 
-const readLegacyBillingCompatibilityRow = async ({
-  database,
-  organizationId,
-}: {
-  database: AuthRuntimeDatabase;
-  organizationId: string;
-}): Promise<LegacyBillingCompatibilityRow | null> => {
-  const rows = await database
-    .select({
-      trialEndedAt: dbSchema.organizationBilling.trialEndedAt,
-      billingProfileReadiness: dbSchema.organizationBilling.billingProfileReadiness,
-      billingProfileNextAction: dbSchema.organizationBilling.billingProfileNextAction,
-      billingProfileCheckedAt: dbSchema.organizationBilling.billingProfileCheckedAt,
-      lastReconciledAt: dbSchema.organizationBilling.lastReconciledAt,
-      lastReconciliationReason: dbSchema.organizationBilling.lastReconciliationReason,
-    })
-    .from(dbSchema.organizationBilling)
-    .where(eq(dbSchema.organizationBilling.organizationId, organizationId))
-    .limit(1);
-
-  return rows[0] ?? null;
-};
-
-const ensureReserveAppBillingV2State = async ({
+export const ensureReserveAppBillingV2State = async ({
   database,
   organizationId,
   now = new Date(),
@@ -264,18 +232,6 @@ const ensureReserveAppBillingV2State = async ({
     throw new Error('BILLING_PAYMENT_ISSUE_ENSURE_FAILED');
   }
 
-  await database
-    .insert(dbSchema.organizationBilling)
-    .values({
-      id: crypto.randomUUID(),
-      organizationId,
-      planCode: 'free',
-      subscriptionStatus: 'free',
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing();
-
   return {
     billingStore,
     account,
@@ -284,71 +240,11 @@ const ensureReserveAppBillingV2State = async ({
   };
 };
 
-const mirrorReserveAppBillingV2ToLegacyOrganizationBilling = async ({
-  database,
-  organizationId,
-  state,
-  trialEndedAt,
-  now,
-}: {
-  database: AuthRuntimeDatabase;
-  organizationId: string;
-  state: ReserveAppBillingV2State;
-  trialEndedAt?: Date | null;
-  now: Date;
-}) => {
-  const planCode = resolvePlanCode(state.subscription.planCode);
-  const subscriptionStatus = normalizeSubscriptionStatus(state.subscription.status);
-  const insertValues = {
-    id: crypto.randomUUID(),
-    organizationId,
-    planCode,
-    stripeCustomerId: state.account.providerCustomerId,
-    stripeSubscriptionId: state.subscription.providerSubscriptionId,
-    stripePriceId: state.subscription.priceCode,
-    billingInterval: resolveBillingInterval(state.subscription.interval),
-    subscriptionStatus,
-    cancelAtPeriodEnd: state.subscription.cancelAtPeriodEnd,
-    trialStartedAt: state.subscription.trialStart,
-    trialEndedAt: trialEndedAt ?? null,
-    currentPeriodStart: state.subscription.currentPeriodStart,
-    currentPeriodEnd: state.subscription.currentPeriodEnd,
-    paymentIssueStartedAt: currentPaymentIssueStartedAt(state.paymentIssue),
-    pastDueGraceEndsAt: currentPastDueGraceEndsAt(state.paymentIssue),
-    createdAt: now,
-    updatedAt: now,
-  };
-  const updateValues: Partial<typeof dbSchema.organizationBilling.$inferInsert> = {
-    planCode,
-    stripeCustomerId: state.account.providerCustomerId,
-    stripeSubscriptionId: state.subscription.providerSubscriptionId,
-    stripePriceId: state.subscription.priceCode,
-    billingInterval: resolveBillingInterval(state.subscription.interval),
-    subscriptionStatus,
-    cancelAtPeriodEnd: state.subscription.cancelAtPeriodEnd,
-    trialStartedAt: state.subscription.trialStart,
-    currentPeriodStart: state.subscription.currentPeriodStart,
-    currentPeriodEnd: state.subscription.currentPeriodEnd,
-    paymentIssueStartedAt: currentPaymentIssueStartedAt(state.paymentIssue),
-    pastDueGraceEndsAt: currentPastDueGraceEndsAt(state.paymentIssue),
-    updatedAt: now,
-  };
-  if (trialEndedAt !== undefined) {
-    updateValues.trialEndedAt = trialEndedAt;
-  }
-
-  await database.insert(dbSchema.organizationBilling).values(insertValues).onConflictDoUpdate({
-    target: dbSchema.organizationBilling.organizationId,
-    set: updateValues,
-  });
-};
-
 export const syncReserveAppBillingV2DerivedState = async ({
   database,
   env,
   organizationId,
   now = new Date(),
-  trialEndedAt,
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
@@ -383,14 +279,6 @@ export const syncReserveAppBillingV2DerivedState = async ({
       now,
     }),
   });
-  await mirrorReserveAppBillingV2ToLegacyOrganizationBilling({
-    database,
-    organizationId,
-    state,
-    trialEndedAt,
-    now,
-  });
-
   return {
     account: state.account,
     subscription: state.subscription,
@@ -542,6 +430,17 @@ export const upsertReserveAppBillingV2SubscriptionState = async ({
     explicitPastDueGraceEndsAt: pastDueGraceEndsAt,
     now,
   });
+  const resolvedTrialStart =
+    trialStartedAt ??
+    (subscriptionStatus === 'trialing'
+      ? (currentPeriodStart ?? state.subscription.trialStart ?? now)
+      : state.subscription.trialStart);
+  const resolvedTrialEnd =
+    subscriptionStatus === 'trialing'
+      ? (currentPeriodEnd ?? state.subscription.trialEnd)
+      : trialEndedAt !== undefined
+        ? trialEndedAt
+        : state.subscription.trialEnd;
   const subscription = await state.billingStore.upsertSubscription({
     billingAccountId: state.account.id,
     provider: 'stripe',
@@ -552,15 +451,8 @@ export const upsertReserveAppBillingV2SubscriptionState = async ({
     status: subscriptionStatus,
     currentPeriodStart,
     currentPeriodEnd,
-    trialStart:
-      trialStartedAt ??
-      (subscriptionStatus === 'trialing'
-        ? (currentPeriodStart ?? state.subscription.trialStart ?? now)
-        : state.subscription.trialStart),
-    trialEnd:
-      subscriptionStatus === 'trialing'
-        ? (currentPeriodEnd ?? state.subscription.trialEnd)
-        : state.subscription.trialEnd,
+    trialStart: resolvedTrialStart,
+    trialEnd: resolvedTrialEnd,
     cancelAtPeriodEnd,
   });
   const paymentIssueState = resolvePaymentIssueState({
@@ -765,11 +657,13 @@ export const hasReserveAppBillingV2StartedPremiumTrial = async ({
 
   const auditRows = await database
     .select({ count: count() })
-    .from(dbSchema.organizationBillingAuditEvent)
+    .from(dbSchema.billingAuditEvent)
+    .innerJoin(dbSchema.billingAccount, eq(dbSchema.billingAuditEvent.billingAccountId, dbSchema.billingAccount.id))
     .where(
       and(
-        eq(dbSchema.organizationBillingAuditEvent.organizationId, organizationId),
-        eq(dbSchema.organizationBillingAuditEvent.sourceKind, 'trial_start'),
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingAccount.subjectId, organizationId),
+        eq(dbSchema.billingAuditEvent.sourceKind, 'trial_start'),
       ),
     );
 
@@ -961,13 +855,27 @@ export const readReserveAppBillingV2Summary = async ({
     env,
     organizationId,
   });
-  const compatibility = await readLegacyBillingCompatibilityRow({ database, organizationId });
   const planCode = resolvePlanCode(projection.subscription.planCode);
   const subscriptionStatus = normalizeSubscriptionStatus(projection.subscription.status);
   const inferredTrialEndedAt =
     projection.subscription.trialStart && subscriptionStatus !== 'trialing'
       ? projection.subscription.trialEnd
       : null;
+  const latestReconciliationRows = await database
+    .select({
+      lastReconciledAt: dbSchema.billingSignal.createdAt,
+      lastReconciliationReason: dbSchema.billingSignal.sourceKind,
+    })
+    .from(dbSchema.billingSignal)
+    .where(
+      and(
+        eq(dbSchema.billingSignal.billingAccountId, projection.account.id),
+        eq(dbSchema.billingSignal.signalKind, 'reconciliation'),
+      ),
+    )
+    .orderBy(desc(dbSchema.billingSignal.sequenceNumber), desc(dbSchema.billingSignal.createdAt))
+    .limit(1);
+  const latestReconciliation = latestReconciliationRows[0] ?? null;
 
   return {
     planCode,
@@ -975,38 +883,18 @@ export const readReserveAppBillingV2Summary = async ({
     subscriptionStatus,
     cancelAtPeriodEnd: projection.subscription.cancelAtPeriodEnd,
     trialStartedAt: projection.subscription.trialStart,
-    trialEndedAt: compatibility?.trialEndedAt ?? inferredTrialEndedAt,
+    trialEndedAt: inferredTrialEndedAt,
     currentPeriodStart: projection.subscription.currentPeriodStart,
     currentPeriodEnd: projection.subscription.currentPeriodEnd,
     paymentIssueStartedAt: currentPaymentIssueStartedAt(projection.paymentIssue),
     pastDueGraceEndsAt: currentPastDueGraceEndsAt(projection.paymentIssue),
-    billingProfileReadiness: compatibility?.billingProfileReadiness ?? 'not_required',
-    billingProfileNextAction: compatibility?.billingProfileNextAction ?? null,
-    billingProfileCheckedAt: compatibility?.billingProfileCheckedAt ?? null,
-    lastReconciledAt: compatibility?.lastReconciledAt ?? null,
-    lastReconciliationReason: compatibility?.lastReconciliationReason ?? null,
+    billingProfileReadiness: 'not_required',
+    billingProfileNextAction: null,
+    billingProfileCheckedAt: null,
+    lastReconciledAt: latestReconciliation?.lastReconciledAt ?? null,
+    lastReconciliationReason: latestReconciliation?.lastReconciliationReason ?? null,
     stripeCustomerId: projection.account.providerCustomerId,
     stripeSubscriptionId: projection.subscription.providerSubscriptionId,
     stripePriceId: projection.subscription.priceCode,
   };
-};
-
-export const markReserveAppBillingV2Reconciled = async ({
-  database,
-  organizationId,
-  now,
-  reason,
-}: {
-  database: AuthRuntimeDatabase;
-  organizationId: string;
-  now: Date;
-  reason: string;
-}) => {
-  await database
-    .update(dbSchema.organizationBilling)
-    .set({
-      lastReconciledAt: now,
-      lastReconciliationReason: reason,
-    })
-    .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
 };

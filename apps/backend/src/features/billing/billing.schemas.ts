@@ -147,7 +147,7 @@ export const organizationBillingSummarySchema = z.object({
     .nullable(),
   paymentDocuments: z
     .object({
-      aggregateRoot: z.literal('organization_billing'),
+      aggregateRoot: z.literal('billing_account'),
       organizationId: z.string().min(1),
       provider: z.literal('stripe'),
       stripeCustomerId: z.string().nullable(),
@@ -408,7 +408,7 @@ export const internalPaymentIssueInspectionSchema = z.object({
 });
 
 export const internalBillingInspectionPaymentDocumentsSchema = z.object({
-  aggregateRoot: z.literal('organization_billing'),
+  aggregateRoot: z.literal('billing_account'),
   provider: z.literal('stripe'),
   ownerAccess: z.literal('owner_only'),
   persistenceStrategy: z.literal('provider_reference_only'),

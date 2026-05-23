@@ -1,7 +1,10 @@
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import * as dbSchema from '../../infra/db/schema.js';
-import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
+import {
+  ensureReserveAppBillingV2State,
+  readReserveAppBillingV2Summary,
+} from '../../infra/billing/reserve-app-billing-v2-source.js';
 import {
   resolveOrganizationBillingPaymentMethodStatus,
   type OrganizationBillingPaymentMethodStatus,
@@ -14,10 +17,6 @@ import {
   type OrganizationBillingEntitlementState,
   type OrganizationBillingPaidTier,
 } from './organization-billing-policy.js';
-import {
-  appendOrganizationBillingV2AuditEvent,
-  appendOrganizationBillingV2Signal,
-} from './organization-billing-v2-bridge.js';
 import type { StripeSubscriptionSummary } from '../../infra/payment/stripe.js';
 
 export type OrganizationBillingObservationSnapshot = {
@@ -103,6 +102,8 @@ type InternalBillingReconciliationWebhookFailureEntry = {
   createdAt: string | null;
 };
 
+type BillingSnapshotJson = Record<string, unknown>;
+
 export type InternalBillingReconciliationInspection = {
   status: InternalBillingReconciliationStatus;
   comparable: boolean;
@@ -156,6 +157,20 @@ const toIsoDateString = (value: unknown): string | null => {
   return candidate.toISOString();
 };
 
+const toSnapshotJson = (snapshot: BillingSnapshotJson) => JSON.stringify(snapshot);
+
+const parseSnapshotJson = (value: unknown): BillingSnapshotJson => {
+  if (typeof value !== 'string' || value.length === 0) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
 const normalizeSignalProviderPlanState = (value: unknown): OrganizationBillingPlanState | null => {
   return value === 'free' || value === 'premium_trial' || value === 'premium_paid' ? value : null;
 };
@@ -205,34 +220,34 @@ const normalizeSignalAppEntitlementState = (
 
 const selectNextBillingAuditSequenceNumber = async ({
   database,
-  organizationId,
+  billingAccountId,
 }: {
   database: AuthRuntimeDatabase;
-  organizationId: string;
+  billingAccountId: string;
 }) => {
   const rows = await database
     .select({
-      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.organizationBillingAuditEvent.sequenceNumber}), 0)`,
+      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.billingAuditEvent.sequenceNumber}), 0)`,
     })
-    .from(dbSchema.organizationBillingAuditEvent)
-    .where(eq(dbSchema.organizationBillingAuditEvent.organizationId, organizationId));
+    .from(dbSchema.billingAuditEvent)
+    .where(eq(dbSchema.billingAuditEvent.billingAccountId, billingAccountId));
 
   return Number(rows[0]?.maxSequenceNumber ?? 0) + 1;
 };
 
 const selectNextBillingSignalSequenceNumber = async ({
   database,
-  organizationId,
+  billingAccountId,
 }: {
   database: AuthRuntimeDatabase;
-  organizationId: string;
+  billingAccountId: string;
 }) => {
   const rows = await database
     .select({
-      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.organizationBillingSignal.sequenceNumber}), 0)`,
+      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.billingSignal.sequenceNumber}), 0)`,
     })
-    .from(dbSchema.organizationBillingSignal)
-    .where(eq(dbSchema.organizationBillingSignal.organizationId, organizationId));
+    .from(dbSchema.billingSignal)
+    .where(eq(dbSchema.billingSignal.billingAccountId, billingAccountId));
 
   return Number(rows[0]?.maxSequenceNumber ?? 0) + 1;
 };
@@ -341,42 +356,30 @@ export const appendOrganizationBillingAuditEvent = async ({
     return false;
   }
 
+  const state = await ensureReserveAppBillingV2State({
+    database,
+    organizationId,
+  });
   const sequenceNumber = await selectNextBillingAuditSequenceNumber({
     database,
-    organizationId,
+    billingAccountId: state.account.id,
   });
+  const providerCustomerId = nextSnapshot.stripeCustomerId ?? previousSnapshot.stripeCustomerId;
+  const providerSubscriptionId =
+    nextSnapshot.stripeSubscriptionId ?? previousSnapshot.stripeSubscriptionId;
 
-  await database.insert(dbSchema.organizationBillingAuditEvent).values({
+  await database.insert(dbSchema.billingAuditEvent).values({
     id: crypto.randomUUID(),
-    organizationId,
+    billingAccountId: state.account.id,
     sequenceNumber,
     sourceKind,
-    stripeEventId: stripeEventId ?? null,
-    stripeCustomerId: nextSnapshot.stripeCustomerId ?? previousSnapshot.stripeCustomerId,
-    stripeSubscriptionId:
-      nextSnapshot.stripeSubscriptionId ?? previousSnapshot.stripeSubscriptionId,
     sourceContext: sourceContext ?? null,
-    previousPlanCode: previousSnapshot.planCode,
-    nextPlanCode: nextSnapshot.planCode,
-    previousPlanState: previousSnapshot.planState,
-    nextPlanState: nextSnapshot.planState,
-    previousSubscriptionStatus: previousSnapshot.subscriptionStatus,
-    nextSubscriptionStatus: nextSnapshot.subscriptionStatus,
-    previousPaymentMethodStatus: previousSnapshot.paymentMethodStatus,
-    nextPaymentMethodStatus: nextSnapshot.paymentMethodStatus,
-    previousEntitlementState: previousSnapshot.entitlementState,
-    nextEntitlementState: nextSnapshot.entitlementState,
-    previousBillingInterval: previousSnapshot.billingInterval,
-    nextBillingInterval: nextSnapshot.billingInterval,
-  });
-  await appendOrganizationBillingV2AuditEvent({
-    database,
-    organizationId,
-    sourceKind,
-    previousSnapshot,
-    nextSnapshot,
-    stripeEventId,
-    sourceContext,
+    previousSnapshotJson: toSnapshotJson(previousSnapshot),
+    nextSnapshotJson: toSnapshotJson(nextSnapshot),
+    provider: providerCustomerId || providerSubscriptionId || stripeEventId ? 'stripe' : null,
+    providerEventId: stripeEventId ?? null,
+    providerCustomerId,
+    providerSubscriptionId,
   });
 
   return true;
@@ -410,42 +413,32 @@ export const appendOrganizationBillingSignal = async ({
   providerPlanState?: OrganizationBillingPlanState | null;
   providerSubscriptionStatus?: string | null;
 }) => {
-  const sequenceNumber = await selectNextBillingSignalSequenceNumber({
+  const state = await ensureReserveAppBillingV2State({
     database,
     organizationId,
   });
+  const sequenceNumber = await selectNextBillingSignalSequenceNumber({
+    database,
+    billingAccountId: state.account.id,
+  });
+  const providerCustomerId = stripeCustomerId ?? appSnapshot.stripeCustomerId;
+  const providerSubscriptionId = stripeSubscriptionId ?? appSnapshot.stripeSubscriptionId;
 
-  await database.insert(dbSchema.organizationBillingSignal).values({
+  await database.insert(dbSchema.billingSignal).values({
     id: crypto.randomUUID(),
-    organizationId,
+    billingAccountId: state.account.id,
     sequenceNumber,
     signalKind,
     signalStatus,
     sourceKind,
     reason,
-    stripeEventId: stripeEventId ?? null,
-    stripeCustomerId: stripeCustomerId ?? appSnapshot.stripeCustomerId,
-    stripeSubscriptionId: stripeSubscriptionId ?? appSnapshot.stripeSubscriptionId,
+    appSnapshotJson: toSnapshotJson(appSnapshot),
+    provider: providerCustomerId || providerSubscriptionId || stripeEventId ? 'stripe' : null,
+    providerEventId: stripeEventId ?? null,
+    providerCustomerId,
+    providerSubscriptionId,
     providerPlanState: providerPlanState ?? null,
     providerSubscriptionStatus: providerSubscriptionStatus ?? null,
-    appPlanState: appSnapshot.planState,
-    appSubscriptionStatus: appSnapshot.subscriptionStatus,
-    appPaymentMethodStatus: appSnapshot.paymentMethodStatus,
-    appEntitlementState: appSnapshot.entitlementState,
-  });
-  await appendOrganizationBillingV2Signal({
-    database,
-    organizationId,
-    signalKind,
-    signalStatus,
-    sourceKind,
-    reason,
-    appSnapshot,
-    stripeEventId,
-    stripeCustomerId,
-    stripeSubscriptionId,
-    providerPlanState,
-    providerSubscriptionStatus,
   });
 };
 
@@ -477,14 +470,18 @@ export const appendResolvedBillingSignalIfNeeded = async ({
   providerPlanState?: OrganizationBillingPlanState | null;
   providerSubscriptionStatus?: string | null;
 }) => {
+  const state = await ensureReserveAppBillingV2State({
+    database,
+    organizationId,
+  });
   const latestSignal = await database
     .select({
-      signalStatus: dbSchema.organizationBillingSignal.signalStatus,
-      signalKind: dbSchema.organizationBillingSignal.signalKind,
+      signalStatus: dbSchema.billingSignal.signalStatus,
+      signalKind: dbSchema.billingSignal.signalKind,
     })
-    .from(dbSchema.organizationBillingSignal)
-    .where(eq(dbSchema.organizationBillingSignal.organizationId, organizationId))
-    .orderBy(sql`${dbSchema.organizationBillingSignal.sequenceNumber} desc`)
+    .from(dbSchema.billingSignal)
+    .where(eq(dbSchema.billingSignal.billingAccountId, state.account.id))
+    .orderBy(desc(dbSchema.billingSignal.sequenceNumber), desc(dbSchema.billingSignal.createdAt))
     .limit(20);
 
   const latestSameKind = latestSignal.find(
@@ -596,27 +593,29 @@ export const readInternalBillingReconciliationInspection = async ({
   const [signalRows, webhookEventRows, webhookFailureRows] = await Promise.all([
     database
       .select({
-        sequenceNumber: dbSchema.organizationBillingSignal.sequenceNumber,
-        signalStatus: dbSchema.organizationBillingSignal.signalStatus,
-        sourceKind: dbSchema.organizationBillingSignal.sourceKind,
-        reason: dbSchema.organizationBillingSignal.reason,
-        stripeEventId: dbSchema.organizationBillingSignal.stripeEventId,
-        providerPlanState: dbSchema.organizationBillingSignal.providerPlanState,
-        providerSubscriptionStatus: dbSchema.organizationBillingSignal.providerSubscriptionStatus,
-        appPlanState: dbSchema.organizationBillingSignal.appPlanState,
-        appSubscriptionStatus: dbSchema.organizationBillingSignal.appSubscriptionStatus,
-        appPaymentMethodStatus: dbSchema.organizationBillingSignal.appPaymentMethodStatus,
-        appEntitlementState: dbSchema.organizationBillingSignal.appEntitlementState,
-        createdAt: dbSchema.organizationBillingSignal.createdAt,
+        sequenceNumber: dbSchema.billingSignal.sequenceNumber,
+        signalStatus: dbSchema.billingSignal.signalStatus,
+        sourceKind: dbSchema.billingSignal.sourceKind,
+        reason: dbSchema.billingSignal.reason,
+        stripeEventId: dbSchema.billingSignal.providerEventId,
+        providerPlanState: dbSchema.billingSignal.providerPlanState,
+        providerSubscriptionStatus: dbSchema.billingSignal.providerSubscriptionStatus,
+        appSnapshotJson: dbSchema.billingSignal.appSnapshotJson,
+        createdAt: dbSchema.billingSignal.createdAt,
       })
-      .from(dbSchema.organizationBillingSignal)
+      .from(dbSchema.billingSignal)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingSignal.billingAccountId, dbSchema.billingAccount.id),
+      )
       .where(
         and(
-          eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
-          eq(dbSchema.organizationBillingSignal.signalKind, 'reconciliation'),
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
+          eq(dbSchema.billingSignal.signalKind, 'reconciliation'),
         ),
       )
-      .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+      .orderBy(desc(dbSchema.billingSignal.sequenceNumber), desc(dbSchema.billingSignal.createdAt))
       .limit(5),
     database
       .select({
@@ -658,10 +657,7 @@ export const readInternalBillingReconciliationInspection = async ({
       .where(
         and(
           eq(dbSchema.stripeWebhookFailure.organizationId, organizationId),
-          or(
-            eq(dbSchema.stripeWebhookFailure.scope, 'billing'),
-            eq(dbSchema.stripeWebhookFailure.scope, 'organization_billing'),
-          ),
+          eq(dbSchema.stripeWebhookFailure.scope, 'billing'),
         ),
       )
       .orderBy(desc(dbSchema.stripeWebhookFailure.createdAt))
@@ -669,22 +665,29 @@ export const readInternalBillingReconciliationInspection = async ({
   ]);
 
   const recentSignals = signalRows.reverse().map(
-    (row: (typeof signalRows)[number]): InternalBillingReconciliationSignalEntry => ({
-      sequenceNumber: row.sequenceNumber,
-      signalStatus: row.signalStatus as OrganizationBillingSignalStatus,
-      sourceKind: row.sourceKind,
-      reason: row.reason,
-      stripeEventId: row.stripeEventId ?? null,
-      providerPlanState: normalizeSignalProviderPlanState(row.providerPlanState),
-      providerSubscriptionStatus: normalizeSignalProviderSubscriptionStatus(
-        row.providerSubscriptionStatus,
-      ),
-      appPlanState: normalizeSignalAppPlanState(row.appPlanState),
-      appSubscriptionStatus: normalizeSignalAppSubscriptionStatus(row.appSubscriptionStatus),
-      appPaymentMethodStatus: normalizeSignalAppPaymentMethodStatus(row.appPaymentMethodStatus),
-      appEntitlementState: normalizeSignalAppEntitlementState(row.appEntitlementState),
-      createdAt: toIsoDateString(row.createdAt),
-    }),
+    (row: (typeof signalRows)[number]): InternalBillingReconciliationSignalEntry => {
+      const appSnapshot = parseSnapshotJson(row.appSnapshotJson);
+      return {
+        sequenceNumber: row.sequenceNumber,
+        signalStatus: row.signalStatus as OrganizationBillingSignalStatus,
+        sourceKind: row.sourceKind,
+        reason: row.reason,
+        stripeEventId: row.stripeEventId ?? null,
+        providerPlanState: normalizeSignalProviderPlanState(row.providerPlanState),
+        providerSubscriptionStatus: normalizeSignalProviderSubscriptionStatus(
+          row.providerSubscriptionStatus,
+        ),
+        appPlanState: normalizeSignalAppPlanState(appSnapshot.planState),
+        appSubscriptionStatus: normalizeSignalAppSubscriptionStatus(
+          appSnapshot.subscriptionStatus,
+        ),
+        appPaymentMethodStatus: normalizeSignalAppPaymentMethodStatus(
+          appSnapshot.paymentMethodStatus,
+        ),
+        appEntitlementState: normalizeSignalAppEntitlementState(appSnapshot.entitlementState),
+        createdAt: toIsoDateString(row.createdAt),
+      };
+    },
   );
 
   const recentWebhookEvents = webhookEventRows.reverse().map(

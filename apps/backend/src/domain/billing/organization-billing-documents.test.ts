@@ -22,7 +22,7 @@ describe('organization billing document readiness', () => {
     });
 
     expect(invoice).toMatchObject({
-      aggregateRoot: 'organization_billing',
+      aggregateRoot: 'billing_account',
       documentKind: 'invoice',
       providerDocumentId: 'in_available',
       stripeCustomerId: 'cus_documents',
@@ -31,7 +31,7 @@ describe('organization billing document readiness', () => {
       ownerFacingStatus: 'available',
     });
     expect(receipt).toMatchObject({
-      aggregateRoot: 'organization_billing',
+      aggregateRoot: 'billing_account',
       documentKind: 'receipt',
       providerDocumentId: 'ch_available',
       stripeCustomerId: 'cus_documents',
@@ -55,7 +55,7 @@ describe('organization billing document readiness', () => {
         unavailableInvoice,
         missingReceipt,
         {
-          aggregateRoot: 'organization_billing',
+          aggregateRoot: 'billing_account',
           documentKind: 'invoice',
           documentConcepts: ['invoice', 'payment_document', 'provider_document'],
           provider: 'stripe',
@@ -72,7 +72,7 @@ describe('organization billing document readiness', () => {
     });
 
     expect(readiness).toMatchObject({
-      aggregateRoot: 'organization_billing',
+      aggregateRoot: 'billing_account',
       ownerAccess: 'owner_only',
       persistenceStrategy: 'provider_reference_only',
       documents: [

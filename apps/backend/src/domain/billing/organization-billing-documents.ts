@@ -12,7 +12,7 @@ export type OrganizationBillingDocumentAvailability =
 export type OrganizationBillingDocumentOwnerFacingStatus = 'available' | 'unavailable' | 'checking';
 
 export type OrganizationBillingProviderDocumentReference = {
-  aggregateRoot: 'organization_billing';
+  aggregateRoot: 'billing_account';
   documentKind: OrganizationBillingDocumentKind;
   documentConcepts: OrganizationBillingDocumentConcept[];
   provider: 'stripe';
@@ -27,7 +27,7 @@ export type OrganizationBillingProviderDocumentReference = {
 };
 
 export type OrganizationBillingDocumentReadiness = {
-  aggregateRoot: 'organization_billing';
+  aggregateRoot: 'billing_account';
   organizationId: string;
   provider: 'stripe';
   stripeCustomerId: string | null;
@@ -122,7 +122,7 @@ export const normalizeStripeInvoiceDocument = (
   });
 
   return {
-    aggregateRoot: 'organization_billing',
+    aggregateRoot: 'billing_account',
     documentKind: 'invoice',
     documentConcepts: ['invoice', 'payment_document', 'provider_document'],
     provider: 'stripe',
@@ -149,7 +149,7 @@ export const normalizeStripeChargeReceiptDocument = (
   });
 
   return {
-    aggregateRoot: 'organization_billing',
+    aggregateRoot: 'billing_account',
     documentKind: 'receipt',
     documentConcepts: ['receipt', 'payment_document', 'provider_document'],
     provider: 'stripe',
@@ -175,7 +175,7 @@ export const buildBillingDocumentReadiness = ({
   stripeSubscriptionId?: string | null;
   documents?: OrganizationBillingProviderDocumentReference[];
 }): OrganizationBillingDocumentReadiness => ({
-  aggregateRoot: 'organization_billing',
+  aggregateRoot: 'billing_account',
   organizationId,
   provider: 'stripe',
   stripeCustomerId: stripeCustomerId ?? null,
@@ -234,7 +234,7 @@ export const buildInternalBillingDocumentInspection = ({
   readiness: OrganizationBillingDocumentReadiness;
   diagnosticReason?: string | null;
 }) => ({
-  aggregateRoot: 'organization_billing' as const,
+  aggregateRoot: 'billing_account' as const,
   provider: 'stripe' as const,
   ownerAccess: readiness.ownerAccess,
   persistenceStrategy: readiness.persistenceStrategy,
@@ -245,20 +245,4 @@ export const buildInternalBillingDocumentInspection = ({
     ...document,
     providerDerived: true,
   })),
-});
-
-export const describeBillingDocumentCompatibilityStrategy = ({
-  hasOrganizationBillingRow,
-  persistedDocumentReferenceCount,
-}: {
-  hasOrganizationBillingRow: boolean;
-  persistedDocumentReferenceCount: number;
-}) => ({
-  legacyState:
-    hasOrganizationBillingRow && persistedDocumentReferenceCount === 0
-      ? 'valid_without_document_metadata'
-      : 'valid_with_provider_document_references',
-  mismatchState: 'not_a_billing_mismatch' as const,
-  persistencePreference: 'append_only_provider_reference_if_needed' as const,
-  sourceOfTruth: 'stripe_provider_pull_or_portal_handoff' as const,
 });

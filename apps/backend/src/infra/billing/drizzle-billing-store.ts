@@ -266,13 +266,17 @@ export const createDrizzleBillingStore = ({
             ),
           )
           .limit(1)
-      : await database
-          .select()
-          .from(dbSchema.billingSubscription)
-          .where(eq(dbSchema.billingSubscription.billingAccountId, input.billingAccountId))
-          .orderBy(desc(dbSchema.billingSubscription.updatedAt))
-          .limit(1);
-    const existing = existingRows[0] ? toSubscription(existingRows[0]) : null;
+      : [];
+    const currentAccountRows =
+      existingRows.length > 0
+        ? existingRows
+        : await database
+            .select()
+            .from(dbSchema.billingSubscription)
+            .where(eq(dbSchema.billingSubscription.billingAccountId, input.billingAccountId))
+            .orderBy(desc(dbSchema.billingSubscription.updatedAt))
+            .limit(1);
+    const existing = currentAccountRows[0] ? toSubscription(currentAccountRows[0]) : null;
 
     if (!existing) {
       const rows = await database

@@ -86,16 +86,27 @@ export const resolveBusinessFacts = async ({
   const canReadOwnerBillingSummary = access.facts.orgRole === 'owner';
   const billingRows = await database
     .select({
-      planCode: dbSchema.organizationBilling.planCode,
-      subscriptionStatus: dbSchema.organizationBilling.subscriptionStatus,
-      billingInterval: dbSchema.organizationBilling.billingInterval,
-      paymentIssueStartedAt: dbSchema.organizationBilling.paymentIssueStartedAt,
-      pastDueGraceEndsAt: dbSchema.organizationBilling.pastDueGraceEndsAt,
-      billingProfileReadiness: dbSchema.organizationBilling.billingProfileReadiness,
-      billingProfileNextAction: dbSchema.organizationBilling.billingProfileNextAction,
+      planCode: dbSchema.billingSubscription.planCode,
+      subscriptionStatus: dbSchema.billingSubscription.status,
+      billingInterval: dbSchema.billingSubscription.interval,
+      paymentIssueStartedAt: dbSchema.billingPaymentIssue.issueStartedAt,
+      pastDueGraceEndsAt: dbSchema.billingPaymentIssue.pastDueGraceEndsAt,
     })
-    .from(dbSchema.organizationBilling)
-    .where(eq(dbSchema.organizationBilling.organizationId, access.organizationId))
+    .from(dbSchema.billingAccount)
+    .leftJoin(
+      dbSchema.billingSubscription,
+      eq(dbSchema.billingSubscription.billingAccountId, dbSchema.billingAccount.id),
+    )
+    .leftJoin(
+      dbSchema.billingPaymentIssue,
+      eq(dbSchema.billingPaymentIssue.billingAccountId, dbSchema.billingAccount.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.billingAccount.subjectType, 'organization'),
+        eq(dbSchema.billingAccount.subjectId, access.organizationId),
+      ),
+    )
     .limit(1);
 
   const billing = billingRows[0] ?? null;
@@ -107,8 +118,8 @@ export const resolveBusinessFacts = async ({
       `課金間隔: ${billing.billingInterval ?? '未設定'}`,
       `支払い問題開始: ${billing.paymentIssueStartedAt ? billing.paymentIssueStartedAt.toISOString() : 'なし'}`,
       `支払い猶予終了: ${billing.pastDueGraceEndsAt ? billing.pastDueGraceEndsAt.toISOString() : 'なし'}`,
-      `請求プロフィール状態: ${billing.billingProfileReadiness}`,
-      `ownerの次アクション: ${billing.billingProfileNextAction ?? 'なし'}`,
+      `請求プロフィール状態: not_required`,
+      `ownerの次アクション: なし`,
     );
   } else if (billing) {
     factKeys.push('billing_summary_redacted');

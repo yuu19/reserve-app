@@ -84,6 +84,18 @@ const toIsoDateString = (value: unknown): string | null => {
   return candidate.toISOString();
 };
 
+const parseSnapshotJson = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== 'string' || value.length === 0) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
 const formatJaDateTime = (value: string | null) => {
   if (!value) {
     return null;
@@ -521,8 +533,6 @@ const buildReconciliationEntry = (row: {
   } satisfies SortableOwnerBillingHistoryEntry;
 };
 
-type OwnerBillingReconciliationHistoryRow = Parameters<typeof buildReconciliationEntry>[0];
-
 const buildInvoicePaymentHistoryEntry = (
   event: OrganizationBillingInvoicePaymentEvent,
   index: number,
@@ -634,54 +644,70 @@ export const readOrganizationOwnerBillingHistory = async ({
     await Promise.all([
       database
         .select({
-          sequenceNumber: dbSchema.organizationBillingAuditEvent.sequenceNumber,
-          sourceKind: dbSchema.organizationBillingAuditEvent.sourceKind,
-          previousPlanState: dbSchema.organizationBillingAuditEvent.previousPlanState,
-          nextPlanState: dbSchema.organizationBillingAuditEvent.nextPlanState,
-          previousSubscriptionStatus:
-            dbSchema.organizationBillingAuditEvent.previousSubscriptionStatus,
-          nextSubscriptionStatus: dbSchema.organizationBillingAuditEvent.nextSubscriptionStatus,
-          nextPaymentMethodStatus: dbSchema.organizationBillingAuditEvent.nextPaymentMethodStatus,
-          nextBillingInterval: dbSchema.organizationBillingAuditEvent.nextBillingInterval,
-          createdAt: dbSchema.organizationBillingAuditEvent.createdAt,
+          sequenceNumber: dbSchema.billingAuditEvent.sequenceNumber,
+          sourceKind: dbSchema.billingAuditEvent.sourceKind,
+          previousSnapshotJson: dbSchema.billingAuditEvent.previousSnapshotJson,
+          nextSnapshotJson: dbSchema.billingAuditEvent.nextSnapshotJson,
+          createdAt: dbSchema.billingAuditEvent.createdAt,
         })
-        .from(dbSchema.organizationBillingAuditEvent)
-        .where(eq(dbSchema.organizationBillingAuditEvent.organizationId, organizationId))
-        .orderBy(desc(dbSchema.organizationBillingAuditEvent.sequenceNumber))
-        .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
-      database
-        .select({
-          sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
-          notificationKind: dbSchema.organizationBillingNotification.notificationKind,
-          channel: dbSchema.organizationBillingNotification.channel,
-          deliveryState: dbSchema.organizationBillingNotification.deliveryState,
-          planState: dbSchema.organizationBillingNotification.planState,
-          subscriptionStatus: dbSchema.organizationBillingNotification.subscriptionStatus,
-          paymentMethodStatus: dbSchema.organizationBillingNotification.paymentMethodStatus,
-          trialEndsAt: dbSchema.organizationBillingNotification.trialEndsAt,
-          createdAt: dbSchema.organizationBillingNotification.createdAt,
-        })
-        .from(dbSchema.organizationBillingNotification)
-        .where(eq(dbSchema.organizationBillingNotification.organizationId, organizationId))
-        .orderBy(desc(dbSchema.organizationBillingNotification.sequenceNumber))
-        .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
-      database
-        .select({
-          sequenceNumber: dbSchema.organizationBillingSignal.sequenceNumber,
-          signalStatus: dbSchema.organizationBillingSignal.signalStatus,
-          appPlanState: dbSchema.organizationBillingSignal.appPlanState,
-          appSubscriptionStatus: dbSchema.organizationBillingSignal.appSubscriptionStatus,
-          appPaymentMethodStatus: dbSchema.organizationBillingSignal.appPaymentMethodStatus,
-          createdAt: dbSchema.organizationBillingSignal.createdAt,
-        })
-        .from(dbSchema.organizationBillingSignal)
+        .from(dbSchema.billingAuditEvent)
+        .innerJoin(
+          dbSchema.billingAccount,
+          eq(dbSchema.billingAuditEvent.billingAccountId, dbSchema.billingAccount.id),
+        )
         .where(
           and(
-            eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
-            eq(dbSchema.organizationBillingSignal.signalKind, 'reconciliation'),
+            eq(dbSchema.billingAccount.subjectType, 'organization'),
+            eq(dbSchema.billingAccount.subjectId, organizationId),
           ),
         )
-        .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+        .orderBy(desc(dbSchema.billingAuditEvent.sequenceNumber))
+        .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
+      database
+        .select({
+          sequenceNumber: dbSchema.billingNotification.sequenceNumber,
+          notificationKind: dbSchema.billingNotification.notificationKind,
+          channel: dbSchema.billingNotification.channel,
+          deliveryState: dbSchema.billingNotification.deliveryStatus,
+          planState: dbSchema.billingNotification.planState,
+          subscriptionStatus: dbSchema.billingNotification.subscriptionStatus,
+          paymentMethodStatus: dbSchema.billingNotification.paymentMethodStatus,
+          trialEndsAt: dbSchema.billingNotification.trialEndsAt,
+          createdAt: dbSchema.billingNotification.createdAt,
+        })
+        .from(dbSchema.billingNotification)
+        .innerJoin(
+          dbSchema.billingAccount,
+          eq(dbSchema.billingNotification.billingAccountId, dbSchema.billingAccount.id),
+        )
+        .where(
+          and(
+            eq(dbSchema.billingAccount.subjectType, 'organization'),
+            eq(dbSchema.billingAccount.subjectId, organizationId),
+          ),
+        )
+        .orderBy(desc(dbSchema.billingNotification.sequenceNumber))
+        .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
+      database
+        .select({
+          sequenceNumber: dbSchema.billingSignal.sequenceNumber,
+          signalStatus: dbSchema.billingSignal.signalStatus,
+          appSnapshotJson: dbSchema.billingSignal.appSnapshotJson,
+          createdAt: dbSchema.billingSignal.createdAt,
+        })
+        .from(dbSchema.billingSignal)
+        .innerJoin(
+          dbSchema.billingAccount,
+          eq(dbSchema.billingSignal.billingAccountId, dbSchema.billingAccount.id),
+        )
+        .where(
+          and(
+            eq(dbSchema.billingAccount.subjectType, 'organization'),
+            eq(dbSchema.billingAccount.subjectId, organizationId),
+            eq(dbSchema.billingSignal.signalKind, 'reconciliation'),
+          ),
+        )
+        .orderBy(desc(dbSchema.billingSignal.sequenceNumber))
         .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
       readOrganizationBillingInvoicePaymentEvents({
         database,
@@ -691,7 +717,21 @@ export const readOrganizationOwnerBillingHistory = async ({
     ]);
 
   const entries = [
-    ...auditRows.map(buildPlanTransitionEntry),
+    ...auditRows.map((row: (typeof auditRows)[number]) => {
+      const previousSnapshot = parseSnapshotJson(row.previousSnapshotJson);
+      const nextSnapshot = parseSnapshotJson(row.nextSnapshotJson);
+      return buildPlanTransitionEntry({
+        sequenceNumber: row.sequenceNumber,
+        sourceKind: row.sourceKind,
+        previousPlanState: previousSnapshot.planState,
+        nextPlanState: nextSnapshot.planState,
+        previousSubscriptionStatus: previousSnapshot.subscriptionStatus,
+        nextSubscriptionStatus: nextSnapshot.subscriptionStatus,
+        nextPaymentMethodStatus: nextSnapshot.paymentMethodStatus,
+        nextBillingInterval: nextSnapshot.billingInterval,
+        createdAt: row.createdAt,
+      });
+    }),
     ...notificationRows
       .filter(
         (row: { deliveryState: unknown }) =>
@@ -722,15 +762,18 @@ export const readOrganizationOwnerBillingHistory = async ({
           row.signalStatus === 'unavailable' ||
           row.signalStatus === 'resolved',
       )
-      .map((row: OwnerBillingReconciliationHistoryRow) =>
-        buildReconciliationEntry({
-          sequenceNumber: row.sequenceNumber,
-          signalStatus: row.signalStatus,
-          appPlanState: row.appPlanState,
-          appSubscriptionStatus: row.appSubscriptionStatus,
-          appPaymentMethodStatus: row.appPaymentMethodStatus,
-          createdAt: row.createdAt,
-        }),
+      .map((row: (typeof reconciliationSignalRows)[number]) =>
+        {
+          const appSnapshot = parseSnapshotJson(row.appSnapshotJson);
+          return buildReconciliationEntry({
+            sequenceNumber: row.sequenceNumber,
+            signalStatus: row.signalStatus,
+            appPlanState: appSnapshot.planState,
+            appSubscriptionStatus: appSnapshot.subscriptionStatus,
+            appPaymentMethodStatus: appSnapshot.paymentMethodStatus,
+            createdAt: row.createdAt,
+          });
+        },
       ),
     ...invoicePaymentEvents.map((event: OrganizationBillingInvoicePaymentEvent, index: number) =>
       buildInvoicePaymentHistoryEntry(event, index, invoicePaymentEvents),

@@ -1,7 +1,3 @@
-import { eq } from 'drizzle-orm';
-import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
-import * as dbSchema from '../../infra/db/schema.js';
-
 export type OrganizationBillingProfileReadinessState =
   | 'complete'
   | 'incomplete'
@@ -57,30 +53,6 @@ export const buildBillingProfileReadiness = ({
   gatesCheckout: false,
   gatesPremiumEligibility: false,
 });
-
-export const updateBillingProfileReadiness = async ({
-  database,
-  organizationId,
-  state,
-  nextAction = null,
-  checkedAt = new Date(),
-}: {
-  database: AuthRuntimeDatabase;
-  organizationId: string;
-  state: OrganizationBillingProfileReadinessState;
-  nextAction?: string | null;
-  checkedAt?: Date | null;
-}) => {
-  await database
-    .update(dbSchema.organizationBilling)
-    .set({
-      billingProfileReadiness: state,
-      billingProfileNextAction: nextAction,
-      billingProfileCheckedAt: checkedAt,
-      updatedAt: new Date(),
-    })
-    .where(eq(dbSchema.organizationBilling.organizationId, organizationId));
-};
 
 export const resolveBillingProfileSupportSignalReason = (
   readiness: OrganizationBillingProfileReadiness,

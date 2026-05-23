@@ -213,6 +213,8 @@ export const billingPaymentIssueEvent = sqliteTable(
     providerEventId: text('provider_event_id'),
     providerInvoiceId: text('provider_invoice_id'),
     providerPaymentIntentId: text('provider_payment_intent_id'),
+    providerStatus: text('provider_status'),
+    ownerFacingStatus: text('owner_facing_status'),
     occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }),
     createdAt: defaultTimestampMs(),
   },
@@ -340,6 +342,7 @@ export const billingAuditEvent = sqliteTable(
     billingAccountId: text('billing_account_id')
       .notNull()
       .references(() => billingAccount.id, { onDelete: 'cascade' }),
+    sequenceNumber: integer('sequence_number').notNull(),
     sourceKind: text('source_kind').notNull(),
     sourceContext: text('source_context'),
     actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
@@ -353,6 +356,10 @@ export const billingAuditEvent = sqliteTable(
   },
   (table) => [
     index('billing_audit_event_account_created_idx').on(table.billingAccountId, table.createdAt),
+    index('billing_audit_event_account_sequence_idx').on(
+      table.billingAccountId,
+      table.sequenceNumber,
+    ),
   ],
 );
 
@@ -363,6 +370,7 @@ export const billingSignal = sqliteTable(
     billingAccountId: text('billing_account_id')
       .notNull()
       .references(() => billingAccount.id, { onDelete: 'cascade' }),
+    sequenceNumber: integer('sequence_number').notNull(),
     signalKind: text('signal_kind').notNull(),
     signalStatus: text('signal_status').notNull(),
     sourceKind: text('source_kind').notNull(),
@@ -382,6 +390,7 @@ export const billingSignal = sqliteTable(
       table.signalKind,
       table.signalStatus,
     ),
+    index('billing_signal_account_sequence_idx').on(table.billingAccountId, table.sequenceNumber),
   ],
 );
 
@@ -393,26 +402,39 @@ export const billingNotification = sqliteTable(
       .notNull()
       .references(() => billingAccount.id, { onDelete: 'cascade' }),
     notificationKind: text('notification_kind').notNull(),
+    channel: text('channel').default('email').notNull(),
+    sequenceNumber: integer('sequence_number').notNull(),
     recipientUserId: text('recipient_user_id').references(() => user.id, {
       onDelete: 'set null',
     }),
     recipientEmail: text('recipient_email').notNull(),
     deliveryStatus: text('delivery_status').notNull(),
+    attemptNumber: integer('attempt_number').default(1).notNull(),
     providerMessageId: text('provider_message_id'),
     failureReason: text('failure_reason'),
     provider: text('provider'),
     providerEventId: text('provider_event_id'),
+    providerCustomerId: text('provider_customer_id'),
+    providerSubscriptionId: text('provider_subscription_id'),
     providerInvoiceId: text('provider_invoice_id'),
+    planState: text('plan_state'),
+    subscriptionStatus: text('subscription_status'),
+    paymentMethodStatus: text('payment_method_status'),
+    trialEndsAt: integer('trial_ends_at', { mode: 'timestamp_ms' }),
     createdAt: defaultTimestampMs(),
     sentAt: integer('sent_at', { mode: 'timestamp_ms' }),
     failedAt: integer('failed_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
-    uniqueIndex('billing_notification_dedupe_uidx').on(
+    index('billing_notification_dedupe_idx').on(
       table.billingAccountId,
       table.notificationKind,
       table.recipientEmail,
       table.providerEventId,
+    ),
+    index('billing_notification_account_sequence_idx').on(
+      table.billingAccountId,
+      table.sequenceNumber,
     ),
     index('billing_notification_retry_idx').on(table.notificationKind, table.deliveryStatus),
   ],
@@ -428,6 +450,8 @@ export const billingDocumentReference = sqliteTable(
     documentKind: text('document_kind').notNull(),
     provider: text('provider').notNull(),
     providerDocumentId: text('provider_document_id').notNull(),
+    providerCustomerId: text('provider_customer_id'),
+    providerSubscriptionId: text('provider_subscription_id'),
     hostedInvoiceUrl: text('hosted_invoice_url'),
     invoicePdfUrl: text('invoice_pdf_url'),
     receiptUrl: text('receipt_url'),
@@ -444,48 +468,6 @@ export const billingDocumentReference = sqliteTable(
       table.documentKind,
     ),
     index('billing_document_reference_account_idx').on(table.billingAccountId),
-  ],
-);
-
-export const organizationBilling = sqliteTable(
-  'organization_billing',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    planCode: text('plan_code').default('free').notNull(),
-    stripeCustomerId: text('stripe_customer_id'),
-    stripeSubscriptionId: text('stripe_subscription_id'),
-    stripePriceId: text('stripe_price_id'),
-    billingInterval: text('billing_interval'),
-    subscriptionStatus: text('subscription_status').default('free').notNull(),
-    cancelAtPeriodEnd: integer('cancel_at_period_end', { mode: 'boolean' })
-      .default(false)
-      .notNull(),
-    trialStartedAt: integer('trial_started_at', { mode: 'timestamp_ms' }),
-    trialEndedAt: integer('trial_ended_at', { mode: 'timestamp_ms' }),
-    currentPeriodStart: integer('current_period_start', { mode: 'timestamp_ms' }),
-    currentPeriodEnd: integer('current_period_end', { mode: 'timestamp_ms' }),
-    paymentIssueStartedAt: integer('payment_issue_started_at', { mode: 'timestamp_ms' }),
-    pastDueGraceEndsAt: integer('past_due_grace_ends_at', { mode: 'timestamp_ms' }),
-    billingProfileReadiness: text('billing_profile_readiness').default('not_required').notNull(),
-    billingProfileNextAction: text('billing_profile_next_action'),
-    billingProfileCheckedAt: integer('billing_profile_checked_at', { mode: 'timestamp_ms' }),
-    lastReconciledAt: integer('last_reconciled_at', { mode: 'timestamp_ms' }),
-    lastReconciliationReason: text('last_reconciliation_reason'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex('organization_billing_organization_uidx').on(table.organizationId),
-    uniqueIndex('organization_billing_stripe_customer_uidx').on(table.stripeCustomerId),
-    uniqueIndex('organization_billing_stripe_subscription_uidx').on(table.stripeSubscriptionId),
   ],
 );
 
@@ -546,236 +528,6 @@ export const stripeWebhookFailure = sqliteTable(
     index('stripe_webhook_failure_event_idx').on(table.eventId),
     index('stripe_webhook_failure_scope_idx').on(table.scope),
     index('stripe_webhook_failure_organization_idx').on(table.organizationId),
-  ],
-);
-
-export const organizationBillingOperationAttempt = sqliteTable(
-  'organization_billing_operation_attempt',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    purpose: text('purpose').notNull(),
-    billingInterval: text('billing_interval'),
-    state: text('state').default('processing').notNull(),
-    handoffUrl: text('handoff_url'),
-    handoffExpiresAt: integer('handoff_expires_at', { mode: 'timestamp_ms' }),
-    provider: text('provider').default('stripe').notNull(),
-    stripeCustomerId: text('stripe_customer_id'),
-    stripeSubscriptionId: text('stripe_subscription_id'),
-    stripeCheckoutSessionId: text('stripe_checkout_session_id'),
-    stripePortalSessionId: text('stripe_portal_session_id'),
-    reuseKey: text('reuse_key'),
-    idempotencyKey: text('idempotency_key').notNull(),
-    failureReason: text('failure_reason'),
-    createdByUserId: text('created_by_user_id').references(() => user.id, {
-      onDelete: 'set null',
-    }),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    index('organization_billing_operation_attempt_org_idx').on(
-      table.organizationId,
-      table.purpose,
-      table.billingInterval,
-      table.state,
-    ),
-    index('organization_billing_operation_attempt_handoff_idx').on(
-      table.organizationId,
-      table.purpose,
-      table.handoffExpiresAt,
-    ),
-    index('organization_billing_operation_attempt_reuse_key_idx').on(
-      table.organizationId,
-      table.reuseKey,
-      table.state,
-      table.createdAt,
-    ),
-    uniqueIndex('organization_billing_operation_attempt_idempotency_uidx').on(table.idempotencyKey),
-  ],
-);
-
-export const organizationBillingInvoiceEvent = sqliteTable(
-  'organization_billing_invoice_event',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    stripeEventId: text('stripe_event_id'),
-    eventType: text('event_type').notNull(),
-    stripeCustomerId: text('stripe_customer_id'),
-    stripeSubscriptionId: text('stripe_subscription_id'),
-    stripeInvoiceId: text('stripe_invoice_id'),
-    stripePaymentIntentId: text('stripe_payment_intent_id'),
-    providerStatus: text('provider_status'),
-    ownerFacingStatus: text('owner_facing_status').notNull(),
-    occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-  },
-  (table) => [
-    index('organization_billing_invoice_event_org_idx').on(table.organizationId, table.createdAt),
-    uniqueIndex('organization_billing_invoice_event_provider_uidx').on(
-      table.stripeEventId,
-      table.eventType,
-    ),
-  ],
-);
-
-export const organizationBillingDocumentReference = sqliteTable(
-  'organization_billing_document_reference',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    invoiceEventId: text('invoice_event_id').references(() => organizationBillingInvoiceEvent.id, {
-      onDelete: 'set null',
-    }),
-    documentKind: text('document_kind').notNull(),
-    providerDocumentId: text('provider_document_id').notNull(),
-    hostedInvoiceUrl: text('hosted_invoice_url'),
-    invoicePdfUrl: text('invoice_pdf_url'),
-    receiptUrl: text('receipt_url'),
-    availability: text('availability').notNull(),
-    ownerFacingStatus: text('owner_facing_status').notNull(),
-    providerDerived: integer('provider_derived', { mode: 'boolean' }).default(true).notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    index('organization_billing_document_reference_org_idx').on(
-      table.organizationId,
-      table.documentKind,
-      table.availability,
-    ),
-    uniqueIndex('organization_billing_document_reference_provider_uidx').on(
-      table.organizationId,
-      table.documentKind,
-      table.providerDocumentId,
-    ),
-  ],
-);
-
-export const organizationBillingNotification = sqliteTable(
-  'organization_billing_notification',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    recipientUserId: text('recipient_user_id').references(() => user.id, {
-      onDelete: 'set null',
-    }),
-    notificationKind: text('notification_kind').notNull(),
-    channel: text('channel').notNull(),
-    sequenceNumber: integer('sequence_number').notNull(),
-    deliveryState: text('delivery_state').notNull(),
-    attemptNumber: integer('attempt_number').notNull(),
-    stripeEventId: text('stripe_event_id'),
-    stripeCustomerId: text('stripe_customer_id'),
-    stripeSubscriptionId: text('stripe_subscription_id'),
-    recipientEmail: text('recipient_email'),
-    planState: text('plan_state').notNull(),
-    subscriptionStatus: text('subscription_status').notNull(),
-    paymentMethodStatus: text('payment_method_status').notNull(),
-    trialEndsAt: integer('trial_ends_at', { mode: 'timestamp_ms' }),
-    failureReason: text('failure_reason'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-  },
-  (table) => [
-    index('organization_billing_notification_org_idx').on(
-      table.organizationId,
-      table.sequenceNumber,
-    ),
-    index('organization_billing_notification_event_idx').on(table.stripeEventId),
-    index('organization_billing_notification_recipient_idx').on(table.recipientUserId),
-  ],
-);
-
-export const organizationBillingAuditEvent = sqliteTable(
-  'organization_billing_audit_event',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    sequenceNumber: integer('sequence_number').notNull(),
-    sourceKind: text('source_kind').notNull(),
-    stripeEventId: text('stripe_event_id'),
-    stripeCustomerId: text('stripe_customer_id'),
-    stripeSubscriptionId: text('stripe_subscription_id'),
-    sourceContext: text('source_context'),
-    previousPlanCode: text('previous_plan_code').notNull(),
-    nextPlanCode: text('next_plan_code').notNull(),
-    previousPlanState: text('previous_plan_state').notNull(),
-    nextPlanState: text('next_plan_state').notNull(),
-    previousSubscriptionStatus: text('previous_subscription_status').notNull(),
-    nextSubscriptionStatus: text('next_subscription_status').notNull(),
-    previousPaymentMethodStatus: text('previous_payment_method_status').notNull(),
-    nextPaymentMethodStatus: text('next_payment_method_status').notNull(),
-    previousEntitlementState: text('previous_entitlement_state').notNull(),
-    nextEntitlementState: text('next_entitlement_state').notNull(),
-    previousBillingInterval: text('previous_billing_interval'),
-    nextBillingInterval: text('next_billing_interval'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-  },
-  (table) => [
-    index('organization_billing_audit_event_org_idx').on(
-      table.organizationId,
-      table.sequenceNumber,
-    ),
-    index('organization_billing_audit_event_event_idx').on(table.stripeEventId),
-  ],
-);
-
-export const organizationBillingSignal = sqliteTable(
-  'organization_billing_signal',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    sequenceNumber: integer('sequence_number').notNull(),
-    signalKind: text('signal_kind').notNull(),
-    signalStatus: text('signal_status').notNull(),
-    sourceKind: text('source_kind').notNull(),
-    reason: text('reason').notNull(),
-    stripeEventId: text('stripe_event_id'),
-    stripeCustomerId: text('stripe_customer_id'),
-    stripeSubscriptionId: text('stripe_subscription_id'),
-    providerPlanState: text('provider_plan_state'),
-    providerSubscriptionStatus: text('provider_subscription_status'),
-    appPlanState: text('app_plan_state').notNull(),
-    appSubscriptionStatus: text('app_subscription_status').notNull(),
-    appPaymentMethodStatus: text('app_payment_method_status').notNull(),
-    appEntitlementState: text('app_entitlement_state').notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-  },
-  (table) => [
-    index('organization_billing_signal_org_idx').on(table.organizationId, table.sequenceNumber),
-    index('organization_billing_signal_event_idx').on(table.stripeEventId),
-    index('organization_billing_signal_kind_idx').on(table.signalKind, table.signalStatus),
   ],
 );
 
@@ -1711,7 +1463,6 @@ export const aiFeedbackRelations = relations(aiFeedback, ({ one }) => ({
 
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
-  billingRecords: many(organizationBilling),
   classrooms: many(classroom),
   participants: many(participant),
   services: many(service),
@@ -1726,59 +1477,10 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   bookingAuditLogs: many(bookingAuditLog),
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
-  billingOperationAttempts: many(organizationBillingOperationAttempt),
-  billingInvoiceEvents: many(organizationBillingInvoiceEvent),
-  billingDocumentReferences: many(organizationBillingDocumentReference),
   aiKnowledgeDocuments: many(aiKnowledgeDocument),
   aiKnowledgeChunks: many(aiKnowledgeChunk),
   aiConversations: many(aiConversation),
 }));
-
-export const organizationBillingRelations = relations(organizationBilling, ({ one }) => ({
-  organization: one(organization, {
-    fields: [organizationBilling.organizationId],
-    references: [organization.id],
-  }),
-}));
-
-export const organizationBillingOperationAttemptRelations = relations(
-  organizationBillingOperationAttempt,
-  ({ one }) => ({
-    organization: one(organization, {
-      fields: [organizationBillingOperationAttempt.organizationId],
-      references: [organization.id],
-    }),
-    createdByUser: one(user, {
-      fields: [organizationBillingOperationAttempt.createdByUserId],
-      references: [user.id],
-    }),
-  }),
-);
-
-export const organizationBillingInvoiceEventRelations = relations(
-  organizationBillingInvoiceEvent,
-  ({ one, many }) => ({
-    organization: one(organization, {
-      fields: [organizationBillingInvoiceEvent.organizationId],
-      references: [organization.id],
-    }),
-    documentReferences: many(organizationBillingDocumentReference),
-  }),
-);
-
-export const organizationBillingDocumentReferenceRelations = relations(
-  organizationBillingDocumentReference,
-  ({ one }) => ({
-    organization: one(organization, {
-      fields: [organizationBillingDocumentReference.organizationId],
-      references: [organization.id],
-    }),
-    invoiceEvent: one(organizationBillingInvoiceEvent, {
-      fields: [organizationBillingDocumentReference.invoiceEventId],
-      references: [organizationBillingInvoiceEvent.id],
-    }),
-  }),
-);
 
 export const classroomRelations = relations(classroom, ({ one, many }) => ({
   organization: one(organization, {

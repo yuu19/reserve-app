@@ -44,7 +44,7 @@ const invoicePaymentEvent = {
 } as const;
 
 const documentReference = {
-  aggregateRoot: 'organization_billing',
+  aggregateRoot: 'billing_account',
   documentKind: 'invoice',
   documentConcepts: ['invoice', 'payment_document', 'provider_document'],
   provider: 'stripe',
@@ -104,7 +104,7 @@ describe('billing presenter', () => {
 
     expect(result.history).toHaveLength(1);
     expect(result.paymentDocuments).toMatchObject({
-      aggregateRoot: 'organization_billing',
+      aggregateRoot: 'billing_account',
       organizationId: 'organization-1',
       ownerAccess: 'owner_only',
       documents: [

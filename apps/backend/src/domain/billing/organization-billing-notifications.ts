@@ -1,6 +1,9 @@
 import { and, count, desc, eq, or, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
-import { readReserveAppBillingV2Summary } from '../../infra/billing/reserve-app-billing-v2-source.js';
+import {
+  ensureReserveAppBillingV2State,
+  readReserveAppBillingV2Summary,
+} from '../../infra/billing/reserve-app-billing-v2-source.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import {
   resolveOrganizationBillingPaymentMethodStatus,
@@ -18,7 +21,6 @@ import {
   appendResolvedBillingSignalIfNeeded,
   readOrganizationBillingObservationSnapshot,
 } from './organization-billing-observability.js';
-import { upsertOrganizationBillingV2Notification } from './organization-billing-v2-bridge.js';
 
 export type OrganizationBillingNotificationKind =
   | 'trial_will_end_email'
@@ -454,19 +456,23 @@ const selectNextOrganizationBillingNotificationAttempt = async ({
   stripeEventId: string;
   notificationKind?: OrganizationBillingNotificationKind;
 }) => {
+  const state = await ensureReserveAppBillingV2State({
+    database,
+    organizationId,
+  });
   const rows = await database
     .select({
       count: count(),
     })
-    .from(dbSchema.organizationBillingNotification)
+    .from(dbSchema.billingNotification)
     .where(
       and(
-        eq(dbSchema.organizationBillingNotification.organizationId, organizationId),
-        eq(dbSchema.organizationBillingNotification.notificationKind, notificationKind),
-        eq(dbSchema.organizationBillingNotification.stripeEventId, stripeEventId),
+        eq(dbSchema.billingNotification.billingAccountId, state.account.id),
+        eq(dbSchema.billingNotification.notificationKind, notificationKind),
+        eq(dbSchema.billingNotification.providerEventId, stripeEventId),
         or(
-          eq(dbSchema.organizationBillingNotification.deliveryState, 'requested'),
-          eq(dbSchema.organizationBillingNotification.deliveryState, 'retried'),
+          eq(dbSchema.billingNotification.deliveryStatus, 'requested'),
+          eq(dbSchema.billingNotification.deliveryStatus, 'retried'),
         ),
       ),
     );
@@ -485,23 +491,27 @@ const selectPaymentIssueNotificationRecipientAttempts = async ({
   stripeEventId: string;
   notificationKind: OrganizationBillingNotificationKind;
 }) => {
+  const state = await ensureReserveAppBillingV2State({
+    database,
+    organizationId,
+  });
   return database
     .select({
-      sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
-      recipientUserId: dbSchema.organizationBillingNotification.recipientUserId,
-      recipientEmail: dbSchema.organizationBillingNotification.recipientEmail,
-      deliveryState: dbSchema.organizationBillingNotification.deliveryState,
-      attemptNumber: dbSchema.organizationBillingNotification.attemptNumber,
+      sequenceNumber: dbSchema.billingNotification.sequenceNumber,
+      recipientUserId: dbSchema.billingNotification.recipientUserId,
+      recipientEmail: dbSchema.billingNotification.recipientEmail,
+      deliveryState: dbSchema.billingNotification.deliveryStatus,
+      attemptNumber: dbSchema.billingNotification.attemptNumber,
     })
-    .from(dbSchema.organizationBillingNotification)
+    .from(dbSchema.billingNotification)
     .where(
       and(
-        eq(dbSchema.organizationBillingNotification.organizationId, organizationId),
-        eq(dbSchema.organizationBillingNotification.notificationKind, notificationKind),
-        eq(dbSchema.organizationBillingNotification.stripeEventId, stripeEventId),
+        eq(dbSchema.billingNotification.billingAccountId, state.account.id),
+        eq(dbSchema.billingNotification.notificationKind, notificationKind),
+        eq(dbSchema.billingNotification.providerEventId, stripeEventId),
       ),
     )
-    .orderBy(desc(dbSchema.organizationBillingNotification.sequenceNumber));
+    .orderBy(desc(dbSchema.billingNotification.sequenceNumber));
 };
 
 const selectNextOrganizationBillingNotificationSequence = async ({
@@ -511,12 +521,16 @@ const selectNextOrganizationBillingNotificationSequence = async ({
   database: AuthRuntimeDatabase;
   organizationId: string;
 }) => {
+  const state = await ensureReserveAppBillingV2State({
+    database,
+    organizationId,
+  });
   const rows = await database
     .select({
-      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.organizationBillingNotification.sequenceNumber}), 0)`,
+      maxSequenceNumber: sql<number>`coalesce(max(${dbSchema.billingNotification.sequenceNumber}), 0)`,
     })
-    .from(dbSchema.organizationBillingNotification)
-    .where(eq(dbSchema.organizationBillingNotification.organizationId, organizationId));
+    .from(dbSchema.billingNotification)
+    .where(eq(dbSchema.billingNotification.billingAccountId, state.account.id));
 
   return Number(rows[0]?.maxSequenceNumber ?? 0) + 1;
 };
@@ -556,42 +570,39 @@ const insertOrganizationBillingNotification = async ({
   trialEndsAt: string | null;
   failureReason?: string | null;
 }) => {
+  const state = await ensureReserveAppBillingV2State({
+    database,
+    organizationId,
+  });
   const sequenceNumber = await selectNextOrganizationBillingNotificationSequence({
     database,
     organizationId,
   });
 
-  await database.insert(dbSchema.organizationBillingNotification).values({
+  const now = new Date();
+  await database.insert(dbSchema.billingNotification).values({
     id: crypto.randomUUID(),
-    organizationId,
+    billingAccountId: state.account.id,
     recipientUserId: recipientUserId ?? null,
     notificationKind,
     channel: 'email',
     sequenceNumber,
-    deliveryState,
+    deliveryStatus: deliveryState,
     attemptNumber,
-    stripeEventId,
-    stripeCustomerId: stripeCustomerId ?? null,
-    stripeSubscriptionId: stripeSubscriptionId ?? null,
-    recipientEmail: recipientEmail ?? null,
+    provider: stripeCustomerId || stripeSubscriptionId || stripeEventId ? 'stripe' : null,
+    providerEventId: stripeEventId,
+    providerCustomerId: stripeCustomerId ?? null,
+    providerSubscriptionId: stripeSubscriptionId ?? null,
+    providerInvoiceId: stripeInvoiceId ?? null,
+    recipientEmail: recipientEmail ?? 'unassigned',
     planState,
     subscriptionStatus,
     paymentMethodStatus,
     trialEndsAt: trialEndsAt ? new Date(trialEndsAt) : null,
     failureReason: failureReason ?? null,
-  });
-  await upsertOrganizationBillingV2Notification({
-    database,
-    organizationId,
-    notificationKind,
-    recipientUserId,
-    recipientEmail,
-    deliveryState,
-    failureReason,
-    stripeEventId,
-    stripeCustomerId,
-    stripeSubscriptionId,
-    stripeInvoiceId,
+    createdAt: now,
+    sentAt: deliveryState === 'sent' ? now : null,
+    failedAt: deliveryState === 'failed' ? now : null,
   });
 };
 
@@ -655,46 +666,56 @@ export const readTrialReminderDeliveryAuditInspection = async ({
   const [historyRows, latestSignalRows, latestEventRows] = await Promise.all([
     database
       .select({
-        sequenceNumber: dbSchema.organizationBillingNotification.sequenceNumber,
-        notificationKind: dbSchema.organizationBillingNotification.notificationKind,
-        channel: dbSchema.organizationBillingNotification.channel,
-        deliveryState: dbSchema.organizationBillingNotification.deliveryState,
-        attemptNumber: dbSchema.organizationBillingNotification.attemptNumber,
-        stripeEventId: dbSchema.organizationBillingNotification.stripeEventId,
-        recipientEmail: dbSchema.organizationBillingNotification.recipientEmail,
-        planState: dbSchema.organizationBillingNotification.planState,
-        subscriptionStatus: dbSchema.organizationBillingNotification.subscriptionStatus,
-        paymentMethodStatus: dbSchema.organizationBillingNotification.paymentMethodStatus,
-        trialEndsAt: dbSchema.organizationBillingNotification.trialEndsAt,
-        failureReason: dbSchema.organizationBillingNotification.failureReason,
-        createdAt: dbSchema.organizationBillingNotification.createdAt,
+        sequenceNumber: dbSchema.billingNotification.sequenceNumber,
+        notificationKind: dbSchema.billingNotification.notificationKind,
+        channel: dbSchema.billingNotification.channel,
+        deliveryState: dbSchema.billingNotification.deliveryStatus,
+        attemptNumber: dbSchema.billingNotification.attemptNumber,
+        stripeEventId: dbSchema.billingNotification.providerEventId,
+        recipientEmail: dbSchema.billingNotification.recipientEmail,
+        planState: dbSchema.billingNotification.planState,
+        subscriptionStatus: dbSchema.billingNotification.subscriptionStatus,
+        paymentMethodStatus: dbSchema.billingNotification.paymentMethodStatus,
+        trialEndsAt: dbSchema.billingNotification.trialEndsAt,
+        failureReason: dbSchema.billingNotification.failureReason,
+        createdAt: dbSchema.billingNotification.createdAt,
       })
-      .from(dbSchema.organizationBillingNotification)
+      .from(dbSchema.billingNotification)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingNotification.billingAccountId, dbSchema.billingAccount.id),
+      )
       .where(
         and(
-          eq(dbSchema.organizationBillingNotification.organizationId, organizationId),
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
           or(
-            eq(dbSchema.organizationBillingNotification.notificationKind, 'trial_will_end_email'),
-            eq(dbSchema.organizationBillingNotification.notificationKind, 'trial_will_end'),
+            eq(dbSchema.billingNotification.notificationKind, 'trial_will_end_email'),
+            eq(dbSchema.billingNotification.notificationKind, 'trial_will_end'),
           ),
         ),
       )
-      .orderBy(dbSchema.organizationBillingNotification.sequenceNumber),
+      .orderBy(dbSchema.billingNotification.sequenceNumber),
     database
       .select({
-        signalStatus: dbSchema.organizationBillingSignal.signalStatus,
-        reason: dbSchema.organizationBillingSignal.reason,
-        createdAt: dbSchema.organizationBillingSignal.createdAt,
+        signalStatus: dbSchema.billingSignal.signalStatus,
+        reason: dbSchema.billingSignal.reason,
+        createdAt: dbSchema.billingSignal.createdAt,
       })
-      .from(dbSchema.organizationBillingSignal)
+      .from(dbSchema.billingSignal)
+      .innerJoin(
+        dbSchema.billingAccount,
+        eq(dbSchema.billingSignal.billingAccountId, dbSchema.billingAccount.id),
+      )
       .where(
         and(
-          eq(dbSchema.organizationBillingSignal.organizationId, organizationId),
-          eq(dbSchema.organizationBillingSignal.signalKind, 'notification_delivery'),
-          eq(dbSchema.organizationBillingSignal.sourceKind, 'trial_will_end_email'),
+          eq(dbSchema.billingAccount.subjectType, 'organization'),
+          eq(dbSchema.billingAccount.subjectId, organizationId),
+          eq(dbSchema.billingSignal.signalKind, 'notification_delivery'),
+          eq(dbSchema.billingSignal.sourceKind, 'trial_will_end_email'),
         ),
       )
-      .orderBy(desc(dbSchema.organizationBillingSignal.sequenceNumber))
+      .orderBy(desc(dbSchema.billingSignal.sequenceNumber), desc(dbSchema.billingSignal.createdAt))
       .limit(1),
     database
       .select({
