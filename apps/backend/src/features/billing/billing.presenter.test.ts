@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthRuntimeEnv } from '../../auth-runtime.js';
-import type { OrganizationBillingStore } from './billing.store.js';
+import type { ReserveAppBillingStore } from './billing.store.js';
 import { readOrganizationBillingSummaryPayload } from './billing.presenter.js';
 
 const env = {
@@ -85,7 +85,7 @@ const createStore = () =>
     appendSignal: vi.fn(),
     appendResolvedSignalIfNeeded: vi.fn(),
     readInternalInspection: vi.fn(),
-  }) as unknown as OrganizationBillingStore;
+  }) as unknown as ReserveAppBillingStore;
 
 describe('billing presenter', () => {
   beforeEach(() => {

@@ -356,7 +356,7 @@ export const billingAuditEvent = sqliteTable(
   },
   (table) => [
     index('billing_audit_event_account_created_idx').on(table.billingAccountId, table.createdAt),
-    index('billing_audit_event_account_sequence_idx').on(
+    uniqueIndex('billing_audit_event_account_sequence_uidx').on(
       table.billingAccountId,
       table.sequenceNumber,
     ),
@@ -390,7 +390,10 @@ export const billingSignal = sqliteTable(
       table.signalKind,
       table.signalStatus,
     ),
-    index('billing_signal_account_sequence_idx').on(table.billingAccountId, table.sequenceNumber),
+    uniqueIndex('billing_signal_account_sequence_uidx').on(
+      table.billingAccountId,
+      table.sequenceNumber,
+    ),
   ],
 );
 
@@ -434,7 +437,7 @@ export const billingNotification = sqliteTable(
       table.attemptNumber,
       table.deliveryStatus,
     ),
-    index('billing_notification_account_sequence_idx').on(
+    uniqueIndex('billing_notification_account_sequence_uidx').on(
       table.billingAccountId,
       table.sequenceNumber,
     ),

@@ -11,7 +11,7 @@ import {
   appendResolvedReserveAppBillingSignalIfNeeded,
   readReserveAppBillingObservationSnapshot,
 } from '../../domain/billing/reserve-app-billing-observability.js';
-import type { OrganizationBillingStore } from '../../features/billing/billing.store.js';
+import type { ReserveAppBillingStore } from '../../features/billing/billing.store.js';
 import {
   applyReserveAppBillingV2TrialCompletion,
   hasReserveAppBillingV2StartedPremiumTrial,
@@ -26,7 +26,7 @@ export const createReserveAppBillingStore = ({
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
-}): OrganizationBillingStore => ({
+}): ReserveAppBillingStore => ({
   selectSummary: (organizationId) =>
     readReserveAppBillingV2Summary({
       database,

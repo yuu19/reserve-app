@@ -23,7 +23,7 @@ import {
   resolveReserveAppBillingPaymentMethodStatus,
   type ReserveAppBillingSubscriptionStatus,
 } from './policies/reserve-app-billing-policy.js';
-import type { OrganizationBillingStore } from './billing.store.js';
+import type { ReserveAppBillingStore } from './billing.store.js';
 
 export const toIsoDateString = (value: unknown): string | null => {
   if (value instanceof Date) {
@@ -164,7 +164,7 @@ export const readOrganizationBillingSummaryPayload = async ({
   organizationId,
   role,
 }: {
-  store: OrganizationBillingStore;
+  store: ReserveAppBillingStore;
   env: AuthRuntimeEnv;
   organizationId: string;
   role: OrganizationRole;
@@ -275,7 +275,7 @@ export const buildBillingActionEnvelope = async ({
   handoffPurpose,
   handoffReused = false,
 }: {
-  store: OrganizationBillingStore;
+  store: ReserveAppBillingStore;
   env: AuthRuntimeEnv;
   organizationId: string;
   role: OrganizationRole;

@@ -81,7 +81,7 @@ export type InternalBillingInspection = Awaited<ReturnType<typeof readInternalBi
  *
  * route/usecase は v2 tables を正本として扱い、organization 固有の表現は presenter 側で組み立てます。
  */
-export type OrganizationBillingStore = {
+export type ReserveAppBillingStore = {
   selectSummary(organizationId: string): Promise<OrganizationBillingSummaryRow>;
 
   hasStartedPremiumTrial(input: { organizationId: string }): Promise<boolean>;

@@ -21,6 +21,7 @@ import {
   appendResolvedReserveAppBillingSignalIfNeeded,
   readReserveAppBillingObservationSnapshot,
 } from './reserve-app-billing-observability.js';
+import { retryBillingSequenceInsert } from './billing-sequence.js';
 
 export type ReserveAppBillingNotificationKind =
   | 'trial_will_end_email'
@@ -572,35 +573,40 @@ const insertOrganizationBillingNotification = async ({
     database,
     organizationId,
   });
-  const sequenceNumber = await selectNextOrganizationBillingNotificationSequence({
-    database,
-    organizationId,
-  });
-
   const now = new Date();
-  await database.insert(dbSchema.billingNotification).values({
-    id: crypto.randomUUID(),
-    billingAccountId: state.account.id,
-    recipientUserId: recipientUserId ?? null,
-    notificationKind,
-    channel: 'email',
-    sequenceNumber,
-    deliveryStatus: deliveryState,
-    attemptNumber,
-    provider: stripeCustomerId || stripeSubscriptionId || stripeEventId ? 'stripe' : null,
-    providerEventId: stripeEventId,
-    providerCustomerId: stripeCustomerId ?? null,
-    providerSubscriptionId: stripeSubscriptionId ?? null,
-    providerInvoiceId: stripeInvoiceId ?? null,
-    recipientEmail: recipientEmail ?? 'unassigned',
-    planState,
-    subscriptionStatus,
-    paymentMethodStatus,
-    trialEndsAt: trialEndsAt ? new Date(trialEndsAt) : null,
-    failureReason: failureReason ?? null,
-    createdAt: now,
-    sentAt: deliveryState === 'sent' ? now : null,
-    failedAt: deliveryState === 'failed' ? now : null,
+  await retryBillingSequenceInsert({
+    tableName: 'billing_notification',
+    operation: async () => {
+      const sequenceNumber = await selectNextOrganizationBillingNotificationSequence({
+        database,
+        organizationId,
+      });
+
+      await database.insert(dbSchema.billingNotification).values({
+        id: crypto.randomUUID(),
+        billingAccountId: state.account.id,
+        recipientUserId: recipientUserId ?? null,
+        notificationKind,
+        channel: 'email',
+        sequenceNumber,
+        deliveryStatus: deliveryState,
+        attemptNumber,
+        provider: stripeCustomerId || stripeSubscriptionId || stripeEventId ? 'stripe' : null,
+        providerEventId: stripeEventId,
+        providerCustomerId: stripeCustomerId ?? null,
+        providerSubscriptionId: stripeSubscriptionId ?? null,
+        providerInvoiceId: stripeInvoiceId ?? null,
+        recipientEmail: recipientEmail ?? 'unassigned',
+        planState,
+        subscriptionStatus,
+        paymentMethodStatus,
+        trialEndsAt: trialEndsAt ? new Date(trialEndsAt) : null,
+        failureReason: failureReason ?? null,
+        createdAt: now,
+        sentAt: deliveryState === 'sent' ? now : null,
+        failedAt: deliveryState === 'failed' ? now : null,
+      });
+    },
   });
 };
 

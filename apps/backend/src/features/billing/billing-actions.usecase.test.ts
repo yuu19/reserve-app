@@ -10,7 +10,7 @@ import {
   createSubscriptionUpdatePortalHandoff,
   startTrialSubscription,
 } from './billing-actions.usecase.js';
-import type { OrganizationBillingStore } from './billing.store.js';
+import type { ReserveAppBillingStore } from './billing.store.js';
 import type { BillingOperationStore } from './billing-operation.store.js';
 
 const env = {
@@ -114,7 +114,7 @@ const createStore = (billing: typeof freeBilling = freeBilling) =>
     appendSignal: vi.fn(async () => undefined),
     appendResolvedSignalIfNeeded: vi.fn(async () => undefined),
     readInternalInspection: vi.fn(),
-  }) as unknown as OrganizationBillingStore;
+  }) as unknown as ReserveAppBillingStore;
 
 const createOperationStore = (attempt: OrganizationBillingOperationAttempt = baseAttempt) =>
   ({

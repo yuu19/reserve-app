@@ -4,7 +4,7 @@ import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../../au
 import type { OrganizationRole } from '../../domain/booking/authorization.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import type { BillingOperationStore } from './billing-operation.store.js';
-import type { OrganizationBillingStore } from './billing.store.js';
+import type { ReserveAppBillingStore } from './billing.store.js';
 
 export type BillingRouteBindings = {
   Variables: {
@@ -29,7 +29,7 @@ export type BillingRouteContext = {
   auth: AuthInstance;
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
-  store: OrganizationBillingStore;
+  store: ReserveAppBillingStore;
   operationStore: BillingOperationStore;
   createProvider: BillingProviderFactory;
   getSessionIdentity(headers: Headers): Promise<BillingIdentity | null>;
@@ -48,7 +48,7 @@ type CreateBillingRouteContextInput = {
   auth: AuthInstance;
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
-  store: OrganizationBillingStore;
+  store: ReserveAppBillingStore;
   operationStore: BillingOperationStore;
   createProvider: BillingProviderFactory;
 };

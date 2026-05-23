@@ -5,6 +5,7 @@ import {
   ensureReserveAppBillingV2State,
   readReserveAppBillingV2Summary,
 } from '../../infra/billing/reserve-app-billing-v2-source.js';
+import { retryBillingSequenceInsert } from './billing-sequence.js';
 import {
   resolveReserveAppBillingPaymentMethodStatus,
   type ReserveAppBillingPaymentMethodStatus,
@@ -359,26 +360,32 @@ export const appendReserveAppBillingAuditEvent = async ({
     database,
     organizationId,
   });
-  const sequenceNumber = await selectNextBillingAuditSequenceNumber({
-    database,
-    billingAccountId: state.account.id,
-  });
   const providerCustomerId = nextSnapshot.stripeCustomerId ?? previousSnapshot.stripeCustomerId;
   const providerSubscriptionId =
     nextSnapshot.stripeSubscriptionId ?? previousSnapshot.stripeSubscriptionId;
 
-  await database.insert(dbSchema.billingAuditEvent).values({
-    id: crypto.randomUUID(),
-    billingAccountId: state.account.id,
-    sequenceNumber,
-    sourceKind,
-    sourceContext: sourceContext ?? null,
-    previousSnapshotJson: toSnapshotJson(previousSnapshot),
-    nextSnapshotJson: toSnapshotJson(nextSnapshot),
-    provider: providerCustomerId || providerSubscriptionId || stripeEventId ? 'stripe' : null,
-    providerEventId: stripeEventId ?? null,
-    providerCustomerId,
-    providerSubscriptionId,
+  await retryBillingSequenceInsert({
+    tableName: 'billing_audit_event',
+    operation: async () => {
+      const sequenceNumber = await selectNextBillingAuditSequenceNumber({
+        database,
+        billingAccountId: state.account.id,
+      });
+
+      await database.insert(dbSchema.billingAuditEvent).values({
+        id: crypto.randomUUID(),
+        billingAccountId: state.account.id,
+        sequenceNumber,
+        sourceKind,
+        sourceContext: sourceContext ?? null,
+        previousSnapshotJson: toSnapshotJson(previousSnapshot),
+        nextSnapshotJson: toSnapshotJson(nextSnapshot),
+        provider: providerCustomerId || providerSubscriptionId || stripeEventId ? 'stripe' : null,
+        providerEventId: stripeEventId ?? null,
+        providerCustomerId,
+        providerSubscriptionId,
+      });
+    },
   });
 
   return true;
@@ -416,28 +423,34 @@ export const appendReserveAppBillingSignal = async ({
     database,
     organizationId,
   });
-  const sequenceNumber = await selectNextBillingSignalSequenceNumber({
-    database,
-    billingAccountId: state.account.id,
-  });
   const providerCustomerId = stripeCustomerId ?? appSnapshot.stripeCustomerId;
   const providerSubscriptionId = stripeSubscriptionId ?? appSnapshot.stripeSubscriptionId;
 
-  await database.insert(dbSchema.billingSignal).values({
-    id: crypto.randomUUID(),
-    billingAccountId: state.account.id,
-    sequenceNumber,
-    signalKind,
-    signalStatus,
-    sourceKind,
-    reason,
-    appSnapshotJson: toSnapshotJson(appSnapshot),
-    provider: providerCustomerId || providerSubscriptionId || stripeEventId ? 'stripe' : null,
-    providerEventId: stripeEventId ?? null,
-    providerCustomerId,
-    providerSubscriptionId,
-    providerPlanState: providerPlanState ?? null,
-    providerSubscriptionStatus: providerSubscriptionStatus ?? null,
+  await retryBillingSequenceInsert({
+    tableName: 'billing_signal',
+    operation: async () => {
+      const sequenceNumber = await selectNextBillingSignalSequenceNumber({
+        database,
+        billingAccountId: state.account.id,
+      });
+
+      await database.insert(dbSchema.billingSignal).values({
+        id: crypto.randomUUID(),
+        billingAccountId: state.account.id,
+        sequenceNumber,
+        signalKind,
+        signalStatus,
+        sourceKind,
+        reason,
+        appSnapshotJson: toSnapshotJson(appSnapshot),
+        provider: providerCustomerId || providerSubscriptionId || stripeEventId ? 'stripe' : null,
+        providerEventId: stripeEventId ?? null,
+        providerCustomerId,
+        providerSubscriptionId,
+        providerPlanState: providerPlanState ?? null,
+        providerSubscriptionStatus: providerSubscriptionStatus ?? null,
+      });
+    },
   });
 };
 
