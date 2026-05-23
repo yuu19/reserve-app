@@ -24,7 +24,6 @@
 	const pageTitle = 'WakuReserve | 予約管理プラットフォーム';
 	const pageDescription =
 		'WakuReserve は、管理者と予約者の導線を分離しながら、予約作成・受付運用・参加者対応を一体で管理できる予約プラットフォームです。';
-	const marketingBaseUrl = 'https://wakureserve.com';
 
 	const nextPath = $derived.by(() => {
 		const next = page.url.searchParams.get('next');
@@ -208,26 +207,6 @@
 		}
 	];
 
-	const footerLinks: Array<{ label: string; href: string }> = [
-		{ label: 'サービス紹介', href: marketingBaseUrl },
-		{ label: '開発者情報', href: `${marketingBaseUrl}/developer` },
-		{ label: '利用規約', href: `${marketingBaseUrl}/terms` },
-		{ label: 'プライバシーポリシー', href: `${marketingBaseUrl}/privacy` }
-	];
-
-	const footerIconLinks: Array<{ label: string; href: string; icon: IconComponent }> = [
-		{
-			label: 'GitHub',
-			href: 'https://github.com/yuu19/reserve-app',
-			icon: Github
-		},
-		{
-			label: 'X',
-			href: 'https://x.com/wakureserve',
-			icon: Twitter
-		}
-	];
-
 	const sectionEyebrowClass =
 		'text-xxs font-bold tracking-[0.08em] text-muted-foreground uppercase';
 	const sectionHeadingClass =
@@ -262,7 +241,9 @@
 				<div class="space-y-5">
 					<div class="space-y-3">
 						<p class={sectionEyebrowClass}>Reservation Operations</p>
-						<h1 class="text-[2rem] leading-[1.08] font-bold tracking-tight text-foreground sm:text-[2.35rem] md:text-[4rem]">
+						<h1
+							class="text-[2rem] leading-[1.08] font-bold tracking-tight text-foreground sm:text-[2.35rem] md:text-[4rem]"
+						>
 							<span class="block">予約運用を、</span>
 							<span class="block">ひとつの画面で。</span>
 						</h1>
@@ -273,7 +254,9 @@
 					</div>
 
 					{#if nextPath}
-						<p class="rounded-md border border-primary/20 bg-primary/8 px-3 py-2 text-xs text-secondary-foreground">
+						<p
+							class="rounded-md border border-primary/20 bg-primary/8 px-3 py-2 text-xs text-secondary-foreground"
+						>
 							ログイン後の遷移先: {nextPath}
 						</p>
 					{/if}
@@ -399,7 +382,9 @@
 				{#each onboardingSteps as step, index (step.title)}
 					<Card class={`${panelClass} rounded-md`}>
 						<CardHeader class="space-y-2 pb-0">
-							<p class="text-xxs font-bold tracking-[0.08em] text-primary uppercase">Step {index + 1}</p>
+							<p class="text-xxs font-bold tracking-[0.08em] text-primary uppercase">
+								Step {index + 1}
+							</p>
 							<CardTitle class="flex items-center gap-2 text-base">
 								<step.icon class="size-4 text-primary" aria-hidden="true" />
 								{step.title}
@@ -431,7 +416,9 @@
 							<div class="flex items-center justify-between gap-3">
 								<CardTitle class="text-xl">{plan.name}</CardTitle>
 								{#if plan.recommended}
-									<span class="rounded-full bg-primary px-2.5 py-1 text-xxs font-bold text-primary-foreground">
+									<span
+										class="rounded-full bg-primary px-2.5 py-1 text-xxs font-bold text-primary-foreground"
+									>
 										おすすめ
 									</span>
 								{/if}
@@ -486,7 +473,9 @@
 
 		<section>
 			<Card class="surface-panel rounded-md border border-primary/20 bg-card shadow-sm">
-				<CardContent class="flex flex-col gap-5 p-5 md:flex-row md:items-end md:justify-between md:p-6">
+				<CardContent
+					class="flex flex-col gap-5 p-5 md:flex-row md:items-end md:justify-between md:p-6"
+				>
 					<div class="space-y-2">
 						<p class="text-xxs font-bold tracking-[0.08em] text-primary uppercase">Get Started</p>
 						<h2 class="text-2xl font-bold tracking-tight text-foreground">
@@ -512,35 +501,70 @@
 		<div
 			class="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:flex-row sm:items-center sm:justify-between md:px-8 md:py-6"
 		>
-			<div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-7 sm:gap-y-3">
+			<div
+				class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-7 sm:gap-y-3"
+			>
 				<p class="text-base text-secondary-foreground">© WakuReserve. 個人開発プロジェクト</p>
 
 				<div class="flex flex-wrap items-center gap-x-5 gap-y-3">
-					{#each footerLinks as item (item.href)}
-						<a
-							class="inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
-							href={item.href}
-							target="_blank"
-							rel="noreferrer"
-						>
-							{item.label}
-							<ExternalLink class="size-3.5" aria-hidden="true" />
-						</a>
-					{/each}
+					<a
+						class="inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+						href="https://wakureserve.com"
+						target="_blank"
+						rel="noreferrer"
+					>
+						サービス紹介
+						<ExternalLink class="size-3.5" aria-hidden="true" />
+					</a>
+					<a
+						class="inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+						href="https://wakureserve.com/developer"
+						target="_blank"
+						rel="noreferrer"
+					>
+						開発者情報
+						<ExternalLink class="size-3.5" aria-hidden="true" />
+					</a>
+					<a
+						class="inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+						href="https://wakureserve.com/terms"
+						target="_blank"
+						rel="noreferrer"
+					>
+						利用規約
+						<ExternalLink class="size-3.5" aria-hidden="true" />
+					</a>
+					<a
+						class="inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+						href="https://wakureserve.com/privacy"
+						target="_blank"
+						rel="noreferrer"
+					>
+						プライバシーポリシー
+						<ExternalLink class="size-3.5" aria-hidden="true" />
+					</a>
 
 					<div class="flex items-center gap-2">
-						{#each footerIconLinks as item (item.label)}
-							<a
-								class="inline-flex size-10 items-center justify-center rounded-full text-foreground transition-colors hover:bg-secondary hover:text-primary"
-								href={item.href}
-								target="_blank"
-								rel="noreferrer"
-								aria-label={item.label}
-								title={item.label}
-							>
-								<item.icon class="size-5" aria-hidden="true" />
-							</a>
-						{/each}
+						<a
+							class="inline-flex size-10 items-center justify-center rounded-full text-foreground transition-colors hover:bg-secondary hover:text-primary"
+							href="https://github.com/yuu19/reserve-app"
+							target="_blank"
+							rel="noreferrer"
+							aria-label="GitHub"
+							title="GitHub"
+						>
+							<Github class="size-5" aria-hidden="true" />
+						</a>
+						<a
+							class="inline-flex size-10 items-center justify-center rounded-full text-foreground transition-colors hover:bg-secondary hover:text-primary"
+							href="https://x.com/wakureserve"
+							target="_blank"
+							rel="noreferrer"
+							aria-label="X"
+							title="X"
+						>
+							<Twitter class="size-5" aria-hidden="true" />
+						</a>
 					</div>
 				</div>
 			</div>

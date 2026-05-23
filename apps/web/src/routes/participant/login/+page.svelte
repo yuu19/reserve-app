@@ -55,7 +55,6 @@
 	});
 
 	const isBusy = $derived(submittingAction !== null);
-	const participantFallbackPath = resolve('/events');
 
 	const completeSignIn = async () => {
 		const targetNextPath = nextPath;

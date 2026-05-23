@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import type { Pathname } from '$app/types';
 	import type { AiSuggestedAction } from '$lib/ai-client';
 	import { ExternalLink, LifeBuoy, UserRoundCheck } from '@lucide/svelte';
 
@@ -21,7 +23,7 @@
 			{@const Icon = iconByKind[action.actionKind ?? 'contact_support']}
 			{#if action.actionKind === 'open_page' && action.href}
 				<a
-					href={action.href}
+					href={resolve(action.href as Pathname)}
 					class="inline-flex min-h-9 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-secondary-foreground transition-colors hover:bg-secondary"
 				>
 					<Icon class="size-3.5" aria-hidden="true" />

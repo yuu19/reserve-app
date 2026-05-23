@@ -5,6 +5,7 @@
 	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import type { Pathname } from '$app/types';
 	import { onDestroy, onMount } from 'svelte';
+	import { SvelteURL } from 'svelte/reactivity';
 	import { AiChatWidget } from '$lib/components/ai';
 	import ContextSwitcher from '$lib/components/context-switcher.svelte';
 	import { Toaster, toast } from 'svelte-sonner';
@@ -715,7 +716,7 @@
 			return false;
 		}
 
-		const nextUrl = new URL(window.location.href);
+		const nextUrl = new SvelteURL(window.location.href);
 		nextUrl.protocol = 'https:';
 		nextUrl.host = canonicalHost;
 		window.location.replace(nextUrl.toString());
