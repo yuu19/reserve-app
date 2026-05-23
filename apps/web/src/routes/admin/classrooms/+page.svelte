@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
@@ -42,8 +41,6 @@
 	import type { OrganizationBillingPayload, OrganizationPayload } from '$lib/rpc-client';
 	import type { OrganizationPremiumRestrictionPayload } from '$lib/features/premium-restrictions';
 	import { toast } from 'svelte-sonner';
-
-	type ResolvablePath = Pathname;
 
 	let loading = $state(true);
 	let busy = $state(false);
@@ -216,13 +213,10 @@
 
 			if (activeClassroom?.slug === editTarget.slug) {
 				await goto(
-					resolve(
-						'/[orgSlug]/[classroomSlug]/admin/classrooms',
-						{
-							orgSlug: activeOrganization.slug,
-							classroomSlug: result.classroom.slug
-						}
-					),
+					resolve('/[orgSlug]/[classroomSlug]/admin/classrooms', {
+						orgSlug: activeOrganization.slug,
+						classroomSlug: result.classroom.slug
+					}),
 					{ invalidateAll: true }
 				);
 				return;
@@ -239,13 +233,10 @@
 			return;
 		}
 		await goto(
-			resolve(
-				'/[orgSlug]/[classroomSlug]/admin/classrooms',
-				{
-					orgSlug: activeOrganization.slug,
-					classroomSlug
-				}
-			),
+			resolve('/[orgSlug]/[classroomSlug]/admin/classrooms', {
+				orgSlug: activeOrganization.slug,
+				classroomSlug
+			}),
 			{ invalidateAll: true }
 		);
 	};
@@ -255,13 +246,10 @@
 			return;
 		}
 		await goto(
-			resolve(
-				'/[orgSlug]/[classroomSlug]/admin/invitations',
-				{
-					orgSlug: activeOrganization.slug,
-					classroomSlug
-				}
-			)
+			resolve('/[orgSlug]/[classroomSlug]/admin/invitations', {
+				orgSlug: activeOrganization.slug,
+				classroomSlug
+			})
 		);
 	};
 

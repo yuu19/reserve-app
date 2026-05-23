@@ -1,4 +1,5 @@
 import { getRemoteSession } from '$lib/remote/session.remote';
+import { SvelteURL, SvelteURLSearchParams } from 'svelte/reactivity';
 import {
 	authRpc,
 	type AccessTreePayload,
@@ -23,7 +24,10 @@ export const isRecord = (value: unknown): value is JsonRecord =>
 	typeof value === 'object' && value !== null;
 
 const isOrganizationPayload = (value: unknown): value is OrganizationPayload =>
-	isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string' && typeof value.slug === 'string';
+	isRecord(value) &&
+	typeof value.id === 'string' &&
+	typeof value.name === 'string' &&
+	typeof value.slug === 'string';
 
 const asOrganizations = (value: unknown): OrganizationPayload[] =>
 	Array.isArray(value) ? value.filter(isOrganizationPayload) : [];
@@ -45,7 +49,9 @@ const asOrganizationRole = (value: unknown): OrganizationMembershipRole | null =
 	return null;
 };
 
-const isAccessTreeClassroom = (value: unknown): value is AccessTreePayload['orgs'][number]['classrooms'][number] =>
+const isAccessTreeClassroom = (
+	value: unknown
+): value is AccessTreePayload['orgs'][number]['classrooms'][number] =>
 	isRecord(value) &&
 	typeof value.id === 'string' &&
 	typeof value.slug === 'string' &&
@@ -64,25 +70,26 @@ const isAccessTreeClassroom = (value: unknown): value is AccessTreePayload['orgs
 	typeof value.effective.canManageBookings === 'boolean' &&
 	typeof value.effective.canManageParticipants === 'boolean' &&
 	typeof value.effective.canUseParticipantBooking === 'boolean' &&
-	(value.sources.canManageOrganization === null || value.sources.canManageOrganization === 'org_role') &&
-		(value.sources.canManageClassroom === null ||
-			value.sources.canManageClassroom === 'org_role' ||
-			value.sources.canManageClassroom === 'classroom_member') &&
-		(value.sources.canManageBookings === null ||
-			value.sources.canManageBookings === 'org_role' ||
-			value.sources.canManageBookings === 'classroom_member') &&
-		(value.sources.canManageParticipants === null ||
-			value.sources.canManageParticipants === 'org_role' ||
-			value.sources.canManageParticipants === 'classroom_member') &&
-		(value.sources.canUseParticipantBooking === null ||
-			value.sources.canUseParticipantBooking === 'participant_record') &&
-		(value.display.primaryRole === null ||
-			value.display.primaryRole === 'owner' ||
-			value.display.primaryRole === 'admin' ||
-			value.display.primaryRole === 'manager' ||
-			value.display.primaryRole === 'staff' ||
-			value.display.primaryRole === 'participant') &&
-		Array.isArray(value.display.badges);
+	(value.sources.canManageOrganization === null ||
+		value.sources.canManageOrganization === 'org_role') &&
+	(value.sources.canManageClassroom === null ||
+		value.sources.canManageClassroom === 'org_role' ||
+		value.sources.canManageClassroom === 'classroom_member') &&
+	(value.sources.canManageBookings === null ||
+		value.sources.canManageBookings === 'org_role' ||
+		value.sources.canManageBookings === 'classroom_member') &&
+	(value.sources.canManageParticipants === null ||
+		value.sources.canManageParticipants === 'org_role' ||
+		value.sources.canManageParticipants === 'classroom_member') &&
+	(value.sources.canUseParticipantBooking === null ||
+		value.sources.canUseParticipantBooking === 'participant_record') &&
+	(value.display.primaryRole === null ||
+		value.display.primaryRole === 'owner' ||
+		value.display.primaryRole === 'admin' ||
+		value.display.primaryRole === 'manager' ||
+		value.display.primaryRole === 'staff' ||
+		value.display.primaryRole === 'participant') &&
+	Array.isArray(value.display.badges);
 
 const isAccessTreeOrg = (value: unknown): value is AccessTreePayload['orgs'][number] =>
 	isRecord(value) &&
@@ -103,10 +110,10 @@ const asAccessTreePayload = (value: unknown): AccessTreePayload | null => {
 	return value as AccessTreePayload;
 };
 
-	type LegacyAccessTreeClassroom = {
-		classroomId: string;
-		classroomSlug: string;
-		classroomName: string;
+type LegacyAccessTreeClassroom = {
+	classroomId: string;
+	classroomSlug: string;
+	classroomName: string;
 	role?: unknown;
 	canManage: boolean;
 	canUseParticipantBooking: boolean;
@@ -139,77 +146,81 @@ const isLegacyAccessTreeOrganization = (value: unknown): value is LegacyAccessTr
 	value.classrooms.every((classroom) => isLegacyAccessTreeClassroom(classroom));
 
 const normalizeLegacyAccessTreePayload = (value: unknown): AccessTreePayload | null => {
-	if (!Array.isArray(value) || !value.every((orgEntry) => isLegacyAccessTreeOrganization(orgEntry))) {
+	if (
+		!Array.isArray(value) ||
+		!value.every((orgEntry) => isLegacyAccessTreeOrganization(orgEntry))
+	) {
 		return null;
 	}
 
-		return {
-			orgs: value.map((orgEntry) => ({
-				org: {
-					id: orgEntry.organizationId,
-					slug: orgEntry.organizationSlug,
-					name: orgEntry.organizationName,
-					logo: typeof orgEntry.logo === 'string' ? orgEntry.logo : null
-				},
-				classrooms: orgEntry.classrooms.map((classroom) => {
-					const isLegacyManager = classroom.role === 'manager';
-					const isLegacyStaff = classroom.role === 'staff';
-					const hasLegacyRole = isLegacyManager || isLegacyStaff || classroom.role === 'participant';
-					const canManageClassroom = isLegacyManager || (!hasLegacyRole && classroom.canManage);
-					const canManageBookings =
-						isLegacyManager || isLegacyStaff || (!hasLegacyRole && classroom.canManage);
-					const canManageParticipants =
-						isLegacyManager || isLegacyStaff || (!hasLegacyRole && classroom.canManage);
+	return {
+		orgs: value.map((orgEntry) => ({
+			org: {
+				id: orgEntry.organizationId,
+				slug: orgEntry.organizationSlug,
+				name: orgEntry.organizationName,
+				logo: typeof orgEntry.logo === 'string' ? orgEntry.logo : null
+			},
+			classrooms: orgEntry.classrooms.map((classroom) => {
+				const isLegacyManager = classroom.role === 'manager';
+				const isLegacyStaff = classroom.role === 'staff';
+				const hasLegacyRole = isLegacyManager || isLegacyStaff || classroom.role === 'participant';
+				const canManageClassroom = isLegacyManager || (!hasLegacyRole && classroom.canManage);
+				const canManageBookings =
+					isLegacyManager || isLegacyStaff || (!hasLegacyRole && classroom.canManage);
+				const canManageParticipants =
+					isLegacyManager || isLegacyStaff || (!hasLegacyRole && classroom.canManage);
 
-					return {
-						id: classroom.classroomId,
-						slug: classroom.classroomSlug,
-						name: classroom.classroomName,
-						logo: typeof classroom.logo === 'string' ? classroom.logo : null,
-						facts: {
-							orgRole: asOrganizationRole(orgEntry.role ?? null),
-							classroomStaffRole:
-								classroom.role === 'manager' || classroom.role === 'staff' ? classroom.role : null,
-							hasParticipantRecord: classroom.canUseParticipantBooking
-						},
-						effective: {
-							canManageOrganization:
-								orgEntry.role === 'owner' || orgEntry.role === 'admin',
-							canManageClassroom,
-							canManageBookings,
-							canManageParticipants,
-							canUseParticipantBooking: classroom.canUseParticipantBooking
-						},
-						sources: {
-							canManageOrganization:
-								orgEntry.role === 'owner' || orgEntry.role === 'admin' ? 'org_role' : null,
-							canManageClassroom: canManageClassroom ? 'classroom_member' : null,
-							canManageBookings: canManageBookings ? 'classroom_member' : null,
-							canManageParticipants: canManageParticipants ? 'classroom_member' : null,
-							canUseParticipantBooking: classroom.canUseParticipantBooking ? 'participant_record' : null
-						},
-						display: {
-							primaryRole:
-								classroom.role === 'manager' ||
-								classroom.role === 'staff' ||
-								classroom.role === 'participant'
-									? classroom.role
-									: orgEntry.role === 'owner' || orgEntry.role === 'admin'
-										? orgEntry.role
-										: null,
-							badges:
-								classroom.role === 'manager' ||
-								classroom.role === 'staff' ||
-								classroom.role === 'participant'
-									? [classroom.role]
-									: orgEntry.role === 'owner' || orgEntry.role === 'admin'
-										? [orgEntry.role]
-										: []
-						}
-					};
-				})
-			}))
-		};
+				return {
+					id: classroom.classroomId,
+					slug: classroom.classroomSlug,
+					name: classroom.classroomName,
+					logo: typeof classroom.logo === 'string' ? classroom.logo : null,
+					facts: {
+						orgRole: asOrganizationRole(orgEntry.role ?? null),
+						classroomStaffRole:
+							classroom.role === 'manager' || classroom.role === 'staff' ? classroom.role : null,
+						hasParticipantRecord: classroom.canUseParticipantBooking
+					},
+					effective: {
+						canManageOrganization: orgEntry.role === 'owner' || orgEntry.role === 'admin',
+						canManageClassroom,
+						canManageBookings,
+						canManageParticipants,
+						canUseParticipantBooking: classroom.canUseParticipantBooking
+					},
+					sources: {
+						canManageOrganization:
+							orgEntry.role === 'owner' || orgEntry.role === 'admin' ? 'org_role' : null,
+						canManageClassroom: canManageClassroom ? 'classroom_member' : null,
+						canManageBookings: canManageBookings ? 'classroom_member' : null,
+						canManageParticipants: canManageParticipants ? 'classroom_member' : null,
+						canUseParticipantBooking: classroom.canUseParticipantBooking
+							? 'participant_record'
+							: null
+					},
+					display: {
+						primaryRole:
+							classroom.role === 'manager' ||
+							classroom.role === 'staff' ||
+							classroom.role === 'participant'
+								? classroom.role
+								: orgEntry.role === 'owner' || orgEntry.role === 'admin'
+									? orgEntry.role
+									: null,
+						badges:
+							classroom.role === 'manager' ||
+							classroom.role === 'staff' ||
+							classroom.role === 'participant'
+								? [classroom.role]
+								: orgEntry.role === 'owner' || orgEntry.role === 'admin'
+									? [orgEntry.role]
+									: []
+					}
+				};
+			})
+		}))
+	};
 };
 
 export const normalizeAccessTreePayload = (value: unknown): AccessTreePayload | null =>
@@ -258,7 +269,7 @@ export const getNextPathFromSearch = (): string | null => {
 	if (typeof window === 'undefined') {
 		return null;
 	}
-	const searchParams = new URLSearchParams(window.location.search);
+	const searchParams = new SvelteURLSearchParams(window.location.search);
 	const next = searchParams.get('next');
 	if (!next || !next.startsWith('/')) {
 		return null;
@@ -274,7 +285,7 @@ export const navigateToNextIfNeeded = (): boolean => {
 	if (!next) {
 		return false;
 	}
-	const url = new URL(next, 'http://localhost');
+	const url = new SvelteURL(next, 'http://localhost');
 	window.location.assign(`${url.pathname}${url.search}${url.hash}`);
 	return true;
 };
@@ -301,18 +312,19 @@ export const resolvePendingInvitationHomePath = (
 	return null;
 };
 
-export const loadPendingInvitationHomePath = async (): Promise<PendingInvitationHomePath | null> => {
-	try {
-		const response = await authRpc.listUserInvitations();
-		const payload = await parseResponseBody(response);
-		if (!response.ok) {
+export const loadPendingInvitationHomePath =
+	async (): Promise<PendingInvitationHomePath | null> => {
+		try {
+			const response = await authRpc.listUserInvitations();
+			const payload = await parseResponseBody(response);
+			if (!response.ok) {
+				return null;
+			}
+			return resolvePendingInvitationHomePath(asInvitations(payload));
+		} catch {
 			return null;
 		}
-		return resolvePendingInvitationHomePath(asInvitations(payload));
-	} catch {
-		return null;
-	}
-};
+	};
 
 export const redirectToLoginWithNext = (nextPath: string) => {
 	if (typeof window === 'undefined') {
@@ -406,30 +418,30 @@ type FlatAccessEntry = {
 
 const flattenAccessTree = (tree: AccessTreePayload): FlatAccessEntry[] => {
 	const entries: FlatAccessEntry[] = [];
-		for (const orgEntry of tree.orgs) {
-			for (const classroom of orgEntry.classrooms) {
-				entries.push({
-					orgId: orgEntry.org.id,
-					orgSlug: orgEntry.org.slug,
-					orgRole: classroom.facts.orgRole,
-					classroomSlug: classroom.slug,
-					facts: classroom.facts,
-					effective: classroom.effective,
-					sources: classroom.sources,
-					display: classroom.display,
-					canManage: classroom.effective.canManageClassroom,
-					canManageClassroom: classroom.effective.canManageClassroom,
-					canManageBookings: classroom.effective.canManageBookings,
-					canManageParticipants: classroom.effective.canManageParticipants,
-					canAccessAdminPortal:
-						classroom.effective.canManageOrganization ||
-						classroom.effective.canManageClassroom ||
-						classroom.effective.canManageBookings ||
-						classroom.effective.canManageParticipants,
-					canUseParticipantBooking: classroom.effective.canUseParticipantBooking
-				});
-			}
+	for (const orgEntry of tree.orgs) {
+		for (const classroom of orgEntry.classrooms) {
+			entries.push({
+				orgId: orgEntry.org.id,
+				orgSlug: orgEntry.org.slug,
+				orgRole: classroom.facts.orgRole,
+				classroomSlug: classroom.slug,
+				facts: classroom.facts,
+				effective: classroom.effective,
+				sources: classroom.sources,
+				display: classroom.display,
+				canManage: classroom.effective.canManageClassroom,
+				canManageClassroom: classroom.effective.canManageClassroom,
+				canManageBookings: classroom.effective.canManageBookings,
+				canManageParticipants: classroom.effective.canManageParticipants,
+				canAccessAdminPortal:
+					classroom.effective.canManageOrganization ||
+					classroom.effective.canManageClassroom ||
+					classroom.effective.canManageBookings ||
+					classroom.effective.canManageParticipants,
+				canUseParticipantBooking: classroom.effective.canUseParticipantBooking
+			});
 		}
+	}
 	return entries;
 };
 
@@ -442,8 +454,7 @@ const findEntryByContext = (
 	}
 	return (
 		entries.find(
-			(entry) =>
-				entry.orgSlug === context.orgSlug && entry.classroomSlug === context.classroomSlug
+			(entry) => entry.orgSlug === context.orgSlug && entry.classroomSlug === context.classroomSlug
 		) ?? null
 	);
 };
@@ -509,44 +520,42 @@ export const loadPortalAccess = async (
 			return emptyPortalAccess();
 		}
 
-			const accessTree = normalizeAccessTreePayload(accessTreePayload);
+		const accessTree = normalizeAccessTreePayload(accessTreePayload);
 		if (!accessTree) {
 			return emptyPortalAccess();
 		}
 
-			const entries = flattenAccessTree(accessTree);
-			const hasOrganizationAdminAccess = entries.some(
-				(entry) => entry.effective.canManageOrganization
-			);
-			const hasAdminPortalAccess = entries.some((entry) => entry.canAccessAdminPortal);
-			const hasParticipantAccess = entries.some(
-				(entry) => entry.effective.canUseParticipantBooking
-			);
-			const activeEntry = resolveDefaultEntry(entries, preferredContext);
+		const entries = flattenAccessTree(accessTree);
+		const hasOrganizationAdminAccess = entries.some(
+			(entry) => entry.effective.canManageOrganization
+		);
+		const hasAdminPortalAccess = entries.some((entry) => entry.canAccessAdminPortal);
+		const hasParticipantAccess = entries.some((entry) => entry.effective.canUseParticipantBooking);
+		const activeEntry = resolveDefaultEntry(entries, preferredContext);
 		if (activeEntry) {
 			writeLastUsedOrganizationId(activeEntry.orgId);
 		}
 
 		return {
-				hasOrganizationAdminAccess,
-				hasAdminPortalAccess,
-				hasParticipantAccess,
-				canManage: activeEntry?.effective.canManageClassroom ?? false,
-				canManageClassroom: activeEntry?.effective.canManageClassroom ?? false,
-				canManageBookings: activeEntry?.effective.canManageBookings ?? false,
-				canManageParticipants: activeEntry?.effective.canManageParticipants ?? false,
-				canUseParticipantBooking: activeEntry?.effective.canUseParticipantBooking ?? false,
-				activeOrganizationRole: activeEntry?.facts.orgRole ?? null,
-				activeFacts: activeEntry?.facts ?? null,
-				activeSources: activeEntry?.sources ?? null,
-				activeDisplay: activeEntry?.display ?? null,
-				activeDisplayRole: activeEntry?.display.primaryRole ?? null,
-				hasActiveOrganization: Boolean(activeEntry),
+			hasOrganizationAdminAccess,
+			hasAdminPortalAccess,
+			hasParticipantAccess,
+			canManage: activeEntry?.effective.canManageClassroom ?? false,
+			canManageClassroom: activeEntry?.effective.canManageClassroom ?? false,
+			canManageBookings: activeEntry?.effective.canManageBookings ?? false,
+			canManageParticipants: activeEntry?.effective.canManageParticipants ?? false,
+			canUseParticipantBooking: activeEntry?.effective.canUseParticipantBooking ?? false,
+			activeOrganizationRole: activeEntry?.facts.orgRole ?? null,
+			activeFacts: activeEntry?.facts ?? null,
+			activeSources: activeEntry?.sources ?? null,
+			activeDisplay: activeEntry?.display ?? null,
+			activeDisplayRole: activeEntry?.display.primaryRole ?? null,
+			hasActiveOrganization: Boolean(activeEntry),
 			activeContext: activeEntry
 				? {
-					orgSlug: activeEntry.orgSlug,
-					classroomSlug: activeEntry.classroomSlug
-				}
+						orgSlug: activeEntry.orgSlug,
+						classroomSlug: activeEntry.classroomSlug
+					}
 				: null,
 			accessTree
 		};
@@ -564,9 +573,7 @@ export type PortalHomePath =
 	| '/admin/participants'
 	| '/participant/home';
 
-export const resolvePortalHomePath = (
-	portalAccess: PortalAccess
-): PortalHomePath | null => {
+export const resolvePortalHomePath = (portalAccess: PortalAccess): PortalHomePath | null => {
 	if (portalAccess.hasOrganizationAdminAccess) {
 		return '/admin/dashboard';
 	}
@@ -615,7 +622,9 @@ export const getScopedContextFromUrlPath = (
 	return getContextFromAccessTree(accessTree, pathContext.orgSlug, pathContext.classroomSlug);
 };
 
-export const readOrganizationsFromAccessTree = (accessTree: AccessTreePayload | null): OrganizationPayload[] => {
+export const readOrganizationsFromAccessTree = (
+	accessTree: AccessTreePayload | null
+): OrganizationPayload[] => {
 	if (!accessTree) {
 		return [];
 	}
@@ -651,20 +660,20 @@ export const readClassroomsFromAccessTree = (
 	if (!organization) {
 		return [];
 	}
-		return organization.classrooms.map((classroom) => ({
-			id: classroom.id,
-			slug: classroom.slug,
-			name: classroom.name,
-			logo: typeof classroom.logo === 'string' ? classroom.logo : null,
-			canManage: classroom.effective.canManageClassroom,
-			canManageClassroom: classroom.effective.canManageClassroom,
-			canManageBookings: classroom.effective.canManageBookings,
-			canManageParticipants: classroom.effective.canManageParticipants,
-			canUseParticipantBooking: classroom.effective.canUseParticipantBooking,
-			display: classroom.display,
-			facts: classroom.facts,
-			sources: classroom.sources
-		}));
+	return organization.classrooms.map((classroom) => ({
+		id: classroom.id,
+		slug: classroom.slug,
+		name: classroom.name,
+		logo: typeof classroom.logo === 'string' ? classroom.logo : null,
+		canManage: classroom.effective.canManageClassroom,
+		canManageClassroom: classroom.effective.canManageClassroom,
+		canManageBookings: classroom.effective.canManageBookings,
+		canManageParticipants: classroom.effective.canManageParticipants,
+		canUseParticipantBooking: classroom.effective.canUseParticipantBooking,
+		display: classroom.display,
+		facts: classroom.facts,
+		sources: classroom.sources
+	}));
 };
 
 export const loadOrganizationsFromAccessTree = async (): Promise<OrganizationPayload[]> => {

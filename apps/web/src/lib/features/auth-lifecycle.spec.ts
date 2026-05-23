@@ -34,12 +34,9 @@ describe('auth-lifecycle', () => {
 		const handler = vi.fn();
 
 		const unsubscribe = onAuthSessionUpdated(handler);
-		expect(addEventListener).toHaveBeenCalledWith(
-			AUTH_SESSION_UPDATED_EVENT,
-			expect.any(Function)
-		);
+		expect(addEventListener).toHaveBeenCalledWith(AUTH_SESSION_UPDATED_EVENT, expect.any(Function));
 
-		const [_, listener] = addEventListener.mock.calls[0] as [string, EventListener];
+		const [, listener] = addEventListener.mock.calls[0] as [string, EventListener];
 		listener(new Event(AUTH_SESSION_UPDATED_EVENT));
 		expect(handler).toHaveBeenCalledTimes(1);
 
