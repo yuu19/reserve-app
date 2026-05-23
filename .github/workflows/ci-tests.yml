@@ -9,6 +9,7 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
+      - 'scripts/**'
       - 'turbo.json'
       - '.github/workflows/ci-tests.yml'
       - '.github/workflows/deploy-workers.yml'
@@ -23,6 +24,7 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
+      - 'scripts/**'
       - 'turbo.json'
       - '.github/workflows/ci-tests.yml'
       - '.github/workflows/deploy-workers.yml'
@@ -59,10 +61,24 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run backend tests
-        run: pnpm --filter @apps/backend test
+        run: pnpm --filter @apps/backend test:coverage
 
       - name: Run web server tests
-        run: pnpm --filter @apps/web test
+        run: pnpm --filter @apps/web test:coverage
+
+      - name: Write Vitest coverage summary
+        run: node scripts/write-vitest-coverage-summary.mjs "Backend=apps/backend/coverage/coverage-summary.json" "Web server=apps/web/coverage/server/coverage-summary.json"
+
+      - name: Upload Vitest coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-coverage
+          path: |
+            apps/backend/coverage/
+            apps/web/coverage/server/
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Build docs worker
         run: pnpm --filter @apps/docs build

@@ -31,6 +31,11 @@ export default defineConfig({
 		sourcemap: 'hidden'
 	},
 	test: {
+		coverage: {
+			provider: 'v8',
+			reporter: ['text', 'json-summary', 'html', 'lcov'],
+			reportsDirectory: './coverage/server'
+		},
 		expect: { requireAssertions: true },
 		projects: [
 			{

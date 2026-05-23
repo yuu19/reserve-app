@@ -9,6 +9,7 @@ playwright-report
 test-results
 /.svelte-kit
 /build
+/coverage
 
 # OS
 .DS_Store
