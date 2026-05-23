@@ -405,7 +405,7 @@ export const createDrizzleBillingStore = ({
 
   async appendPaymentIssueEvent(input: BillingPaymentIssueEventInput) {
     await database
-      .insert(dbSchema.billingPaymentIssueEvent)
+      .insert(dbSchema.billingInvoiceEvent)
       .values({
         id: crypto.randomUUID(),
         billingAccountId: input.billingAccountId,

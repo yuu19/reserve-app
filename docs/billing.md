@@ -95,7 +95,7 @@ Stripe の Premium Price が設定され、[`STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_E
 
 実装メモ:
 
-- トライアル日数: [`ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS`](../apps/backend/src/billing/organization-billing.ts)
+- トライアル日数: [`ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS`](../apps/backend/src/domain/billing/organization-billing.ts)
 - トライアル時の Stripe subscription 作成: [`STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED`](../apps/backend/.env.example)
 - トライアル開始: [`POST /api/v1/auth/organizations/billing/trial`](../apps/backend/src/routes/auth-routes.ts)
 - トライアル完了判定: [`POST /api/v1/auth/organizations/billing/trial/complete`](../apps/backend/src/routes/auth-routes.ts)
@@ -163,8 +163,8 @@ Customer Portal は、Stripe と連携済みで `active`、`trialing`、`past_du
 
 - 支払い方法登録: [`POST /api/v1/auth/organizations/billing/payment-method`](../apps/backend/src/routes/auth-routes.ts)
 - 契約管理: [`POST /api/v1/auth/organizations/billing/portal`](../apps/backend/src/routes/auth-routes.ts)
-- 課金操作の再利用: [`organization_billing_operation_attempt`](../apps/backend/src/db/schema.ts)
-- 再利用期間: [`BILLING_HANDOFF_REUSE_WINDOW_MS`](../apps/backend/src/billing/organization-billing-operations.ts)
+- 課金操作の再利用: [`billing_operation_attempt`](../apps/backend/src/infra/db/schema.ts)
+- 再利用期間: [`BILLING_HANDOFF_REUSE_WINDOW_MS`](../apps/backend/src/domain/billing/organization-billing-operations.ts)
 
 ## 7. 回数券購入の支払い
 
@@ -220,8 +220,8 @@ API でも回数券購入の Stripe 決済は受け付けない。
 
 実装メモ:
 
-- 通知履歴: [`organization_billing_notification`](../apps/backend/src/db/schema.ts)
-- 通知処理: [`apps/backend/src/billing/organization-billing-notifications.ts`](../apps/backend/src/billing/organization-billing-notifications.ts)
+- 通知履歴: [`billing_notification`](../apps/backend/src/infra/db/schema.ts)
+- 通知処理: [`apps/backend/src/domain/billing/reserve-app-billing-notifications.ts`](../apps/backend/src/domain/billing/reserve-app-billing-notifications.ts)
 - メール送信: [`RESEND_API_KEY`](../apps/backend/.env.example)、[`RESEND_FROM_EMAIL`](../apps/backend/.env.example)
 
 ## 10. Stripe との同期
@@ -270,12 +270,11 @@ Stripe と連携済みの契約全体も、日次で照合する。
 実装メモ:
 
 - Stripe 通知: [`POST /api/webhooks/stripe`](../apps/backend/src/app.ts)
-- 署名検証: [`apps/backend/src/payment/stripe.ts`](../apps/backend/src/payment/stripe.ts)
-- Stripe 通知の同期: [`apps/backend/src/billing/stripe-webhook-sync.ts`](../apps/backend/src/billing/stripe-webhook-sync.ts)
-- Stripe 通知の処理履歴: [`stripe_webhook_event`](../apps/backend/src/db/schema.ts)
-- Stripe 通知の失敗履歴: [`stripe_webhook_failure`](../apps/backend/src/db/schema.ts)
-- 対象限定照合: [`reconcileRiskyOrganizationBillingStates`](../apps/backend/src/billing/organization-billing-maintenance.ts)
-- 全体照合: [`reconcileProviderLinkedOrganizationBillingStates`](../apps/backend/src/billing/organization-billing-maintenance.ts)
+- 署名検証: [`apps/backend/src/infra/payment/stripe.ts`](../apps/backend/src/infra/payment/stripe.ts)
+- Stripe 通知の同期: [`apps/backend/src/domain/billing/stripe-webhook-sync.ts`](../apps/backend/src/domain/billing/stripe-webhook-sync.ts)
+- Stripe 通知の処理履歴: [`billing_provider_event`](../apps/backend/src/infra/db/schema.ts)
+- 対象限定照合: [`reconcileRiskyOrganizationBillingStates`](../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
+- 全体照合: [`reconcileProviderLinkedOrganizationBillingStates`](../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
 - scheduled handler: [`apps/backend/src/worker.ts`](../apps/backend/src/worker.ts)
 
 運用上の注意:
@@ -314,10 +313,10 @@ owner は、Stripe が提供する請求書または領収書の参照を契約�
 
 実装メモ:
 
-- 請求書・支払いイベント履歴: [`organization_billing_invoice_event`](../apps/backend/src/db/schema.ts)
-- 請求書・領収書の参照: [`organization_billing_document_reference`](../apps/backend/src/db/schema.ts)
-- 請求書・領収書の表示判定: [`apps/backend/src/billing/organization-billing-documents.ts`](../apps/backend/src/billing/organization-billing-documents.ts)
-- 請求書・支払いイベント: [`apps/backend/src/billing/organization-billing-invoice-events.ts`](../apps/backend/src/billing/organization-billing-invoice-events.ts)
+- 請求書・支払いイベント履歴: [`billing_invoice_event`](../apps/backend/src/infra/db/schema.ts)
+- 請求書・領収書の参照: [`billing_document_reference`](../apps/backend/src/infra/db/schema.ts)
+- 請求書・領収書の表示判定: [`apps/backend/src/domain/billing/organization-billing-documents.ts`](../apps/backend/src/domain/billing/organization-billing-documents.ts)
+- 請求書・支払いイベント: [`apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts`](../apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts)
 
 ## 12. 請求先情報と価格
 
@@ -329,9 +328,9 @@ owner には次に必要な操作を案内し、社内調査では確認でき�
 
 実装メモ:
 
-- 請求先情報の状態: [`organization_billing.billing_profile_readiness`](../apps/backend/src/db/schema.ts)
-- 次に必要な案内: [`organization_billing.billing_profile_next_action`](../apps/backend/src/db/schema.ts)
-- 状態更新: [`apps/backend/src/billing/organization-billing-profile.ts`](../apps/backend/src/billing/organization-billing-profile.ts)
+- 請求先情報の状態: [`apps/backend/src/domain/billing/organization-billing-profile.ts`](../apps/backend/src/domain/billing/organization-billing-profile.ts)
+- 次に必要な案内: [`billing_profile_next_action`](../apps/backend/src/features/billing/billing.store.ts)
+- 状態更新: [`apps/backend/src/domain/billing/organization-billing-profile.ts`](../apps/backend/src/domain/billing/organization-billing-profile.ts)
 
 ## 13. 社内調査
 
@@ -348,7 +347,7 @@ owner には次に必要な操作を案内し、社内調査では確認でき�
 実装メモ:
 
 - 社内調査: [`GET /api/v1/auth/internal/organizations/{organizationId}/billing-inspection`](../apps/backend/src/routes/auth-routes.ts)
-- 社内調査の読み取り: [`apps/backend/src/billing/internal-billing-inspection.ts`](../apps/backend/src/billing/internal-billing-inspection.ts)
+- 社内調査の読み取り: [`apps/backend/src/domain/billing/internal-billing-inspection.ts`](../apps/backend/src/domain/billing/internal-billing-inspection.ts)
 - 調査担当者の許可: [`INTERNAL_OPERATOR_EMAILS`](../apps/backend/.env.example)
 
 ## 14. 表示の原則
@@ -402,15 +401,14 @@ Stripe Dashboard では、次の状態を確認する。
 
 ### 主な保存先
 
-- 組織の契約状態: [`organization_billing`](../apps/backend/src/db/schema.ts)
-- owner 課金操作の再利用・失敗履歴: [`organization_billing_operation_attempt`](../apps/backend/src/db/schema.ts)
-- 請求書・支払いイベント履歴: [`organization_billing_invoice_event`](../apps/backend/src/db/schema.ts)
-- 請求書・領収書の参照: [`organization_billing_document_reference`](../apps/backend/src/db/schema.ts)
-- Stripe 通知の処理履歴: [`stripe_webhook_event`](../apps/backend/src/db/schema.ts)
-- Stripe 通知の失敗履歴: [`stripe_webhook_failure`](../apps/backend/src/db/schema.ts)
-- owner 向け通知履歴: [`organization_billing_notification`](../apps/backend/src/db/schema.ts)
-- 契約変更の監査履歴: [`organization_billing_audit_event`](../apps/backend/src/db/schema.ts)
-- Stripe とアプリの状態差分: [`organization_billing_signal`](../apps/backend/src/db/schema.ts)
+- 組織の契約状態: [`billing_account`](../apps/backend/src/infra/db/schema.ts)、[`billing_subscription`](../apps/backend/src/infra/db/schema.ts)、[`billing_payment_issue`](../apps/backend/src/infra/db/schema.ts)
+- owner 課金操作の再利用・失敗履歴: [`billing_operation_attempt`](../apps/backend/src/infra/db/schema.ts)
+- 請求書・支払いイベント履歴: [`billing_invoice_event`](../apps/backend/src/infra/db/schema.ts)
+- 請求書・領収書の参照: [`billing_document_reference`](../apps/backend/src/infra/db/schema.ts)
+- Stripe 通知の処理履歴: [`billing_provider_event`](../apps/backend/src/infra/db/schema.ts)
+- owner 向け通知履歴: [`billing_notification`](../apps/backend/src/infra/db/schema.ts)
+- 契約変更の監査履歴: [`billing_audit_event`](../apps/backend/src/infra/db/schema.ts)
+- Stripe とアプリの状態差分: [`billing_signal`](../apps/backend/src/infra/db/schema.ts)
 
 ### 主な環境変数
 
@@ -429,14 +427,14 @@ Stripe Dashboard では、次の状態を確認する。
 
 ### 関連コード
 
-- 契約状態の判定: [`apps/backend/src/billing/organization-billing-policy.ts`](../apps/backend/src/billing/organization-billing-policy.ts)
-- Stripe 通知の同期: [`apps/backend/src/billing/stripe-webhook-sync.ts`](../apps/backend/src/billing/stripe-webhook-sync.ts)
-- 課金操作の再利用: [`apps/backend/src/billing/organization-billing-operations.ts`](../apps/backend/src/billing/organization-billing-operations.ts)
-- 請求書・支払いイベント: [`apps/backend/src/billing/organization-billing-invoice-events.ts`](../apps/backend/src/billing/organization-billing-invoice-events.ts)
-- 請求書・領収書の表示判定: [`apps/backend/src/billing/organization-billing-documents.ts`](../apps/backend/src/billing/organization-billing-documents.ts)
-- 請求先情報の状態: [`apps/backend/src/billing/organization-billing-profile.ts`](../apps/backend/src/billing/organization-billing-profile.ts)
-- 定期照合: [`apps/backend/src/billing/organization-billing-maintenance.ts`](../apps/backend/src/billing/organization-billing-maintenance.ts)
-- 通知履歴: [`apps/backend/src/billing/organization-billing-notifications.ts`](../apps/backend/src/billing/organization-billing-notifications.ts)
-- 監査履歴と状態ずれの記録: [`apps/backend/src/billing/organization-billing-observability.ts`](../apps/backend/src/billing/organization-billing-observability.ts)
-- 社内調査の読み取り: [`apps/backend/src/billing/internal-billing-inspection.ts`](../apps/backend/src/billing/internal-billing-inspection.ts)
-- プレミアム機能の制御: [`apps/backend/src/booking/authorization.ts`](../apps/backend/src/booking/authorization.ts)
+- 契約状態の判定: [`apps/backend/src/domain/billing/organization-billing-policy.ts`](../apps/backend/src/domain/billing/organization-billing-policy.ts)
+- Stripe 通知の同期: [`apps/backend/src/domain/billing/stripe-webhook-sync.ts`](../apps/backend/src/domain/billing/stripe-webhook-sync.ts)
+- 課金操作の再利用: [`apps/backend/src/domain/billing/organization-billing-operations.ts`](../apps/backend/src/domain/billing/organization-billing-operations.ts)
+- 請求書・支払いイベント: [`apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts`](../apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts)
+- 請求書・領収書の表示判定: [`apps/backend/src/domain/billing/organization-billing-documents.ts`](../apps/backend/src/domain/billing/organization-billing-documents.ts)
+- 請求先情報の状態: [`apps/backend/src/domain/billing/organization-billing-profile.ts`](../apps/backend/src/domain/billing/organization-billing-profile.ts)
+- 定期照合: [`apps/backend/src/domain/billing/organization-billing-maintenance.ts`](../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
+- 通知履歴: [`apps/backend/src/domain/billing/reserve-app-billing-notifications.ts`](../apps/backend/src/domain/billing/reserve-app-billing-notifications.ts)
+- 監査履歴と状態ずれの記録: [`apps/backend/src/domain/billing/reserve-app-billing-observability.ts`](../apps/backend/src/domain/billing/reserve-app-billing-observability.ts)
+- 社内調査の読み取り: [`apps/backend/src/domain/billing/internal-billing-inspection.ts`](../apps/backend/src/domain/billing/internal-billing-inspection.ts)
+- プレミアム機能の制御: [`apps/backend/src/domain/booking/authorization.ts`](../apps/backend/src/domain/booking/authorization.ts)

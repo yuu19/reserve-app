@@ -195,8 +195,8 @@ export const billingPaymentIssue = sqliteTable(
   ],
 );
 
-export const billingPaymentIssueEvent = sqliteTable(
-  'billing_payment_issue_event',
+export const billingInvoiceEvent = sqliteTable(
+  'billing_invoice_event',
   {
     id: text('id').primaryKey(),
     billingAccountId: text('billing_account_id')
@@ -219,11 +219,8 @@ export const billingPaymentIssueEvent = sqliteTable(
     createdAt: defaultTimestampMs(),
   },
   (table) => [
-    index('billing_payment_issue_event_account_created_idx').on(
-      table.billingAccountId,
-      table.createdAt,
-    ),
-    uniqueIndex('billing_payment_issue_event_provider_uidx').on(
+    index('billing_invoice_event_account_created_idx').on(table.billingAccountId, table.createdAt),
+    uniqueIndex('billing_invoice_event_provider_uidx').on(
       table.provider,
       table.providerEventId,
       table.eventType,
@@ -429,11 +426,13 @@ export const billingNotification = sqliteTable(
     failedAt: integer('failed_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
-    index('billing_notification_dedupe_idx').on(
+    uniqueIndex('billing_notification_dedupe_uidx').on(
       table.billingAccountId,
       table.notificationKind,
       table.recipientEmail,
       table.providerEventId,
+      table.attemptNumber,
+      table.deliveryStatus,
     ),
     index('billing_notification_account_sequence_idx').on(
       table.billingAccountId,

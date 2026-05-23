@@ -15,28 +15,28 @@ import {
   type ReserveAppBillingNotificationDeliveryState,
 } from './reserve-app-billing-notifications.js';
 import {
-  readOrganizationBillingInvoicePaymentEvents,
-  type OrganizationBillingInvoicePaymentEvent,
-} from './organization-billing-invoice-events.js';
+  readReserveAppBillingInvoiceEvents,
+  type ReserveAppBillingInvoiceEvent,
+} from './reserve-app-billing-invoice-events.js';
 
-export type OrganizationOwnerBillingHistoryEntryType =
+export type ReserveAppOwnerBillingHistoryEntryType =
   | 'plan_transition'
   | 'notification'
   | 'reconciliation'
   | 'payment_event';
-export type OrganizationOwnerBillingHistoryEntryTone = 'neutral' | 'positive' | 'attention';
+export type ReserveAppOwnerBillingHistoryEntryTone = 'neutral' | 'positive' | 'attention';
 
-export type OrganizationOwnerBillingHistoryEntry = {
+export type ReserveAppOwnerBillingHistoryEntry = {
   id: string;
-  eventType: OrganizationOwnerBillingHistoryEntryType;
+  eventType: ReserveAppOwnerBillingHistoryEntryType;
   occurredAt: string | null;
   title: string;
   summary: string;
   billingContext: string | null;
-  tone: OrganizationOwnerBillingHistoryEntryTone;
+  tone: ReserveAppOwnerBillingHistoryEntryTone;
 };
 
-type SortableOwnerBillingHistoryEntry = OrganizationOwnerBillingHistoryEntry & {
+type SortableOwnerBillingHistoryEntry = ReserveAppOwnerBillingHistoryEntry & {
   sortSequence: number | null;
 };
 
@@ -162,7 +162,7 @@ const normalizeBillingInterval = (value: unknown): 'month' | 'year' | null => {
 
 const toHistoryToneFromSignalStatus = (
   value: 'pending' | 'mismatch' | 'unavailable' | 'resolved',
-): OrganizationOwnerBillingHistoryEntryTone => {
+): ReserveAppOwnerBillingHistoryEntryTone => {
   if (value === 'resolved') {
     return 'positive';
   }
@@ -534,9 +534,9 @@ const buildReconciliationEntry = (row: {
 };
 
 const buildInvoicePaymentHistoryEntry = (
-  event: OrganizationBillingInvoicePaymentEvent,
+  event: ReserveAppBillingInvoiceEvent,
   index: number,
-  events: OrganizationBillingInvoicePaymentEvent[],
+  events: ReserveAppBillingInvoiceEvent[],
 ) => {
   const eventTime = event.occurredAt ? Date.parse(event.occurredAt) : null;
   const hasPaymentIssueBeforeSuccess =
@@ -633,7 +633,7 @@ const compareHistoryEntries = (
   return left.id.localeCompare(right.id);
 };
 
-export const readOrganizationOwnerBillingHistory = async ({
+export const readReserveAppOwnerBillingHistory = async ({
   database,
   organizationId,
 }: {
@@ -709,7 +709,7 @@ export const readOrganizationOwnerBillingHistory = async ({
         )
         .orderBy(desc(dbSchema.billingSignal.sequenceNumber))
         .limit(OWNER_BILLING_HISTORY_ENTRY_LIMIT),
-      readOrganizationBillingInvoicePaymentEvents({
+      readReserveAppBillingInvoiceEvents({
         database,
         organizationId,
         limit: OWNER_BILLING_HISTORY_ENTRY_LIMIT,
@@ -773,13 +773,13 @@ export const readOrganizationOwnerBillingHistory = async ({
           createdAt: row.createdAt,
         });
       }),
-    ...invoicePaymentEvents.map((event: OrganizationBillingInvoicePaymentEvent, index: number) =>
+    ...invoicePaymentEvents.map((event: ReserveAppBillingInvoiceEvent, index: number) =>
       buildInvoicePaymentHistoryEntry(event, index, invoicePaymentEvents),
     ),
   ]
     .sort(compareHistoryEntries)
     .slice(0, OWNER_BILLING_HISTORY_ENTRY_LIMIT)
-    .map(({ sortSequence: _, ...entry }) => entry satisfies OrganizationOwnerBillingHistoryEntry);
+    .map(({ sortSequence: _, ...entry }) => entry satisfies ReserveAppOwnerBillingHistoryEntry);
 
   return { entries };
 };

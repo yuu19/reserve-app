@@ -1,10 +1,10 @@
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import { buildBillingDocumentReadiness } from '../../domain/billing/organization-billing-documents.js';
-import { readOrganizationBillingDocumentReferences } from '../../domain/billing/organization-billing-invoice-events.js';
+import { readReserveAppBillingDocumentReferences } from '../../domain/billing/reserve-app-billing-invoice-events.js';
 
 export const createReserveAppBillingDocumentStore = (database: AuthRuntimeDatabase) => ({
   readDocumentReferences(organizationId: string) {
-    return readOrganizationBillingDocumentReferences({
+    return readReserveAppBillingDocumentReferences({
       database,
       organizationId,
     });

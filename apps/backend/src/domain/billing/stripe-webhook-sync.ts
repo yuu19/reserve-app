@@ -10,10 +10,10 @@ import {
   normalizeStripeInvoiceDocument,
 } from './organization-billing-documents.js';
 import {
-  appendOrganizationBillingInvoicePaymentEvent,
-  type OrganizationBillingInvoicePaymentEventType,
-  type OrganizationBillingInvoicePaymentOwnerFacingStatus,
-} from './organization-billing-invoice-events.js';
+  appendReserveAppBillingInvoiceEvent,
+  type ReserveAppBillingInvoiceEventType,
+  type ReserveAppBillingInvoiceEventOwnerFacingStatus,
+} from './reserve-app-billing-invoice-events.js';
 import {
   appendReserveAppBillingAuditEvent,
   appendReserveAppBillingSignal,
@@ -139,8 +139,8 @@ type NormalizedStripeOrganizationBillingWebhookEvent =
       kind: 'invoice_payment_event';
       eventId: string;
       eventType: string;
-      invoiceEventType: OrganizationBillingInvoicePaymentEventType;
-      ownerFacingStatus: OrganizationBillingInvoicePaymentOwnerFacingStatus;
+      invoiceEventType: ReserveAppBillingInvoiceEventType;
+      ownerFacingStatus: ReserveAppBillingInvoiceEventOwnerFacingStatus;
       stripeCustomerId: string | null;
       stripeSubscriptionId: string | null;
       stripeInvoiceId: string | null;
@@ -489,8 +489,8 @@ const normalizeSubscriptionStatus = (
 const resolveInvoicePaymentEventMapping = (
   eventType: string,
 ): {
-  eventType: OrganizationBillingInvoicePaymentEventType;
-  ownerFacingStatus: OrganizationBillingInvoicePaymentOwnerFacingStatus;
+  eventType: ReserveAppBillingInvoiceEventType;
+  ownerFacingStatus: ReserveAppBillingInvoiceEventOwnerFacingStatus;
 } | null => {
   switch (eventType) {
     case 'invoice.finalized':
@@ -984,7 +984,7 @@ export const handleStripeOrganizationBillingWebhook = async ({
           ? normalizeStripeChargeReceiptDocument(normalized.latestChargePayload)
           : null,
       ].filter((document): document is NonNullable<typeof document> => Boolean(document));
-      await appendOrganizationBillingInvoicePaymentEvent({
+      await appendReserveAppBillingInvoiceEvent({
         database,
         organizationId: matchedBilling.organizationId,
         stripeEventId: normalized.eventId,

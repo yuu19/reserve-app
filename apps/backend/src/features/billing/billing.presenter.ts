@@ -1,6 +1,6 @@
 import type { OrganizationRole } from '../../domain/booking/authorization.js';
 import { buildBillingDocumentReadiness } from '../../domain/billing/organization-billing-documents.js';
-import type { OrganizationBillingInvoicePaymentEvent } from '../../domain/billing/organization-billing-invoice-events.js';
+import type { ReserveAppBillingInvoiceEvent } from '../../domain/billing/reserve-app-billing-invoice-events.js';
 import type {
   OrganizationBillingOperationAttempt,
   OrganizationBillingOperationPurpose,
@@ -58,7 +58,7 @@ export const toTimestamp = (value: unknown): number | null => {
   return null;
 };
 
-export const getPaymentEventTime = (event: OrganizationBillingInvoicePaymentEvent) =>
+export const getPaymentEventTime = (event: ReserveAppBillingInvoiceEvent) =>
   toTimestamp(event.occurredAt) ?? toTimestamp(event.createdAt);
 
 export const buildBillingHandoff = ({
@@ -94,12 +94,12 @@ export const resolvePaymentIssueContext = ({
   entitlementReason: string;
   paymentIssueStartedAt: unknown;
   pastDueGraceEndsAt: unknown;
-  invoicePaymentEvents: OrganizationBillingInvoicePaymentEvent[];
+  invoicePaymentEvents: ReserveAppBillingInvoiceEvent[];
 }) => {
   const latestIssueEvent = invoicePaymentEvents.find(
     (
       event,
-    ): event is OrganizationBillingInvoicePaymentEvent & {
+    ): event is ReserveAppBillingInvoiceEvent & {
       eventType: 'payment_failed' | 'payment_action_required';
     } => event.eventType === 'payment_failed' || event.eventType === 'payment_action_required',
   );

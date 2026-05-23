@@ -16,10 +16,10 @@ import {
   buildInternalBillingDocumentInspection,
 } from './organization-billing-documents.js';
 import {
-  readOrganizationBillingDocumentReferences,
-  readOrganizationBillingInvoicePaymentEvents,
-  type OrganizationBillingInvoicePaymentEvent,
-} from './organization-billing-invoice-events.js';
+  readReserveAppBillingDocumentReferences,
+  readReserveAppBillingInvoiceEvents,
+  type ReserveAppBillingInvoiceEvent,
+} from './reserve-app-billing-invoice-events.js';
 import { readRecentBillingOperationAttempts } from './organization-billing-operations.js';
 import {
   normalizeReserveAppBillingNotificationDeliveryState,
@@ -85,7 +85,7 @@ const toTimestamp = (value: string | null | undefined) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 };
 
-const getPaymentEventTime = (event: OrganizationBillingInvoicePaymentEvent) =>
+const getPaymentEventTime = (event: ReserveAppBillingInvoiceEvent) =>
   toTimestamp(event.occurredAt) ?? toTimestamp(event.createdAt);
 
 const resolveInspectionPaymentIssueState = ({
@@ -95,12 +95,12 @@ const resolveInspectionPaymentIssueState = ({
 }: {
   subscriptionStatus: ReserveAppBillingSubscriptionStatus;
   entitlementReason: string;
-  invoicePaymentEvents: OrganizationBillingInvoicePaymentEvent[];
+  invoicePaymentEvents: ReserveAppBillingInvoiceEvent[];
 }) => {
   const latestIssueEvent = invoicePaymentEvents.find(
     (
       event,
-    ): event is OrganizationBillingInvoicePaymentEvent & {
+    ): event is ReserveAppBillingInvoiceEvent & {
       eventType: 'payment_failed' | 'payment_action_required';
     } => event.eventType === 'payment_failed' || event.eventType === 'payment_action_required',
   );
@@ -532,11 +532,11 @@ export const readInternalBillingInspection = async ({
         entitlementState: entitlementPolicy.entitlementState,
       },
     }),
-    readOrganizationBillingDocumentReferences({
+    readReserveAppBillingDocumentReferences({
       database,
       organizationId,
     }),
-    readOrganizationBillingInvoicePaymentEvents({
+    readReserveAppBillingInvoiceEvents({
       database,
       organizationId,
     }),
@@ -645,7 +645,7 @@ export const readInternalBillingInspection = async ({
     invoicePaymentEvents,
   });
   const latestSucceededEvent = invoicePaymentEvents.find(
-    (event: OrganizationBillingInvoicePaymentEvent) => event.eventType === 'payment_succeeded',
+    (event: ReserveAppBillingInvoiceEvent) => event.eventType === 'payment_succeeded',
   );
   const latestSucceededTime = latestSucceededEvent
     ? getPaymentEventTime(latestSucceededEvent)
@@ -656,7 +656,7 @@ export const readInternalBillingInspection = async ({
       subscriptionStatus === 'trialing' ||
       subscriptionStatus === 'free' ||
       subscriptionStatus === 'canceled')
-      ? invoicePaymentEvents.filter((event: OrganizationBillingInvoicePaymentEvent) => {
+      ? invoicePaymentEvents.filter((event: ReserveAppBillingInvoiceEvent) => {
           if (
             event.eventType !== 'payment_failed' &&
             event.eventType !== 'payment_action_required'

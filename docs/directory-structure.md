@@ -79,11 +79,11 @@ apps/backend/src/
     billing/
       organization-billing.ts
       organization-billing-policy.ts
-      organization-billing-history.ts
+      reserve-app-billing-history.ts
       organization-billing-documents.ts
       organization-billing-observability.ts
       organization-billing-operations.ts
-      organization-billing-invoice-events.ts
+      reserve-app-billing-invoice-events.ts
       internal-billing-inspection.ts
       internal-operator-access.ts
 

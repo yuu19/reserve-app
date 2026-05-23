@@ -98,14 +98,14 @@ integer('created_at', { mode: 'timestamp_ms' });
 
 `billing_payment_issue` を「現在状態」専用テーブルにし、`billing_account_id` で unique にする。
 
-履歴は別テーブル `billing_payment_issue_event` に保存する。
+請求書と支払いの履歴は別テーブル `billing_invoice_event` に保存する。
 
 ```txt
 billing_payment_issue
   現在の支払い問題状態を 1 account 1 row で保持
 
-billing_payment_issue_event
-  payment_failed / action_required / recovered などの履歴を append-only で保持
+billing_invoice_event
+  invoice_available / payment_failed / action_required / recovered などの履歴を append-only で保持
 ```
 
 ---
@@ -326,13 +326,13 @@ export const billingPaymentIssue = sqliteTable(
 
 ---
 
-## 2.5 billing_payment_issue_event
+## 2.5 billing_invoice_event
 
-支払い問題の履歴 table。
+請求書・支払いイベント全般の履歴 table。
 
 ```ts
-export const billingPaymentIssueEvent = sqliteTable(
-  'billing_payment_issue_event',
+export const billingInvoiceEvent = sqliteTable(
+  'billing_invoice_event',
   {
     id: text('id').primaryKey(),
 
@@ -346,7 +346,7 @@ export const billingPaymentIssueEvent = sqliteTable(
     ),
 
     eventType: text('event_type').notNull(),
-    // payment_failed | payment_action_required | payment_succeeded | recovered | stale_failure
+    // invoice_available | payment_failed | payment_action_required | payment_succeeded | recovered | stale_failure
 
     provider: text('provider').notNull(),
     providerEventId: text('provider_event_id'),
@@ -359,11 +359,8 @@ export const billingPaymentIssueEvent = sqliteTable(
       .notNull(),
   },
   (table) => [
-    index('billing_payment_issue_event_account_created_idx').on(
-      table.billingAccountId,
-      table.createdAt,
-    ),
-    uniqueIndex('billing_payment_issue_event_provider_uidx').on(
+    index('billing_invoice_event_account_created_idx').on(table.billingAccountId, table.createdAt),
+    uniqueIndex('billing_invoice_event_provider_uidx').on(
       table.provider,
       table.providerEventId,
       table.eventType,
@@ -654,6 +651,7 @@ export const billingNotification = sqliteTable(
 
     deliveryStatus: text('delivery_status').notNull(),
     // pending | sent | failed | skipped
+    attemptNumber: integer('attempt_number').default(1).notNull(),
 
     providerMessageId: text('provider_message_id'),
     failureReason: text('failure_reason'),
@@ -674,6 +672,8 @@ export const billingNotification = sqliteTable(
       table.notificationKind,
       table.recipientEmail,
       table.providerEventId,
+      table.attemptNumber,
+      table.deliveryStatus,
     ),
     index('billing_notification_retry_idx').on(table.notificationKind, table.deliveryStatus),
   ],
@@ -815,7 +815,7 @@ apps/backend/src/infra/billing/drizzle-billing-store.ts
 - billing_subscription の upsert
 - billing_entitlement の projection
 - billing_payment_issue current row の upsert
-- billing_payment_issue_event の append
+- billing_invoice_event の append
 ```
 
 禁止:
@@ -1094,7 +1094,7 @@ Scope:
 - billing_account
 - billing_subscription
 - billing_payment_issue
-- billing_payment_issue_event
+- billing_invoice_event
 - billing_entitlement
 - billing_provider_event
 - billing_operation_attempt

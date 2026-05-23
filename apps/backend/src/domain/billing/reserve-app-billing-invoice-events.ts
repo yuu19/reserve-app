@@ -9,12 +9,12 @@ import type {
   OrganizationBillingProviderDocumentReference,
 } from './organization-billing-documents.js';
 
-export type OrganizationBillingInvoicePaymentEventType =
+export type ReserveAppBillingInvoiceEventType =
   | 'invoice_available'
   | 'payment_succeeded'
   | 'payment_failed'
   | 'payment_action_required';
-export type OrganizationBillingInvoicePaymentOwnerFacingStatus =
+export type ReserveAppBillingInvoiceEventOwnerFacingStatus =
   | 'available'
   | 'checking'
   | 'missing'
@@ -22,17 +22,17 @@ export type OrganizationBillingInvoicePaymentOwnerFacingStatus =
   | 'failed'
   | 'succeeded';
 
-export type OrganizationBillingInvoicePaymentEvent = {
+export type ReserveAppBillingInvoiceEvent = {
   id: string;
   organizationId: string;
   stripeEventId: string | null;
-  eventType: OrganizationBillingInvoicePaymentEventType;
+  eventType: ReserveAppBillingInvoiceEventType;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   stripeInvoiceId: string | null;
   stripePaymentIntentId: string | null;
   providerStatus: string | null;
-  ownerFacingStatus: OrganizationBillingInvoicePaymentOwnerFacingStatus;
+  ownerFacingStatus: ReserveAppBillingInvoiceEventOwnerFacingStatus;
   occurredAt: string | null;
   createdAt: string | null;
 };
@@ -54,7 +54,7 @@ const toIsoDateString = (value: unknown): string | null => {
 
 export const normalizeInvoicePaymentEventType = (
   value: unknown,
-): OrganizationBillingInvoicePaymentEventType | null => {
+): ReserveAppBillingInvoiceEventType | null => {
   return value === 'invoice_available' ||
     value === 'payment_succeeded' ||
     value === 'payment_failed' ||
@@ -65,7 +65,7 @@ export const normalizeInvoicePaymentEventType = (
 
 export const normalizeInvoicePaymentOwnerFacingStatus = (
   value: unknown,
-): OrganizationBillingInvoicePaymentOwnerFacingStatus => {
+): ReserveAppBillingInvoiceEventOwnerFacingStatus => {
   return value === 'available' ||
     value === 'checking' ||
     value === 'missing' ||
@@ -109,7 +109,7 @@ const toInvoicePaymentEvent = (row: {
   ownerFacingStatus: string | null;
   occurredAt: unknown;
   createdAt: unknown;
-}): OrganizationBillingInvoicePaymentEvent => ({
+}): ReserveAppBillingInvoiceEvent => ({
   id: row.id,
   organizationId: row.organizationId,
   stripeEventId: row.stripeEventId ?? null,
@@ -124,7 +124,7 @@ const toInvoicePaymentEvent = (row: {
   createdAt: toIsoDateString(row.createdAt),
 });
 
-export const appendOrganizationBillingInvoicePaymentEvent = async ({
+export const appendReserveAppBillingInvoiceEvent = async ({
   database,
   organizationId,
   stripeEventId = null,
@@ -141,13 +141,13 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
   database: AuthRuntimeDatabase;
   organizationId: string;
   stripeEventId?: string | null;
-  eventType: OrganizationBillingInvoicePaymentEventType;
+  eventType: ReserveAppBillingInvoiceEventType;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   stripeInvoiceId?: string | null;
   stripePaymentIntentId?: string | null;
   providerStatus?: string | null;
-  ownerFacingStatus: OrganizationBillingInvoicePaymentOwnerFacingStatus;
+  ownerFacingStatus: ReserveAppBillingInvoiceEventOwnerFacingStatus;
   occurredAt?: Date | null;
   documentReferences?: OrganizationBillingProviderDocumentReference[];
 }) => {
@@ -156,7 +156,7 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
     organizationId,
   });
   const insertedRows = await database
-    .insert(dbSchema.billingPaymentIssueEvent)
+    .insert(dbSchema.billingInvoiceEvent)
     .values({
       id: crypto.randomUUID(),
       billingAccountId: state.account.id,
@@ -178,8 +178,8 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
     (stripeEventId
       ? await database
           .select()
-          .from(dbSchema.billingPaymentIssueEvent)
-          .where(eq(dbSchema.billingPaymentIssueEvent.providerEventId, stripeEventId))
+          .from(dbSchema.billingInvoiceEvent)
+          .where(eq(dbSchema.billingInvoiceEvent.providerEventId, stripeEventId))
           .limit(1)
       : [])[0];
 
@@ -242,7 +242,7 @@ export const appendOrganizationBillingInvoicePaymentEvent = async ({
   });
 };
 
-export const readOrganizationBillingInvoicePaymentEvents = async ({
+export const readReserveAppBillingInvoiceEvents = async ({
   database,
   organizationId,
   limit = 20,
@@ -253,50 +253,47 @@ export const readOrganizationBillingInvoicePaymentEvents = async ({
 }) => {
   const rows = await database
     .select({
-      id: dbSchema.billingPaymentIssueEvent.id,
+      id: dbSchema.billingInvoiceEvent.id,
       organizationId: dbSchema.billingAccount.subjectId,
-      stripeEventId: dbSchema.billingPaymentIssueEvent.providerEventId,
-      eventType: dbSchema.billingPaymentIssueEvent.eventType,
+      stripeEventId: dbSchema.billingInvoiceEvent.providerEventId,
+      eventType: dbSchema.billingInvoiceEvent.eventType,
       stripeCustomerId: dbSchema.billingAccount.providerCustomerId,
       stripeSubscriptionId: dbSchema.billingSubscription.providerSubscriptionId,
-      stripeInvoiceId: dbSchema.billingPaymentIssueEvent.providerInvoiceId,
-      stripePaymentIntentId: dbSchema.billingPaymentIssueEvent.providerPaymentIntentId,
-      providerStatus: dbSchema.billingPaymentIssueEvent.providerStatus,
-      ownerFacingStatus: dbSchema.billingPaymentIssueEvent.ownerFacingStatus,
-      occurredAt: dbSchema.billingPaymentIssueEvent.occurredAt,
-      createdAt: dbSchema.billingPaymentIssueEvent.createdAt,
+      stripeInvoiceId: dbSchema.billingInvoiceEvent.providerInvoiceId,
+      stripePaymentIntentId: dbSchema.billingInvoiceEvent.providerPaymentIntentId,
+      providerStatus: dbSchema.billingInvoiceEvent.providerStatus,
+      ownerFacingStatus: dbSchema.billingInvoiceEvent.ownerFacingStatus,
+      occurredAt: dbSchema.billingInvoiceEvent.occurredAt,
+      createdAt: dbSchema.billingInvoiceEvent.createdAt,
     })
-    .from(dbSchema.billingPaymentIssueEvent)
+    .from(dbSchema.billingInvoiceEvent)
     .innerJoin(
       dbSchema.billingAccount,
-      eq(dbSchema.billingPaymentIssueEvent.billingAccountId, dbSchema.billingAccount.id),
+      eq(dbSchema.billingInvoiceEvent.billingAccountId, dbSchema.billingAccount.id),
     )
     .leftJoin(
       dbSchema.billingSubscription,
-      eq(
-        dbSchema.billingPaymentIssueEvent.billingSubscriptionId,
-        dbSchema.billingSubscription.id,
-      ),
+      eq(dbSchema.billingInvoiceEvent.billingSubscriptionId, dbSchema.billingSubscription.id),
     )
     .where(
       and(
         eq(dbSchema.billingAccount.subjectType, 'organization'),
         eq(dbSchema.billingAccount.subjectId, organizationId),
         or(
-          eq(dbSchema.billingPaymentIssueEvent.eventType, 'invoice_available'),
-          eq(dbSchema.billingPaymentIssueEvent.eventType, 'payment_succeeded'),
-          eq(dbSchema.billingPaymentIssueEvent.eventType, 'payment_failed'),
-          eq(dbSchema.billingPaymentIssueEvent.eventType, 'payment_action_required'),
+          eq(dbSchema.billingInvoiceEvent.eventType, 'invoice_available'),
+          eq(dbSchema.billingInvoiceEvent.eventType, 'payment_succeeded'),
+          eq(dbSchema.billingInvoiceEvent.eventType, 'payment_failed'),
+          eq(dbSchema.billingInvoiceEvent.eventType, 'payment_action_required'),
         ),
       ),
     )
-    .orderBy(desc(dbSchema.billingPaymentIssueEvent.createdAt))
+    .orderBy(desc(dbSchema.billingInvoiceEvent.createdAt))
     .limit(Math.max(1, Math.min(Math.trunc(limit), 50)));
 
   return rows.map(toInvoicePaymentEvent);
 };
 
-export const readOrganizationBillingDocumentReferences = async ({
+export const readReserveAppBillingDocumentReferences = async ({
   database,
   organizationId,
 }: {

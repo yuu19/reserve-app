@@ -1,10 +1,10 @@
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import { readInternalBillingInspection } from '../../domain/billing/internal-billing-inspection.js';
-import { readOrganizationOwnerBillingHistory } from '../../domain/billing/organization-billing-history.js';
+import { readReserveAppOwnerBillingHistory } from '../../domain/billing/reserve-app-billing-history.js';
 import {
-  readOrganizationBillingDocumentReferences,
-  readOrganizationBillingInvoicePaymentEvents,
-} from '../../domain/billing/organization-billing-invoice-events.js';
+  readReserveAppBillingDocumentReferences,
+  readReserveAppBillingInvoiceEvents,
+} from '../../domain/billing/reserve-app-billing-invoice-events.js';
 import {
   appendReserveAppBillingAuditEvent,
   appendReserveAppBillingSignal,
@@ -66,19 +66,19 @@ export const createReserveAppBillingStore = ({
   },
 
   readOwnerBillingHistory: ({ organizationId }) =>
-    readOrganizationOwnerBillingHistory({
+    readReserveAppOwnerBillingHistory({
       database,
       organizationId,
     }),
 
   readInvoicePaymentEvents: ({ organizationId }) =>
-    readOrganizationBillingInvoicePaymentEvents({
+    readReserveAppBillingInvoiceEvents({
       database,
       organizationId,
     }),
 
   readDocumentReferences: ({ organizationId }) =>
-    readOrganizationBillingDocumentReferences({
+    readReserveAppBillingDocumentReferences({
       database,
       organizationId,
     }),

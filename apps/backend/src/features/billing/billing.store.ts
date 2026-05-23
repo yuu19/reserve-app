@@ -1,7 +1,7 @@
 import type { readInternalBillingInspection } from '../../domain/billing/internal-billing-inspection.js';
 import type { buildBillingDocumentReadiness } from '../../domain/billing/organization-billing-documents.js';
-import type { readOrganizationOwnerBillingHistory } from '../../domain/billing/organization-billing-history.js';
-import type { OrganizationBillingInvoicePaymentEvent } from '../../domain/billing/organization-billing-invoice-events.js';
+import type { readReserveAppOwnerBillingHistory } from '../../domain/billing/reserve-app-billing-history.js';
+import type { ReserveAppBillingInvoiceEvent } from '../../domain/billing/reserve-app-billing-invoice-events.js';
 import type {
   appendReserveAppBillingAuditEvent,
   appendReserveAppBillingSignal,
@@ -54,7 +54,7 @@ export type TrialCompletionResult =
       message: string;
     };
 export type OrganizationBillingHistoryResult = Awaited<
-  ReturnType<typeof readOrganizationOwnerBillingHistory>
+  ReturnType<typeof readReserveAppOwnerBillingHistory>
 >;
 export type OrganizationBillingDocumentReferences = Parameters<
   typeof buildBillingDocumentReadiness
@@ -104,7 +104,7 @@ export type OrganizationBillingStore = {
 
   readInvoicePaymentEvents(input: {
     organizationId: string;
-  }): Promise<OrganizationBillingInvoicePaymentEvent[]>;
+  }): Promise<ReserveAppBillingInvoiceEvent[]>;
 
   readDocumentReferences(input: {
     organizationId: string;

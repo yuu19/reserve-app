@@ -15,7 +15,7 @@ import {
   type ReserveAppBillingPlanCode,
   type ReserveAppBillingSubscriptionStatus,
 } from '../../features/billing/policies/reserve-app-billing-policy.js';
-import type { OrganizationBillingInvoicePaymentEventType } from '../../domain/billing/organization-billing-invoice-events.js';
+import type { ReserveAppBillingInvoiceEventType } from '../../domain/billing/reserve-app-billing-invoice-events.js';
 import * as dbSchema from '../db/schema.js';
 import { readStripeSubscriptionSummaryById } from '../payment/stripe.js';
 import { createDrizzleBillingStore } from './drizzle-billing-store.js';
@@ -728,7 +728,7 @@ const resolveIssueEventState = ({
   projectedPaymentIssueState,
   stalePaymentIssueAfterRecovery,
 }: {
-  invoiceEventType: OrganizationBillingInvoicePaymentEventType;
+  invoiceEventType: ReserveAppBillingInvoiceEventType;
   projectedPaymentIssueState: ReserveAppBillingPaymentIssueState;
   stalePaymentIssueAfterRecovery?: boolean;
 }): ReserveAppBillingPaymentIssueState | null => {
@@ -775,7 +775,7 @@ export const appendReserveAppBillingV2PaymentIssueEvent = async ({
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
   organizationId: string;
-  invoiceEventType: OrganizationBillingInvoicePaymentEventType;
+  invoiceEventType: ReserveAppBillingInvoiceEventType;
   providerEventId: string;
   providerInvoiceId?: string | null;
   providerPaymentIntentId?: string | null;

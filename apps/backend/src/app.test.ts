@@ -1127,7 +1127,7 @@ const selectOrganizationBillingOperationAttemptRows = async (organizationId: str
 const selectOrganizationBillingInvoiceEventRows = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      "SELECT e.id, e.provider_event_id as stripeEventId, e.event_type as eventType, e.provider_invoice_id as stripeInvoiceId, e.provider_payment_intent_id as stripePaymentIntentId, e.provider_status as providerStatus, e.owner_facing_status as ownerFacingStatus, e.occurred_at as occurredAt, e.created_at as createdAt FROM billing_payment_issue_event e INNER JOIN billing_account a ON a.id = e.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? AND e.event_type IN ('invoice_available', 'payment_succeeded', 'payment_failed', 'payment_action_required') ORDER BY e.created_at ASC",
+      "SELECT e.id, e.provider_event_id as stripeEventId, e.event_type as eventType, e.provider_invoice_id as stripeInvoiceId, e.provider_payment_intent_id as stripePaymentIntentId, e.provider_status as providerStatus, e.owner_facing_status as ownerFacingStatus, e.occurred_at as occurredAt, e.created_at as createdAt FROM billing_invoice_event e INNER JOIN billing_account a ON a.id = e.billing_account_id WHERE a.subject_type = 'organization' AND a.subject_id = ? AND e.event_type IN ('invoice_available', 'payment_succeeded', 'payment_failed', 'payment_action_required') ORDER BY e.created_at ASC",
     )
     .bind(organizationId)
     .all<{
@@ -1183,7 +1183,7 @@ const insertOrganizationBillingInvoiceEventRow = async ({
   const billingSubscriptionId = await selectBillingFixtureSubscriptionId(organizationId);
   await d1
     .prepare(
-      'INSERT INTO billing_payment_issue_event (id, billing_account_id, billing_subscription_id, event_type, provider, provider_event_id, provider_invoice_id, provider_payment_intent_id, provider_status, owner_facing_status, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO billing_invoice_event (id, billing_account_id, billing_subscription_id, event_type, provider, provider_event_id, provider_invoice_id, provider_payment_intent_id, provider_status, owner_facing_status, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       crypto.randomUUID(),
@@ -1242,7 +1242,7 @@ const selectBillingPaymentIssueRowBySubject = async (organizationId: string) => 
 const selectBillingPaymentIssueEventRowsBySubject = async (organizationId: string) => {
   const result = await d1
     .prepare(
-      'SELECT e.event_type as eventType, e.provider_event_id as providerEventId, e.provider_invoice_id as providerInvoiceId, e.provider_payment_intent_id as providerPaymentIntentId, e.occurred_at as occurredAt FROM billing_payment_issue_event e INNER JOIN billing_account a ON a.id = e.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? ORDER BY e.created_at ASC',
+      'SELECT e.event_type as eventType, e.provider_event_id as providerEventId, e.provider_invoice_id as providerInvoiceId, e.provider_payment_intent_id as providerPaymentIntentId, e.occurred_at as occurredAt FROM billing_invoice_event e INNER JOIN billing_account a ON a.id = e.billing_account_id WHERE a.subject_type = ? AND a.subject_id = ? ORDER BY e.created_at ASC',
     )
     .bind('organization', organizationId)
     .all<{
