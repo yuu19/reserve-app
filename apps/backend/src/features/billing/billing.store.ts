@@ -13,7 +13,7 @@ import type {
   ReserveAppBillingSubscriptionStatus,
 } from './policies/reserve-app-billing-policy.js';
 
-export type OrganizationBillingSummaryRow = {
+export type ReserveAppBillingSummaryRow = {
   planCode: ReserveAppBillingPlanCode;
   billingInterval: 'month' | 'year' | null;
   subscriptionStatus: ReserveAppBillingSubscriptionStatus;
@@ -33,7 +33,7 @@ export type OrganizationBillingSummaryRow = {
   stripeSubscriptionId: string | null;
   stripePriceId: string | null;
 } | null;
-export type StartOrganizationPremiumTrialInput = {
+export type StartReserveAppPremiumTrialInput = {
   organizationId: string;
   now?: Date;
   trialStartedAt?: Date;
@@ -53,24 +53,24 @@ export type TrialCompletionResult =
       status: 409 | 422 | 503;
       message: string;
     };
-export type OrganizationBillingHistoryResult = Awaited<
+export type ReserveAppBillingHistoryResult = Awaited<
   ReturnType<typeof readReserveAppOwnerBillingHistory>
 >;
-export type OrganizationBillingDocumentReferences = Parameters<
+export type ReserveAppBillingDocumentReferences = Parameters<
   typeof buildBillingDocumentReadiness
 >[0]['documents'];
 export type ReserveAppBillingObservationSnapshot = Awaited<
   ReturnType<typeof readReserveAppBillingObservationSnapshot>
 >;
-export type AppendOrganizationBillingAuditEventInput = Omit<
+export type AppendReserveAppBillingAuditEventInput = Omit<
   Parameters<typeof appendReserveAppBillingAuditEvent>[0],
   'database'
 >;
-export type AppendOrganizationBillingSignalInput = Omit<
+export type AppendReserveAppBillingSignalInput = Omit<
   Parameters<typeof appendReserveAppBillingSignal>[0],
   'database'
 >;
-export type AppendResolvedBillingSignalInput = Omit<
+export type AppendResolvedReserveAppBillingSignalInput = Omit<
   Parameters<typeof appendResolvedReserveAppBillingSignalIfNeeded>[0],
   'database'
 >;
@@ -82,7 +82,7 @@ export type InternalBillingInspection = Awaited<ReturnType<typeof readInternalBi
  * route/usecase は v2 tables を正本として扱い、organization 固有の表現は presenter 側で組み立てます。
  */
 export type ReserveAppBillingStore = {
-  selectSummary(organizationId: string): Promise<OrganizationBillingSummaryRow>;
+  selectSummary(organizationId: string): Promise<ReserveAppBillingSummaryRow>;
 
   hasStartedPremiumTrial(input: { organizationId: string }): Promise<boolean>;
 
@@ -91,7 +91,7 @@ export type ReserveAppBillingStore = {
     stripeCustomerId: string;
   }): Promise<void>;
 
-  startPremiumTrial(input: StartOrganizationPremiumTrialInput): Promise<{
+  startPremiumTrial(input: StartReserveAppPremiumTrialInput): Promise<{
     trialStartedAt: Date;
     trialEndsAt: Date;
   }>;
@@ -100,7 +100,7 @@ export type ReserveAppBillingStore = {
 
   readOwnerBillingHistory(input: {
     organizationId: string;
-  }): Promise<OrganizationBillingHistoryResult>;
+  }): Promise<ReserveAppBillingHistoryResult>;
 
   readInvoicePaymentEvents(input: {
     organizationId: string;
@@ -108,17 +108,17 @@ export type ReserveAppBillingStore = {
 
   readDocumentReferences(input: {
     organizationId: string;
-  }): Promise<OrganizationBillingDocumentReferences>;
+  }): Promise<ReserveAppBillingDocumentReferences>;
 
   readObservationSnapshot(input: {
     organizationId: string;
   }): Promise<ReserveAppBillingObservationSnapshot>;
 
-  appendAuditEvent(input: AppendOrganizationBillingAuditEventInput): Promise<void>;
+  appendAuditEvent(input: AppendReserveAppBillingAuditEventInput): Promise<void>;
 
-  appendSignal(input: AppendOrganizationBillingSignalInput): Promise<void>;
+  appendSignal(input: AppendReserveAppBillingSignalInput): Promise<void>;
 
-  appendResolvedSignalIfNeeded(input: AppendResolvedBillingSignalInput): Promise<void>;
+  appendResolvedSignalIfNeeded(input: AppendResolvedReserveAppBillingSignalInput): Promise<void>;
 
   readInternalInspection(input: { organizationId: string }): Promise<InternalBillingInspection>;
 };

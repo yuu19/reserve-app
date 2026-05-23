@@ -429,6 +429,7 @@ export const billingNotification = sqliteTable(
     failedAt: integer('failed_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
+    // 同じ attempt の requested/sent/failed などを append-only の履歴行として残す。
     uniqueIndex('billing_notification_dedupe_uidx').on(
       table.billingAccountId,
       table.notificationKind,

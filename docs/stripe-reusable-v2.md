@@ -565,10 +565,11 @@ export const billingAuditEvent = sqliteTable(
       .notNull()
       .references(() => billingAccount.id, { onDelete: 'cascade' }),
 
+    sequenceNumber: integer('sequence_number').notNull(),
     sourceKind: text('source_kind').notNull(),
     sourceContext: text('source_context'),
 
-    actorUserId: text('actor_user_id'),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
 
     previousSnapshotJson: text('previous_snapshot_json'),
     nextSnapshotJson: text('next_snapshot_json'),
@@ -584,6 +585,10 @@ export const billingAuditEvent = sqliteTable(
   },
   (table) => [
     index('billing_audit_event_account_created_idx').on(table.billingAccountId, table.createdAt),
+    uniqueIndex('billing_audit_event_account_sequence_uidx').on(
+      table.billingAccountId,
+      table.sequenceNumber,
+    ),
   ],
 );
 ```
@@ -602,6 +607,7 @@ export const billingSignal = sqliteTable(
       .notNull()
       .references(() => billingAccount.id, { onDelete: 'cascade' }),
 
+    sequenceNumber: integer('sequence_number').notNull(),
     signalKind: text('signal_kind').notNull(),
     signalStatus: text('signal_status').notNull(),
     sourceKind: text('source_kind').notNull(),
@@ -626,6 +632,10 @@ export const billingSignal = sqliteTable(
       table.signalKind,
       table.signalStatus,
     ),
+    uniqueIndex('billing_signal_account_sequence_uidx').on(
+      table.billingAccountId,
+      table.sequenceNumber,
+    ),
   ],
 );
 ```
@@ -633,6 +643,9 @@ export const billingSignal = sqliteTable(
 ---
 
 ## 2.11 billing_notification
+
+通知は同じ attempt の状態を更新せず、`requested` / `retried` と `sent` / `failed` / `skipped` を別 row として履歴に残す。
+`billing_notification_dedupe_uidx` は同一状態の重複だけを止めるため、`deliveryStatus` も一意キーに含める。
 
 ```ts
 export const billingNotification = sqliteTable(
@@ -644,13 +657,17 @@ export const billingNotification = sqliteTable(
       .notNull()
       .references(() => billingAccount.id, { onDelete: 'cascade' }),
 
+    channel: text('channel').default('email').notNull(),
+    sequenceNumber: integer('sequence_number').notNull(),
     notificationKind: text('notification_kind').notNull(),
 
-    recipientUserId: text('recipient_user_id'),
+    recipientUserId: text('recipient_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     recipientEmail: text('recipient_email').notNull(),
 
     deliveryStatus: text('delivery_status').notNull(),
-    // pending | sent | failed | skipped
+    // requested | retried | sent | failed | skipped
     attemptNumber: integer('attempt_number').default(1).notNull(),
 
     providerMessageId: text('provider_message_id'),
@@ -658,7 +675,13 @@ export const billingNotification = sqliteTable(
 
     provider: text('provider'),
     providerEventId: text('provider_event_id'),
+    providerCustomerId: text('provider_customer_id'),
+    providerSubscriptionId: text('provider_subscription_id'),
     providerInvoiceId: text('provider_invoice_id'),
+    planState: text('plan_state'),
+    subscriptionStatus: text('subscription_status'),
+    paymentMethodStatus: text('payment_method_status'),
+    trialEndsAt: integer('trial_ends_at', { mode: 'timestamp_ms' }),
 
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
@@ -667,6 +690,7 @@ export const billingNotification = sqliteTable(
     failedAt: integer('failed_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
+    // 同じ attempt の requested/sent/failed などを append-only の履歴行として残す。
     uniqueIndex('billing_notification_dedupe_uidx').on(
       table.billingAccountId,
       table.notificationKind,
@@ -674,6 +698,10 @@ export const billingNotification = sqliteTable(
       table.providerEventId,
       table.attemptNumber,
       table.deliveryStatus,
+    ),
+    uniqueIndex('billing_notification_account_sequence_uidx').on(
+      table.billingAccountId,
+      table.sequenceNumber,
     ),
     index('billing_notification_retry_idx').on(table.notificationKind, table.deliveryStatus),
   ],
