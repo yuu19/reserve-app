@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 /**
  * usecase が Hono へ返せる JSON HTTP status を限定します。
  */
-export type JsonStatus = 200 | 201 | 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 503;
+export type JsonStatus = 200 | 201 | 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 500 | 503;
 
 /**
  * usecase 層が Hono Context に依存せず JSON 応答を表現するための戻り値です。
