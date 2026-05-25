@@ -29,6 +29,11 @@ type StripeSubscription = {
 	current_period_end?: number;
 	trial_end?: number | null;
 	test_clock?: string | null;
+	items?: {
+		data?: Array<{
+			current_period_end?: number | null;
+		}>;
+	};
 };
 
 type StripeEvent = {
@@ -130,6 +135,23 @@ const stripeForm = (entries: Record<string, string | number | null | undefined>)
 	}
 	return params;
 };
+
+const readSubscriptionCurrentPeriodEnd = (subscription: StripeSubscription): number | undefined => {
+	if (typeof subscription.current_period_end === 'number') {
+		return subscription.current_period_end;
+	}
+	const itemPeriodEnds =
+		subscription.items?.data
+			?.map((item) => item.current_period_end)
+			.filter((value): value is number => typeof value === 'number' && Number.isFinite(value)) ??
+		[];
+	return itemPeriodEnds.length > 0 ? Math.min(...itemPeriodEnds) : undefined;
+};
+
+const normalizeStripeSubscription = (subscription: StripeSubscription): StripeSubscription => ({
+	...subscription,
+	current_period_end: readSubscriptionCurrentPeriodEnd(subscription)
+});
 
 export const createStripeTestClock = async (name: string): Promise<StripeTestClock> =>
 	stripeRequest<StripeTestClock>({
@@ -275,7 +297,7 @@ export const readCustomerSubscription = async (customerId: string): Promise<Stri
 	if (!subscription) {
 		throw new Error(`No Stripe subscription found for ${customerId}.`);
 	}
-	return subscription;
+	return normalizeStripeSubscription(subscription);
 };
 
 const eventMatchesBillingObject = ({
