@@ -33,6 +33,7 @@
     "@react-email/components": "^1.0.7",
     "@react-email/render": "^2.0.4",
     "@repo/saas-billing-core": "workspace:*",
+    "@repo/saas-chatbot-core": "workspace:*",
     "@sentry/cloudflare": "^10.39.0",
     "better-auth": "^1.4.18",
     "drizzle-orm": "^0.45.1",

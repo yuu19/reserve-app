@@ -1,19 +1,17 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import {
+  AI_FEEDBACK_RATINGS,
+  AI_SOURCE_KINDS,
+  AI_SOURCE_VISIBILITIES,
+  AI_SUGGESTED_ACTION_KINDS,
+} from '@repo/saas-chatbot-core';
 
-export const aiSourceKindSchema = z.enum(['docs', 'specs', 'faq', 'db_summary']);
-export const aiSourceVisibilitySchema = z.enum([
-  'public',
-  'authenticated',
-  'participant',
-  'staff',
-  'manager',
-  'admin',
-  'owner',
-]);
+export const aiSourceKindSchema = z.enum(AI_SOURCE_KINDS);
+export const aiSourceVisibilitySchema = z.enum(AI_SOURCE_VISIBILITIES);
 export const aiSuggestedActionSchema = z.object({
   label: z.string(),
   href: z.string().nullable().optional(),
-  actionKind: z.enum(['open_page', 'contact_owner', 'contact_support']),
+  actionKind: z.enum(AI_SUGGESTED_ACTION_KINDS),
 });
 
 export const aiChatRequestSchema = z.object({
@@ -47,14 +45,14 @@ export const aiChatResponseSchema = z.object({
 });
 
 export const feedbackRequestSchema = z.object({
-  rating: z.enum(['helpful', 'unhelpful']),
+  rating: z.enum(AI_FEEDBACK_RATINGS),
   comment: z.string().max(1000).optional(),
 });
 
 export const feedbackResponseSchema = z.object({
   feedbackId: z.string(),
   messageId: z.string(),
-  rating: z.enum(['helpful', 'unhelpful']),
+  rating: z.enum(AI_FEEDBACK_RATINGS),
 });
 
 export const knowledgeStatusSchema = z.object({

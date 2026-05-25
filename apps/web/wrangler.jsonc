@@ -11,6 +11,7 @@
 	// Replace with actual backend worker URL.
 	"vars": {
 		"PUBLIC_BACKEND_URL": "https://api.wakureserve.com",
+		"PUBLIC_AI_CHAT_ENABLED": "true",
 		"PUBLIC_EVENTS_ORG_SLUG": "public-events",
 		"PUBLIC_EVENTS_CLASSROOM_SLUG": "public-events"
 	},

@@ -32,6 +32,7 @@
 		"clean:e2e": "rm -rf test-results playwright-report ../../.wrangler/e2e"
 	},
 	"dependencies": {
+		"@repo/saas-chatbot-core": "workspace:*",
 		"@sentry/sveltekit": "^10.39.0",
 		"dayjs": "^1.11.19",
 		"hono": "^4.11.7",

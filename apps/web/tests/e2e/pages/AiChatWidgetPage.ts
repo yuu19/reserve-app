@@ -15,11 +15,11 @@ export class AiChatWidgetPage extends BasePage {
 		await this.page.getByRole('button', { name: 'AIサポートを開く' }).click();
 		const textbox = this.page.getByRole('textbox', { name: 'AIサポートへの質問' });
 		const sendButton = this.page.getByRole('button', { name: 'AIサポートへ送信' });
-		await expect(async () => {
-			await textbox.fill(message);
-			await expect(textbox).toHaveValue(message);
-			await sendButton.click({ timeout: 1_000 });
-		}).toPass({ timeout: 10_000 });
+		await expect(textbox).toBeEnabled();
+		await textbox.fill(message);
+		await expect(textbox).toHaveValue(message);
+		await expect(sendButton).toBeEnabled();
+		await sendButton.click();
 	}
 
 	async expectGroundedAnswer() {

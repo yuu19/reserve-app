@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { Pathname } from '$app/types';
-	import type { AiSuggestedAction } from '$lib/ai-client';
+	import type { AiSuggestedAction } from '@repo/saas-chatbot-core';
 	import { ExternalLink, LifeBuoy, UserRoundCheck } from '@lucide/svelte';
 
 	type Props = {

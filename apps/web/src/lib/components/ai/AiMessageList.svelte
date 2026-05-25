@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import type { AiChatMessage } from '$lib/features/ai-chat.svelte';
+	import type { AiChatMessage } from '@repo/saas-chatbot-core';
 	import { AlertTriangle, Bot, Check, ThumbsDown, ThumbsUp, UserRound } from '@lucide/svelte';
 	import AiSourceList from './AiSourceList.svelte';
 	import AiSuggestedActions from './AiSuggestedActions.svelte';

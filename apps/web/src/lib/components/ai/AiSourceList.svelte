@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge';
-	import type { AiSourceReference } from '$lib/ai-client';
+	import type { AiSourceReference } from '@repo/saas-chatbot-core';
 
 	type Props = {
 		sources?: AiSourceReference[];

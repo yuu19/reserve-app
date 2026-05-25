@@ -37,10 +37,14 @@ describe('AiChatWidget.svelte', () => {
 				{ label: '予約運用を開く', href: '/admin/bookings', actionKind: 'open_page' }
 			],
 			confidence: 82,
-			needsHumanSupport: false
+			needsHumanSupport: false,
+			rateLimit: {
+				userRemainingThisHour: 19,
+				organizationRemainingToday: 199
+			}
 		});
 		render(AiChatWidget, {
-			active: true,
+			enabled: true,
 			organizationId: 'org-a',
 			classroomId: 'class-a',
 			currentPage: '/admin/dashboard'
@@ -73,7 +77,11 @@ describe('AiChatWidget.svelte', () => {
 				sources: [],
 				suggestedActions: [],
 				confidence: 80,
-				needsHumanSupport: false
+				needsHumanSupport: false,
+				rateLimit: {
+					userRemainingThisHour: 19,
+					organizationRemainingToday: 199
+				}
 			})
 			.mockResolvedValueOnce({
 				conversationId: 'conv-b',
@@ -82,10 +90,14 @@ describe('AiChatWidget.svelte', () => {
 				sources: [],
 				suggestedActions: [],
 				confidence: 80,
-				needsHumanSupport: false
+				needsHumanSupport: false,
+				rateLimit: {
+					userRemainingThisHour: 18,
+					organizationRemainingToday: 198
+				}
 			});
 		const rendered = render(AiChatWidget, {
-			active: true,
+			enabled: true,
 			organizationId: 'org-a',
 			classroomId: 'class-a',
 			currentPage: '/admin/dashboard'
@@ -97,7 +109,7 @@ describe('AiChatWidget.svelte', () => {
 		await expect.element(page.getByText('最初の回答')).toBeInTheDocument();
 
 		await rendered.rerender({
-			active: true,
+			enabled: true,
 			organizationId: 'org-b',
 			classroomId: 'class-b',
 			currentPage: '/admin/dashboard'
@@ -123,14 +135,18 @@ describe('AiChatWidget.svelte', () => {
 			sources: [],
 			suggestedActions: [{ label: 'ownerに確認する', actionKind: 'contact_owner' }],
 			confidence: 35,
-			needsHumanSupport: true
+			needsHumanSupport: true,
+			rateLimit: {
+				userRemainingThisHour: 19,
+				organizationRemainingToday: 199
+			}
 		});
 		mocks.submitAiFeedback.mockResolvedValue({
 			feedbackId: 'feedback-a',
 			messageId: 'assistant-a',
 			rating: 'unhelpful'
 		});
-		render(AiChatWidget, { active: true });
+		render(AiChatWidget, { enabled: true });
 
 		await page.getByRole('button', { name: 'AIサポートを開く' }).click();
 		await page.getByRole('textbox', { name: 'AIサポートへの質問' }).fill('支払い方法を確認したい');

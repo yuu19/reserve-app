@@ -1,25 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createAiChatState } from './ai-chat.svelte';
+import type { AiChatResponse } from '@repo/saas-chatbot-core';
+import { createAiChatState, type AiChatClient } from './ai-chat.svelte';
 
-const mocks = vi.hoisted(() => ({
-	askAi: vi.fn(),
-	submitAiFeedback: vi.fn()
-}));
-
-vi.mock('$lib/ai-client', () => ({
-	askAi: mocks.askAi,
-	submitAiFeedback: mocks.submitAiFeedback
-}));
+const createClientMock = (): AiChatClient => ({
+	ask: vi.fn(),
+	submitFeedback: vi.fn()
+});
 
 describe('ai-chat state', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
-		mocks.askAi.mockReset();
-		mocks.submitAiFeedback.mockReset();
 	});
 
 	it('sends the current input and appends assistant responses with sources and actions', async () => {
-		mocks.askAi.mockResolvedValue({
+		const client = createClientMock();
+		vi.mocked(client.ask).mockResolvedValue({
 			conversationId: 'conv-a',
 			messageId: 'msg-assistant-a',
 			answer: '予約運用から予約枠を作成できます。',
@@ -35,7 +30,7 @@ describe('ai-chat state', () => {
 			}
 		});
 
-		const state = createAiChatState();
+		const state = createAiChatState(client);
 		state.input = '予約枠を作るには？';
 		await state.send({
 			organizationId: 'org-a',
@@ -43,7 +38,7 @@ describe('ai-chat state', () => {
 			currentPage: '/admin/dashboard'
 		});
 
-		expect(mocks.askAi).toHaveBeenCalledWith({
+		expect(client.ask).toHaveBeenCalledWith({
 			message: '予約枠を作るには？',
 			conversationId: undefined,
 			organizationId: 'org-a',
@@ -68,9 +63,10 @@ describe('ai-chat state', () => {
 	});
 
 	it('restores input and exposes an error when the chat request fails', async () => {
-		mocks.askAi.mockRejectedValue(new Error('AIサポートを利用できません。'));
+		const client = createClientMock();
+		vi.mocked(client.ask).mockRejectedValue(new Error('AIサポートを利用できません。'));
 
-		const state = createAiChatState();
+		const state = createAiChatState(client);
 		state.input = 'エラーになる質問';
 		await state.send();
 
@@ -111,8 +107,43 @@ describe('ai-chat state', () => {
 		expect(state.lastRateLimit).toBeNull();
 	});
 
+	it('ignores stale responses after a conversation reset', async () => {
+		const client = createClientMock();
+		let resolveResponse: (response: AiChatResponse) => void = () => {};
+		vi.mocked(client.ask).mockReturnValue(
+			new Promise((resolve) => {
+				resolveResponse = resolve;
+			})
+		);
+
+		const state = createAiChatState(client);
+		state.input = '切替前の質問';
+		const sendPromise = state.send();
+		state.resetConversation();
+
+		resolveResponse({
+			conversationId: 'conv-old',
+			messageId: 'assistant-old',
+			answer: '古い回答',
+			sources: [],
+			suggestedActions: [],
+			confidence: 80,
+			needsHumanSupport: false,
+			rateLimit: {
+				userRemainingThisHour: 19,
+				organizationRemainingToday: 199
+			}
+		});
+		await sendPromise;
+
+		expect(state.messages).toEqual([]);
+		expect(state.conversationId).toBeNull();
+		expect(state.status).toBe('idle');
+	});
+
 	it('submits feedback and records failed feedback attempts', async () => {
-		const state = createAiChatState();
+		const client = createClientMock();
+		const state = createAiChatState(client);
 		state.messages = [
 			{
 				id: 'assistant-a',
@@ -123,14 +154,14 @@ describe('ai-chat state', () => {
 			}
 		];
 
-		mocks.submitAiFeedback.mockResolvedValueOnce({
+		vi.mocked(client.submitFeedback).mockResolvedValueOnce({
 			feedbackId: 'feedback-a',
 			messageId: 'assistant-a',
 			rating: 'helpful'
 		});
 		await state.submitFeedback('assistant-a', 'helpful');
 
-		expect(mocks.submitAiFeedback).toHaveBeenCalledWith('assistant-a', {
+		expect(client.submitFeedback).toHaveBeenCalledWith('assistant-a', {
 			rating: 'helpful',
 			comment: undefined
 		});
@@ -140,7 +171,7 @@ describe('ai-chat state', () => {
 			feedbackError: null
 		});
 
-		mocks.submitAiFeedback.mockRejectedValueOnce(new Error('送信失敗'));
+		vi.mocked(client.submitFeedback).mockRejectedValueOnce(new Error('送信失敗'));
 		await state.submitFeedback('assistant-a', 'unhelpful', '根拠が足りない');
 
 		expect(state.messages[0]).toMatchObject({

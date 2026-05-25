@@ -1,17 +1,14 @@
+import {
+  AI_SOURCE_KINDS,
+  AI_SOURCE_VISIBILITIES,
+  type AiSourceKind,
+  type AiSourceReference,
+  type AiSourceVisibility,
+} from '@repo/saas-chatbot-core';
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
 
-export const AI_SOURCE_VISIBILITIES = [
-  'public',
-  'authenticated',
-  'participant',
-  'staff',
-  'manager',
-  'admin',
-  'owner',
-] as const;
-
-export type AiSourceVisibility = (typeof AI_SOURCE_VISIBILITIES)[number];
-export type AiSourceKind = 'docs' | 'specs' | 'faq' | 'db_summary';
+export { AI_SOURCE_KINDS, AI_SOURCE_VISIBILITIES };
+export type { AiSourceKind, AiSourceReference, AiSourceVisibility };
 
 export type AiSourceScope = {
   visibility: string;
@@ -128,12 +125,7 @@ export const isSourceScopeAllowed = ({
   return true;
 };
 
-export type AiSourceReference = {
-  sourceKind: AiSourceKind;
-  title: string;
-  sourcePath?: string | null;
-  chunkId?: string | null;
-  visibility?: AiSourceVisibility;
+type InternalAiSourceReference = AiSourceReference & {
   internalOnly?: boolean | null;
 };
 
@@ -142,7 +134,7 @@ export const sanitizeSourceReference = ({
   access,
   internalOperator = false,
 }: {
-  source: AiSourceReference;
+  source: InternalAiSourceReference;
   access: OrganizationClassroomAccess;
   internalOperator?: boolean;
 }): AiSourceReference | null => {

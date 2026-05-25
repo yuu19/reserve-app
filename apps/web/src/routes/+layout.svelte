@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import type { Pathname } from '$app/types';
+	import { env } from '$env/dynamic/public';
 	import { onDestroy, onMount } from 'svelte';
 	import { SvelteURL } from 'svelte/reactivity';
 	import { AiChatWidget } from '$lib/components/ai';
@@ -69,6 +70,7 @@
 	const brandIcon16Href = '/brand/reservation-logo-16x16.svg';
 	const brandIcon32Href = '/brand/reservation-logo-32x32.svg';
 	const brandAppleTouchHref = '/brand/reservation-logo-180x180.svg';
+	const aiChatFeatureEnabled = env.PUBLIC_AI_CHAT_ENABLED !== 'false';
 
 	let loadingSession = $state(true);
 	let isLoggedIn = $state(false);
@@ -1256,7 +1258,7 @@
 		</div>
 	{/if}
 	<AiChatWidget
-		active={isLoggedIn}
+		enabled={isLoggedIn && aiChatFeatureEnabled}
 		organizationId={activeOrganization?.id ?? null}
 		classroomId={activeClassroom?.id ?? null}
 		currentPage={pathname}

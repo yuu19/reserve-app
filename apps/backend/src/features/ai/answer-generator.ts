@@ -1,4 +1,5 @@
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { AiSuggestedAction } from '@repo/saas-chatbot-core';
 import { createWorkersAiAnswerModelProvider, type AiAnswerEnv } from './answer-provider.js';
 import {
   buildAiSystemPrompt,
@@ -10,12 +11,6 @@ import {
 import type { AiSourceReference } from './source-visibility.js';
 
 export type { AiAnswerEnv } from './answer-provider.js';
-
-export type AiSuggestedAction = {
-  label: string;
-  href?: string | null;
-  actionKind: 'open_page' | 'contact_owner' | 'contact_support';
-};
 
 export type GeneratedAiAnswer = {
   answer: string;

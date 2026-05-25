@@ -53,6 +53,9 @@ importers:
       '@repo/saas-billing-core':
         specifier: workspace:*
         version: link:../../packages/saas-billing-core
+      '@repo/saas-chatbot-core':
+        specifier: workspace:*
+        version: link:../../packages/saas-chatbot-core
       '@sentry/cloudflare':
         specifier: ^10.39.0
         version: 10.39.0(@cloudflare/workers-types@4.20260203.0)
@@ -325,6 +328,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@repo/saas-chatbot-core':
+        specifier: workspace:*
+        version: link:../../packages/saas-chatbot-core
       '@sentry/sveltekit':
         specifier: ^10.39.0
         version: 10.39.0(@cloudflare/workers-types@4.20260203.0)(@sveltejs/kit@2.50.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.49.1)(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.49.1)(typescript@5.9.3)(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.49.1)(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
@@ -445,6 +451,15 @@ importers:
         version: 4.3.6
 
   packages/saas-billing-core:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.4(@opentelemetry/api@1.9.0)(@types/node@24.10.10)(@vitest/browser-playwright@4.1.4)(vite@8.0.8(@types/node@24.10.10)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+
+  packages/saas-chatbot-core:
     devDependencies:
       typescript:
         specifier: ^5.8.3

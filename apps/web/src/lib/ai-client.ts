@@ -1,48 +1,25 @@
 import { authRpc } from '$lib/rpc-client';
+import type {
+	AiChatRequest,
+	AiChatResponse,
+	AiFeedbackRequest,
+	AiFeedbackResponse
+} from '@repo/saas-chatbot-core';
 
-export type AiSourceKind = 'docs' | 'specs' | 'faq' | 'db_summary';
-export type AiSuggestedActionKind = 'open_page' | 'contact_owner' | 'contact_support';
-
-export type AiSourceReference = {
-	sourceKind: AiSourceKind;
-	title: string;
-	sourcePath?: string | null;
-	chunkId?: string | null;
-	visibility?: 'public' | 'authenticated' | 'participant' | 'staff' | 'manager' | 'admin' | 'owner';
-};
-
-export type AiSuggestedAction = {
-	label: string;
-	href?: string | null;
-	actionKind: AiSuggestedActionKind;
-};
-
-export type AiChatResponse = {
-	conversationId: string;
-	messageId: string;
-	answer: string;
-	sources: AiSourceReference[];
-	suggestedActions: AiSuggestedAction[];
-	confidence: number;
-	needsHumanSupport: boolean;
-	rateLimit?: {
-		userRemainingThisHour: number;
-		organizationRemainingToday: number;
-	};
-};
-
-export type AiChatRequest = {
-	message: string;
-	conversationId?: string;
-	organizationId?: string;
-	classroomId?: string;
-	currentPage?: string;
-};
-
-export type AiFeedbackRequest = {
-	rating: 'helpful' | 'unhelpful';
-	comment?: string;
-};
+export type {
+	AiChatContext,
+	AiChatMessage,
+	AiChatRequest,
+	AiChatResponse,
+	AiFeedbackRequest,
+	AiFeedbackResponse,
+	AiFeedbackRating,
+	AiSourceKind,
+	AiSourceReference,
+	AiSourceVisibility,
+	AiSuggestedAction,
+	AiSuggestedActionKind
+} from '@repo/saas-chatbot-core';
 
 const parseJsonResponse = async (response: Response): Promise<unknown> => {
 	// backend は rate limit や認可失敗で JSON 以外を返す可能性があるため、UI 側では
@@ -97,7 +74,7 @@ export const askAi = async (request: AiChatRequest): Promise<AiChatResponse> => 
 export const submitAiFeedback = async (
 	messageId: string,
 	request: AiFeedbackRequest
-): Promise<{ feedbackId: string; messageId: string; rating: 'helpful' | 'unhelpful' }> => {
+): Promise<AiFeedbackResponse> => {
 	const response = await fetch(
 		new URL(`/api/v1/ai/messages/${encodeURIComponent(messageId)}/feedback`, authRpc.backendUrl),
 		{
@@ -113,5 +90,5 @@ export const submitAiFeedback = async (
 	if (!response.ok) {
 		throw new Error(readErrorMessage(payload, 'フィードバックを送信できません。'));
 	}
-	return payload as { feedbackId: string; messageId: string; rating: 'helpful' | 'unhelpful' };
+	return payload as AiFeedbackResponse;
 };

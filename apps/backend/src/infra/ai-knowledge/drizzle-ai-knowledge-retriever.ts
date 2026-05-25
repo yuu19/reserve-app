@@ -3,6 +3,7 @@ import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
 import type { RetrievedKnowledgeContext } from '../../features/ai/prompt.js';
 import {
+  AI_SOURCE_KINDS,
   isSourceScopeAllowed,
   type AiSourceVisibility,
   type AiSourceKind,
@@ -36,7 +37,7 @@ export type RetrievedKnowledgeChunk = RetrievedKnowledgeContext & {
 };
 
 const isAiSourceKind = (value: string): value is AiSourceKind =>
-  value === 'docs' || value === 'specs' || value === 'faq' || value === 'db_summary';
+  AI_SOURCE_KINDS.includes(value as AiSourceKind);
 
 const normalizeSourceKind = (value: string): AiSourceKind =>
   isAiSourceKind(value) ? value : 'docs';

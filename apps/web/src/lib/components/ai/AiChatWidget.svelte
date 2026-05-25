@@ -6,14 +6,14 @@
 	import AiMessageList from './AiMessageList.svelte';
 
 	type Props = {
-		active?: boolean;
+		enabled?: boolean;
 		organizationId?: string | null;
 		classroomId?: string | null;
 		currentPage?: string | null;
 	};
 
 	let {
-		active = false,
+		enabled = false,
 		organizationId = null,
 		classroomId = null,
 		currentPage = null
@@ -25,7 +25,7 @@
 	let lastScopeKey: string | null = null;
 
 	$effect(() => {
-		const scopeKey = active ? `${organizationId ?? ''}:${classroomId ?? ''}` : 'inactive';
+		const scopeKey = enabled ? `${organizationId ?? ''}:${classroomId ?? ''}` : 'inactive';
 		if (lastScopeKey !== null && scopeKey !== lastScopeKey) {
 			chat.resetConversation();
 		}
@@ -63,7 +63,7 @@
 	};
 </script>
 
-{#if active}
+{#if enabled}
 	<div class="fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-3">
 		{#if open}
 			<section
