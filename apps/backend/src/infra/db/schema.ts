@@ -1193,15 +1193,16 @@ export const aiConversation = sqliteTable(
   'ai_conversation',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id')
+    actorUserId: text('actor_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    organizationId: text('organization_id').references(() => organization.id, {
-      onDelete: 'cascade',
-    }),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
     classroomId: text('classroom_id').references(() => classroom.id, {
       onDelete: 'cascade',
     }),
+    channel: text('channel').default('web').notNull(),
+    status: text('status').default('active').notNull(),
     title: text('title'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
@@ -1210,15 +1211,25 @@ export const aiConversation = sqliteTable(
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
+    lastMessageAt: integer('last_message_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
     retentionExpiresAt: integer('retention_expires_at', { mode: 'timestamp_ms' }).notNull(),
     anonymizedAt: integer('anonymized_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
-    index('ai_conversation_user_scope_idx').on(
-      table.userId,
-      table.organizationId,
+    index('ai_conversation_actor_subject_idx').on(
+      table.actorUserId,
+      table.subjectType,
+      table.subjectId,
       table.classroomId,
       table.updatedAt,
+    ),
+    index('ai_conversation_subject_status_last_message_idx').on(
+      table.subjectType,
+      table.subjectId,
+      table.status,
+      table.lastMessageAt,
     ),
     index('ai_conversation_retention_idx').on(table.retentionExpiresAt, table.anonymizedAt),
   ],
@@ -1237,11 +1248,15 @@ export const aiMessage = sqliteTable(
     retrievedContextJson: text('retrieved_context_json'),
     confidence: integer('confidence'),
     needsHumanSupport: integer('needs_human_support', { mode: 'boolean' }).default(false).notNull(),
+    provider: text('provider'),
+    model: text('model'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    latencyMs: integer('latency_ms'),
+    generationStatus: text('generation_status'),
+    errorCode: text('error_code'),
+    errorSummary: text('error_summary'),
     aiGatewayLogId: text('ai_gateway_log_id'),
-    aiModel: text('ai_model'),
-    aiLatencyMs: integer('ai_latency_ms'),
-    aiGenerationStatus: text('ai_generation_status'),
-    aiErrorSummary: text('ai_error_summary'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -1250,7 +1265,47 @@ export const aiMessage = sqliteTable(
   },
   (table) => [
     index('ai_message_conversation_created_idx').on(table.conversationId, table.createdAt),
+    index('ai_message_generation_status_idx').on(table.generationStatus, table.createdAt),
     index('ai_message_retention_idx').on(table.retentionExpiresAt, table.anonymizedAt),
+  ],
+);
+
+export const aiUsageEvent = sqliteTable(
+  'ai_usage_event',
+  {
+    id: text('id').primaryKey(),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
+    classroomId: text('classroom_id').references(() => classroom.id, {
+      onDelete: 'set null',
+    }),
+    conversationId: text('conversation_id').references(() => aiConversation.id, {
+      onDelete: 'set null',
+    }),
+    messageId: text('message_id').references(() => aiMessage.id, { onDelete: 'set null' }),
+    provider: text('provider'),
+    model: text('model'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    latencyMs: integer('latency_ms'),
+    generationStatus: text('generation_status').notNull(),
+    errorCode: text('error_code'),
+    errorSummary: text('error_summary'),
+    aiGatewayLogId: text('ai_gateway_log_id'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    index('ai_usage_event_subject_created_idx').on(
+      table.subjectType,
+      table.subjectId,
+      table.createdAt,
+    ),
+    index('ai_usage_event_actor_created_idx').on(table.actorUserId, table.createdAt),
+    index('ai_usage_event_conversation_idx').on(table.conversationId, table.messageId),
+    index('ai_usage_event_status_idx').on(table.generationStatus, table.createdAt),
   ],
 );
 
@@ -1329,6 +1384,7 @@ export const userRelations = relations(user, ({ many }) => ({
   bookingAuditLogs: many(bookingAuditLog),
   aiConversations: many(aiConversation),
   aiFeedback: many(aiFeedback),
+  aiUsageEvents: many(aiUsageEvent),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -1373,19 +1429,16 @@ export const aiKnowledgeChunkRelations = relations(aiKnowledgeChunk, ({ one }) =
 }));
 
 export const aiConversationRelations = relations(aiConversation, ({ one, many }) => ({
-  user: one(user, {
-    fields: [aiConversation.userId],
+  actor: one(user, {
+    fields: [aiConversation.actorUserId],
     references: [user.id],
-  }),
-  organization: one(organization, {
-    fields: [aiConversation.organizationId],
-    references: [organization.id],
   }),
   classroom: one(classroom, {
     fields: [aiConversation.classroomId],
     references: [classroom.id],
   }),
   messages: many(aiMessage),
+  usageEvents: many(aiUsageEvent),
 }));
 
 export const aiMessageRelations = relations(aiMessage, ({ one, many }) => ({
@@ -1394,6 +1447,26 @@ export const aiMessageRelations = relations(aiMessage, ({ one, many }) => ({
     references: [aiConversation.id],
   }),
   feedback: many(aiFeedback),
+  usageEvents: many(aiUsageEvent),
+}));
+
+export const aiUsageEventRelations = relations(aiUsageEvent, ({ one }) => ({
+  actor: one(user, {
+    fields: [aiUsageEvent.actorUserId],
+    references: [user.id],
+  }),
+  classroom: one(classroom, {
+    fields: [aiUsageEvent.classroomId],
+    references: [classroom.id],
+  }),
+  conversation: one(aiConversation, {
+    fields: [aiUsageEvent.conversationId],
+    references: [aiConversation.id],
+  }),
+  message: one(aiMessage, {
+    fields: [aiUsageEvent.messageId],
+    references: [aiMessage.id],
+  }),
 }));
 
 export const aiFeedbackRelations = relations(aiFeedback, ({ one }) => ({
@@ -1425,7 +1498,6 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   invitationAuditLogs: many(invitationAuditLog),
   aiKnowledgeDocuments: many(aiKnowledgeDocument),
   aiKnowledgeChunks: many(aiKnowledgeChunk),
-  aiConversations: many(aiConversation),
 }));
 
 export const classroomRelations = relations(classroom, ({ one, many }) => ({
@@ -1450,6 +1522,7 @@ export const classroomRelations = relations(classroom, ({ one, many }) => ({
   aiKnowledgeDocuments: many(aiKnowledgeDocument),
   aiKnowledgeChunks: many(aiKnowledgeChunk),
   aiConversations: many(aiConversation),
+  aiUsageEvents: many(aiUsageEvent),
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({

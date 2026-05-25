@@ -72,9 +72,13 @@ const generatedAnswer = ({
   suggestedActions,
   confidence: 82,
   needsHumanSupport: false,
+  provider: 'cloudflare-workers-ai',
   model: '@cf/test/chat',
+  inputTokens: 12,
+  outputTokens: 34,
   latencyMs: 12,
   generationStatus,
+  errorCode: generationStatus === 'generated' ? null : 'retrieval_failed',
   errorSummary: null,
   aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
 });
@@ -110,6 +114,7 @@ const createConversationStore = (
     submitFeedback: vi.fn(),
     cleanupExpiredConversationContent: vi.fn(),
     countMessagesForConversation: vi.fn(),
+    recordUsageEvent: vi.fn(),
     ...overrides,
   }) as AiRouteContext['conversationStore'];
 
@@ -256,7 +261,29 @@ describe('askAiChat', () => {
           businessFactKeys: ['service_count'],
           retrievalErrorSummary: 'vector offline',
         }),
-        aiGenerationStatus: 'fallback_retrieval_failed',
+        provider: 'cloudflare-workers-ai',
+        model: '@cf/test/chat',
+        inputTokens: 12,
+        outputTokens: 34,
+        generationStatus: 'fallback_retrieval_failed',
+        errorCode: 'retrieval_failed',
+      }),
+    );
+    expect(ctx.conversationStore.recordUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: {
+          userId: 'user-a',
+          organizationId: 'org-a',
+          classroomId: 'class-a',
+        },
+        conversationId: 'conversation-a',
+        messageId: 'assistant-message-a',
+        provider: 'cloudflare-workers-ai',
+        model: '@cf/test/chat',
+        inputTokens: 12,
+        outputTokens: 34,
+        generationStatus: 'fallback_retrieval_failed',
+        errorCode: 'retrieval_failed',
       }),
     );
     expect(generateAnswer).toHaveBeenCalledWith(
@@ -362,5 +389,17 @@ describe('askAiChat', () => {
     );
     expect(ctx.sanitizeSourceReference).toHaveBeenCalledTimes(2);
     expect(ctx.recordChatBreadcrumb).toHaveBeenCalledTimes(1);
+    expect(ctx.conversationStore.recordUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: {
+          userId: 'user-a',
+          organizationId: 'org-a',
+          classroomId: 'class-a',
+        },
+        messageId: 'assistant-message-a',
+        generationStatus: 'generated',
+        errorCode: null,
+      }),
+    );
   });
 });

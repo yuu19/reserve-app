@@ -38,7 +38,11 @@ Keep existing bindings:
 
 1. Add additive D1 migration and Drizzle schema.
    - Add `ai_knowledge_document`, `ai_knowledge_chunk`, `ai_knowledge_index_run`, `ai_conversation`, `ai_message`,
-     `ai_feedback`, and `ai_usage_counter`.
+     `ai_usage_event`, `ai_feedback`, and `ai_usage_counter`.
+   - Store chat threads with reusable `subject_type = organization` / `subject_id = organizationId` scope plus the
+     ReserveApp-specific `classroom_id`.
+   - Store provider/model/token/latency/status/error metadata on assistant messages and append one `ai_usage_event` per
+     assistant answer. Token usage remains nullable when Workers AI omits it.
    - Keep existing auth, organization, classroom, booking, ticket, invitation, and billing rows untouched.
 
 2. Add Cloudflare AI/Vectorize bindings and env types.
@@ -88,7 +92,7 @@ Targeted backend checks:
 
 ```bash
 pnpm --filter @apps/backend typecheck
-pnpm --filter @apps/backend exec vitest run src/ai/source-visibility.test.ts src/ai/rate-limit.test.ts src/ai/embedding.test.ts src/ai/prompt.test.ts src/ai/answer-generator.test.ts src/ai/indexer.test.ts src/ai/business-facts.test.ts src/ai/conversation-store.test.ts
+pnpm --filter @apps/backend exec vitest run src/features/ai src/infra/ai src/infra/ai-knowledge src/routes/ai-routes.ts
 pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "AI|ai|chat|source|feedback|rate"
 pnpm --filter @apps/backend test
 ```
@@ -96,8 +100,7 @@ pnpm --filter @apps/backend test
 Expected output for the implemented AI unit subset:
 
 - `tsc --noEmit` exits with code 0.
-- `8 passed (8)` test files.
-- `27 passed (27)` tests.
+- AI feature, provider, and knowledge infra test files exit with code 0.
 
 Note: the full backend suite includes existing Miniflare app tests and may take substantially longer than the AI-only subset.
 
@@ -146,6 +149,9 @@ Then verify:
 - User hourly limit blocks after 20 accepted messages and does not increment blocked attempts.
 - Organization daily limit blocks after 200 accepted messages and shows retry guidance.
 - Conversation continuation is rejected across organization/classroom scope.
+- Conversation rows store `actor_user_id`, `subject_type`, `subject_id`, `channel`, `status`, and `last_message_at`.
+- Assistant messages store provider/model/token/latency/status/error observability metadata.
+- Assistant answer generation inserts an append-only `ai_usage_event`, including retrieval-failure fallbacks.
 - currentPage improves relevance but is not accepted as authorization proof.
 - Participant asking for invoices/receipts/payment method details receives owner-contact guidance without details.
 - Owner billing question can use owner-safe `OrganizationBillingPayload` summary fields.

@@ -26,18 +26,24 @@ export type AiAnswerModelGenerationInput = {
 
 export type AiAnswerModelGenerationResult = {
   result: unknown;
+  provider: string;
+  model: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
   aiGatewayLogId: string | null;
   latencyMs: number;
 };
 
 export type AiAnswerModelProvider = {
   isConfigured: boolean;
+  provider: string;
   model: string;
   generate(input: AiAnswerModelGenerationInput): Promise<AiAnswerModelGenerationResult>;
   readAiGatewayLogId(result?: unknown): string | null;
 };
 
 const DEFAULT_ANSWER_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const WORKERS_AI_PROVIDER = 'cloudflare-workers-ai';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -58,6 +64,51 @@ const readHeaderValue = (headers: unknown, name: string): string | null => {
   }
 
   return null;
+};
+
+const readTokenNumber = (value: unknown): number | null => {
+  const numeric =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(numeric) && numeric >= 0 ? Math.round(numeric) : null;
+};
+
+const findUsageRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const usage = value.usage ?? value.token_usage ?? value.tokenUsage;
+  if (isRecord(usage)) {
+    return usage;
+  }
+
+  const nestedResult = value.result ?? value.response;
+  if (isRecord(nestedResult)) {
+    return findUsageRecord(nestedResult);
+  }
+
+  return null;
+};
+
+export const readAiTokenUsage = (
+  result: unknown,
+): { inputTokens: number | null; outputTokens: number | null } => {
+  const usage = findUsageRecord(result);
+  if (!usage) {
+    return { inputTokens: null, outputTokens: null };
+  }
+
+  return {
+    inputTokens: readTokenNumber(
+      usage.input_tokens ?? usage.prompt_tokens ?? usage.inputTokens ?? usage.promptTokens,
+    ),
+    outputTokens: readTokenNumber(
+      usage.output_tokens ??
+        usage.completion_tokens ??
+        usage.outputTokens ??
+        usage.completionTokens,
+    ),
+  };
 };
 
 export const readAiGatewayLogId = ({
@@ -90,6 +141,7 @@ export const createWorkersAiAnswerModelProvider = ({
 
   return {
     isConfigured: Boolean(env.AI),
+    provider: WORKERS_AI_PROVIDER,
     model: defaultModel,
 
     async generate({ model, messages, skipCache, cacheTtl, metadata }) {
@@ -98,8 +150,9 @@ export const createWorkersAiAnswerModelProvider = ({
       }
 
       const generationStartedAt = Date.now();
+      const resolvedModel = model ?? defaultModel;
       const result = await env.AI.run(
-        model ?? defaultModel,
+        resolvedModel,
         {
           messages,
         },
@@ -117,9 +170,14 @@ export const createWorkersAiAnswerModelProvider = ({
             }
           : undefined,
       );
+      const tokenUsage = readAiTokenUsage(result);
 
       return {
         result,
+        provider: WORKERS_AI_PROVIDER,
+        model: resolvedModel,
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
         aiGatewayLogId: readAiGatewayLogId({ env, result }),
         latencyMs: Date.now() - generationStartedAt,
       };

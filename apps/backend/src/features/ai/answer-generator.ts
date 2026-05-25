@@ -23,7 +23,10 @@ export type GeneratedAiAnswer = {
   suggestedActions: AiSuggestedAction[];
   confidence: number;
   needsHumanSupport: boolean;
+  provider: string;
   model: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
   latencyMs: number;
   generationStatus:
     | 'generated'
@@ -32,6 +35,7 @@ export type GeneratedAiAnswer = {
     | 'fallback_retrieval_failed'
     | 'generation_failed';
   errorSummary?: string | null;
+  errorCode?: string | null;
   aiGatewayLogId?: string | null;
 };
 
@@ -226,6 +230,7 @@ export const generateAnswer = async ({
   const sources = buildAnswerSources({ retrievedContexts, businessFacts });
   const hasGrounding = retrievedContexts.length > 0 || Boolean(businessFacts?.factKeys.length);
   const answerProvider = createWorkersAiAnswerModelProvider({ env });
+  const provider = answerProvider.provider;
   const model = answerProvider.model;
 
   if (retrievalErrorSummary) {
@@ -236,9 +241,13 @@ export const generateAnswer = async ({
       suggestedActions: defaultSuggestedActions({ access, needsHumanSupport: true }),
       confidence: 30,
       needsHumanSupport: true,
+      provider,
       model,
+      inputTokens: null,
+      outputTokens: null,
       latencyMs: 0,
       generationStatus: 'fallback_retrieval_failed',
+      errorCode: 'retrieval_failed',
       errorSummary: retrievalErrorSummary,
     };
   }
@@ -255,9 +264,13 @@ export const generateAnswer = async ({
       suggestedActions: defaultSuggestedActions({ access, needsHumanSupport: true }),
       confidence: hasGrounding ? 45 : 20,
       needsHumanSupport: true,
+      provider,
       model,
+      inputTokens: null,
+      outputTokens: null,
       latencyMs: 0,
       generationStatus: hasGrounding ? 'fallback_ai_unavailable' : 'fallback_no_grounding',
+      errorCode: hasGrounding ? 'workers_ai_binding_not_configured' : null,
       errorSummary: hasGrounding ? 'workers_ai_binding_not_configured' : null,
     };
   }
@@ -299,9 +312,13 @@ export const generateAnswer = async ({
       suggestedActions: defaultSuggestedActions({ access, needsHumanSupport: true }),
       confidence: 35,
       needsHumanSupport: true,
+      provider,
       model,
+      inputTokens: null,
+      outputTokens: null,
       latencyMs: Date.now() - generationStartedAt,
       generationStatus: 'generation_failed',
+      errorCode: 'answer_generation_failed',
       errorSummary: summarizeAiError(error),
       aiGatewayLogId: answerProvider.readAiGatewayLogId(null),
     };
@@ -322,9 +339,13 @@ export const generateAnswer = async ({
         : defaultSuggestedActions({ access, needsHumanSupport }),
     confidence,
     needsHumanSupport,
-    model,
+    provider: generation.provider,
+    model: generation.model,
+    inputTokens: generation.inputTokens,
+    outputTokens: generation.outputTokens,
     latencyMs: generation.latencyMs,
     generationStatus: 'generated',
+    errorCode: null,
     errorSummary: null,
     aiGatewayLogId: generation.aiGatewayLogId,
   };

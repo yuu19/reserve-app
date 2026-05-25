@@ -4,6 +4,7 @@ import {
   cleanupExpiredAiConversationContent,
   ensureAiConversation,
   insertAiMessage,
+  recordAiUsageEvent,
 } from './conversation-store.js';
 
 const createDatabase = (selectedRows: unknown[][] = []) => {
@@ -64,12 +65,16 @@ describe('AI conversation store', () => {
 
     expect(result).toMatchObject({ created: true });
     expect(inserts[0]).toMatchObject({
-      userId: 'user-a',
-      organizationId: 'org-a',
+      actorUserId: 'user-a',
+      subjectType: 'organization',
+      subjectId: 'org-a',
       classroomId: 'class-a',
+      channel: 'web',
+      status: 'active',
       title: '予約枠を作るには？',
       createdAt: now,
       updatedAt: now,
+      lastMessageAt: now,
     });
     expect((inserts[0] as { retentionExpiresAt: Date }).retentionExpiresAt.toISOString()).toBe(
       '2026-11-09T00:00:00.000Z',
@@ -107,11 +112,15 @@ describe('AI conversation store', () => {
       retrievedContext: { chunks: [{ id: 'chunk-a' }], businessFactKeys: ['service_count'] },
       confidence: 82,
       needsHumanSupport: false,
+      provider: 'cloudflare-workers-ai',
+      model: '@cf/test/chat',
+      inputTokens: 12,
+      outputTokens: 34,
+      latencyMs: 1234,
+      generationStatus: 'generated',
+      errorCode: null,
+      errorSummary: null,
       aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
-      aiModel: '@cf/test/chat',
-      aiLatencyMs: 1234,
-      aiGenerationStatus: 'generated',
-      aiErrorSummary: null,
     });
 
     expect(result).toMatchObject({ conversationId: 'conversation-a' });
@@ -121,11 +130,15 @@ describe('AI conversation store', () => {
       content: '回答',
       confidence: 82,
       needsHumanSupport: false,
+      provider: 'cloudflare-workers-ai',
+      model: '@cf/test/chat',
+      inputTokens: 12,
+      outputTokens: 34,
+      latencyMs: 1234,
+      generationStatus: 'generated',
+      errorCode: null,
+      errorSummary: null,
       aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
-      aiModel: '@cf/test/chat',
-      aiLatencyMs: 1234,
-      aiGenerationStatus: 'generated',
-      aiErrorSummary: null,
       createdAt: now,
     });
     expect(inserts[0]).toMatchObject({
@@ -138,7 +151,52 @@ describe('AI conversation store', () => {
     expect((inserts[0] as { retentionExpiresAt: Date }).retentionExpiresAt.toISOString()).toBe(
       '2026-11-09T00:00:00.000Z',
     );
-    expect(updates[0]).toEqual({ updatedAt: now });
+    expect(updates[0]).toEqual({ updatedAt: now, lastMessageAt: now });
+  });
+
+  it('records append-only generation usage events with subject and actor scope', async () => {
+    const now = new Date('2026-05-13T00:00:00.000Z');
+    const { database, inserts } = createDatabase();
+
+    await recordAiUsageEvent({
+      database,
+      now,
+      scope: {
+        userId: 'user-a',
+        organizationId: 'org-a',
+        classroomId: 'class-a',
+      },
+      conversationId: 'conversation-a',
+      messageId: 'assistant-message-a',
+      provider: 'cloudflare-workers-ai',
+      model: '@cf/test/chat',
+      inputTokens: null,
+      outputTokens: null,
+      latencyMs: 1234,
+      generationStatus: 'fallback_retrieval_failed',
+      errorCode: 'retrieval_failed',
+      errorSummary: 'vector offline',
+      aiGatewayLogId: null,
+    });
+
+    expect(inserts[0]).toMatchObject({
+      subjectType: 'organization',
+      subjectId: 'org-a',
+      actorUserId: 'user-a',
+      classroomId: 'class-a',
+      conversationId: 'conversation-a',
+      messageId: 'assistant-message-a',
+      provider: 'cloudflare-workers-ai',
+      model: '@cf/test/chat',
+      inputTokens: null,
+      outputTokens: null,
+      latencyMs: 1234,
+      generationStatus: 'fallback_retrieval_failed',
+      errorCode: 'retrieval_failed',
+      errorSummary: 'vector offline',
+      aiGatewayLogId: null,
+      createdAt: now,
+    });
   });
 
   it('anonymizes expired conversation content and deletes expired feedback aggregates', async () => {
@@ -154,6 +212,7 @@ describe('AI conversation store', () => {
       },
       {
         title: null,
+        status: 'anonymized',
         anonymizedAt: now,
       },
     ]);

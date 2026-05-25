@@ -13,18 +13,29 @@ export const createFakeAiAnswerModelProvider = ({
   aiGatewayLogId = null,
   latencyMs = 0,
   isConfigured = true,
+  provider = 'fake-ai',
   model = 'fake-answer-model',
+  inputTokens = null,
+  outputTokens = null,
 }: {
   result?: unknown;
   aiGatewayLogId?: string | null;
   latencyMs?: number;
   isConfigured?: boolean;
+  provider?: string;
   model?: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
 } = {}): AiAnswerModelProvider => ({
   isConfigured,
+  provider,
   model,
   generate: async () => ({
     result,
+    provider,
+    model,
+    inputTokens,
+    outputTokens,
     aiGatewayLogId,
     latencyMs,
   }),

@@ -86,17 +86,22 @@ Vectorize stores only searchable vectors and metadata keyed by `ai_knowledge_chu
 **Fields**:
 
 - `id`: conversation id.
-- `user_id`: authenticated user id.
-- `organization_id`: nullable only when no active organization is resolved.
-- `classroom_id`: nullable only when no classroom context is resolved.
+- `actor_user_id`: authenticated user id that started or continues the chat.
+- `subject_type`: reusable subject discriminator. ReserveApp uses `organization`.
+- `subject_id`: reusable subject id. ReserveApp stores the resolved `organizationId`.
+- `classroom_id`: nullable ReserveApp-specific classroom scope.
+- `channel`: chat surface such as `web`.
+- `status`: `active`, `closed`, or `anonymized`.
 - `title`: optional short title.
 - `created_at`, `updated_at`.
+- `last_message_at`: latest user or assistant message timestamp.
 - `retention_expires_at`: normally `created_at + 180 days`.
 - `anonymized_at`: timestamp when content was deleted or anonymized, nullable.
 
 **Validation rules**:
 
-- A conversation can continue only for the same user and permitted organization/classroom scope.
+- A conversation can continue only for the same actor and permitted subject/classroom scope.
+- ReserveApp chat requests set `subject_type = organization` and `subject_id = organizationId`.
 - Cross-organization or cross-classroom continuation is rejected or starts a new conversation.
 - Conversation content is deleted or anonymized after 180 days.
 
@@ -114,6 +119,14 @@ Vectorize stores only searchable vectors and metadata keyed by `ai_knowledge_chu
 - `retrieved_context_json`: sanitized retrieved chunk ids, scores, visibility, and business fact keys, nullable.
 - `confidence`: integer 0-100, nullable for user messages.
 - `needs_human_support`: boolean.
+- `provider`: AI provider id, nullable for user messages and non-provider fallbacks.
+- `model`: model id used or selected for the answer, nullable when unavailable.
+- `input_tokens`, `output_tokens`: token usage if the provider returns it; nullable otherwise.
+- `latency_ms`: provider generation latency or fallback latency.
+- `generation_status`: `generated`, `fallback_no_grounding`, `fallback_ai_unavailable`,
+  `fallback_retrieval_failed`, or `generation_failed`.
+- `error_code`: normalized generation/retrieval error code, nullable.
+- `error_summary`: sanitized generation/retrieval error summary, nullable.
 - `ai_gateway_log_id`: nullable provider log id, if available.
 - `created_at`.
 - `retention_expires_at`.
@@ -124,6 +137,34 @@ Vectorize stores only searchable vectors and metadata keyed by `ai_knowledge_chu
 - `role = assistant` messages must include `confidence` and `needs_human_support`.
 - `retrieved_context_json` must not include secrets, full payment details, raw provider payloads, or private audit records.
 - Source references must be role-safe for the user who receives the answer.
+- Token usage is nullable because Workers AI responses may omit usage metadata.
+
+## New Entity: `ai_usage_event`
+
+**Purpose**: Append-only observability record for each assistant answer generation attempt.
+
+**Fields**:
+
+- `id`: event id.
+- `subject_type`, `subject_id`: reusable tenant/subject scope. ReserveApp uses `organization` and `organizationId`.
+- `actor_user_id`: requesting user id, nullable only after user deletion.
+- `classroom_id`: nullable ReserveApp classroom scope.
+- `conversation_id`: related conversation, nullable after retention deletion.
+- `message_id`: related assistant message, nullable after retention deletion.
+- `provider`, `model`: provider and model selected for generation.
+- `input_tokens`, `output_tokens`: token usage if available.
+- `latency_ms`: provider or fallback latency.
+- `generation_status`: answer generation result status.
+- `error_code`, `error_summary`: sanitized failure metadata, nullable.
+- `ai_gateway_log_id`: nullable provider log id, if available.
+- `created_at`.
+
+**Validation rules**:
+
+- Insert one event for every persisted assistant answer, including fallback answers after retrieval failure.
+- Events are append-only and are not used for rate limiting.
+- Token and AI Gateway fields remain nullable when the provider does not expose them.
+- Error summaries must be sanitized and short enough for operator diagnostics without raw provider payloads.
 
 ## New Entity: `ai_feedback`
 
@@ -229,3 +270,6 @@ submitted -> aggregate_retained -> expired
 Add one D1 migration for AI tables and indexes. The migration is additive and must not rewrite existing organization,
 classroom, booking, ticket, invitation, billing, or auth rows. Vectorize index creation is an infrastructure step, not
 a D1 migration, and must be recorded in quickstart/release evidence with the verified embedding shape.
+
+Phase 5 rebuilds the unreleased AI migration shape in `apps/backend/drizzle/0018_ai_chatbot.sql` and folds the previous
+AI message observability additions into that file. There is no separate `0019_ai_message_observability.sql` dependency.

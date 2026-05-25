@@ -9,13 +9,29 @@ const ANONYMIZED_CONTENT = '[deleted by AI retention policy]';
 
 export type ConversationScope = {
   userId: string;
-  organizationId: string | null;
+  organizationId: string;
   classroomId: string | null;
 };
 
 export type StoredAssistantMessage = {
   id: string;
   conversationId: string;
+};
+
+export type AiUsageEventInput = {
+  scope: ConversationScope;
+  conversationId: string;
+  messageId: string;
+  provider?: string | null;
+  model?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  latencyMs?: number | null;
+  generationStatus: string;
+  errorCode?: string | null;
+  errorSummary?: string | null;
+  aiGatewayLogId?: string | null;
+  now?: Date;
 };
 
 const retentionExpiresAt = (now: Date): Date => new Date(now.getTime() + CONVERSATION_RETENTION_MS);
@@ -49,13 +65,13 @@ export const ensureAiConversation = async ({
       .where(
         and(
           eq(dbSchema.aiConversation.id, conversationId),
-          eq(dbSchema.aiConversation.userId, scope.userId),
-          scope.organizationId
-            ? eq(dbSchema.aiConversation.organizationId, scope.organizationId)
-            : isNull(dbSchema.aiConversation.organizationId),
+          eq(dbSchema.aiConversation.actorUserId, scope.userId),
+          eq(dbSchema.aiConversation.subjectType, 'organization'),
+          eq(dbSchema.aiConversation.subjectId, scope.organizationId),
           scope.classroomId
             ? eq(dbSchema.aiConversation.classroomId, scope.classroomId)
             : isNull(dbSchema.aiConversation.classroomId),
+          eq(dbSchema.aiConversation.status, 'active'),
           isNull(dbSchema.aiConversation.anonymizedAt),
         ),
       )
@@ -78,12 +94,16 @@ export const ensureAiConversation = async ({
   const id = crypto.randomUUID();
   await database.insert(dbSchema.aiConversation).values({
     id,
-    userId: scope.userId,
-    organizationId: scope.organizationId,
+    actorUserId: scope.userId,
+    subjectType: 'organization',
+    subjectId: scope.organizationId,
     classroomId: scope.classroomId,
+    channel: 'web',
+    status: 'active',
     title: title?.slice(0, 120) ?? null,
     createdAt: now,
     updatedAt: now,
+    lastMessageAt: now,
     retentionExpiresAt: retentionExpiresAt(now),
   });
 
@@ -101,10 +121,14 @@ export const insertAiMessage = async ({
   confidence,
   needsHumanSupport = false,
   aiGatewayLogId,
-  aiModel,
-  aiLatencyMs,
-  aiGenerationStatus,
-  aiErrorSummary,
+  provider,
+  model,
+  inputTokens,
+  outputTokens,
+  latencyMs,
+  generationStatus,
+  errorCode,
+  errorSummary,
   now = new Date(),
 }: {
   database: AuthRuntimeDatabase;
@@ -116,10 +140,14 @@ export const insertAiMessage = async ({
   confidence?: number | null;
   needsHumanSupport?: boolean;
   aiGatewayLogId?: string | null;
-  aiModel?: string | null;
-  aiLatencyMs?: number | null;
-  aiGenerationStatus?: string | null;
-  aiErrorSummary?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  latencyMs?: number | null;
+  generationStatus?: string | null;
+  errorCode?: string | null;
+  errorSummary?: string | null;
   now?: Date;
 }): Promise<StoredAssistantMessage> => {
   const id = crypto.randomUUID();
@@ -132,21 +160,63 @@ export const insertAiMessage = async ({
     retrievedContextJson: retrievedContext ? JSON.stringify(retrievedContext) : null,
     confidence: confidence ?? null,
     needsHumanSupport,
+    provider: provider ?? null,
+    model: model ?? null,
+    inputTokens: inputTokens ?? null,
+    outputTokens: outputTokens ?? null,
+    latencyMs: latencyMs ?? null,
+    generationStatus: generationStatus ?? null,
+    errorCode: errorCode ?? null,
+    errorSummary: errorSummary ?? null,
     aiGatewayLogId: aiGatewayLogId ?? null,
-    aiModel: aiModel ?? null,
-    aiLatencyMs: aiLatencyMs ?? null,
-    aiGenerationStatus: aiGenerationStatus ?? null,
-    aiErrorSummary: aiErrorSummary ?? null,
     createdAt: now,
     retentionExpiresAt: retentionExpiresAt(now),
   });
 
   await database
     .update(dbSchema.aiConversation)
-    .set({ updatedAt: now })
+    .set({ updatedAt: now, lastMessageAt: now })
     .where(eq(dbSchema.aiConversation.id, conversationId));
 
   return { id, conversationId };
+};
+
+/** 回答生成ごとの provider / model / token / error 観測値を append-only で記録する。 */
+export const recordAiUsageEvent = async ({
+  database,
+  scope,
+  conversationId,
+  messageId,
+  provider,
+  model,
+  inputTokens,
+  outputTokens,
+  latencyMs,
+  generationStatus,
+  errorCode,
+  errorSummary,
+  aiGatewayLogId,
+  now = new Date(),
+}: AiUsageEventInput & { database: AuthRuntimeDatabase }) => {
+  await database.insert(dbSchema.aiUsageEvent).values({
+    id: crypto.randomUUID(),
+    subjectType: 'organization',
+    subjectId: scope.organizationId,
+    actorUserId: scope.userId,
+    classroomId: scope.classroomId,
+    conversationId,
+    messageId,
+    provider: provider ?? null,
+    model: model ?? null,
+    inputTokens: inputTokens ?? null,
+    outputTokens: outputTokens ?? null,
+    latencyMs: latencyMs ?? null,
+    generationStatus,
+    errorCode: errorCode ?? null,
+    errorSummary: errorSummary ?? null,
+    aiGatewayLogId: aiGatewayLogId ?? null,
+    createdAt: now,
+  });
 };
 
 /** 呼び出し側スコープ内のアシスタントメッセージにだけフィードバックを付与できることを確認する。 */
@@ -173,10 +243,9 @@ export const canUserAccessAssistantMessage = async ({
       and(
         eq(dbSchema.aiMessage.id, messageId),
         eq(dbSchema.aiMessage.role, 'assistant'),
-        eq(dbSchema.aiConversation.userId, scope.userId),
-        scope.organizationId
-          ? eq(dbSchema.aiConversation.organizationId, scope.organizationId)
-          : isNull(dbSchema.aiConversation.organizationId),
+        eq(dbSchema.aiConversation.actorUserId, scope.userId),
+        eq(dbSchema.aiConversation.subjectType, 'organization'),
+        eq(dbSchema.aiConversation.subjectId, scope.organizationId),
         scope.classroomId
           ? eq(dbSchema.aiConversation.classroomId, scope.classroomId)
           : isNull(dbSchema.aiConversation.classroomId),
@@ -255,6 +324,7 @@ export const cleanupExpiredAiConversationContent = async ({
     .update(dbSchema.aiConversation)
     .set({
       title: null,
+      status: 'anonymized',
       anonymizedAt: now,
     })
     .where(
@@ -309,6 +379,7 @@ export type EnsureAiConversationInput = Omit<
   'database'
 >;
 export type InsertAiMessageInput = Omit<Parameters<typeof insertAiMessage>[0], 'database'>;
+export type RecordAiUsageEventInput = Omit<Parameters<typeof recordAiUsageEvent>[0], 'database'>;
 export type CanUserAccessAssistantMessageInput = Omit<
   Parameters<typeof canUserAccessAssistantMessage>[0],
   'database'
@@ -328,6 +399,7 @@ export type DrizzleAiConversationStore = {
     input: EnsureAiConversationInput,
   ): Promise<{ conversationId: string; created: boolean } | null>;
   insertMessage(input: InsertAiMessageInput): Promise<StoredAssistantMessage>;
+  recordUsageEvent(input: RecordAiUsageEventInput): Promise<void>;
   canUserAccessAssistantMessage(
     input: CanUserAccessAssistantMessageInput,
   ): ReturnType<typeof canUserAccessAssistantMessage>;
@@ -350,6 +422,11 @@ export const createDrizzleAiConversationStore = ({
     }),
   insertMessage: (input) =>
     insertAiMessage({
+      database,
+      ...input,
+    }),
+  recordUsageEvent: (input) =>
+    recordAiUsageEvent({
       database,
       ...input,
     }),

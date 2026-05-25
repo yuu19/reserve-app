@@ -46,13 +46,14 @@ export const askAiChat = async ({
     );
   }
 
+  const conversationScope = {
+    userId: requestContext.identity.userId,
+    organizationId: requestContext.access.organizationId,
+    classroomId: requestContext.access.classroomId,
+  };
   const conversation = await ctx.conversationStore.ensureConversation({
     conversationId: body.conversationId,
-    scope: {
-      userId: requestContext.identity.userId,
-      organizationId: requestContext.access.organizationId,
-      classroomId: requestContext.access.classroomId,
-    },
+    scope: conversationScope,
     title: body.message,
   });
   if (!conversation) {
@@ -115,11 +116,30 @@ export const askAiChat = async ({
     }),
     confidence: generated.confidence,
     needsHumanSupport: generated.needsHumanSupport,
+    provider: generated.provider,
+    model: generated.model,
+    inputTokens: generated.inputTokens,
+    outputTokens: generated.outputTokens,
+    latencyMs: generated.latencyMs,
+    generationStatus: generated.generationStatus,
+    errorCode: generated.errorCode,
+    errorSummary: generated.errorSummary,
     aiGatewayLogId: generated.aiGatewayLogId,
-    aiModel: generated.model,
-    aiLatencyMs: generated.latencyMs,
-    aiGenerationStatus: generated.generationStatus,
-    aiErrorSummary: generated.errorSummary,
+  });
+
+  await ctx.conversationStore.recordUsageEvent({
+    scope: conversationScope,
+    conversationId: conversation.conversationId,
+    messageId: assistantMessage.id,
+    provider: generated.provider,
+    model: generated.model,
+    inputTokens: generated.inputTokens,
+    outputTokens: generated.outputTokens,
+    latencyMs: generated.latencyMs,
+    generationStatus: generated.generationStatus,
+    errorCode: generated.errorCode,
+    errorSummary: generated.errorSummary,
+    aiGatewayLogId: generated.aiGatewayLogId,
   });
 
   ctx.recordChatBreadcrumb({

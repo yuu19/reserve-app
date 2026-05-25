@@ -73,6 +73,10 @@ describe('AI answer generation', () => {
             { label: '予約運用を開く', href: '/admin/bookings', actionKind: 'open_page' },
           ],
         }),
+        usage: {
+          input_tokens: 11,
+          output_tokens: 22,
+        },
       })),
     };
 
@@ -103,8 +107,12 @@ describe('AI answer generation', () => {
       answer: '予約運用から予約枠を作成できます。',
       confidence: 82,
       needsHumanSupport: false,
+      provider: 'cloudflare-workers-ai',
       model: '@cf/test/chat',
+      inputTokens: 11,
+      outputTokens: 22,
       generationStatus: 'generated',
+      errorCode: null,
       errorSummary: null,
       aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
       sources: [{ title: '予約運用', chunkId: 'chunk-a' }],
@@ -178,8 +186,11 @@ describe('AI answer generation', () => {
       confidence: 30,
       needsHumanSupport: true,
       model: '@cf/test/chat',
+      inputTokens: null,
+      outputTokens: null,
       latencyMs: 0,
       generationStatus: 'fallback_retrieval_failed',
+      errorCode: 'retrieval_failed',
       errorSummary: 'vectorize unavailable',
     });
     expect(run).not.toHaveBeenCalled();
