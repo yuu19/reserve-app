@@ -20,6 +20,7 @@ import {
 
 const STRIPE_BILLING_E2E_TIMEOUT_MS = 180_000;
 const STRIPE_BILLING_SETTLE_TIMEOUT_MS = 60_000;
+const STRIPE_BILLING_UI_TIMEOUT_MS = 15_000;
 
 test.describe.configure({ mode: 'serial', timeout: STRIPE_BILLING_E2E_TIMEOUT_MS });
 
@@ -97,7 +98,9 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			});
 
 		await openContractsPage(page);
-		await expect(page.getByText('Premiumプラン', { exact: true })).toBeVisible();
+		await expect(page.getByText('Premiumプラン', { exact: true })).toBeVisible({
+			timeout: STRIPE_BILLING_UI_TIMEOUT_MS
+		});
 	});
 
 	test('surfaces payment issue state after a failed Test Clock renewal', async ({
@@ -177,7 +180,9 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			});
 
 		await openContractsPage(page);
-		await expect(page.getByText('支払い遅延', { exact: true })).toBeVisible();
+		await expect(page.getByText('支払い遅延', { exact: true })).toBeVisible({
+			timeout: STRIPE_BILLING_UI_TIMEOUT_MS
+		});
 
 		await recoverSubscriptionPaymentMethod({
 			customerId: customer.id,
@@ -253,6 +258,8 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			});
 
 		await openContractsPage(page);
-		await expect(page.getByText('無料プラン', { exact: true })).toBeVisible();
+		await expect(page.getByText('無料プラン', { exact: true })).toBeVisible({
+			timeout: STRIPE_BILLING_UI_TIMEOUT_MS
+		});
 	});
 });

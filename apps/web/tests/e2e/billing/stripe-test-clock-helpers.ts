@@ -192,7 +192,7 @@ export const createStripePaymentMethod = async (token: string): Promise<string> 
 };
 
 export const createDeclinedStripePaymentMethod = async (
-	token = 'tok_chargeDeclined'
+	token = 'tok_chargeCustomerFail'
 ): Promise<string> => createStripePaymentMethod(token);
 
 export const setDefaultPaymentMethod = async ({
