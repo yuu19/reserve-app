@@ -481,7 +481,7 @@ export const readBillingSummary = async ({
 
 export const openContractsPage = async (page: Page) => {
 	await page.goto('/admin/contracts');
-	await expect(page.getByRole('heading', { name: /契約|プラン|Premium/ })).toBeVisible({
+	await expect(page.getByRole('heading', { level: 1, name: '契約' })).toBeVisible({
 		timeout: 15_000
 	});
 };
