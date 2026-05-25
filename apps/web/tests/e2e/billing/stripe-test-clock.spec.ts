@@ -18,7 +18,10 @@ import {
 	startPremiumTrial
 } from './stripe-test-clock-helpers';
 
-test.describe.configure({ mode: 'serial' });
+const STRIPE_BILLING_E2E_TIMEOUT_MS = 180_000;
+const STRIPE_BILLING_SETTLE_TIMEOUT_MS = 60_000;
+
+test.describe.configure({ mode: 'serial', timeout: STRIPE_BILLING_E2E_TIMEOUT_MS });
 
 test.describe('Stripe Test Clock billing lifecycle', () => {
 	const clocksToDelete: string[] = [];
@@ -83,7 +86,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 
 		await expect
 			.poll(async () => readBillingSummary({ request, organizationId }), {
-				timeout: 30_000,
+				timeout: STRIPE_BILLING_SETTLE_TIMEOUT_MS,
 				intervals: [1_000, 2_000, 5_000]
 			})
 			.toMatchObject({
@@ -164,7 +167,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 
 		await expect
 			.poll(async () => readBillingSummary({ request, organizationId }), {
-				timeout: 30_000,
+				timeout: STRIPE_BILLING_SETTLE_TIMEOUT_MS,
 				intervals: [1_000, 2_000, 5_000]
 			})
 			.toMatchObject({
@@ -193,7 +196,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 
 		await expect
 			.poll(async () => readBillingSummary({ request, organizationId }), {
-				timeout: 30_000,
+				timeout: STRIPE_BILLING_SETTLE_TIMEOUT_MS,
 				intervals: [1_000, 2_000, 5_000]
 			})
 			.toMatchObject({
@@ -240,7 +243,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 
 		await expect
 			.poll(async () => readBillingSummary({ request, organizationId }), {
-				timeout: 30_000,
+				timeout: STRIPE_BILLING_SETTLE_TIMEOUT_MS,
 				intervals: [1_000, 2_000, 5_000]
 			})
 			.toMatchObject({
