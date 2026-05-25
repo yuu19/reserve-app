@@ -2,7 +2,19 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { chunkKnowledgeContent, discoverMarkdownKnowledge } from './indexer.js';
+import { parseArgs } from '../../../scripts/index-ai-knowledge.mjs';
+import {
+  chunkKnowledgeContent,
+  discoverKnowledgeDocuments,
+  discoverMarkdownKnowledge,
+} from '../../../scripts/ai-knowledge-source-loader.mjs';
+import {
+  buildPendingSql,
+  buildSuccessSql,
+  buildVectorMetadata,
+  createKnowledgeIndexingPlan,
+  runKnowledgeIndexing,
+} from '../../../scripts/ai-knowledge-indexing-usecase.mjs';
 
 const tempDirs: string[] = [];
 
@@ -11,6 +23,27 @@ const createTempDir = async () => {
   tempDirs.push(dir);
   return dir;
 };
+
+const writeFile = async (rootDir: string, filePath: string, content: string) => {
+  const fullPath = path.join(rootDir, filePath);
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, content);
+};
+
+const createDocument = (overrides: Record<string, unknown> = {}) => ({
+  sourceKind: 'docs',
+  sourcePath: 'apps/docs/manual.md',
+  title: 'Manual',
+  content: '# Manual\n本文',
+  locale: 'ja',
+  visibility: 'authenticated',
+  internalOnly: false,
+  organizationId: null,
+  classroomId: null,
+  feature: null,
+  tags: [],
+  ...overrides,
+});
 
 describe('AI knowledge indexer', () => {
   afterEach(async () => {
@@ -33,23 +66,25 @@ describe('AI knowledge indexer', () => {
 
   it('discovers markdown/spec documents with frontmatter metadata and titles', async () => {
     const rootDir = await createTempDir();
-    await fs.mkdir(path.join(rootDir, 'nested'));
-    await fs.writeFile(
-      path.join(rootDir, 'manual.md'),
+    await writeFile(
+      rootDir,
+      'manual.md',
       [
         '---',
         'title: "予約FAQ"',
         'locale: ja',
         'feature: booking',
+        'tags: booking, faq',
         '---',
         '',
         '# 見出し',
         '本文',
       ].join('\n'),
     );
-    await fs.writeFile(path.join(rootDir, 'nested', 'ignored.txt'), 'ignored');
+    await writeFile(rootDir, 'nested/ignored.txt', 'ignored');
 
     const documents = await discoverMarkdownKnowledge({
+      repoRoot: rootDir,
       rootDir,
       sourceKind: 'docs',
       visibility: 'authenticated',
@@ -59,13 +94,212 @@ describe('AI knowledge indexer', () => {
     expect(documents).toHaveLength(1);
     expect(documents[0]).toMatchObject({
       sourceKind: 'docs',
+      sourcePath: 'manual.md',
       title: '予約FAQ',
       locale: 'ja',
       visibility: 'authenticated',
       internalOnly: false,
       feature: 'booking',
+      tags: ['booking', 'faq'],
     });
-    expect(documents[0]?.sourcePath).toContain('manual.md');
     expect(documents[0]?.content).toContain('# 見出し');
+  });
+
+  it('preserves root visibility and internal-only policy during repository discovery', async () => {
+    const repoRoot = await createTempDir();
+    await writeFile(
+      repoRoot,
+      'apps/docs/src/routes/manuals/common/ai-chatbot/+page.md',
+      ['---', 'title: "AI Chat"', 'locale: en', 'feature: ai-chatbot', '---', '', 'Guide'].join(
+        '\n',
+      ),
+    );
+    await writeFile(repoRoot, 'docs/operator.md', '# Operator note');
+    await writeFile(repoRoot, 'specs/004-ai-chatbot/spec.md', '# Spec');
+
+    const documents = await discoverKnowledgeDocuments({ repoRoot });
+    const byPath = new Map(documents.map((document) => [document.sourcePath, document]));
+
+    expect(byPath.get('apps/docs/src/routes/manuals/common/ai-chatbot/+page.md')).toMatchObject({
+      sourceKind: 'docs',
+      visibility: 'authenticated',
+      internalOnly: false,
+      feature: 'ai-chatbot',
+      locale: 'en',
+    });
+    expect(byPath.get('docs/operator.md')).toMatchObject({
+      sourceKind: 'docs',
+      visibility: 'admin',
+      internalOnly: true,
+      locale: 'ja',
+    });
+    expect(byPath.get('specs/004-ai-chatbot/spec.md')).toMatchObject({
+      sourceKind: 'specs',
+      visibility: 'admin',
+      internalOnly: true,
+    });
+  });
+
+  it('dry-run does not call D1, Vectorize, or Workers AI dependencies', async () => {
+    const result = await runKnowledgeIndexing({
+      documents: [createDocument()],
+      apply: false,
+      repoRoot: '/unused',
+      dependencies: {
+        readAccountId: () => {
+          throw new Error('readAccountId should not be called');
+        },
+        executeD1File: () => {
+          throw new Error('executeD1File should not be called');
+        },
+        upsertVectors: () => {
+          throw new Error('upsertVectors should not be called');
+        },
+        generateEmbedding: () => {
+          throw new Error('generateEmbedding should not be called');
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      mode: 'dry-run',
+      documentsSeen: 1,
+      chunksPrepared: 1,
+    });
+  });
+
+  it('treats no arguments as dry-run and rejects conflicting apply modes', () => {
+    expect(parseArgs([])).toMatchObject({
+      apply: false,
+      dryRun: true,
+      sourcePath: null,
+    });
+    expect(parseArgs(['--dry-run'])).toMatchObject({
+      apply: false,
+      dryRun: true,
+    });
+    expect(parseArgs(['--apply'])).toMatchObject({
+      apply: true,
+      dryRun: false,
+    });
+    expect(() => parseArgs(['--dry-run', '--apply'])).toThrow(
+      'Use either --dry-run or --apply, not both.',
+    );
+  });
+
+  it('filters discovery by repository-relative source path', async () => {
+    const repoRoot = await createTempDir();
+    await writeFile(repoRoot, 'apps/docs/manual-a.md', '# A');
+    await writeFile(repoRoot, 'apps/docs/manual-b.md', '# B');
+
+    const documents = await discoverKnowledgeDocuments({
+      repoRoot,
+      sourcePath: './apps/docs/manual-a.md',
+    });
+
+    expect(documents.map((document) => document.sourcePath)).toEqual(['apps/docs/manual-a.md']);
+  });
+
+  it('fails when source-path matches no knowledge source', async () => {
+    const repoRoot = await createTempDir();
+    await writeFile(repoRoot, 'apps/docs/manual-a.md', '# A');
+
+    await expect(
+      discoverKnowledgeDocuments({
+        repoRoot,
+        sourcePath: 'apps/docs/missing.md',
+      }),
+    ).rejects.toThrow('No knowledge source matched --source-path apps/docs/missing.md');
+  });
+
+  it('limits stale SQL to the target document for source-path apply', () => {
+    const plan = createKnowledgeIndexingPlan({
+      documents: [createDocument({ sourcePath: 'apps/docs/manual-a.md' })],
+    });
+
+    const statements = buildSuccessSql({
+      runId: 'run-1',
+      documents: plan.documents,
+      chunks: plan.chunks,
+      now: 1000,
+      embeddingShape: [1, 1024],
+      staleScope: 'targeted',
+    });
+    const sql = statements.join('\n');
+
+    expect(sql).toContain("UPDATE ai_knowledge_chunk SET vector_status = 'stale'");
+    expect(sql).toContain('WHERE document_id IN');
+    expect(sql).not.toContain('source_kind IN');
+    expect(sql).not.toContain("UPDATE ai_knowledge_document SET index_status = 'stale'");
+  });
+
+  it('keeps global source-kind stale SQL for full apply', () => {
+    const plan = createKnowledgeIndexingPlan({
+      documents: [createDocument({ sourcePath: 'apps/docs/manual-a.md' })],
+    });
+
+    const statements = buildSuccessSql({
+      runId: 'run-1',
+      documents: plan.documents,
+      chunks: plan.chunks,
+      now: 1000,
+      embeddingShape: [1, 1024],
+      staleScope: 'full',
+    });
+    const sql = statements.join('\n');
+
+    expect(sql).toContain("source_kind IN ('docs')");
+    expect(sql).toContain('organization_id IS NULL AND classroom_id IS NULL');
+    expect(sql).toContain("UPDATE ai_knowledge_document SET index_status = 'stale'");
+  });
+
+  it('stores and updates source visibility metadata in pending SQL and vector metadata', () => {
+    const plan = createKnowledgeIndexingPlan({
+      documents: [
+        createDocument({
+          sourcePath: 'docs/operator.md',
+          visibility: 'admin',
+          internalOnly: true,
+          organizationId: 'org-1',
+          classroomId: 'classroom-1',
+          feature: 'billing',
+          tags: ['operator', 'billing'],
+        }),
+      ],
+    });
+
+    const statements = buildPendingSql({
+      documents: plan.documents,
+      chunks: plan.chunks,
+      now: 1000,
+    });
+    const sql = statements.join('\n');
+
+    expect(sql).toContain('source_kind');
+    expect(sql).toContain('source_path');
+    expect(sql).toContain("'docs'");
+    expect(sql).toContain("'docs/operator.md'");
+    expect(sql).toContain("'admin'");
+    expect(sql).toContain("'org-1'");
+    expect(sql).toContain("'classroom-1'");
+    expect(sql).toContain("'billing'");
+    expect(sql).toContain('\'["operator","billing"]\'');
+    expect(sql).toContain("source_kind = 'docs'");
+    expect(sql).toContain("source_path = 'docs/operator.md'");
+    expect(sql).toContain('internal_only = 1');
+    expect(sql).toContain("organization_id = 'org-1'");
+    expect(sql).toContain('tags_json');
+
+    expect(buildVectorMetadata(plan.chunks[0])).toEqual({
+      visibility: 'admin',
+      internal_only: true,
+      organization_id: 'org-1',
+      classroom_id: 'classroom-1',
+      feature: 'billing',
+      locale: 'ja',
+      source_kind: 'docs',
+      source_path: 'docs/operator.md',
+      tags_json: '["operator","billing"]',
+    });
   });
 });

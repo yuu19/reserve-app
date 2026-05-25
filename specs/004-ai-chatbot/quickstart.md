@@ -104,6 +104,33 @@ Expected output for the implemented AI unit subset:
 
 Note: the full backend suite includes existing Miniflare app tests and may take substantially longer than the AI-only subset.
 
+Knowledge indexing script checks:
+
+```bash
+pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs
+pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run
+pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+```
+
+Expected output:
+
+- All three commands run discovery only. They do not call Workers AI, D1, or Vectorize.
+- The default mode is dry-run when neither `--dry-run` nor `--apply` is provided.
+- `--source-path` must match a repository-relative Markdown source. A non-matching path exits with a usage failure.
+
+Remote indexing when credentials and production rollout approval are available:
+
+```bash
+CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply
+CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+```
+
+Expected behavior:
+
+- `--apply` writes remote D1 rows and upserts Vectorize records.
+- Full apply marks global documents and chunks that disappeared from the current discovery as stale.
+- Source-path apply only refreshes the selected document and marks old chunks for that document as stale.
+
 Targeted web checks:
 
 ```bash
