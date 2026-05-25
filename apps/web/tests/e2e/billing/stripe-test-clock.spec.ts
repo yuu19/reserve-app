@@ -97,7 +97,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			});
 
 		await openContractsPage(page);
-		await expect(page.getByText('現在はPremiumプラン利用中です。')).toBeVisible();
+		await expect(page.getByText('Premiumプラン', { exact: true })).toBeVisible();
 	});
 
 	test('surfaces payment issue state after a failed Test Clock renewal', async ({
@@ -177,7 +177,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			});
 
 		await openContractsPage(page);
-		await expect(page.getByText(/支払い|未払い|Premium 機能/)).toBeVisible();
+		await expect(page.getByText('支払い遅延', { exact: true })).toBeVisible();
 
 		await recoverSubscriptionPaymentMethod({
 			customerId: customer.id,
@@ -253,6 +253,6 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			});
 
 		await openContractsPage(page);
-		await expect(page.getByText(/無料プラン|Premiumトライアル/)).toBeVisible();
+		await expect(page.getByText('無料プラン', { exact: true })).toBeVisible();
 	});
 });
