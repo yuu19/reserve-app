@@ -470,9 +470,13 @@ export const readBillingSummary = async ({
 		)}`
 	);
 	expect(response.status()).toBe(200);
-	const payload = (await response.json()) as { billing?: BillingPayload | null };
-	expect(payload.billing).toBeTruthy();
-	return payload.billing as BillingPayload;
+	const payload = (await response.json()) as {
+		billing?: BillingPayload | null;
+	} & Partial<BillingPayload>;
+	const billing =
+		payload.billing ?? (typeof payload.planCode === 'string' ? (payload as BillingPayload) : null);
+	expect(billing).toBeTruthy();
+	return billing as BillingPayload;
 };
 
 export const openContractsPage = async (page: Page) => {
