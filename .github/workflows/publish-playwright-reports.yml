@@ -239,9 +239,9 @@ jobs:
                 <h1>Playwright Reports</h1>
                 <p>Latest available reports generated from main branch workflows.</p>
                 <ul>
-                  <li><a href="./docs/">Docs report</a></li>
-                  <li><a href="./web/">Web report</a></li>
-                  <li><a href="./stripe-billing/">Stripe Billing report</a></li>
+                  <li><a href="./docs/index.html">Docs report</a></li>
+                  <li><a href="./web/index.html">Web report</a></li>
+                  <li><a href="./stripe-billing/index.html">Stripe Billing report</a></li>
                 </ul>
               </main>
             </body>
@@ -283,16 +283,43 @@ jobs:
 
           if [ -n "${prefix}" ]; then
             s3_uri="s3://${R2_BUCKET}/${prefix}/"
-            report_url="${REPORT_BASE_URL%/}/${prefix}/"
+            report_root_url="${REPORT_BASE_URL%/}/${prefix}"
           else
             s3_uri="s3://${R2_BUCKET}/"
-            report_url="${REPORT_BASE_URL%/}/"
+            report_root_url="${REPORT_BASE_URL%/}"
           fi
+
+          report_url="${report_root_url}/index.html"
 
           aws s3 sync .pages "${s3_uri}" \
             --endpoint-url "${R2_ENDPOINT}" \
             --delete \
             --cache-control "no-store"
+
+          put_directory_index_alias() {
+            local source_file="$1"
+            local key="$2"
+
+            if [ -z "${key}" ] || [ ! -f "${source_file}" ]; then
+              return 0
+            fi
+
+            aws s3api put-object \
+              --bucket "${R2_BUCKET}" \
+              --key "${key}" \
+              --body "${source_file}" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "text/html; charset=utf-8" \
+              --cache-control "no-store" \
+              >/dev/null
+          }
+
+          if [ -n "${prefix}" ]; then
+            put_directory_index_alias ".pages/index.html" "${prefix}/"
+            put_directory_index_alias ".pages/docs/index.html" "${prefix}/docs/"
+            put_directory_index_alias ".pages/web/index.html" "${prefix}/web/"
+            put_directory_index_alias ".pages/stripe-billing/index.html" "${prefix}/stripe-billing/"
+          fi
 
           echo "report_url=${report_url}" >> "$GITHUB_OUTPUT"
 
@@ -300,7 +327,7 @@ jobs:
             echo "### Playwright Reports"
             echo ""
             echo "- Index: ${report_url}"
-            echo "- Docs: ${report_url}docs/"
-            echo "- Web: ${report_url}web/"
-            echo "- Stripe Billing: ${report_url}stripe-billing/"
+            echo "- Docs: ${report_root_url}/docs/index.html"
+            echo "- Web: ${report_root_url}/web/index.html"
+            echo "- Stripe Billing: ${report_root_url}/stripe-billing/index.html"
           } >> "$GITHUB_STEP_SUMMARY"

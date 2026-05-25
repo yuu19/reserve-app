@@ -36,23 +36,27 @@ pull request の失敗は GitHub Actions の artifact から確認する。
 公開 URL の構造は次のとおり。
 
 - `index.html`: レポート一覧
-- `docs/`: docs Playwright E2E
-- `web/`: web Playwright E2E
-- `stripe-billing/`: Stripe 課金 Playwright E2E
+- `docs/index.html`: docs Playwright E2E
+- `web/index.html`: web Playwright E2E
+- `stripe-billing/index.html`: Stripe 課金 Playwright E2E
 
 たとえば `PLAYWRIGHT_REPORT_BASE_URL=https://reports.example.com`、`PLAYWRIGHT_REPORT_PREFIX=reserve-app/playwright/latest` の場合、一覧は次の URL になる。
 
 ```text
-https://reports.example.com/reserve-app/playwright/latest/
+https://reports.example.com/reserve-app/playwright/latest/index.html
 ```
 
 各レポートは、この URL の配下に置かれる。
 
 ```text
-https://reports.example.com/reserve-app/playwright/latest/docs/
-https://reports.example.com/reserve-app/playwright/latest/web/
-https://reports.example.com/reserve-app/playwright/latest/stripe-billing/
+https://reports.example.com/reserve-app/playwright/latest/docs/index.html
+https://reports.example.com/reserve-app/playwright/latest/web/index.html
+https://reports.example.com/reserve-app/playwright/latest/stripe-billing/index.html
 ```
+
+R2 Custom Domain は directory index を自動解決しない。
+GitHub Actions の environment URL と step summary では `index.html` まで含む URL を表示する。
+既存リンクや手入力に備え、workflow は `latest/`、`latest/docs/` などの trailing slash key にも同じ HTML を置く。
 
 ## GitHub Actions の構成
 
@@ -250,6 +254,7 @@ Custom Domain を使う場合は、その domain を指定する。
 
 `Publish Playwright Reports` が成功すると、GitHub Actions の environment URL と step summary に一覧 URL が出る。
 その URL を開くと、最新の Playwright レポート一覧を確認できる。
+URL は R2 object を直接指すため、`index.html` まで含む。
 
 一覧から次のレポートに移動する。
 
@@ -354,7 +359,10 @@ Cloudflare Dashboard で次を確認する。
 - DNS record が作られているか
 - Cloudflare Access policy で閲覧者が許可されているか
 - `PLAYWRIGHT_REPORT_BASE_URL` が Custom Domain と一致しているか
-- `PLAYWRIGHT_REPORT_PREFIX` を含めた URL を開いているか
+- `PLAYWRIGHT_REPORT_PREFIX` と `index.html` を含めた URL を開いているか
+
+R2 Custom Domain は `latest/` を `latest/index.html` に自動変換しない。
+workflow は trailing slash key も作成するが、確認時はまず `.../latest/index.html` を直接開く。
 
 `r2.dev` で見えて Custom Domain で見えない場合は、Custom Domain と Access の設定を確認する。
 本番運用では `r2.dev` を有効にしたままにしない。
