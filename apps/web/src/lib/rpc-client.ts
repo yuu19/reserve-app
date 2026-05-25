@@ -98,7 +98,7 @@ export type OrganizationBillingPayload = {
 		tone: 'neutral' | 'positive' | 'attention';
 	}> | null;
 	paymentDocuments?: {
-		aggregateRoot: 'organization_billing';
+		aggregateRoot: 'billing_account';
 		organizationId: string;
 		provider: 'stripe';
 		stripeCustomerId: string | null;

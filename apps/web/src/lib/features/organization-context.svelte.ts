@@ -59,7 +59,7 @@ const isOrganizationBillingPaymentDocuments = (
 	value: unknown
 ): value is NonNullable<OrganizationBillingPayload['paymentDocuments']> =>
 	isRecord(value) &&
-	value.aggregateRoot === 'organization_billing' &&
+	value.aggregateRoot === 'billing_account' &&
 	typeof value.organizationId === 'string' &&
 	value.provider === 'stripe' &&
 	(typeof value.stripeCustomerId === 'string' || value.stripeCustomerId === null) &&

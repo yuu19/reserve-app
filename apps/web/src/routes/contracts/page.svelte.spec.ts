@@ -90,7 +90,7 @@ const createBillingFixture = (overrides: Record<string, unknown> = {}) => ({
 	},
 	history: [],
 	paymentDocuments: {
-		aggregateRoot: 'organization_billing',
+		aggregateRoot: 'billing_account',
 		organizationId: 'org-1',
 		provider: 'stripe',
 		stripeCustomerId: null,
@@ -959,7 +959,7 @@ describe('/contracts/+page.svelte', () => {
 					readOnlyReason: null
 				},
 				paymentDocuments: {
-					aggregateRoot: 'organization_billing',
+					aggregateRoot: 'billing_account',
 					organizationId: 'org-1',
 					provider: 'stripe',
 					stripeCustomerId: 'cus_docs',
