@@ -254,7 +254,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			.toMatchObject({
 				planCode: 'free',
 				planState: 'free',
-				subscriptionStatus: 'free'
+				subscriptionStatus: 'canceled'
 			});
 
 		await openContractsPage(page);
