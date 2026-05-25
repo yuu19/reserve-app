@@ -71,7 +71,7 @@ export const askAiChat = async ({
   try {
     retrieved = await ctx.retrieveKnowledge({
       message: body.message,
-      access: requestContext.access,
+      context: requestContext.access,
       allowedVisibilities: requestContext.allowedVisibilities,
       internalOperator: requestContext.internalOperator,
     });

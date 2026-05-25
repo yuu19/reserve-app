@@ -1,3 +1,9 @@
+import type {
+  AiUsageLimitResult,
+  ChatRateLimiter,
+  RateLimitScopeKind,
+  RateLimitWindowKind,
+} from '@repo/saas-chatbot-core';
 import { and, eq, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import * as dbSchema from '../../infra/db/schema.js';
@@ -5,22 +11,10 @@ import * as dbSchema from '../../infra/db/schema.js';
 const USER_HOURLY_LIMIT = 20;
 const ORGANIZATION_DAILY_LIMIT = 200;
 
-type WindowKind = 'hour' | 'day';
-type ScopeKind = 'user' | 'organization';
+type WindowKind = RateLimitWindowKind;
+type ScopeKind = RateLimitScopeKind;
 
-export type AiUsageLimitResult =
-  | {
-      allowed: true;
-      userRemainingThisHour: number;
-      organizationRemainingToday: number;
-    }
-  | {
-      allowed: false;
-      scopeKind: ScopeKind;
-      retryAfterSeconds: number;
-      userRemainingThisHour: number;
-      organizationRemainingToday: number;
-    };
+export type { AiUsageLimitResult } from '@repo/saas-chatbot-core';
 
 const startOfHour = (date: Date): Date => {
   const next = new Date(date);
@@ -269,6 +263,20 @@ export const checkAndIncrementAiUsage = async ({
     organizationRemainingToday: Math.max(0, ORGANIZATION_DAILY_LIMIT - organizationCount),
   };
 };
+
+export const createReserveAppChatRateLimiter = ({
+  database,
+}: {
+  database: AuthRuntimeDatabase;
+}): ChatRateLimiter => ({
+  checkAndIncrement: ({ actorUserId, subjectId, now }) =>
+    checkAndIncrementAiUsage({
+      database,
+      userId: actorUserId,
+      organizationId: subjectId,
+      now,
+    }),
+});
 
 /** rate limit 判定に不要になった古い AI usage window を削除する。 */
 export const compactExpiredAiUsageCounters = async ({

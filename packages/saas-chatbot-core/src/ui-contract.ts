@@ -1,22 +1,22 @@
-export const AI_SOURCE_KINDS = ['docs', 'specs', 'faq', 'db_summary'] as const;
-export type AiSourceKind = (typeof AI_SOURCE_KINDS)[number];
+import type {
+  AiFeedbackRating,
+  AiSourceKind,
+  AiSourceVisibility,
+  AiSuggestedActionKind,
+} from './types.js';
 
-export const AI_SOURCE_VISIBILITIES = [
-  'public',
-  'authenticated',
-  'participant',
-  'staff',
-  'manager',
-  'admin',
-  'owner',
-] as const;
-export type AiSourceVisibility = (typeof AI_SOURCE_VISIBILITIES)[number];
-
-export const AI_SUGGESTED_ACTION_KINDS = ['open_page', 'contact_owner', 'contact_support'] as const;
-export type AiSuggestedActionKind = (typeof AI_SUGGESTED_ACTION_KINDS)[number];
-
-export const AI_FEEDBACK_RATINGS = ['helpful', 'unhelpful'] as const;
-export type AiFeedbackRating = (typeof AI_FEEDBACK_RATINGS)[number];
+export {
+  AI_FEEDBACK_RATINGS,
+  AI_SOURCE_KINDS,
+  AI_SOURCE_VISIBILITIES,
+  AI_SUGGESTED_ACTION_KINDS,
+} from './types.js';
+export type {
+  AiFeedbackRating,
+  AiSourceKind,
+  AiSourceVisibility,
+  AiSuggestedActionKind,
+} from './types.js';
 
 export type AiSourceReference = {
   sourceKind: AiSourceKind;

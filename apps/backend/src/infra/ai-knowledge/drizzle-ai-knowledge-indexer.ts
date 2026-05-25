@@ -1,3 +1,9 @@
+import type {
+  EmbeddingProvider,
+  IndexableKnowledgeDocument,
+  KnowledgeIndexer,
+  KnowledgeIndexResult,
+} from '@repo/saas-chatbot-core';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -10,19 +16,7 @@ import {
 } from '../ai/cloudflare-ai-embedding-provider.js';
 import * as dbSchema from '../db/schema.js';
 
-export type IndexableKnowledgeDocument = {
-  sourceKind: AiSourceKind;
-  sourcePath: string;
-  title: string;
-  content: string;
-  locale?: 'ja' | 'en';
-  visibility?: AiSourceVisibility;
-  internalOnly?: boolean;
-  organizationId?: string | null;
-  classroomId?: string | null;
-  feature?: string | null;
-  tags?: string[];
-};
+export type { IndexableKnowledgeDocument } from '@repo/saas-chatbot-core';
 
 export type AiIndexerEnv = AiEmbeddingEnv & {
   AI_KNOWLEDGE_INDEX?: {
@@ -155,15 +149,16 @@ export const discoverMarkdownKnowledge = async ({
 export const upsertKnowledgeDocument = async ({
   env,
   database,
+  embeddingProvider = createWorkersAiEmbeddingProvider({ env }),
   document,
   now = new Date(),
 }: {
   env: AiIndexerEnv;
   database: AuthRuntimeDatabase;
+  embeddingProvider?: EmbeddingProvider;
   document: IndexableKnowledgeDocument;
   now?: Date;
-}) => {
-  const embeddingProvider = createWorkersAiEmbeddingProvider({ env });
+}): Promise<KnowledgeIndexResult> => {
   if (!embeddingProvider.isConfigured || !env.AI_KNOWLEDGE_INDEX) {
     throw new Error('Workers AI and Vectorize bindings are required for indexing.');
   }
@@ -304,26 +299,25 @@ export const upsertKnowledgeDocument = async ({
 
 export type UpsertKnowledgeDocumentInput = Omit<
   Parameters<typeof upsertKnowledgeDocument>[0],
-  'env' | 'database'
+  'env' | 'database' | 'embeddingProvider'
 >;
 
-export type DrizzleAiKnowledgeIndexer = {
-  upsertKnowledgeDocument(
-    input: UpsertKnowledgeDocumentInput,
-  ): ReturnType<typeof upsertKnowledgeDocument>;
-};
+export type DrizzleAiKnowledgeIndexer = KnowledgeIndexer<IndexableKnowledgeDocument>;
 
 export const createDrizzleAiKnowledgeIndexer = ({
   env,
   database,
+  embeddingProvider,
 }: {
   env: AiIndexerEnv;
   database: AuthRuntimeDatabase;
+  embeddingProvider?: EmbeddingProvider;
 }): DrizzleAiKnowledgeIndexer => ({
   upsertKnowledgeDocument: (input) =>
     upsertKnowledgeDocument({
       env,
       database,
+      embeddingProvider,
       ...input,
     }),
 });

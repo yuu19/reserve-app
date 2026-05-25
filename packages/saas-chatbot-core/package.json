@@ -8,6 +8,38 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./answer": {
+      "types": "./src/answer.ts",
+      "default": "./src/answer.ts"
+    },
+    "./conversation": {
+      "types": "./src/conversation.ts",
+      "default": "./src/conversation.ts"
+    },
+    "./embedding": {
+      "types": "./src/embedding.ts",
+      "default": "./src/embedding.ts"
+    },
+    "./knowledge": {
+      "types": "./src/knowledge.ts",
+      "default": "./src/knowledge.ts"
+    },
+    "./prompt": {
+      "types": "./src/prompt.ts",
+      "default": "./src/prompt.ts"
+    },
+    "./rate-limit": {
+      "types": "./src/rate-limit.ts",
+      "default": "./src/rate-limit.ts"
+    },
+    "./source-visibility": {
+      "types": "./src/source-visibility.ts",
+      "default": "./src/source-visibility.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./src/types.ts"
+    },
     "./ui-contract": {
       "types": "./src/ui-contract.ts",
       "default": "./src/ui-contract.ts"

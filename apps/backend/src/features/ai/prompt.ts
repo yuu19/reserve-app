@@ -1,16 +1,11 @@
+import type {
+  BusinessFactSummary,
+  PromptBuilder,
+  RetrievedKnowledgeContext,
+} from '@repo/saas-chatbot-core';
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
-import type { AiSourceReference } from './source-visibility.js';
 
-export type RetrievedKnowledgeContext = AiSourceReference & {
-  content: string;
-  score?: number;
-};
-
-export type BusinessFactSummary = {
-  factKeys: string[];
-  lines: string[];
-  sensitive: boolean;
-};
+export type { BusinessFactSummary, RetrievedKnowledgeContext } from '@repo/saas-chatbot-core';
 
 /** プロンプトや保存用概要に入る前に、高リスクな secret と支払い参照情報をマスクする。 */
 export const redactSensitiveText = (value: string): string =>
@@ -127,4 +122,27 @@ export const shouldSkipAiGatewayCache = (
   return /請求|領収|支払|カード|invoice|receipt|payment|billing|個人情報|メールアドレス/u.test(
     message,
   );
+};
+
+export const reserveAppPromptBuilder: PromptBuilder<OrganizationClassroomAccess> = {
+  build({ userId, context: access, currentPage, retrievedContexts, businessFacts, message }) {
+    const skipCache = shouldSkipAiGatewayCache(message, businessFacts);
+    return {
+      systemPrompt: buildAiSystemPrompt(),
+      userPrompt: buildAnswerPrompt({
+        userId,
+        access,
+        currentPage,
+        retrievedContexts,
+        businessFacts,
+        message,
+      }),
+      skipCache,
+      cacheTtl: skipCache ? undefined : 60,
+      metadata: {
+        organizationId: access.organizationId,
+        classroomId: access.classroomId,
+      },
+    };
+  },
 };

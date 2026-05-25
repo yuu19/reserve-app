@@ -1,5 +1,4 @@
-import type { AiAnswerModelProvider } from './cloudflare-ai-answer-provider.js';
-import type { AiEmbeddingProvider } from './cloudflare-ai-embedding-provider.js';
+import type { AiAnswerModelProvider, AiEmbeddingProvider } from '@repo/saas-chatbot-core';
 
 export const createFakeAiAnswerModelProvider = ({
   result = {

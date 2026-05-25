@@ -1,38 +1,19 @@
+import type {
+  AiUsageEventInput,
+  AiSourceReference,
+  ConversationScope,
+  ConversationStore,
+  StoredAssistantMessage,
+} from '@repo/saas-chatbot-core';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
-import type { AiSourceReference } from '../../features/ai/source-visibility.js';
 import * as dbSchema from '../db/schema.js';
 
 const CONVERSATION_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 const FEEDBACK_AGGREGATE_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 const ANONYMIZED_CONTENT = '[deleted by AI retention policy]';
 
-export type ConversationScope = {
-  userId: string;
-  organizationId: string;
-  classroomId: string | null;
-};
-
-export type StoredAssistantMessage = {
-  id: string;
-  conversationId: string;
-};
-
-export type AiUsageEventInput = {
-  scope: ConversationScope;
-  conversationId: string;
-  messageId: string;
-  provider?: string | null;
-  model?: string | null;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  latencyMs?: number | null;
-  generationStatus: string;
-  errorCode?: string | null;
-  errorSummary?: string | null;
-  aiGatewayLogId?: string | null;
-  now?: Date;
-};
+export type { AiUsageEventInput, ConversationScope, StoredAssistantMessage };
 
 const retentionExpiresAt = (now: Date): Date => new Date(now.getTime() + CONVERSATION_RETENTION_MS);
 
@@ -394,21 +375,7 @@ export type CountAiMessagesForConversationInput = Omit<
   'database'
 >;
 
-export type DrizzleAiConversationStore = {
-  ensureConversation(
-    input: EnsureAiConversationInput,
-  ): Promise<{ conversationId: string; created: boolean } | null>;
-  insertMessage(input: InsertAiMessageInput): Promise<StoredAssistantMessage>;
-  recordUsageEvent(input: RecordAiUsageEventInput): Promise<void>;
-  canUserAccessAssistantMessage(
-    input: CanUserAccessAssistantMessageInput,
-  ): ReturnType<typeof canUserAccessAssistantMessage>;
-  submitFeedback(input: SubmitAiFeedbackInput): ReturnType<typeof submitAiFeedback>;
-  cleanupExpiredConversationContent(
-    input?: CleanupExpiredAiConversationContentInput,
-  ): Promise<void>;
-  countMessagesForConversation(input: CountAiMessagesForConversationInput): Promise<number>;
-};
+export type DrizzleAiConversationStore = ConversationStore;
 
 export const createDrizzleAiConversationStore = ({
   database,

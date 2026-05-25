@@ -1,8 +1,10 @@
+import type { BusinessFactsProvider, BusinessFactSummary } from '@repo/saas-chatbot-core';
 import { and, eq, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
 import * as dbSchema from '../../infra/db/schema.js';
-import type { BusinessFactSummary } from './prompt.js';
+
+export type { BusinessFactSummary } from '@repo/saas-chatbot-core';
 
 const readCount = (rows: Array<{ count: number | string | null }>): number =>
   Number(rows[0]?.count ?? 0);
@@ -136,3 +138,13 @@ export const resolveBusinessFacts = async ({
     sensitive: Boolean(billing),
   };
 };
+
+export type ReserveAppBusinessFactsProvider = BusinessFactsProvider<OrganizationClassroomAccess>;
+
+export const createReserveAppBusinessFactsProvider = ({
+  database,
+}: {
+  database: AuthRuntimeDatabase;
+}): ReserveAppBusinessFactsProvider => ({
+  getFacts: (access) => resolveBusinessFacts({ database, access }),
+});

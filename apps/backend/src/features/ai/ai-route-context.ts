@@ -1,4 +1,12 @@
 import * as Sentry from '@sentry/cloudflare';
+import type {
+  AiGeneratedSourceReference,
+  AiSourceReference,
+  AiUsageLimitResult,
+  ConversationStore,
+  RetrievedKnowledgeChunk,
+  RetrieveKnowledgeInput,
+} from '@repo/saas-chatbot-core';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
   getSessionIdentity,
@@ -9,15 +17,12 @@ import { createDrizzleAiKnowledgeRetriever } from '../../infra/ai-knowledge/driz
 import { createDrizzleAiConversationStore } from '../../infra/ai-knowledge/drizzle-ai-conversation-store.js';
 import { createDrizzleAiObservabilityStore } from '../../infra/ai-knowledge/drizzle-ai-observability-store.js';
 import { generateAnswer, type AiAnswerEnv, type GeneratedAiAnswer } from './answer-generator.js';
-import { resolveBusinessFacts } from './business-facts.js';
+import { createReserveAppBusinessFactsProvider } from './business-facts.js';
 import { resolveAiRequestContext, type AiRequestContext } from './context-resolver.js';
-import { checkAndIncrementAiUsage, type AiUsageLimitResult } from './rate-limit.js';
-import {
-  type AiRetrieverEnv,
-  type RetrievedKnowledgeChunk,
-  type RetrieveKnowledgeInput,
-} from './retriever.js';
-import { sanitizeSourceReference, type AiSourceReference } from './source-visibility.js';
+import { createReserveAppChatRateLimiter } from './rate-limit.js';
+import { type AiRetrieverEnv } from './retriever.js';
+import { reserveAppPromptBuilder } from './prompt.js';
+import { reserveAppSourceVisibilityPolicy } from './source-visibility.js';
 import type { BusinessFactSummary } from './prompt.js';
 
 export type AiRoutesEnv = AuthRuntimeEnv & AiAnswerEnv & AiRetrieverEnv;
@@ -43,9 +48,11 @@ export type AiRouteContext = {
   database: AuthRuntimeDatabase;
   env: AiRoutesEnv;
   resolveRequestContext(input: ResolveAiRouteRequestContextInput): Promise<AiRequestContext | null>;
-  conversationStore: ReturnType<typeof createDrizzleAiConversationStore>;
+  conversationStore: ConversationStore;
   observabilityStore: ReturnType<typeof createDrizzleAiObservabilityStore>;
-  retrieveKnowledge(input: RetrieveKnowledgeInput): Promise<RetrievedKnowledgeChunk[]>;
+  retrieveKnowledge(
+    input: RetrieveKnowledgeInput<OrganizationClassroomAccess>,
+  ): Promise<RetrievedKnowledgeChunk[]>;
   resolveBusinessFacts(input: {
     access: OrganizationClassroomAccess;
   }): Promise<BusinessFactSummary>;
@@ -57,9 +64,11 @@ export type AiRouteContext = {
     organizationId: string;
     now?: Date;
   }): Promise<AiUsageLimitResult>;
-  sanitizeSourceReference(
-    input: Parameters<typeof sanitizeSourceReference>[0],
-  ): AiSourceReference | null;
+  sanitizeSourceReference(input: {
+    source: AiGeneratedSourceReference;
+    access: OrganizationClassroomAccess;
+    internalOperator?: boolean;
+  }): AiSourceReference | null;
   ensureInternalOperator(input: { headers: Headers }): Promise<InternalOperatorAccessResult>;
   recordChatBreadcrumb(input: AiChatBreadcrumbInput): void;
 };
@@ -88,7 +97,13 @@ export const createAiRouteContext = ({
 }: CreateAiRouteContextInput): AiRouteContext => {
   const conversationStore = createDrizzleAiConversationStore({ database });
   const observabilityStore = createDrizzleAiObservabilityStore({ database });
-  const knowledgeRetriever = createDrizzleAiKnowledgeRetriever({ env, database });
+  const knowledgeRetriever = createDrizzleAiKnowledgeRetriever({
+    env,
+    database,
+    sourceVisibilityPolicy: reserveAppSourceVisibilityPolicy,
+  });
+  const businessFactsProvider = createReserveAppBusinessFactsProvider({ database });
+  const rateLimiter = createReserveAppChatRateLimiter({ database });
 
   return {
     auth,
@@ -114,28 +129,32 @@ export const createAiRouteContext = ({
     },
 
     resolveBusinessFacts(input) {
-      return resolveBusinessFacts({
-        database,
-        access: input.access,
-      });
+      return businessFactsProvider.getFacts(input.access);
     },
 
     generateAnswer(input) {
       return generateAnswer({
         env,
+        promptBuilder: reserveAppPromptBuilder,
         ...input,
       });
     },
 
     checkAndIncrementUsage(input) {
-      return checkAndIncrementAiUsage({
-        database,
-        ...input,
+      return rateLimiter.checkAndIncrement({
+        actorUserId: input.userId,
+        subjectType: 'organization',
+        subjectId: input.organizationId,
+        now: input.now,
       });
     },
 
     sanitizeSourceReference(input) {
-      return sanitizeSourceReference(input);
+      return reserveAppSourceVisibilityPolicy.sanitizeSourceReference({
+        source: input.source,
+        context: input.access,
+        internalOperator: input.internalOperator,
+      });
     },
 
     async ensureInternalOperator({ headers }) {

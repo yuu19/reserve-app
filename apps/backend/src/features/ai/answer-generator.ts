@@ -1,38 +1,18 @@
+import type {
+  AnswerGenerationProvider,
+  BusinessFactSummary,
+  GeneratedAiAnswer,
+  PromptBuilder,
+  RetrievedKnowledgeContext,
+} from '@repo/saas-chatbot-core';
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
 import type { AiSuggestedAction } from '@repo/saas-chatbot-core';
 import { createWorkersAiAnswerModelProvider, type AiAnswerEnv } from './answer-provider.js';
-import {
-  buildAiSystemPrompt,
-  buildAnswerPrompt,
-  shouldSkipAiGatewayCache,
-  type BusinessFactSummary,
-  type RetrievedKnowledgeContext,
-} from './prompt.js';
+import { reserveAppPromptBuilder } from './prompt.js';
 import type { AiSourceReference } from './source-visibility.js';
 
 export type { AiAnswerEnv } from './answer-provider.js';
-
-export type GeneratedAiAnswer = {
-  answer: string;
-  sources: AiSourceReference[];
-  suggestedActions: AiSuggestedAction[];
-  confidence: number;
-  needsHumanSupport: boolean;
-  provider: string;
-  model: string;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  latencyMs: number;
-  generationStatus:
-    | 'generated'
-    | 'fallback_no_grounding'
-    | 'fallback_ai_unavailable'
-    | 'fallback_retrieval_failed'
-    | 'generation_failed';
-  errorSummary?: string | null;
-  errorCode?: string | null;
-  aiGatewayLogId?: string | null;
-};
+export type { GeneratedAiAnswer } from '@repo/saas-chatbot-core';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -212,6 +192,8 @@ export const generateAnswer = async ({
   retrievedContexts,
   businessFacts,
   retrievalErrorSummary,
+  answerProvider: providedAnswerProvider,
+  promptBuilder = reserveAppPromptBuilder,
 }: {
   env: AiAnswerEnv;
   userId: string;
@@ -221,10 +203,12 @@ export const generateAnswer = async ({
   retrievedContexts: RetrievedKnowledgeContext[];
   businessFacts: BusinessFactSummary | null;
   retrievalErrorSummary?: string | null;
+  answerProvider?: AnswerGenerationProvider;
+  promptBuilder?: PromptBuilder<OrganizationClassroomAccess>;
 }): Promise<GeneratedAiAnswer> => {
   const sources = buildAnswerSources({ retrievedContexts, businessFacts });
   const hasGrounding = retrievedContexts.length > 0 || Boolean(businessFacts?.factKeys.length);
-  const answerProvider = createWorkersAiAnswerModelProvider({ env });
+  const answerProvider = providedAnswerProvider ?? createWorkersAiAnswerModelProvider({ env });
   const provider = answerProvider.provider;
   const model = answerProvider.model;
 
@@ -270,33 +254,32 @@ export const generateAnswer = async ({
     };
   }
 
+  const prompt = await promptBuilder.build({
+    userId,
+    context: access,
+    currentPage,
+    retrievedContexts,
+    businessFacts,
+    message,
+  });
+
   let generation: Awaited<ReturnType<typeof answerProvider.generate>>;
   const generationStartedAt = Date.now();
   try {
     generation = await answerProvider.generate({
       model,
       messages: [
-        { role: 'system', content: buildAiSystemPrompt() },
+        { role: 'system', content: prompt.systemPrompt },
         {
           role: 'user',
-          content: buildAnswerPrompt({
-            userId,
-            access,
-            currentPage,
-            retrievedContexts,
-            businessFacts,
-            message,
-          }),
+          content: prompt.userPrompt,
         },
       ],
-      skipCache: shouldSkipAiGatewayCache(message, businessFacts),
-      cacheTtl: shouldSkipAiGatewayCache(message, businessFacts) ? undefined : 60,
+      skipCache: prompt.skipCache,
+      cacheTtl: prompt.cacheTtl,
       // 組織・教室のメタデータは AI Gateway の観測用に限定し、
       // プロンプト側にはアクセスフィルター済みの業務コンテキストだけを渡す。
-      metadata: {
-        organizationId: access.organizationId,
-        classroomId: access.classroomId,
-      },
+      metadata: prompt.metadata,
     });
   } catch (error) {
     console.warn('[ai-chat] answer generation failed', error);

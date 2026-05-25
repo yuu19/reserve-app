@@ -1,3 +1,7 @@
+import type { AiEmbeddingResult, AiEmbeddingProvider } from '@repo/saas-chatbot-core';
+
+export type { AiEmbeddingResult, AiEmbeddingProvider } from '@repo/saas-chatbot-core';
+
 export type AiEmbeddingEnv = {
   AI?: {
     run: (
@@ -8,17 +12,6 @@ export type AiEmbeddingEnv = {
   };
   AI_GATEWAY_ID?: string;
   AI_EMBEDDING_MODEL?: string;
-};
-
-export type AiEmbeddingResult = {
-  vector: number[];
-  shape: number[] | null;
-  model: string;
-};
-
-export type AiEmbeddingProvider = {
-  isConfigured: boolean;
-  generateEmbedding(input: { text: string; cache?: boolean }): Promise<AiEmbeddingResult>;
 };
 
 const DEFAULT_EMBEDDING_MODEL = '@cf/baai/bge-m3';

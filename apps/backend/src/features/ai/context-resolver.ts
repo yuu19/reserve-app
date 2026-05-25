@@ -1,3 +1,4 @@
+import type { ChatRuntimeContext } from '@repo/saas-chatbot-core';
 import { and, asc, eq } from 'drizzle-orm';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
@@ -16,6 +17,7 @@ import { resolveAllowedVisibilities, type AiSourceVisibility } from './source-vi
 export type AiRequestContext = {
   identity: SessionIdentity;
   access: OrganizationClassroomAccess;
+  runtimeContext: ChatRuntimeContext;
   allowedVisibilities: AiSourceVisibility[];
   internalOperator: boolean;
   currentPage: string | null;
@@ -143,6 +145,15 @@ export const resolveAiRequestContext = async ({
   return {
     identity,
     access,
+    runtimeContext: {
+      subjectType: 'organization',
+      subjectId: access.organizationId,
+      actorUserId: identity.userId,
+      classroomId: access.classroomId,
+      channel: 'web',
+      locale: 'ja',
+      currentPage: currentPage?.slice(0, 2048) ?? null,
+    },
     allowedVisibilities: resolveAllowedVisibilities(access),
     internalOperator,
     currentPage: currentPage?.slice(0, 2048) ?? null,

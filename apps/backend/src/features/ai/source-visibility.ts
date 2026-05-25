@@ -2,20 +2,21 @@ import {
   AI_SOURCE_KINDS,
   AI_SOURCE_VISIBILITIES,
   type AiSourceKind,
+  type AiGeneratedSourceReference,
+  type AiSourceScope,
   type AiSourceReference,
   type AiSourceVisibility,
+  type SourceVisibilityPolicy,
 } from '@repo/saas-chatbot-core';
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
 
 export { AI_SOURCE_KINDS, AI_SOURCE_VISIBILITIES };
-export type { AiSourceKind, AiSourceReference, AiSourceVisibility };
-
-export type AiSourceScope = {
-  visibility: string;
-  internalOnly?: boolean | null;
-  organizationId?: string | null;
-  classroomId?: string | null;
-  locale?: string | null;
+export type {
+  AiGeneratedSourceReference,
+  AiSourceKind,
+  AiSourceReference,
+  AiSourceScope,
+  AiSourceVisibility,
 };
 
 export type AiAccessContext = {
@@ -125,16 +126,12 @@ export const isSourceScopeAllowed = ({
   return true;
 };
 
-type InternalAiSourceReference = AiSourceReference & {
-  internalOnly?: boolean | null;
-};
-
 export const sanitizeSourceReference = ({
   source,
   access,
   internalOperator = false,
 }: {
-  source: InternalAiSourceReference;
+  source: AiGeneratedSourceReference;
   access: OrganizationClassroomAccess;
   internalOperator?: boolean;
 }): AiSourceReference | null => {
@@ -163,4 +160,28 @@ export const sanitizeSourceReference = ({
     chunkId: source.chunkId ?? null,
     visibility: source.visibility,
   };
+};
+
+export type ReserveAppSourceVisibilityPolicy = SourceVisibilityPolicy<OrganizationClassroomAccess>;
+
+export const reserveAppSourceVisibilityPolicy: ReserveAppSourceVisibilityPolicy = {
+  resolveAllowedVisibilities,
+  canUseInternalKnowledge: ({ context, internalOperator = false }) =>
+    canUseInternalKnowledge({ access: context, internalOperator }),
+  canReadSource: ({
+    source,
+    context,
+    allowedVisibilities = resolveAllowedVisibilities(context),
+    internalOperator = false,
+    locale = 'ja',
+  }) =>
+    isSourceScopeAllowed({
+      source,
+      access: context,
+      allowedVisibilities,
+      internalOperator,
+      locale,
+    }),
+  sanitizeSourceReference: ({ source, context, internalOperator = false }) =>
+    sanitizeSourceReference({ source, access: context, internalOperator }),
 };

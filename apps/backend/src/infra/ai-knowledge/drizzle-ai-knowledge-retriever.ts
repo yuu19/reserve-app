@@ -1,12 +1,16 @@
+import type {
+  EmbeddingProvider,
+  KnowledgeRetriever,
+  RetrievedKnowledgeChunk,
+  SourceVisibilityPolicy,
+} from '@repo/saas-chatbot-core';
 import { eq, inArray } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
-import type { RetrievedKnowledgeContext } from '../../features/ai/prompt.js';
 import {
   AI_SOURCE_KINDS,
-  isSourceScopeAllowed,
-  type AiSourceVisibility,
   type AiSourceKind,
+  type AiSourceVisibility,
 } from '../../features/ai/source-visibility.js';
 import {
   createWorkersAiEmbeddingProvider,
@@ -29,12 +33,7 @@ export type AiRetrieverEnv = AiEmbeddingEnv & {
   };
 };
 
-export type RetrievedKnowledgeChunk = RetrievedKnowledgeContext & {
-  id: string;
-  score: number;
-  contentHash: string;
-  visibility: AiSourceVisibility;
-};
+export type { RetrievedKnowledgeChunk } from '@repo/saas-chatbot-core';
 
 const isAiSourceKind = (value: string): value is AiSourceKind =>
   AI_SOURCE_KINDS.includes(value as AiSourceKind);
@@ -51,21 +50,24 @@ const normalizeSourceKind = (value: string): AiSourceKind =>
 export const retrieveKnowledge = async ({
   env,
   database,
+  embeddingProvider = createWorkersAiEmbeddingProvider({ env }),
+  sourceVisibilityPolicy,
   message,
-  access,
+  context,
   allowedVisibilities,
   internalOperator,
   locale = 'ja',
 }: {
   env: AiRetrieverEnv;
   database: AuthRuntimeDatabase;
+  embeddingProvider?: EmbeddingProvider;
+  sourceVisibilityPolicy: SourceVisibilityPolicy<OrganizationClassroomAccess>;
   message: string;
-  access: OrganizationClassroomAccess;
+  context: OrganizationClassroomAccess;
   allowedVisibilities: AiSourceVisibility[];
   internalOperator: boolean;
   locale?: string;
 }): Promise<RetrievedKnowledgeChunk[]> => {
-  const embeddingProvider = createWorkersAiEmbeddingProvider({ env });
   if (!embeddingProvider.isConfigured || !env.AI_KNOWLEDGE_INDEX) {
     return [];
   }
@@ -149,8 +151,7 @@ export const retrieveKnowledge = async ({
     documentIndexStatus: string;
   };
 
-  const uniqueContent = new Set<string>();
-  return (rows as KnowledgeChunkRow[])
+  const candidates = (rows as KnowledgeChunkRow[])
     .map((row) => {
       const match = matchById.get(row.id);
       return {
@@ -171,16 +172,25 @@ export const retrieveKnowledge = async ({
         documentIndexStatus: row.documentIndexStatus,
       } satisfies CandidateChunk;
     })
-    .filter((row) => row.vectorStatus === 'upserted' && row.documentIndexStatus === 'indexed')
-    .filter((row) =>
-      isSourceScopeAllowed({
-        source: row,
-        access,
-        allowedVisibilities,
-        internalOperator,
-        locale,
-      }),
+    .filter((row) => row.vectorStatus === 'upserted' && row.documentIndexStatus === 'indexed');
+  const scopedRows = (
+    await Promise.all(
+      candidates.map(async (row) =>
+        (await sourceVisibilityPolicy.canReadSource({
+          source: row,
+          context,
+          allowedVisibilities,
+          internalOperator,
+          locale,
+        }))
+          ? row
+          : null,
+      ),
     )
+  ).filter((row): row is CandidateChunk => Boolean(row));
+
+  const uniqueContent = new Set<string>();
+  return scopedRows
     .sort((a, b) => b.score - a.score)
     .filter((row) => {
       const duplicate = uniqueContent.has(row.contentHash);
@@ -203,24 +213,31 @@ export const retrieveKnowledge = async ({
 
 export type RetrieveKnowledgeInput = Omit<
   Parameters<typeof retrieveKnowledge>[0],
-  'env' | 'database'
+  'env' | 'database' | 'embeddingProvider' | 'sourceVisibilityPolicy'
 >;
 
-export type DrizzleAiKnowledgeRetriever = {
-  retrieveKnowledge(input: RetrieveKnowledgeInput): Promise<RetrievedKnowledgeChunk[]>;
-};
+export type DrizzleAiKnowledgeRetriever = KnowledgeRetriever<
+  OrganizationClassroomAccess,
+  RetrievedKnowledgeChunk
+>;
 
 export const createDrizzleAiKnowledgeRetriever = ({
   env,
   database,
+  sourceVisibilityPolicy,
+  embeddingProvider,
 }: {
   env: AiRetrieverEnv;
   database: AuthRuntimeDatabase;
+  sourceVisibilityPolicy: SourceVisibilityPolicy<OrganizationClassroomAccess>;
+  embeddingProvider?: EmbeddingProvider;
 }): DrizzleAiKnowledgeRetriever => ({
   retrieveKnowledge: (input) =>
     retrieveKnowledge({
       env,
       database,
+      embeddingProvider,
+      sourceVisibilityPolicy,
       ...input,
     }),
 });

@@ -1,3 +1,17 @@
+import type {
+  AiAnswerModelGenerationInput,
+  AiAnswerModelGenerationResult,
+  AiAnswerModelMessage,
+  AiAnswerModelProvider,
+} from '@repo/saas-chatbot-core';
+
+export type {
+  AiAnswerModelGenerationInput,
+  AiAnswerModelGenerationResult,
+  AiAnswerModelMessage,
+  AiAnswerModelProvider,
+} from '@repo/saas-chatbot-core';
+
 export type AiAnswerEnv = {
   AI?: {
     run: (
@@ -9,37 +23,6 @@ export type AiAnswerEnv = {
   };
   AI_ANSWER_MODEL?: string;
   AI_GATEWAY_ID?: string;
-};
-
-export type AiAnswerModelMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-};
-
-export type AiAnswerModelGenerationInput = {
-  model?: string;
-  messages: AiAnswerModelMessage[];
-  skipCache: boolean;
-  cacheTtl?: number;
-  metadata?: Record<string, unknown>;
-};
-
-export type AiAnswerModelGenerationResult = {
-  result: unknown;
-  provider: string;
-  model: string;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  aiGatewayLogId: string | null;
-  latencyMs: number;
-};
-
-export type AiAnswerModelProvider = {
-  isConfigured: boolean;
-  provider: string;
-  model: string;
-  generate(input: AiAnswerModelGenerationInput): Promise<AiAnswerModelGenerationResult>;
-  readAiGatewayLogId(result?: unknown): string | null;
 };
 
 const DEFAULT_ANSWER_MODEL = '@cf/meta/llama-3.1-8b-instruct';

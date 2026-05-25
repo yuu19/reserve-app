@@ -3,9 +3,9 @@ export {
   readAiGatewayLogId,
 } from '../../infra/ai/cloudflare-ai-answer-provider.js';
 export type {
-  AiAnswerEnv,
   AiAnswerModelGenerationInput,
   AiAnswerModelGenerationResult,
   AiAnswerModelMessage,
   AiAnswerModelProvider,
-} from '../../infra/ai/cloudflare-ai-answer-provider.js';
+} from '@repo/saas-chatbot-core';
+export type { AiAnswerEnv } from '../../infra/ai/cloudflare-ai-answer-provider.js';
