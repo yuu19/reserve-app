@@ -208,7 +208,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 				planCode: 'premium',
 				planState: 'premium_paid',
 				subscriptionStatus: 'active',
-				paymentIssueState: 'recovered'
+				paymentIssueState: 'stale_failure_history_only'
 			});
 	});
 
