@@ -16,8 +16,9 @@ order, and D1 access without adding a new service boundary.
 
 **Rationale**: The proposal specifies Workers AI as the first V1 path. Cloudflare AI Gateway Workers binding docs show
 `env.AI.run()` accepts Gateway options, which supports logs/cache/metadata and keeps model calls in the Worker runtime.
-The implementation should centralize all model calls in `apps/backend/src/ai/answer-generator.ts` and
-`apps/backend/src/ai/embedding.ts` so Gateway id, cache policy, skip-cache decisions, and log metadata are consistent.
+The implementation centralizes model calls behind `apps/backend/src/infra/ai/cloudflare-ai-answer-provider.ts` and
+`apps/backend/src/infra/ai/cloudflare-ai-embedding-provider.ts`, with `apps/backend/src/features/ai/answer-generator.ts`
+handling response normalization, fallback classification, and safe suggested actions.
 
 **Alternatives considered**:
 

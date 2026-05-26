@@ -6,6 +6,23 @@ AI Chatbot V1 adds an AI support slice without changing existing organization/cl
 D1 remains the source of truth for knowledge content, metadata, conversations, feedback, rate limits, and retention.
 Vectorize stores only searchable vectors and metadata keyed by `ai_knowledge_chunk.id`.
 
+## Reusable Chat Context
+
+The shared contract lives in `packages/saas-chatbot-core`. It separates reusable SaaS concepts from ReserveApp-specific
+tables and routes.
+
+- `ChatRuntimeContext` describes the runtime subject and actor context. ReserveApp uses `subjectType = organization`,
+  `subjectId = organizationId`, `channel = web`, and an optional `classroomId`.
+- `ConversationScope` is the conversation-store boundary used by the current ReserveApp adapter. It contains
+  `userId`, `organizationId`, and nullable `classroomId`.
+- `AiChatRequest` accepts optional `organizationId`, `classroomId`, and `currentPage`. These values are hints for
+  scope resolution and relevance. They are not authorization proof.
+- `AiChatResponse` includes the generated answer, role-safe sources, suggested actions, confidence,
+  `needsHumanSupport`, and remaining rate-limit counts.
+
+The persisted D1 tables keep reusable subject columns where they are needed for future SaaS reuse. ReserveApp adapters
+map those columns back to the current organization/classroom model.
+
 ## New Entity: `ai_knowledge_document`
 
 **Purpose**: Source-level record for approved AI knowledge.

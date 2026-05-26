@@ -1,39 +1,24 @@
 flowchart TB
-  subgraph intake["質問受付と検索"]
-    direction LR
-    user --> backend --> embedding --> vector
-  end
+  web["1. Webチャット<br/>入力・送信状態・feedback"]
+  core["2. 共通contract<br/>saas-chatbot-core"]
+  route["3. Backend AI feature<br/>認証・scope・利用回数"]
+  search["4. Knowledge infra<br/>D1本文取得・Vectorize検索"]
+  provider["5. AI provider<br/>AI Gateway + Workers AI"]
+  answer["6. 回答整形<br/>根拠・残利用回数・案内"]
+  ui["7. UI表示<br/>古い応答を無視・再送可能"]
+  store[("D1<br/>ナレッジ本文<br/>会話<br/>feedback<br/>usage counter")]
+  vector[("Vectorize<br/>検索index")]
 
-  subgraph answerFlow["根拠確認と回答"]
-    direction LR
-    d1 --> retrieve --> prompt --> answer --> response
-  end
+  web --> core --> route
+  route --> store
+  route --> search
+  search --> store
+  search --> vector
+  search --> provider
+  provider --> answer
+  answer --> store
+  answer --> ui
+  ui --> web
 
-  user["1. 利用者<br/>ログイン済みWebユーザー"]
-  backend["2. バックエンド<br/>認証確認<br/>権限チェック<br/>利用回数確認"]
-  embedding["3. 質問を検索用に変換<br/>Workers AI"]
-  vector["4. 関連情報を検索<br/>Cloudflare Vectorize"]
-  d1[("D1<br/>ナレッジ本文<br/>会話<br/>フィードバック<br/>利用回数")]
-  retrieve["5. 根拠データ取得<br/>本文・説明情報<br/>権限を再確認"]
-  prompt["6. 回答材料を整理<br/>参照できる根拠だけを使用"]
-  answer["7. 回答生成<br/>AI Gateway<br/>Workers AI"]
-  response["8. 根拠付き回答を表示"]
-  save["9. 会話・フィードバック<br/>利用回数を保存"]
-
-  backend --> d1
-  vector --> retrieve
-  response --> save --> d1
-  vector -. "関連候補" .-> retrieve
-  retrieve -. "回答前に権限を再確認" .-> prompt
-
-  classDef blue fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#0f172a;
-  classDef green fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#0f172a;
-  classDef purple fill:#faf5ff,stroke:#7c3aed,stroke-width:2px,color:#0f172a;
-  classDef orange fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#0f172a;
-  classDef data fill:#eef2ff,stroke:#1d4ed8,stroke-width:2px,color:#0f172a;
-
-  class user,backend,embedding,prompt,answer,response blue;
-  class vector green;
-  class retrieve purple;
-  class save orange;
-  class d1 data;
+  route -. "organization / classroom scope" .-> search
+  answer -. "open_page hrefなしはリンク化しない" .-> ui

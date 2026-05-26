@@ -9,11 +9,22 @@ tickets, send invitations, or create support tickets.
 ## Prerequisites
 
 - `docs/ai-chat-proposal.md` remains the technical source for the V1 stack.
+- `docs/ai-chat-reusable-architecture.md` records the Phase 7 reusable core / backend / infra / web boundary.
 - Existing backend, web, and D1 setup is working locally.
 - Cloudflare account has Workers AI, AI Gateway, and Vectorize available for the target environment.
 - The embedding model shape has been verified in a dev Worker before creating the Vectorize index.
 - `reserve-app-knowledge` Vectorize index exists with dimensions matching the adopted embedding model and metric `cosine`.
 - Vectorize metadata indexes required for filtering are created before production indexing.
+
+## Current Implementation Structure
+
+- Shared AI contracts and ports: `packages/saas-chatbot-core`.
+- Backend feature and usecases: `apps/backend/src/features/ai`.
+- Workers AI / AI Gateway providers: `apps/backend/src/infra/ai`.
+- D1 knowledge, conversation, and observability adapters: `apps/backend/src/infra/ai-knowledge`.
+- Drizzle schema: `apps/backend/src/infra/db/schema.ts`.
+- Web API client: `apps/web/src/lib/ai-client.ts`.
+- Web widget state: `apps/web/src/lib/features/ai-chat.svelte.ts`.
 
 ## Expected Backend Configuration
 
@@ -51,16 +62,18 @@ Keep existing bindings:
    - Run Wrangler type generation if implementation requires generated Worker env types.
 
 3. Build backend AI domain modules.
-   - `source-visibility.ts`: role/scope visibility decisions, internal specs rule, owner-only billing guard.
-   - `context-resolver.ts`: session, active organization, classroom, role, and effective capability resolution.
-   - `rate-limit.ts`: 20 user messages/hour and 200 organization messages/day counters.
-   - `embedding.ts`: Workers AI embedding call through Gateway options and provider shape parser.
-   - `retriever.ts`: Vectorize query with metadata filter, D1 chunk fetch, D1 post-filter, rerank/trim.
-   - `business-facts.ts`: answer-time booking, invitation, ticket, participant, and billing summaries.
-   - `prompt.ts`: structured system/user context, no-action instruction, no unsupported assertion instruction.
-   - `answer-generator.ts`: Workers AI answer call through AI Gateway, confidence/fallback parsing.
-   - `conversation-store.ts`: scoped conversation/message storage, feedback storage, retention metadata.
-   - `indexer.ts`: docs/specs/FAQ/db-summary chunking and D1 + Vectorize upsert orchestration.
+   - `packages/saas-chatbot-core`: shared UI, conversation, provider, prompt, knowledge, and rate-limit contracts.
+   - `apps/backend/src/features/ai/source-visibility.ts`: role/scope visibility decisions, internal specs rule, owner-only billing guard.
+   - `apps/backend/src/features/ai/context-resolver.ts`: session, active organization, classroom, role, and effective capability resolution.
+   - `apps/backend/src/features/ai/rate-limit.ts`: 20 user messages/hour and 200 organization messages/day counters.
+   - `apps/backend/src/infra/ai/cloudflare-ai-embedding-provider.ts`: Workers AI embedding call through Gateway options and provider shape parser.
+   - `apps/backend/src/features/ai/retriever.ts`: Vectorize query with metadata filter, D1 chunk fetch, D1 post-filter, rerank/trim.
+   - `apps/backend/src/features/ai/business-facts.ts`: answer-time booking, invitation, ticket, participant, and billing summaries.
+   - `apps/backend/src/features/ai/prompt.ts`: structured system/user context, no-action instruction, no unsupported assertion instruction.
+   - `apps/backend/src/infra/ai/cloudflare-ai-answer-provider.ts`: Workers AI answer call through AI Gateway.
+   - `apps/backend/src/features/ai/answer-generator.ts`: confidence/fallback parsing and suggested action normalization.
+   - `apps/backend/src/infra/ai-knowledge/drizzle-ai-conversation-store.ts`: scoped conversation/message storage, feedback storage, retention metadata.
+   - `apps/backend/src/features/ai/indexer.ts`: docs/specs/FAQ/db-summary chunking and D1 + Vectorize upsert orchestration.
 
 4. Add backend routes.
    - Register `/api/v1/ai` in `apps/backend/src/app.ts`.
@@ -78,6 +91,9 @@ Keep existing bindings:
    - Add Svelte 5 AI components under `apps/web/src/lib/components/ai`.
    - Add state helper under `apps/web/src/lib/features/ai-chat.svelte.ts`.
    - Mount widget in `apps/web/src/routes/+layout.svelte` for authenticated web users.
+   - Keep `AiChatUiStatus = closed | ready | sending | error`.
+   - Convert backend errors into `AiChatClientErrorPayload.kind = api | network | parse`.
+   - Reset conversation-scoped state when organization/classroom scope changes and ignore stale in-flight responses.
 
 7. Add scheduled retention cleanup.
    - Extend `apps/backend/src/worker.ts` scheduled maintenance to delete or anonymize message content after 180 days.
@@ -92,15 +108,19 @@ Targeted backend checks:
 
 ```bash
 pnpm --filter @apps/backend typecheck
-pnpm --filter @apps/backend exec vitest run src/features/ai src/infra/ai src/infra/ai-knowledge src/routes/ai-routes.ts
-pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "AI|ai|chat|source|feedback|rate"
+pnpm --filter @repo/saas-chatbot-core typecheck
+pnpm --filter @repo/saas-chatbot-core test
+pnpm --filter @apps/backend exec vitest run src/features/ai/ai-contract.test.ts --maxWorkers=1
+pnpm --filter @apps/backend exec vitest run src/features/ai src/infra/ai src/infra/ai-knowledge src/routes/ai-routes.ts --maxWorkers=1
 pnpm --filter @apps/backend test
 ```
 
 Expected output for the implemented AI unit subset:
 
 - `tsc --noEmit` exits with code 0.
+- `@repo/saas-chatbot-core` typecheck exits with code 0.
 - AI feature, provider, and knowledge infra test files exit with code 0.
+- `ai-contract.test.ts` confirms the backend contract includes `rateLimit` and the current error payload shapes.
 
 Note: the full backend suite includes existing Miniflare app tests and may take substantially longer than the AI-only subset.
 
@@ -142,7 +162,7 @@ Targeted web checks:
 
 ```bash
 pnpm --filter @apps/web typecheck
-pnpm --filter @apps/web exec vitest run --project server src/lib/features/ai-chat.spec.ts --maxWorkers=1
+pnpm --filter @apps/web exec vitest run --project server src/lib/ai-client.spec.ts src/lib/features/ai-chat.spec.ts --maxWorkers=1
 pnpm --filter @apps/web exec vitest run --project client src/lib/components/ai/AiChatWidget.svelte.spec.ts src/lib/components/ai/AiSourceList.svelte.spec.ts --maxWorkers=1
 pnpm --filter @apps/web test
 ```
@@ -150,8 +170,15 @@ pnpm --filter @apps/web test
 Expected output for the implemented web AI subset:
 
 - `svelte-check found 0 errors and 0 warnings`.
-- AI chat state: `1 passed (1)` test file and `3 passed (3)` tests.
-- AI components: `2 passed (2)` test files and `4 passed (4)` tests.
+- AI client/state tests confirm typed API, network, parse errors, scope reset, stale response ignore, input restoration, and feedback state transitions.
+- AI component tests exit with code 0.
+
+Docs and contract sync checks:
+
+```bash
+pnpm exec prettier --check docs/ai-chat-proposal.md docs/ai-chat-reusable-architecture.md specs/004-ai-chatbot apps/docs/src/routes/manuals/common/ai-chatbot
+git diff --check
+```
 
 Broader checks before completion:
 
@@ -207,6 +234,7 @@ Then verify:
 - Low-confidence answer shows support or owner-contact path.
 - Source list hides internal spec paths from organization users.
 - Suggested actions navigate only to permitted pages and never execute business operations.
+- `open_page` suggested actions with `href: null` render as text instead of links.
 - Feedback success/failure is visible and controls are disabled after success.
 - Layout remains usable at mobile and desktop widths without text overlap.
 

@@ -17,22 +17,34 @@ The widget is hidden or disabled when no authenticated session is available.
 
 ## Chat Widget Behavior
 
-**Required states**:
+**Required state contract**:
 
-- Closed: compact launcher with accessible name.
-- Opening/loading: focus moves into the chat surface and status text indicates loading.
-- Ready: message input, message list, source list per answer, suggested actions, and feedback controls.
-- Sending: input remains stable; duplicate send is disabled.
+- `AiChatUiStatus` is `closed | ready | sending | error`.
+- `closed`: compact launcher with accessible name.
+- `ready`: message input, message list, source list per answer, suggested actions, and feedback controls are available.
+- `sending`: duplicate send is disabled while the user's message is already shown optimistically.
+- `error`: API, network, or parse failure is visible and the typed message is restored for retry.
 - Low confidence: answer uses non-assertive wording and shows contact owner/support guidance.
 - No source: answer states it cannot confirm the answer and offers a safe next step.
 - Rate limited: message explains retry timing and does not lose the typed message.
 - Unavailable: message says AI support is temporarily unavailable and offers non-AI navigation/support guidance.
+
+**Client error contract**:
+
+- `AiChatClientErrorPayload` is a web-client internal typed error payload, not the backend wire response.
+- `kind = api` is used when backend returns a non-2xx response. `status`, `statusText`, and `retryAfterSeconds` are preserved when available.
+- `kind = network` is used when the browser cannot reach the backend.
+- `kind = parse` is used when a response body cannot be parsed as expected.
+- Backend 401/403 errors are read from `{ message }`; rate-limit errors are read from `{ message, retryAfterSeconds }`.
 
 **Input rules**:
 
 - Empty messages cannot be sent.
 - Messages over 4,000 characters are rejected before sending with accessible error text.
 - Current page path can be sent as context hint, but UI must not present it as proof of permission.
+- When organization or classroom scope changes, chat state must reset the conversation id, messages, input, client error, and rate-limit display.
+- In-flight responses from an older conversation scope must be ignored after reset.
+- Failed chat requests must restore the submitted text to the input so the user can retry.
 
 ## Message Rendering
 
@@ -65,6 +77,7 @@ Allowed action kinds:
 - `contact_support`: guide users to support.
 
 Suggested actions must never execute booking, billing, participant, ticket, invitation, or purchase operations.
+An `open_page` action with `href: null` or an omitted `href` is rendered as text, not as a link.
 
 ## Feedback Controls
 
@@ -75,6 +88,8 @@ Suggested actions must never execute booking, billing, participant, ticket, invi
 - Feedback submission success/failure is visible with text, not color alone.
 - Feedback controls become disabled after successful submission for the same message.
 - Organization users cannot browse feedback themes or other users' conversation context.
+- Message-level `feedbackStatus` is `idle | sending | sent | failed`.
+- `sending` is shown while the request is in flight, `sent` disables controls after success, and `failed` keeps the selected rating with a visible retry/error message.
 
 ## Internal Operator Review Surface
 

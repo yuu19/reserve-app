@@ -78,6 +78,7 @@ components:
         - suggestedActions
         - confidence
         - needsHumanSupport
+        - rateLimit
       properties:
         conversationId:
           type: string
@@ -178,24 +179,40 @@ components:
         latestAt:
           type: [string, 'null']
           format: date-time
+    ErrorMessage:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    RateLimitError:
+      type: object
+      required: [message, retryAfterSeconds]
+      properties:
+        message:
+          type: string
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
   responses:
     Unauthorized:
       description: Not authenticated.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorMessage'
     Forbidden:
       description: Authenticated but not allowed for the requested scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorMessage'
     RateLimited:
       description: User or organization AI chat limit reached.
       content:
         application/json:
           schema:
-            type: object
-            required: [message, retryAfterSeconds]
-            properties:
-              message:
-                type: string
-              retryAfterSeconds:
-                type: integer
-                minimum: 1
+            $ref: '#/components/schemas/RateLimitError'
 paths:
   /api/v1/ai/chat:
     post:

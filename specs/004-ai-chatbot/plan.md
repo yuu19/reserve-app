@@ -18,31 +18,32 @@ DESIGN.md に沿った chat widget と source/feedback UI を追加する。Mobi
 
 ## Technical Context
 
-**Language/Version**: TypeScript strict。backend は Cloudflare Workers + Hono + `.js` ESM import、
-web は SvelteKit + Svelte 5、monorepo は pnpm/Turborepo の既存構成を維持。  
-**Primary Dependencies**: Better Auth、Drizzle ORM、Cloudflare D1、Cloudflare Workers AI、
-Cloudflare Vectorize V2 index、Cloudflare AI Gateway、Hono、`@hono/zod-openapi`、Zod、
-Sentry、Hono client、Vitest、Vitest browser/Playwright。新規 top-level runtime package は原則不要。  
-**Storage**: Cloudflare D1 を正本にする。新規 D1 tables は `ai_knowledge_document`、
-`ai_knowledge_chunk`、`ai_knowledge_index_run`、`ai_conversation`、`ai_message`、
-`ai_feedback`、`ai_usage_counter`。Vectorize には chunk id、embedding、検索 metadata のみを保存する。  
-**Testing**: backend integration/unit tests、AI domain pure-function tests、web server tests、
-web browser/component tests、manual Cloudflare AI/Vectorize smoke。通常完了前に `pnpm test`、
-`pnpm typecheck`、`pnpm lint`、`pnpm format:check` を対象にする。  
-**Target Platform**: Cloudflare Workers backend、Cloudflare Workers web、browser web UI。Expo mobile は
-V1 chat entry point なし。  
-**Project Type**: Brownfield full-stack SaaS monorepo feature.  
-**Performance Goals**: 95% の standard support questions で 10 秒以内に回答または fallback を表示する。
-retrieval は topK 8-12 から最終 4-6 chunks に絞り、knowledge update は 1 business day 以内に反映または
-failed として検知できる。  
-**Constraints**: AI は操作を実行せず案内のみ。currentPage は relevancy hint であり認可根拠にしない。
-internal specs は internal/operator role のみ。billing documents/payment details/raw external payloads/secrets は
-回答・source snippet・logs に出さない。会話本文は 180 日後に削除または匿名化し、aggregate feedback は 1 年保持。
-usage limit は user 20 messages/hour、organization 200 messages/day。Vectorize index dimensions は採用 embedding
-model の shape を dev で確認してから固定する。  
-**Scale/Scope**: V1 は web authenticated support assistant。対象 knowledge は apps/docs、role-permitted specs、
-固定 FAQ、安全な DB summary。対象 domain facts は booking/service/invitation/participant/ticket/billing summary。
-MVP は chat answer + source + suggested actions + safe fallback + logging/feedback の web path。
+- **Language/Version**: TypeScript strict。backend は Cloudflare Workers + Hono + `.js` ESM import、
+  web は SvelteKit + Svelte 5、monorepo は pnpm/Turborepo の既存構成を維持。
+- **Primary Dependencies**: Better Auth、Drizzle ORM、Cloudflare D1、Cloudflare Workers AI、
+  Cloudflare Vectorize V2 index、Cloudflare AI Gateway、Hono、`@hono/zod-openapi`、Zod、
+  Sentry、Hono client、Vitest、Vitest browser/Playwright。Phase 7 後は shared contract / port を
+  `@repo/saas-chatbot-core` に集約する。
+- **Storage**: Cloudflare D1 を正本にする。新規 D1 tables は `ai_knowledge_document`、
+  `ai_knowledge_chunk`、`ai_knowledge_index_run`、`ai_conversation`、`ai_message`、
+  `ai_feedback`、`ai_usage_counter`。Vectorize には chunk id、embedding、検索 metadata のみを保存する。
+- **Testing**: backend integration/unit tests、AI domain pure-function tests、web server tests、
+  web browser/component tests、manual Cloudflare AI/Vectorize smoke。通常完了前に `pnpm test`、
+  `pnpm typecheck`、`pnpm lint`、`pnpm format:check` を対象にする。
+- **Target Platform**: Cloudflare Workers backend、Cloudflare Workers web、browser web UI。Expo mobile は
+  V1 chat entry point なし。
+- **Project Type**: Brownfield full-stack SaaS monorepo feature.
+- **Performance Goals**: 95% の standard support questions で 10 秒以内に回答または fallback を表示する。
+  retrieval は topK 8-12 から最終 4-6 chunks に絞り、knowledge update は 1 business day 以内に反映または
+  failed として検知できる。
+- **Constraints**: AI は操作を実行せず案内のみ。currentPage は relevancy hint であり認可根拠にしない。
+  internal specs は internal/operator role のみ。billing documents/payment details/raw external payloads/secrets は
+  回答・source snippet・logs に出さない。会話本文は 180 日後に削除または匿名化し、aggregate feedback は 1 年保持。
+  usage limit は user 20 messages/hour、organization 200 messages/day。Vectorize index dimensions は採用 embedding
+  model の shape を dev で確認してから固定する。
+- **Scale/Scope**: V1 は web authenticated support assistant。対象 knowledge は apps/docs、role-permitted specs、
+  固定 FAQ、安全な DB summary。対象 domain facts は booking/service/invitation/participant/ticket/billing summary。
+  MVP は chat answer + source + suggested actions + safe fallback + logging/feedback の web path。
 
 ## Constitution Check
 
@@ -88,25 +89,52 @@ apps/backend/
 ├── scripts/
 │   └── index-ai-knowledge.mjs
 └── src/
-    ├── ai/
-    │   ├── answer-generator.ts
-    │   ├── business-facts.ts
-    │   ├── context-resolver.ts
-    │   ├── conversation-store.ts
-    │   ├── embedding.ts
-    │   ├── indexer.ts
-    │   ├── prompt.ts
-    │   ├── rate-limit.ts
-    │   ├── retriever.ts
-    │   ├── source-visibility.ts
-    │   └── *.test.ts
-    ├── db/
-    │   └── schema.ts
+    ├── features/
+    │   └── ai/
+    │       ├── ai.schemas.ts
+    │       ├── ai-route-context.ts
+    │       ├── ai-chat.usecase.ts
+    │       ├── ai-feedback.usecase.ts
+    │       ├── ai-internal.usecase.ts
+    │       ├── answer-generator.ts
+    │       ├── business-facts.ts
+    │       ├── context-resolver.ts
+    │       ├── conversation-store.ts
+    │       ├── indexer.ts
+    │       ├── prompt.ts
+    │       ├── rate-limit.ts
+    │       ├── retriever.ts
+    │       ├── source-visibility.ts
+    │       └── *.test.ts
+    ├── infra/
+    │   ├── ai/
+    │   │   ├── cloudflare-ai-answer-provider.ts
+    │   │   ├── cloudflare-ai-embedding-provider.ts
+    │   │   └── fake-ai-provider.ts
+    │   ├── ai-knowledge/
+    │   │   ├── drizzle-ai-conversation-store.ts
+    │   │   ├── drizzle-ai-knowledge-indexer.ts
+    │   │   ├── drizzle-ai-knowledge-retriever.ts
+    │   │   └── drizzle-ai-observability-store.ts
+    │   └── db/
+    │       └── schema.ts
     ├── routes/
     │   └── ai-routes.ts
     ├── app.ts
     ├── app.test.ts
     └── auth-worker.ts
+
+packages/saas-chatbot-core/
+└── src/
+    ├── answer.ts
+    ├── conversation.ts
+    ├── embedding.ts
+    ├── knowledge.ts
+    ├── prompt.ts
+    ├── rate-limit.ts
+    ├── source-visibility.ts
+    ├── types.ts
+    └── ui-contract.ts
 
 apps/web/
 └── src/
@@ -129,16 +157,20 @@ docs/
 └── ai-chat-proposal.md
 ```
 
-**Structure Decision**: backend に `/api/v1/ai` route と `src/ai/*` domain slice を追加し、
-existing `createApp` route registration、`auth-worker` env typing、Drizzle schema/migration に接続する。
-knowledge indexer は既存 `apps/backend/scripts` 配下に置く。web は既存 Hono client/RPC style に合わせて
+**Structure Decision**: backend に `/api/v1/ai` route と AI feature slice を追加し、
+existing `createApp` route registration、`auth-worker` env typing、Drizzle schema/migration に接続した。
+Phase 7 後の現行構成では、SaaS 共通の型と port を `packages/saas-chatbot-core` に置き、
+ReserveApp 固有の処理を `apps/backend/src/features/ai`、Cloudflare/D1/Vectorize 接続を
+`apps/backend/src/infra/ai` と `apps/backend/src/infra/ai-knowledge` に分ける。
+Drizzle schema は `apps/backend/src/infra/db/schema.ts` が正である。
+knowledge indexer は既存 `apps/backend/scripts` 配下から呼び出す。web は既存 Hono client/RPC style に合わせて
 `ai-client.ts` と Svelte 5 component/state slice を追加し、global layout から web-only widget を提供する。
 
 ## Complexity Tracking
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| None | N/A | N/A |
+| --------- | ---------- | ------------------------------------ |
+| None      | N/A        | N/A                                  |
 
 ## Phase 0 Research Output
 

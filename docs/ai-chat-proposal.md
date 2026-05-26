@@ -1,5 +1,21 @@
 はい。`reserve-app` の既存構成なら、V1の実体は **Cloudflare Workers上のRAG構成**にするのが一番自然です。
 
+## この文書の扱い
+
+この文書は、初期提案に実装後の追記を重ねた技術メモです。
+外部 Cloudflare 仕様の最新化はこの更新では行っていません。
+現行実装との対応を確認するときは、以下の構成を正とします。
+
+- 共通型と port: `packages/saas-chatbot-core`
+- backend の機能境界: `apps/backend/src/features/ai`
+- Workers AI / AI Gateway provider: `apps/backend/src/infra/ai`
+- D1 knowledge / conversation store: `apps/backend/src/infra/ai-knowledge`
+- Drizzle schema: `apps/backend/src/infra/db/schema.ts`
+- web client / widget state: `apps/web/src/lib/ai-client.ts` と `apps/web/src/lib/features/ai-chat.svelte.ts`
+
+古い節に出てくる `apps/backend/src/ai` や `apps/backend/src/db/schema.ts` は、実装前の配置案です。
+現行コードを確認する場合は、この節の配置を優先します。
+
 ここでいう **V1** は「AIチャット機能のV1」です。Cloudflare Vectorize自体は、現行の Vectorize V2 index を使う前提にした方がよいです。Cloudflareのdocsでは、VectorizeはRAGや検索向けにベクトルを保存・検索するサービスとして位置づけられており、Workers AIで生成したembeddingをVectorizeに保存してqueryできます。([Cloudflare Workers][1])
 
 ## 全体構成
@@ -105,7 +121,9 @@ Vectorize
 
 ## DBテーブル案
 
-`apps/backend/src/db/schema.ts` にDrizzle schemaを追加する想定です。既存schemaには `organization`, `organization_billing`, `member`, `classroom`, `classroom_member`, `participant`, `service`, `booking` などが既にあるため、AI用テーブルは既存ドメインDBを補助する形にします。
+現行実装では `apps/backend/src/infra/db/schema.ts` に Drizzle schema を追加しています。
+既存 schema には `organization`, `member`, `classroom`, `classroom_member`, `participant`, `service`, `booking` と課金 v2 系の table があるため、AI 用 table は既存ドメイン DB を補助する形です。
+会話 scope は reusable な `subject_type` / `subject_id` を持ち、ReserveApp では `organization` / `organizationId` と `classroom_id` を組み合わせて扱います。
 
 ```ts id="ffzcv1"
 export const aiKnowledgeDocument = sqliteTable('ai_knowledge_document', {
@@ -170,22 +188,40 @@ export const aiFeedback = sqliteTable('ai_feedback', {
 
 ## ファイル構成
 
-既存backendは `OpenAPIHono` で `/api/v1/auth` と `/api/v1/public` をroute登録しているので、AIも同じ形式で `/api/v1/ai` に追加するのが自然です。
+既存 backend は `OpenAPIHono` で route 登録しているため、AI も同じ形式で `/api/v1/ai` と internal review route を追加しています。
+Phase 7 後は、共通型を `@repo/saas-chatbot-core` に寄せ、backend は feature/usecase と infra provider/store を分けています。
 
 ```txt id="o4d7i4"
 apps/backend/src
 ├─ routes
 │  └─ ai-routes.ts
 │
-├─ ai
+├─ features/ai
+│  ├─ ai.schemas.ts
+│  ├─ ai-route-context.ts
+│  ├─ ai-chat.usecase.ts
+│  ├─ ai-feedback.usecase.ts
+│  ├─ ai-internal.usecase.ts
 │  ├─ context-resolver.ts
-│  ├─ embedding.ts
 │  ├─ retriever.ts
-│  ├─ reranker.ts
 │  ├─ answer-generator.ts
 │  ├─ prompt.ts
 │  ├─ source-visibility.ts
 │  └─ indexer.ts
+│
+├─ infra/ai
+│  ├─ cloudflare-ai-answer-provider.ts
+│  ├─ cloudflare-ai-embedding-provider.ts
+│  └─ fake-ai-provider.ts
+│
+├─ infra/ai-knowledge
+│  ├─ drizzle-ai-conversation-store.ts
+│  ├─ drizzle-ai-knowledge-indexer.ts
+│  ├─ drizzle-ai-knowledge-retriever.ts
+│  └─ drizzle-ai-observability-store.ts
+│
+├─ infra/db
+│  └─ schema.ts
 │
 └─ scripts
    └─ index-ai-knowledge.mjs
@@ -196,11 +232,21 @@ apps/backend/src
 ```txt id="sx54s6"
 apps/web/src/lib
 ├─ ai-client.ts
+├─ features/ai-chat.svelte.ts
 └─ components/ai
    ├─ AiChatWidget.svelte
    ├─ AiMessageList.svelte
    ├─ AiSourceList.svelte
    └─ AiSuggestedActions.svelte
+
+packages/saas-chatbot-core/src
+├─ ui-contract.ts
+├─ conversation.ts
+├─ rate-limit.ts
+├─ answer.ts
+├─ embedding.ts
+├─ knowledge.ts
+└─ prompt.ts
 ```
 
 ## インデックス作成フロー
@@ -353,18 +399,34 @@ type AiChatResponse = {
   sources: Array<{
     sourceKind: 'docs' | 'specs' | 'faq' | 'db_summary';
     title: string;
-    sourcePath?: string;
-    chunkId?: string;
+    sourcePath?: string | null;
+    chunkId?: string | null;
+    visibility?:
+      | 'public'
+      | 'authenticated'
+      | 'participant'
+      | 'staff'
+      | 'manager'
+      | 'admin'
+      | 'owner';
   }>;
   suggestedActions: Array<{
     label: string;
-    href?: string;
-    actionKind?: 'open_page' | 'contact_owner' | 'contact_support';
+    href?: string | null;
+    actionKind: 'open_page' | 'contact_owner' | 'contact_support';
   }>;
   confidence: number;
   needsHumanSupport: boolean;
+  rateLimit: {
+    userRemainingThisHour: number;
+    organizationRemainingToday: number;
+  };
 };
 ```
+
+現行の 401/403 は `{ message }` を返します。
+429 は `{ message, retryAfterSeconds }` を返します。
+web 側ではこの wire response を `AiChatClientErrorPayload` に変換し、`api`、`network`、`parse` の内部エラー種別として扱います。
 
 ## Retrieval処理のイメージ
 
@@ -581,11 +643,18 @@ Source of truth:
 
 Backend:
 - apps/backend/src/routes/ai-routes.ts
-- apps/backend/src/ai/*
+- apps/backend/src/features/ai/*
+- apps/backend/src/infra/ai/*
+- apps/backend/src/infra/ai-knowledge/*
+- apps/backend/src/infra/db/schema.ts
 
 Frontend:
 - apps/web/src/lib/ai-client.ts
+- apps/web/src/lib/features/ai-chat.svelte.ts
 - apps/web/src/lib/components/ai/*
+
+Reusable core:
+- packages/saas-chatbot-core
 ```
 
 一番大事なのは、**Vectorizeは検索、D1は正本、backendは権限判定、LLMは回答生成だけ**に分けることです。
@@ -604,9 +673,11 @@ AI は予約作成、課金変更、参加者変更、チケット付与、招�
 - AI Gateway は `AI_GATEWAY_ID` で指定します。課金、支払い、個人情報を含む質問や sensitive な業務情報を含む回答では cache を無効にします。
 - Embedding model は `AI_EMBEDDING_MODEL`、回答 model は `AI_ANSWER_MODEL` で差し替えられます。既定は `@cf/baai/bge-m3` と `@cf/meta/llama-3.1-8b-instruct` です。
 - Vectorize index は `reserve-app-knowledge` を想定します。作成前に採用 embedding model の `shape` を確認し、その dimensions と `cosine` metric で作成します。
-- D1 には `ai_knowledge_document`、`ai_knowledge_chunk`、`ai_knowledge_index_run`、`ai_conversation`、`ai_message`、`ai_feedback`、`ai_usage_counter` を追加します。
+- D1 には `ai_knowledge_document`、`ai_knowledge_chunk`、`ai_knowledge_index_run`、`ai_conversation`、`ai_message`、`ai_usage_event`、`ai_feedback`、`ai_usage_counter` を追加します。
 - 会話本文は 180 日で匿名化します。低評価などの集計用フィードバックは 1 年で削除します。
-- 知識投入は `apps/backend/scripts/index-ai-knowledge.mjs` と `apps/backend/src/ai/indexer.ts` を起点にします。D1 を正本、Vectorize を検索用 index として扱います。
+- 知識投入は `apps/backend/scripts/index-ai-knowledge.mjs` と `apps/backend/src/features/ai/indexer.ts` を起点にします。D1 を正本、Vectorize を検索用 index として扱います。
+- web contract は `packages/saas-chatbot-core/src/ui-contract.ts` を共有元にし、`AiChatUiStatus`、`AiChatClientErrorPayload`、`AiChatResponse.rateLimit` を web state と API client が参照します。
+- `open_page` の suggested action でも `href` が `null` の場合はリンクにせず、テキストの案内として表示します。
 
 ## ローカル検証メモ
 
@@ -615,8 +686,9 @@ AI は予約作成、課金変更、参加者変更、チケット付与、招�
 ```bash
 pnpm --filter @apps/backend typecheck
 pnpm --filter @apps/web typecheck
-pnpm --filter @apps/backend exec vitest run src/ai/source-visibility.test.ts src/ai/rate-limit.test.ts src/ai/embedding.test.ts src/ai/prompt.test.ts src/ai/answer-generator.test.ts src/ai/indexer.test.ts src/ai/business-facts.test.ts src/ai/conversation-store.test.ts
-pnpm --filter @apps/web exec vitest run --project server src/lib/features/ai-chat.spec.ts --maxWorkers=1
+pnpm --filter @repo/saas-chatbot-core typecheck
+pnpm --filter @apps/backend exec vitest run src/features/ai/ai-contract.test.ts --maxWorkers=1
+pnpm --filter @apps/web exec vitest run --project server src/lib/ai-client.spec.ts src/lib/features/ai-chat.spec.ts --maxWorkers=1
 pnpm --filter @apps/web exec vitest run --project client src/lib/components/ai/AiChatWidget.svelte.spec.ts src/lib/components/ai/AiSourceList.svelte.spec.ts --maxWorkers=1
 ```
 
@@ -624,8 +696,9 @@ pnpm --filter @apps/web exec vitest run --project client src/lib/components/ai/A
 
 - Backend typecheck: pass
 - Web typecheck: pass, `svelte-check found 0 errors and 0 warnings`
-- Backend AI unit tests: 8 files / 27 tests pass
-- Web AI state tests: 1 file / 3 tests pass
+- Chatbot core typecheck: pass
+- Backend AI contract test: pass
+- Web AI client/state tests: pass
 - Web AI component tests: 2 files / 4 tests pass
 
 [1]: https://workers.cloudflare.com/product/vectorize/?utm_source=chatgpt.com 'Cloudflare Vectorize - Vector Database for RAG Applications'
