@@ -53,6 +53,9 @@ importers:
       '@repo/saas-billing-core':
         specifier: workspace:*
         version: link:../../packages/saas-billing-core
+      '@repo/saas-billing-drizzle':
+        specifier: workspace:*
+        version: link:../../packages/saas-billing-drizzle
       '@repo/saas-chatbot-core':
         specifier: workspace:*
         version: link:../../packages/saas-chatbot-core
@@ -451,6 +454,22 @@ importers:
         version: 4.3.6
 
   packages/saas-billing-core:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.4(@opentelemetry/api@1.9.0)(@types/node@24.10.10)(@vitest/browser-playwright@4.1.4)(vite@8.0.8(@types/node@24.10.10)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+
+  packages/saas-billing-drizzle:
+    dependencies:
+      '@repo/saas-billing-core':
+        specifier: workspace:*
+        version: link:../saas-billing-core
+      drizzle-orm:
+        specifier: ^0.45.1
+        version: 0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0)
     devDependencies:
       typescript:
         specifier: ^5.8.3
@@ -4371,9 +4390,6 @@ packages:
 
   '@types/node@20.19.31':
     resolution: {integrity: sha512-5jsi0wpncvTD33Sh1UCgacK37FFwDn+EG7wCmEvs62fCvBL+n8/76cAYDok21NF6+jaVWIqKwCZyX7Vbu8eB3A==}
-
-  '@types/node@20.19.41':
-    resolution: {integrity: sha512-ECymXOukMnOoVkC2bb1Vc/w/836DXncOg5m8Xj1RH7xSHZJWNYY6Zh7EH477vcnD5egKNNfy2RpNOmuChhFPgQ==}
 
   '@types/node@24.10.10':
     resolution: {integrity: sha512-+0/4J266CBGPUq/ELg7QUHhN25WYjE0wYTPSQJn1xeu8DOlIOPxXxrNGiLmfAWl7HMMgWFWXpt9IDjMWrF5Iow==}
@@ -13434,7 +13450,7 @@ snapshots:
 
   '@types/better-sqlite3@7.6.13':
     dependencies:
-      '@types/node': 20.19.41
+      '@types/node': 24.10.10
     optional: true
 
   '@types/chai@5.2.3':
@@ -13483,11 +13499,6 @@ snapshots:
   '@types/node@20.19.31':
     dependencies:
       undici-types: 6.21.0
-
-  '@types/node@20.19.41':
-    dependencies:
-      undici-types: 6.21.0
-    optional: true
 
   '@types/node@24.10.10':
     dependencies:

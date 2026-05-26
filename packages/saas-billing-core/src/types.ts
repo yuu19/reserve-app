@@ -1,4 +1,4 @@
-export type BillingSubjectType = 'organization' | 'workspace' | 'team' | 'user';
+export type BillingSubjectType = string;
 
 export type BillingInterval = 'month' | 'year';
 
