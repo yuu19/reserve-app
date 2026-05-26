@@ -109,26 +109,33 @@ Knowledge indexing script checks:
 ```bash
 pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs
 pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run
+pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run --source-root app-docs
 pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run --source-root app-docs --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
 ```
 
 Expected output:
 
-- All three commands run discovery only. They do not call Workers AI, D1, or Vectorize.
+- All discovery commands run discovery only. They do not call Workers AI, D1, or Vectorize.
 - The default mode is dry-run when neither `--dry-run` nor `--apply` is provided.
+- `--source-root` limits discovery to one stable root id: `app-docs`, `internal-docs`, or `specs`.
 - `--source-path` must match a repository-relative Markdown source. A non-matching path exits with a usage failure.
+- Combining `--source-root` and `--source-path` indexes only a matching source under the selected root.
 
 Remote indexing when credentials and production rollout approval are available:
 
 ```bash
 CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply
+CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply --source-root app-docs
 CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply --source-root app-docs --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
 ```
 
 Expected behavior:
 
 - `--apply` writes remote D1 rows and upserts Vectorize records.
 - Full apply marks global documents and chunks that disappeared from the current discovery as stale.
+- Source-root apply marks only disappeared documents and chunks under the selected root prefix as stale.
 - Source-path apply only refreshes the selected document and marks old chunks for that document as stale.
 
 Targeted web checks:

@@ -35,6 +35,37 @@ export const sqlValue = (value) => {
   return sqlString(value);
 };
 
+const escapeSqlLikePattern = (value) =>
+  String(value).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+
+const buildSourcePathPrefixPredicate = ({ sourcePathPrefix }) => {
+  const escapedPrefix = escapeSqlLikePattern(sourcePathPrefix);
+  return `(source_path = ${sqlValue(sourcePathPrefix)} OR source_path LIKE ${sqlValue(
+    `${escapedPrefix}/%`,
+  )} ESCAPE '\\')`;
+};
+
+const normalizeStaleScope = (staleScope) => {
+  if (!staleScope || staleScope === 'full') {
+    return { mode: 'full' };
+  }
+  if (staleScope === 'targeted') {
+    return { mode: 'targeted' };
+  }
+  if (staleScope.mode === 'source-root' && staleScope.sourceKind && staleScope.sourcePathPrefix) {
+    return staleScope;
+  }
+  throw new Error('Unknown knowledge indexing stale scope.');
+};
+
+const buildSourceRootDocumentPredicate = ({ sourceKind, sourcePathPrefix }) =>
+  [
+    `source_kind = ${sqlValue(sourceKind)}`,
+    buildSourcePathPrefixPredicate({ sourcePathPrefix }),
+    'organization_id IS NULL',
+    'classroom_id IS NULL',
+  ].join(' AND ');
+
 const normalizeTags = (tags) => (Array.isArray(tags) ? tags.filter(Boolean) : []);
 
 const tagsJsonValue = (tags) => {
@@ -128,6 +159,7 @@ export const buildSuccessSql = ({
   staleScope = 'full',
 }) => {
   const statements = [];
+  const normalizedStaleScope = normalizeStaleScope(staleScope);
   const currentDocumentIds = documents.map((entry) => sqlValue(entry.id)).join(', ');
   const currentChunkIds = chunks.map((entry) => sqlValue(entry.id)).join(', ');
   const currentSourceKinds = [...new Set(documents.map((entry) => entry.sourceKind))]
@@ -150,7 +182,7 @@ export const buildSuccessSql = ({
       `UPDATE ai_knowledge_chunk SET vector_status = 'stale', indexed_at = ${now} WHERE document_id IN (${currentDocumentIds}) AND ${oldChunkPredicate};`,
     );
 
-    if (staleScope === 'full') {
+    if (normalizedStaleScope.mode === 'full') {
       statements.push(
         `UPDATE ai_knowledge_chunk SET vector_status = 'stale', indexed_at = ${now} WHERE document_id IN (SELECT id FROM ai_knowledge_document WHERE source_kind IN (${currentSourceKinds}) AND organization_id IS NULL AND classroom_id IS NULL AND id NOT IN (${currentDocumentIds}));`,
       );
@@ -158,6 +190,19 @@ export const buildSuccessSql = ({
         `UPDATE ai_knowledge_document SET index_status = 'stale', updated_at = ${now} WHERE source_kind IN (${currentSourceKinds}) AND organization_id IS NULL AND classroom_id IS NULL AND id NOT IN (${currentDocumentIds});`,
       );
     }
+  }
+  if (normalizedStaleScope.mode === 'source-root') {
+    const sourceRootPredicate = buildSourceRootDocumentPredicate(normalizedStaleScope);
+    const staleDocumentPredicate =
+      documents.length > 0
+        ? `${sourceRootPredicate} AND id NOT IN (${currentDocumentIds})`
+        : sourceRootPredicate;
+    statements.push(
+      `UPDATE ai_knowledge_chunk SET vector_status = 'stale', indexed_at = ${now} WHERE document_id IN (SELECT id FROM ai_knowledge_document WHERE ${staleDocumentPredicate});`,
+    );
+    statements.push(
+      `UPDATE ai_knowledge_document SET index_status = 'stale', updated_at = ${now} WHERE ${staleDocumentPredicate};`,
+    );
   }
   statements.push(
     `UPDATE ai_knowledge_index_run SET status = 'succeeded', finished_at = ${now}, documents_indexed = ${documents.length}, chunks_upserted = ${chunks.length}, chunks_failed = 0, embedding_shape_json = ${sqlValue(JSON.stringify(embeddingShape))}, error_summary = NULL WHERE id = ${sqlValue(runId)};`,

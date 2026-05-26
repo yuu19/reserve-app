@@ -16,6 +16,8 @@ export class KnowledgeSourceNotFoundError extends Error {
   }
 }
 
+export const defaultKnowledgeSourceRootIds = Object.freeze(['app-docs', 'internal-docs', 'specs']);
+
 const markdownFilePattern = /\.(md|mdx|svx|svelte\.md)$/u;
 const ignoredDirs = new Set([
   '.git',
@@ -28,25 +30,70 @@ const ignoredDirs = new Set([
   'test-results',
 ]);
 
+export const normalizeKnowledgeSourceRootId = (value) => {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new KnowledgeSourceUsageError(
+      `--source-root requires one of: ${defaultKnowledgeSourceRootIds.join(', ')}.`,
+    );
+  }
+
+  return value.trim();
+};
+
+export const assertKnownKnowledgeSourceRootId = (
+  value,
+  knownRootIds = defaultKnowledgeSourceRootIds,
+) => {
+  const normalized = normalizeKnowledgeSourceRootId(value);
+  if (!knownRootIds.includes(normalized)) {
+    throw new KnowledgeSourceUsageError(
+      `Unknown --source-root ${normalized}. Expected one of: ${knownRootIds.join(', ')}.`,
+    );
+  }
+  return normalized;
+};
+
+const createKnowledgeSourceRoot = ({
+  repoRoot,
+  id,
+  repoRelativePrefix,
+  sourceKind,
+  visibility,
+  internalOnly,
+}) => ({
+  id,
+  repoRelativePrefix,
+  sourceKind,
+  rootDir: path.join(repoRoot, repoRelativePrefix),
+  visibility,
+  internalOnly,
+});
+
 export const createDefaultKnowledgeSourceRoots = ({ repoRoot }) => [
-  {
+  createKnowledgeSourceRoot({
+    repoRoot,
+    id: 'app-docs',
+    repoRelativePrefix: 'apps/docs',
     sourceKind: 'docs',
-    rootDir: path.join(repoRoot, 'apps/docs'),
     visibility: 'authenticated',
     internalOnly: false,
-  },
-  {
+  }),
+  createKnowledgeSourceRoot({
+    repoRoot,
+    id: 'internal-docs',
+    repoRelativePrefix: 'docs',
     sourceKind: 'docs',
-    rootDir: path.join(repoRoot, 'docs'),
     visibility: 'admin',
     internalOnly: true,
-  },
-  {
+  }),
+  createKnowledgeSourceRoot({
+    repoRoot,
+    id: 'specs',
+    repoRelativePrefix: 'specs',
     sourceKind: 'specs',
-    rootDir: path.join(repoRoot, 'specs'),
     visibility: 'admin',
     internalOnly: true,
-  },
+  }),
 ];
 
 export const normalizeRepoRelativePath = (value) => {
@@ -65,6 +112,28 @@ export const normalizeRepoRelativePath = (value) => {
   }
 
   return normalized;
+};
+
+export const repoRelativePathMatchesPrefix = ({ sourcePath, repoRelativePrefix }) => {
+  const normalizedSourcePath = normalizeRepoRelativePath(sourcePath);
+  const normalizedPrefix = normalizeRepoRelativePath(repoRelativePrefix);
+  return (
+    normalizedSourcePath === normalizedPrefix ||
+    normalizedSourcePath.startsWith(`${normalizedPrefix}/`)
+  );
+};
+
+export const selectKnowledgeSourceRoots = ({ roots, sourceRoot }) => {
+  if (!sourceRoot) {
+    return roots;
+  }
+
+  const knownRootIds = roots.map((root) => root.id).filter(Boolean);
+  const normalizedSourceRoot = assertKnownKnowledgeSourceRootId(
+    sourceRoot,
+    knownRootIds.length > 0 ? knownRootIds : defaultKnowledgeSourceRootIds,
+  );
+  return roots.filter((root) => root.id === normalizedSourceRoot);
 };
 
 const toRepoRelativePath = ({ repoRoot, filePath }) =>
@@ -213,12 +282,25 @@ export const discoverMarkdownKnowledge = async ({
 export const discoverKnowledgeDocuments = async ({
   repoRoot,
   roots = createDefaultKnowledgeSourceRoots({ repoRoot }),
+  sourceRoot,
   sourcePath,
 }) => {
   const normalizedSourcePath = sourcePath ? normalizeRepoRelativePath(sourcePath) : null;
+  const selectedRoots = selectKnowledgeSourceRoots({ roots, sourceRoot });
   const discovered = [];
 
-  for (const root of roots) {
+  for (const root of selectedRoots) {
+    if (
+      normalizedSourcePath &&
+      root.repoRelativePrefix &&
+      !repoRelativePathMatchesPrefix({
+        sourcePath: normalizedSourcePath,
+        repoRelativePrefix: root.repoRelativePrefix,
+      })
+    ) {
+      continue;
+    }
+
     const files = await walkMarkdownFiles(root.rootDir);
     for (const filePath of files) {
       const repoRelativePath = toRepoRelativePath({ repoRoot, filePath });

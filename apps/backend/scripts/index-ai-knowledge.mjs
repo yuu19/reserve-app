@@ -2,10 +2,14 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+  assertKnownKnowledgeSourceRootId,
+  createDefaultKnowledgeSourceRoots,
+  defaultKnowledgeSourceRootIds,
   discoverKnowledgeDocuments,
   KnowledgeSourceNotFoundError,
   KnowledgeSourceUsageError,
   normalizeRepoRelativePath,
+  selectKnowledgeSourceRoots,
 } from './ai-knowledge-source-loader.mjs';
 import { runKnowledgeIndexing } from './ai-knowledge-indexing-usecase.mjs';
 
@@ -20,11 +24,12 @@ class CliUsageError extends Error {
 }
 
 const usage = [
-  'Usage: node scripts/index-ai-knowledge.mjs [--dry-run | --apply] [--source-path <repo-relative-path>]',
+  'Usage: node scripts/index-ai-knowledge.mjs [--dry-run | --apply] [--source-root <app-docs|internal-docs|specs>] [--source-path <repo-relative-path>]',
   '',
   'Options:',
   '  --dry-run                  Discover and plan indexing without writing to D1, Vectorize, or Workers AI.',
   '  --apply                    Write remote D1 rows and upsert vectors. Requires CF_AI_GATEWAY_TOKEN.',
+  `  --source-root <root>       Index only one knowledge root: ${defaultKnowledgeSourceRootIds.join(', ')}.`,
   '  --source-path <path>       Index only the matching repository-relative knowledge source.',
 ].join('\n');
 
@@ -32,6 +37,7 @@ export const parseArgs = (argv) => {
   const options = {
     apply: false,
     dryRun: false,
+    sourceRoot: null,
     sourcePath: null,
     help: false,
   };
@@ -45,6 +51,17 @@ export const parseArgs = (argv) => {
       case '--dry-run':
         options.dryRun = true;
         break;
+      case '--source-root': {
+        const value = argv[index + 1];
+        if (!value || value.startsWith('--')) {
+          throw new CliUsageError(
+            `--source-root requires one of: ${defaultKnowledgeSourceRootIds.join(', ')}.`,
+          );
+        }
+        options.sourceRoot = assertKnownKnowledgeSourceRootId(value);
+        index += 1;
+        break;
+      }
       case '--source-path': {
         const value = argv[index + 1];
         if (!value || value.startsWith('--')) {
@@ -73,6 +90,21 @@ export const parseArgs = (argv) => {
   };
 };
 
+const createStaleScope = ({ sourceRoot, sourcePath, roots }) => {
+  if (sourcePath) {
+    return 'targeted';
+  }
+  if (sourceRoot) {
+    const [root] = roots;
+    return {
+      mode: 'source-root',
+      sourceKind: root.sourceKind,
+      sourcePathPrefix: root.repoRelativePrefix,
+    };
+  }
+  return 'full';
+};
+
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
@@ -80,8 +112,13 @@ const main = async () => {
     return;
   }
 
+  const roots = selectKnowledgeSourceRoots({
+    roots: createDefaultKnowledgeSourceRoots({ repoRoot }),
+    sourceRoot: options.sourceRoot,
+  });
   const documents = await discoverKnowledgeDocuments({
     repoRoot,
+    roots,
     sourcePath: options.sourcePath,
   });
   const result = await runKnowledgeIndexing({
@@ -90,7 +127,11 @@ const main = async () => {
     repoRoot,
     backendRoot,
     env: process.env,
-    staleScope: options.sourcePath ? 'targeted' : 'full',
+    staleScope: createStaleScope({
+      sourceRoot: options.sourceRoot,
+      sourcePath: options.sourcePath,
+      roots,
+    }),
   });
 
   const message = options.apply
@@ -101,6 +142,7 @@ const main = async () => {
     JSON.stringify(
       {
         message,
+        sourceRoot: options.sourceRoot,
         sourcePath: options.sourcePath,
         ...result,
       },
