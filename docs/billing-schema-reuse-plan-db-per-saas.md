@@ -1,8 +1,8 @@
-# SaaS ごとに DB を分けて Billing schema を使い回すための実行計画
+# SaaS ごとに DB を分けて Billing schema を使い回すための現状と残作業
 
-## 0. 前提
+## 1. 前提
 
-この計画は、複数の SaaS で同じ課金基盤を使い回すが、**DB は SaaS ごとに分ける**ことを前提にする。
+この文書は、複数の SaaS で同じ課金基盤を使い回し、DB は SaaS ごとに分ける方針を扱う。
 
 ```txt
 reserve-app DB
@@ -18,127 +18,156 @@ another-saas DB
   ...
 ```
 
-同じ DB に複数 SaaS の課金情報を入れないため、初期段階では `product_code` は必須にしない。
-各 SaaS の DB 内で、`billing_*` table 名をそのまま使う。
+同じ DB に複数 SaaS の課金情報を入れない。
+そのため、v1 では `product_code` や table 名の差し替えを入れない。
+各 SaaS の DB 内で、固定の `billing_*` table をそのまま使う。
 
----
+## 2. 目的
 
-## 1. 目的
-
-現在の Billing v2 schema を、他の SaaS でも再利用できる形に整理する。
+Reserve App の課金挙動を落とさずに、他 SaaS へ移植できる課金基盤を用意する。
 
 目的は次の 3 つ。
 
 ```txt
-1. billing_* schema を共通 package として使えるようにする
+1. billing_* schema と Drizzle store を共通 package から使えるようにする
 2. SaaS ごとの差分を subject / catalog / entitlement / policy に閉じ込める
-3. reserve-app の実装を壊さず、将来別 SaaS に移植できる状態にする
+3. Reserve App の既存の支払い失敗、通知、監査、内部調査、operation attempt を維持する
 ```
 
----
+## 3. 非ゴール
 
-## 2. 非ゴール
-
-次は今回の対象外にする。
+次は v1 の対象外にする。
 
 ```txt
 - 複数 SaaS を 1 つの DB で運用する
+- table 名や table 定義を factory で注入する
 - Stripe 以外の provider に本格対応する
 - Billing UI を共通 package 化する
 - 通知文面を共通化する
-- reserve-app の業務ロジックを core に移す
-- 全 usecase を最初から package 化する
+- Reserve App の業務ロジックを core に移す
+- すべての usecase を最初から package 化する
 ```
 
----
+table injection は将来の選択肢として残す。
+ただし DB per SaaS の v1 では、固定の `billing_*` schema と `createId` / `now` 注入で十分とする。
 
-## 3. 最終アーキテクチャ
+## 4. 現在の package 状態
 
-理想形は次の構成。
+現在は `packages/saas-billing-core` と `packages/saas-billing-drizzle` が存在する。
+Reserve App の backend は、その package を import して billing schema と store を使っている。
+
+### 4.1 `saas-billing-core`
+
+`saas-billing-core` は DB や Stripe SDK を知らない。
+
+現在含めているもの。
 
 ```txt
-packages/
-  saas-billing-core/
-    src/
-      types.ts
-      catalog.ts
-      entitlement.ts
-      operation.ts
-      webhook.ts
-      payment-issue.ts
-      ports.ts
-
-  saas-billing-drizzle/
-    src/
-      schema.ts
-      stores/
-        drizzle-billing-store.ts
-        drizzle-billing-operation-store.ts
-        drizzle-billing-event-store.ts
-
-apps/
-  backend/
-    src/
-      features/
-        billing/
-          policies/
-            reserve-app-billing-catalog.ts
-            reserve-app-billing-policy.ts
-            reserve-app-entitlements.ts
-          usecases/
-          presenters/
-          routes/
-
-      infra/
-        payment/
-          stripe-billing-provider.ts
+- BillingSubjectType
+- BillingCatalog
+- BillingProvider port
+- BillingStore port
+- BillingOperationStore port
+- BillingEventStore port
+- operation reuse key helper
+- webhook claim result
+- entitlement helper
+- payment issue helper
 ```
 
-依存方向は次の通り。
+`BillingSubjectType` は `string` として扱う。
+共通 package では、未知の `subjectType` を `organization` に丸めない。
+アプリごとの許可値は、各 SaaS の policy や request validation で制御する。
+
+### 4.2 `saas-billing-drizzle`
+
+`saas-billing-drizzle` は Drizzle SQLite/D1 用の schema と store を持つ。
+`apps/backend` の schema や `AuthRuntimeDatabase` には依存しない。
+
+現在含めているもの。
 
 ```txt
-apps/backend
-  -> packages/saas-billing-core
-  -> packages/saas-billing-drizzle
-
-packages/saas-billing-drizzle
-  -> packages/saas-billing-core
-
-packages/saas-billing-core
-  -> app に依存しない
+- billing_* table definitions
+- createDrizzleBillingStore
+- createDrizzleBillingOperationStore
+- createDrizzleBillingEventStore
+- retryBillingSequenceInsert
 ```
 
----
-
-## 4. DB を分ける場合の設計方針
-
-DB を SaaS ごとに分ける場合、同じ schema をそのまま使える。
-
-```txt
-reserve-app DB:
-  billing_account.subject_type = organization
-  billing_account.subject_id = org_xxx
-
-another-saas DB:
-  billing_account.subject_type = workspace
-  billing_account.subject_id = ws_xxx
-```
-
-この場合、`billing_account` の unique index は次でよい。
+store factory は次を受け取れる。
 
 ```ts
-uniqueIndex('billing_account_subject_uidx').on(
-  billingAccount.subjectType,
-  billingAccount.subjectId,
-);
+createDrizzleBillingStore({
+  database,
+  createId: () => crypto.randomUUID(),
+  now: () => new Date(),
+});
+
+createDrizzleBillingOperationStore({
+  database,
+  createId: () => crypto.randomUUID(),
+  now: () => new Date(),
+});
+
+createDrizzleBillingEventStore({
+  database,
+  createId: () => crypto.randomUUID(),
+});
 ```
 
-`product_code` は不要。
-ただし、将来 1 DB に複数プロダクトを入れる可能性が出たら、別途 `product_code` を追加する。
+`createId` と `now` は省略できる。
+省略した場合は、現行どおり `crypto.randomUUID()` と `new Date()` を使う。
 
----
+`BillingEventStore` は各 method が受け取る `now` や `processedAt` を正本にする。
+そのため factory の `now` は現時点では互換用の option として受け取り、暗黙の時刻更新には使わない。
 
-## 5. 共通 schema に含める table
+### 4.3 Reserve App 側の接続
+
+Reserve App の `apps/backend/src/infra/db/schema.ts` は、package の billing table を re-export している。
+
+```ts
+export {
+  billingAccount,
+  billingSubscription,
+  billingPaymentIssue,
+  billingInvoiceEvent,
+  billingEntitlement,
+  billingProviderEvent,
+  billingOperationAttempt,
+  billingAuditEvent,
+  billingSignal,
+  billingNotification,
+  billingDocumentReference,
+  billingTables,
+} from '@repo/saas-billing-drizzle/schema';
+```
+
+backend の wrapper は、Reserve App の runtime DB 型を package 側の DB 型へ接続する薄い adapter になっている。
+現在は既定値の `createId` / `now` を使うため、アプリの挙動は変わらない。
+
+## 5. 維持する schema 契約
+
+共通化しても、Reserve App の現在の課金挙動は変えない。
+特に、支払い失敗、通知履歴、監査履歴、内部調査、operation attempt の扱いを維持する。
+
+必ず維持する契約。
+
+```txt
+- billing_account は課金対象ごとの root とする
+- billing_payment_issue は billing_account_id ごとに 1 current row とする
+- billing_operation_attempt.idempotency_key は unique とする
+- billing_operation_attempt は billing_account_id + reuse_key + attempt_number を unique とする
+- billing_provider_event は provider + provider_event_id + scope を unique とする
+- billing_audit_event / billing_signal / billing_notification は sequence_number で account 内の順序を保証する
+- billing_audit_event / billing_signal / billing_notification は billing_account_id + sequence_number を unique とする
+- sequence 採番は衝突時に retry する
+- billing_notification_dedupe_uidx は同じ attempt の同じ delivery status だけを重複排除する
+```
+
+この契約は schema、store、migration、test のすべてで確認する。
+package 化のために制約や retry を弱めない。
+
+## 6. 共通 schema に含める table
 
 共通化対象は以下。
 
@@ -156,197 +185,29 @@ billing_notification
 billing_document_reference
 ```
 
-これらは SaaS 課金基盤として再利用できる。
+これらは SaaS 課金基盤として再利用する。
+DB per SaaS では table 名を変えずに使う。
 
----
+## 7. SaaS ごとに差し替えるもの
 
-## 6. 共通 schema から app 固有 FK を外す
+共通 package は課金の保存先と基本操作を提供する。
+契約や権限の意味づけは、各 SaaS 側に残す。
 
-再利用 schema では、app 固有 table への FK は避ける。
-
-例えば、現在のように `user.id` へ参照するカラムは、共通 package では plain text にする。
-
-```txt
-created_by_user_id
-actor_user_id
-recipient_user_id
-```
-
-理由:
+SaaS ごとに差し替えるもの。
 
 ```txt
-- SaaS ごとに user table 名や auth provider が違う
-- better-auth / custom auth / external auth などに対応しやすい
-- DB per SaaS なら参照整合性は app 側 policy で担保できる
+- subject mapper
+- plan catalog
+- entitlement key
+- entitlement projection
+- permission policy
+- notification policy
+- presenter
+- route / usecase
+- provider env mapping
 ```
 
-推奨:
-
-```ts
-createdByUserId: text('created_by_user_id')
-actorUserId: text('actor_user_id')
-recipientUserId: text('recipient_user_id')
-```
-
-もし app 側で FK を付けたい場合は、schema factory で optional reference を渡す方式を検討する。
-
-```ts
-createBillingSchema({
-  userTable,
-});
-```
-
-ただし最初は plain text で十分。
-
----
-
-## 6.1 共通 package へ移す前に守る契約
-
-共通化しても、Reserve App の現在の課金挙動は変えない。
-特に、支払い失敗、通知履歴、監査履歴、内部調査、operation attempt の扱いは維持する。
-
-必ず維持する契約:
-
-```txt
-- billing_account は課金対象ごとの root とする
-- billing_payment_issue は billing_account_id ごとに 1 current row とする
-- billing_operation_attempt.idempotency_key は unique とする
-- billing_audit_event / billing_signal / billing_notification は sequence_number で account 内の順序を保証する
-- billing_audit_event / billing_signal / billing_notification は billing_account_id + sequence_number を unique とする
-- sequence 採番は衝突時に retry する
-- billing_notification_dedupe_uidx は同じ attempt の同じ delivery status だけを重複排除する
-```
-
-この契約は schema、store、migration、test のすべてで確認する。
-package 化のために制約や retry を弱めない。
-
----
-
-## 7. 共通 package の責務
-
-## 7.1 `saas-billing-core`
-
-`saas-billing-core` は DB や Stripe SDK を知らない。
-
-置くもの:
-
-```txt
-- BillingSubject
-- BillingCatalog
-- BillingPlan
-- BillingEntitlement
-- BillingSubscriptionStatus
-- BillingOperationPurpose
-- BillingOperationReuseKey
-- ProviderEventClaimResult
-- BillingProvider port
-- BillingStore port
-- BillingOperationStore port
-- BillingEventStore port
-- 純粋な判定関数
-```
-
-例:
-
-```ts
-export type BillingSubjectType = string;
-
-export type BillingSubject = {
-  subjectType: BillingSubjectType;
-  subjectId: string;
-};
-```
-
-共通 package では、未知の `subjectType` を別の値に丸めない。
-読み取れない値はそのまま返すか、app 側の validation で拒否する。
-
-### core に入れる純粋ロジック
-
-```txt
-- operation handoff decision
-- webhook claim decision
-- entitlement projection helper
-- payment issue state helper
-- catalog validation
-```
-
-### core に入れないもの
-
-```txt
-- Hono Context
-- Better Auth session
-- Drizzle table
-- Stripe SDK
-- reserve-app の文言
-- organization / classroom / booking / ticket
-- owner/admin/member の role 判定
-```
-
----
-
-## 7.2 `saas-billing-drizzle`
-
-`saas-billing-drizzle` は Drizzle SQLite/D1 用の schema と store を持つ。
-ただし、`apps/backend` には依存しない。
-
-置くもの:
-
-```txt
-- billing table definitions
-- DrizzleBillingStore
-- DrizzleBillingOperationStore
-- DrizzleBillingEventStore
-- schema helper
-```
-
-store は次を外から受け取る。
-
-```txt
-- Drizzle database instance
-- billing table definitions
-- now() helper
-- createId() helper
-```
-
-`AuthRuntimeDatabase` や `apps/backend/src/infra/db/schema.ts` は import しない。
-Reserve App 側で使う場合は、app schema から billing tables を渡す。
-
-```ts
-createDrizzleBillingStore({
-  database,
-  tables: billingTables,
-  now: () => new Date(),
-  createId: () => crypto.randomUUID(),
-});
-```
-
-DB は SaaS ごとに分かれるため、table 名は固定でよい。
-
-```txt
-billing_account
-billing_subscription
-...
-```
-
----
-
-## 8. app 側に残すもの
-
-Reserve App 側に残すべきもの。
-
-```txt
-- organizationId -> BillingSubject への変換
-- Free / Premium / Trial の意味
-- 7 日間 trial
-- premium price id の env
-- booking.approval などの entitlement key
-- owner だけが課金操作できる policy
-- owner 通知の文面
-- billing summary の表示形式
-- internal inspection の表示形式
-```
-
-Reserve App では次のように subject を作る。
+Reserve App では、課金対象は organization になる。
 
 ```ts
 export const reserveAppBillingSubject = (organizationId: string) => ({
@@ -355,495 +216,154 @@ export const reserveAppBillingSubject = (organizationId: string) => ({
 });
 ```
 
-別 SaaS では差し替える。
+別 SaaS では、同じ table を使いながら subject を変える。
 
 ```ts
-export const anotherSaasBillingSubject = (workspaceId: string) => ({
+export const workspaceBillingSubject = (workspaceId: string) => ({
   subjectType: 'workspace' as const,
   subjectId: workspaceId,
 });
 ```
 
----
+## 8. 別 SaaS への導入例
 
-## 9. 再利用する schema の詳細方針
+ここでは `workspace` を課金対象にする SaaS を例にする。
+実装ファイルを増やすのではなく、導入時に必要な差し替え点を示す。
 
-## 9.1 `billing_account`
-
-課金対象と provider customer を結びつける。
-
-```txt
-subject_type
-subject_id
-provider
-provider_customer_id
-billing_email
-billing_name
-```
-
-使い回し方:
-
-```txt
-reserve-app:
-  subject_type = organization
-
-another-saas:
-  subject_type = workspace
-```
-
----
-
-## 9.2 `billing_subscription`
-
-契約状態の正本。
-
-```txt
-plan_code
-price_code
-interval
-status
-trial_start
-trial_end
-current_period_start
-current_period_end
-cancel_at_period_end
-```
-
-`plan_code` の意味は table ではなく catalog で決める。
-
-```txt
-reserve-app:
-  free / premium
-
-another-saas:
-  free / pro / business
-```
-
----
-
-## 9.3 `billing_entitlement`
-
-機能利用可否の projection。
-
-```txt
-key
-active
-source
-reason
-valid_from
-valid_until
-```
-
-Reserve App:
-
-```txt
-booking.approval
-ticket.enabled
-staff.invite
-classroom.multiple
-```
-
-別 SaaS:
-
-```txt
-export.csv
-team.invite
-ai.assistant
-project.unlimited
-```
-
-アプリ本体は plan ではなく entitlement を見る。
+### 8.1 subject mapper
 
 ```ts
-await requireEntitlement({
-  subjectType: 'workspace',
+export const workspaceBillingSubject = (workspaceId: string) => ({
+  subjectType: 'workspace' as const,
   subjectId: workspaceId,
-  key: 'export.csv',
 });
 ```
 
----
-
-## 9.4 `billing_operation_attempt`
-
-Checkout / Portal / Setup / Trial の owner 操作を冪等にする。
-
-重要な制約:
-
-```txt
-idempotency_key unique
-billing_account_id + reuse_key + attempt_number unique
-```
-
-使い回す operation purpose:
-
-```txt
-start_trial_subscription
-create_subscription_checkout
-create_setup_checkout
-create_portal_session
-```
-
-reuse key は core helper で作る。
+### 8.2 catalog
 
 ```ts
-buildBillingOperationReuseKey({
-  purpose: 'create_subscription_checkout',
-  subjectType: 'workspace',
-  subjectId: workspaceId,
-  planCode: 'pro',
-  interval: 'month',
-});
-```
+import type { BillingCatalog } from '@repo/saas-billing-core';
 
----
-
-## 9.5 `billing_provider_event`
-
-Webhook の冪等性 table。
-
-重要な制約:
-
-```txt
-provider + provider_event_id + scope unique
-```
-
-持つ情報:
-
-```txt
-payload_hash
-processing_status
-receipt_status
-attempt_count
-processing_started_at
-last_attempt_at
-processing_stale_after_ms
-failure_reason
-failure_stage
-```
-
-使い回し方:
-
-```txt
-provider = stripe
-scope = billing
-```
-
-別 provider に対応するときも同じ table を使える。
-
----
-
-## 9.6 `billing_invoice_event` / `billing_document_reference`
-
-請求書・支払いイベントと文書参照を分ける。
-
-```txt
-billing_invoice_event:
-  invoice_available
-  payment_succeeded
-  payment_failed
-  payment_action_required
-
-billing_document_reference:
-  invoice
-  receipt
-  hosted_invoice_url
-  invoice_pdf_url
-  receipt_url
-```
-
-この分離は維持する。
-
----
-
-## 9.7 `billing_notification`
-
-通知履歴を recipient scoped に残す。
-
-```txt
-notification_kind
-channel
-sequence_number
-recipient_email
-delivery_status
-attempt_number
-provider_event_id
-```
-
-同じ attempt の `requested / sent / failed` などを append-only で残すなら、unique key に `delivery_status` を含める。
-
-```txt
-billing_account_id
-notification_kind
-recipient_email
-provider_event_id
-attempt_number
-delivery_status
-```
-
-通知文面・送信対象・retry policy は app 側に残す。
-
----
-
-## 9.8 `billing_audit_event` / `billing_signal`
-
-運用・調査用。
-
-```txt
-billing_audit_event:
-  状態変更履歴
-
-billing_signal:
-  mismatch / unavailable / resolved などの調査 signal
-```
-
-共通 table として使える。
-ただし `source_kind` や `reason` の vocabulary は app ごとに定義する。
-
-重要な制約:
-
-```txt
-billing_account_id + sequence_number unique
-```
-
-履歴の並び順は `created_at` だけに依存しない。
-同じ課金対象の中では `sequence_number` を使って順序を決める。
-
----
-
-## 10. 実装フェーズ
-
-## Phase 1: 現在の schema を shared package 用に固める
-
-やること:
-
-```txt
-- current billing v2 schema を確認
-- app 固有 FK を共通 schema から外す方針を決める
-- schema package に移す table を確定
-- docs に共通 schema の意図を記載
-```
-
-成果物:
-
-```txt
-docs/billing-schema-reuse.md
-```
-
----
-
-## Phase 2: `packages/saas-billing-core` を整理する
-
-やること:
-
-```txt
-- BillingSubject
-- BillingSubjectType を string として扱う方針
-- BillingCatalog
-- BillingProvider
-- BillingStore
-- BillingOperationStore
-- BillingEventStore
-- operation reuse key builder
-- webhook claim result
-- catalog validation
-```
-
-成果物:
-
-```txt
-packages/saas-billing-core/src/
-  types.ts
-  catalog.ts
-  operation.ts
-  webhook.ts
-  ports.ts
-```
-
----
-
-## Phase 3: `packages/saas-billing-drizzle` を作る
-
-やること:
-
-```txt
-- billing schema を package に移す
-- DrizzleBillingStore を package に移す
-- DrizzleBillingOperationStore を package に移す
-- DrizzleBillingEventStore を package に移す
-- database / tables / now / createId を注入できるようにする
-- sequence 採番と retry helper を package に移す
-```
-
-注意:
-
-```txt
-- app の user table へ FK しない
-- table 名は billing_* のまま
-- DB per SaaS なので product_code は不要
-- apps/backend の schema や AuthRuntimeDatabase を import しない
-- unknown subjectType を organization に丸めない
-- sequence_number の unique 制約と retry 方針を維持する
-```
-
-成果物:
-
-```txt
-packages/saas-billing-drizzle/src/schema.ts
-packages/saas-billing-drizzle/src/stores/
-```
-
----
-
-## Phase 4: reserve-app 側を package schema に接続する
-
-やること:
-
-```txt
-- apps/backend/src/infra/db/schema.ts で package の billing table 定義を re-export する
-- reserve-app 固有 table はそのまま app schema に残す
-- reserve-app billing store が package store に app 側の billing table bundle を渡す
-```
-
-イメージ:
-
-```ts
-export {
-  billingAccount,
-  billingSubscription,
-  billingEntitlement,
-  billingProviderEvent,
-  billingOperationAttempt,
-  billingInvoiceEvent,
-  billingPaymentIssue,
-  billingNotification,
-  billingAuditEvent,
-  billingSignal,
-  billingDocumentReference,
-} from '@repo/saas-billing-drizzle/schema';
-
-export const reserveAppBillingTables = {
-  billingAccount,
-  billingSubscription,
-  billingEntitlement,
-  billingProviderEvent,
-  billingOperationAttempt,
-  billingInvoiceEvent,
-  billingPaymentIssue,
-  billingNotification,
-  billingAuditEvent,
-  billingSignal,
-  billingDocumentReference,
+export const workspaceBillingCatalog: BillingCatalog = {
+  prices: [
+    {
+      planCode: 'pro',
+      interval: 'month',
+      provider: 'stripe',
+      providerPriceId: env.STRIPE_PRO_MONTHLY_PRICE_ID,
+    },
+    {
+      planCode: 'pro',
+      interval: 'year',
+      provider: 'stripe',
+      providerPriceId: env.STRIPE_PRO_YEARLY_PRICE_ID,
+    },
+  ],
 };
 ```
 
+`planCode` の意味は table ではなく catalog で決める。
+Reserve App では `free / premium`、別 SaaS では `free / pro / business` のように変えられる。
+
+### 8.3 entitlement projection
+
 ```ts
+import { createActiveEntitlementInput } from '@repo/saas-billing-core';
+import type { BillingEntitlementInput, BillingSubscriptionStatus } from '@repo/saas-billing-core';
+
+export const projectWorkspaceEntitlements = ({
+  planCode,
+  subscriptionStatus,
+}: {
+  planCode: string;
+  subscriptionStatus: BillingSubscriptionStatus;
+}): BillingEntitlementInput[] => {
+  if (planCode !== 'pro' || subscriptionStatus !== 'active') {
+    return [];
+  }
+
+  return [
+    createActiveEntitlementInput({
+      key: 'export.csv',
+      source: 'paid',
+      reason: 'active_subscription',
+    }),
+    createActiveEntitlementInput({
+      key: 'team.invite',
+      source: 'paid',
+      reason: 'active_subscription',
+    }),
+  ];
+};
+```
+
+アプリ本体は plan ではなく entitlement を見る。
+これにより、plan 名が SaaS ごとに違っても利用可否の判定を揃えられる。
+
+### 8.4 store 利用手順
+
+```ts
+import {
+  createDrizzleBillingEventStore,
+  createDrizzleBillingOperationStore,
+  createDrizzleBillingStore,
+} from '@repo/saas-billing-drizzle';
+
 const billingStore = createDrizzleBillingStore({
   database,
-  tables: reserveAppBillingTables,
+  createId: () => crypto.randomUUID(),
   now: () => new Date(),
+});
+
+const operationStore = createDrizzleBillingOperationStore({
+  database,
+  createId: () => crypto.randomUUID(),
+  now: () => new Date(),
+});
+
+const eventStore = createDrizzleBillingEventStore({
+  database,
   createId: () => crypto.randomUUID(),
 });
 ```
 
----
+導入手順。
 
-## Phase 5: 別 SaaS で使える sample test を作る
-
-別 SaaS 用のダミー subject で schema reuse を検証する。
-
-```ts
-it('workspace billing can reuse billing schema', async () => {
-  const subject = {
-    subjectType: 'workspace',
-    subjectId: 'workspace_1',
-  };
-
-  const account = await billingStore.ensureAccount({
-    ...subject,
-    provider: 'stripe',
-  });
-
-  const subscription = await billingStore.upsertSubscription({
-    billingAccountId: account.id,
-    provider: 'stripe',
-    planCode: 'pro',
-    status: 'active',
-    interval: 'month',
-  });
-
-  await billingStore.replaceEntitlements({
-    billingAccountId: account.id,
-    entitlements: [
-      {
-        key: 'export.csv',
-        active: true,
-        source: 'paid',
-        reason: 'active_subscription',
-      },
-    ],
-  });
-});
+```txt
+1. app の schema.ts で @repo/saas-billing-drizzle/schema を re-export する
+2. Drizzle migration をその SaaS の app で生成する
+3. subject mapper を作る
+4. catalog を作る
+5. entitlement projection を作る
+6. BillingProvider を用意する
+7. store / operation store / event store を usecase から呼ぶ
+8. route / presenter / notification を app 側で作る
 ```
 
-これで `organization` に依存せず schema を使えることを確認する。
+## 9. migration 運用
 
----
-
-## Phase 6: migration 運用を決める
-
-SaaS ごとに DB を分けるため、migration は次のどちらか。
-
-### 案 A: 各 app で migration 生成
+SaaS ごとに DB を分けるため、migration は各 app で生成する。
 
 ```txt
 packages/saas-billing-drizzle/schema.ts
   ↓ import
-apps/backend/src/infra/db/schema.ts
+apps/<saas>/src/infra/db/schema.ts
   ↓ drizzle generate
-apps/backend/drizzle/*.sql
+apps/<saas>/drizzle/*.sql
 ```
 
-メリット:
+この方式では、app 固有 table と課金 table を同じ migration chain で管理できる。
+D1 でも扱いやすい。
 
-```txt
-- app 固有 table と一緒に migration 管理できる
-- D1 では扱いやすい
-```
+package に migration template を持つ案は、v1 では採用しない。
+app 固有 migration との統合が複雑になるため。
 
-デメリット:
-
-```txt
-- 各 app で migration が重複する
-```
-
-### 案 B: package に migration template を持つ
-
-```txt
-packages/saas-billing-drizzle/migrations/
-```
-
-メリット:
-
-```txt
-- billing schema の変更履歴を共通化できる
-```
-
-デメリット:
-
-```txt
-- app 固有 migration との統合が面倒
-```
-
-推奨は **案 A**。
-最初は各 SaaS app で migration を生成する方が簡単。
-
-### app 固有 FK を外す migration
+### app 固有 FK を外す場合
 
 既存 table から app 固有 FK を外す場合、SQLite/D1 では table rebuild を前提にする。
 `ALTER TABLE` だけで FK を安全に外せる前提にしない。
 
-手順:
+手順。
 
 ```txt
 1. FK なしの __new_billing_* table を作る
@@ -854,124 +374,66 @@ packages/saas-billing-drizzle/migrations/
 6. migration replay と billing tests で確認する
 ```
 
-対象になりやすい column:
-
-```txt
-created_by_user_id
-actor_user_id
-recipient_user_id
-```
-
 この migration でも、`sequence_number`、unique index、通知 dedupe の形は維持する。
 
----
+## 10. CI と検証
 
-## 11. 使い回し時の手順
+package 化した billing schema は、migration 生成漏れを CI で検知する。
 
-新しい SaaS に導入する場合。
-
-```txt
-1. @repo/saas-billing-core を依存に追加
-2. @repo/saas-billing-drizzle を依存に追加
-3. app の schema.ts で billing schema を re-export
-4. drizzle migration を生成
-5. subject mapper を作る
-6. plan catalog を作る
-7. entitlement keys を定義
-8. entitlement projection を作る
-9. BillingProvider を用意する
-10. route / presenter / notification を app 側で作る
-```
-
----
-
-## 12. 具体例: another-saas
-
-### subject
-
-```ts
-export const anotherSaasBillingSubject = (workspaceId: string) => ({
-  subjectType: 'workspace' as const,
-  subjectId: workspaceId,
-});
-```
-
-### catalog
-
-```ts
-export const anotherSaasBillingCatalog = {
-  plans: [
-    {
-      planCode: 'pro',
-      prices: [
-        {
-          interval: 'month',
-          providerPriceId: env.STRIPE_PRO_MONTHLY_PRICE_ID,
-        },
-      ],
-      entitlements: ['export.csv', 'team.invite'],
-    },
-  ],
-};
-```
-
-### entitlement projection
-
-```ts
-export const projectAnotherSaasEntitlements = ({
-  planCode,
-  subscriptionStatus,
-}: {
-  planCode: string;
-  subscriptionStatus: string;
-}) => {
-  if (planCode === 'pro' && subscriptionStatus === 'active') {
-    return [
-      {
-        key: 'export.csv',
-        active: true,
-        source: 'paid',
-        reason: 'active_subscription',
-      },
-      {
-        key: 'team.invite',
-        active: true,
-        source: 'paid',
-        reason: 'active_subscription',
-      },
-    ];
-  }
-
-  return [];
-};
-```
-
----
-
-## 13. Done 条件
-
-この計画の完了条件。
+CI では backend の Drizzle metadata check を実行する。
 
 ```txt
-- [ ] billing_* schema が package から import できる
-- [ ] app 固有 user table への FK が共通 schema から外れている
-- [ ] Reserve App が package schema を使って動く
-- [ ] Drizzle migration が生成できる
-- [ ] Reserve App の billing tests が通る
-- [ ] workspace subject の sample test が通る
-- [ ] catalog / entitlement / subject だけ差し替えれば別 SaaS で使える
-- [ ] docs に DB per SaaS 方針が明記されている
-- [ ] 共通 Drizzle store が apps/backend の型や schema を import していない
-- [ ] sequence_number の unique 制約と retry 方針が package 化後も維持されている
-- [ ] unknown subjectType を organization に丸めない
-- [ ] app 固有 FK を外す migration 手順が D1/SQLite 前提で明記されている
+pnpm --filter @apps/backend exec drizzle-kit check --config ./drizzle.config.ts
 ```
 
----
+package 側では、SQLite runtime dependency を追加しない。
+Drizzle store の単体テストは fake Drizzle database で、次の挙動を検証する。
 
-## 14. 最終判断
+```txt
+- provider event の初回 claim
+- processed duplicate の no-op 扱い
+- failed provider event の retry claim
+- stale processing provider event の retry claim
+- operation attempt の新規 claim
+- fresh processing attempt の再利用
+- succeeded handoff の再利用
+- stale processing attempt の expired 化
+- failed / expired update
+- recent attempt の新しい順の読み取り
+```
 
-SaaS ごとに DB を分けるなら、課金用 table はかなり素直に使い回せる。
+## 11. 現在完了していること
+
+```txt
+- billing_* schema は package から import できる
+- Reserve App backend は package schema を re-export している
+- 共通 Drizzle store は apps/backend の schema や AuthRuntimeDatabase を import していない
+- unknown subjectType を organization に丸めない
+- createId / now を store factory に注入できる
+- sequence_number の unique 制約と retry helper は package にある
+- workspace subject でも account / subscription / entitlement を扱える
+- Drizzle metadata check を CI に追加している
+```
+
+## 12. 残作業
+
+別 SaaS で実際に使うには、次が残る。
+
+```txt
+- その SaaS の app schema で billing schema を re-export する
+- その SaaS の Drizzle migration を生成する
+- subject mapper / catalog / entitlement projection を作る
+- provider env と Stripe price id を用意する
+- route / presenter / notification / permission policy を app 側に実装する
+- migration replay と billing tests をその SaaS の CI に追加する
+```
+
+将来、同じ DB に複数 SaaS を入れる必要が出た場合は、`product_code` や table injection を再検討する。
+現時点では DB per SaaS を前提に、固定 `billing_*` schema を維持する。
+
+## 13. 最終判断
+
+SaaS ごとに DB を分けるなら、課金用 table は固定名のまま使い回せる。
 
 重要なのは次の分離。
 
@@ -982,6 +444,7 @@ SaaS ごとに DB を分けるなら、課金用 table はかなり素直に使�
   Drizzle store
   webhook claim
   operation handoff
+  sequence retry
 
 app 固有:
   subject
@@ -990,6 +453,7 @@ app 固有:
   permission
   notification
   presenter
+  route / usecase
 ```
 
-つまり、**DB は分ける、schema は同じ、意味づけは app policy で変える**のが最終方針。
+つまり、**DB は分ける、schema は同じ、意味づけは app policy で変える**のが v1 方針。
