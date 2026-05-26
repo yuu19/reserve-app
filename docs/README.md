@@ -12,6 +12,13 @@
 - [playwright-report-r2.md](./playwright-report-r2.md)
 - [test-strategy.md](./test-strategy.md)
 
+### AI チャット関連
+
+- [ai-chat-proposal.md](./ai-chat-proposal.md)（Cloudflare Workers AI / Vectorize / AI Gateway 構成と初期運用）
+- [ai-chat-reusable-architecture.md](./ai-chat-reusable-architecture.md)（共通 core、backend、infra、web の責務境界）
+- [AI チャットの公開マニュアル](../apps/docs/src/routes/manuals/common/ai-chatbot/+page.md)
+- [AI Chatbot quickstart](../specs/004-ai-chatbot/quickstart.md)
+
 ## 現在の移行ステータス（2026-03）
 
 - Backend/DB は `organization + classroom` の2階層へ移行済み（`classroom_id` 必須）。
@@ -196,6 +203,19 @@ GitHub 変数:
   - 現在の実運用は prod のみ適用済みで、staging は将来別 Worker で構築予定です。
 - docs の本番公開 URL は `https://docs.wakureserve.com` を想定しています。
 - backend の `database_id` は、事前に `apps/backend/wrangler.jsonc` に設定してください。
+
+### AI チャットの公開マニュアルを更新した場合
+
+公開マニュアルは RAG のナレッジにも使います。
+`apps/docs/src/routes/manuals/common/ai-chatbot/+page.md` を更新した場合は、main 反映後の Worker デプロイ完了を確認してから、対象ページだけを再投入します。
+
+```bash
+pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+```
+
+dry-run はリモート D1、Vectorize、Workers AI を更新しません。
+apply は本番 D1 と Vectorize を更新し、同じ source path の古い chunk を stale として扱います。
 
 ### Premium 課金を含むデプロイ順
 

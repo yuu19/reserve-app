@@ -72,6 +72,44 @@ suggested action は案内だけを表します。
 `open_page` は、許可された既存ページへの移動だけに使います。
 `href` が `null` または未指定の場合、Web はリンクではなくテキストとして表示します。
 
+## 今回確認した backend integration test 範囲
+
+今回の本番反映では、公開 API、DB schema、runtime route、Web UI の wire shape は変えていません。
+追加確認は `apps/backend/src/app.test.ts` の `AI route integration` に集約しています。
+
+確認済みの範囲:
+
+- 未ログインの chat request と不正な request body を拒否すること。
+- 根拠付き回答で、source、usage event、会話、assistant message が保存されること。
+- Vectorize 検索失敗時に fallback 状態を保存し、安全な回答に留めること。
+- 別組織の chat と、別 scope の conversationId 再利用を拒否すること。
+- classroom scope が requested organization の中だけで有効になること。
+- currentPage は回答の hint としてだけ使い、participant の請求情報や source 権限を広げないこと。
+- feedback は message owner だけが登録でき、重複時は更新され、payload validation が効くこと。
+- internal AI endpoint は operator だけが使え、knowledge freshness と feedback themes を返すこと。
+
+実行コマンド:
+
+```bash
+pnpm --filter @apps/backend exec vitest run src/app.test.ts --maxWorkers=1 -t "AI route integration"
+pnpm --filter @apps/backend exec vitest run src/app.test.ts --maxWorkers=1
+pnpm --filter @apps/backend exec vitest run src/features/ai/ai-contract.test.ts src/features/ai/ai-chat.usecase.test.ts src/features/ai/ai-feedback.usecase.test.ts src/features/ai/ai-route-context.test.ts --maxWorkers=1
+```
+
+## 公開マニュアル更新後の knowledge reindex
+
+公開マニュアルは、docs site と AI チャットの回答根拠の両方で使います。
+`apps/docs/src/routes/manuals/common/ai-chatbot/+page.md` を更新した場合は、PR 経由で main に反映し、`deploy-workers.yml` の backend、web、docs 反映完了を確認してから、対象 source path だけを再投入します。
+
+```bash
+pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+```
+
+dry-run は discovery だけを行い、D1、Vectorize、Workers AI には書き込みません。
+apply は production credentials を使う運用作業です。
+対象 source path の文書を本番 D1 と Vectorize に反映し、同じ文書の古い chunk を stale として扱います。
+
 ## 変更時の確認
 
 core type を変える場合は、backend feature と web widget の両方の contract test を確認します。
