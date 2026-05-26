@@ -64,6 +64,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check backend Drizzle metadata
+        run: pnpm --filter @apps/backend exec drizzle-kit check --config ./drizzle.config.ts
+
       - name: Run backend tests
         run: pnpm --filter @apps/backend test:coverage
 
