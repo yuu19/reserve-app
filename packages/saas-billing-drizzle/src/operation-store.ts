@@ -146,11 +146,17 @@ const readNextAttemptNumber = async ({
   return Number(rows[0]?.attemptNumber ?? 0) + 1;
 };
 
+export type DrizzleBillingOperationStoreOptions = {
+  database: DrizzleBillingDatabase;
+  createId?: () => string;
+  now?: () => Date;
+};
+
 export const createDrizzleBillingOperationStore = ({
   database,
-}: {
-  database: DrizzleBillingDatabase;
-}): BillingOperationStore => ({
+  createId = () => crypto.randomUUID(),
+  now: readNow = () => new Date(),
+}: DrizzleBillingOperationStoreOptions): BillingOperationStore => ({
   async claimAttempt({
     billingAccountId,
     purpose,
@@ -217,7 +223,7 @@ export const createDrizzleBillingOperationStore = ({
     const rows = await database
       .insert(dbSchema.billingOperationAttempt)
       .values({
-        id: crypto.randomUUID(),
+        id: createId(),
         billingAccountId,
         purpose,
         reuseKey,
@@ -274,7 +280,7 @@ export const createDrizzleBillingOperationStore = ({
         providerCheckoutSessionId,
         providerPortalSessionId,
         failureReason: null,
-        updatedAt: new Date(),
+        updatedAt: readNow(),
       })
       .where(eq(dbSchema.billingOperationAttempt.id, attemptId))
       .returning();
@@ -287,7 +293,7 @@ export const createDrizzleBillingOperationStore = ({
       .set({
         state,
         failureReason,
-        updatedAt: new Date(),
+        updatedAt: readNow(),
       })
       .where(eq(dbSchema.billingOperationAttempt.id, attemptId))
       .returning();

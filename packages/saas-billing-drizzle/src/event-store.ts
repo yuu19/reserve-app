@@ -5,11 +5,16 @@ import * as dbSchema from './schema.js';
 
 const BILLING_PROVIDER_EVENT_SCOPE = 'billing';
 
+export type DrizzleBillingEventStoreOptions = {
+  database: DrizzleBillingDatabase;
+  createId?: () => string;
+  now?: () => Date;
+};
+
 export const createDrizzleBillingEventStore = ({
   database,
-}: {
-  database: DrizzleBillingDatabase;
-}): BillingEventStore => ({
+  createId = () => crypto.randomUUID(),
+}: DrizzleBillingEventStoreOptions): BillingEventStore => ({
   async claimProviderEvent({
     provider,
     providerEventId,
@@ -21,7 +26,7 @@ export const createDrizzleBillingEventStore = ({
     const insertedRows = await database
       .insert(dbSchema.billingProviderEvent)
       .values({
-        id: crypto.randomUUID(),
+        id: createId(),
         provider,
         providerEventId,
         eventType,

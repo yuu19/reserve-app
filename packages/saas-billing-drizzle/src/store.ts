@@ -137,11 +137,17 @@ const toPaymentIssue = (
   updatedAt: row.updatedAt,
 });
 
+export type DrizzleBillingStoreOptions = {
+  database: DrizzleBillingDatabase;
+  createId?: () => string;
+  now?: () => Date;
+};
+
 export const createDrizzleBillingStore = ({
   database,
-}: {
-  database: DrizzleBillingDatabase;
-}): BillingStore => ({
+  createId = () => crypto.randomUUID(),
+  now: readNow = () => new Date(),
+}: DrizzleBillingStoreOptions): BillingStore => ({
   async findAccountBySubject({ subjectType, subjectId }) {
     const rows = await database
       .select()
@@ -163,11 +169,11 @@ export const createDrizzleBillingStore = ({
     billingEmail = null,
     billingName = null,
   }) {
-    const now = new Date();
+    const now = readNow();
     const insertedRows = await database
       .insert(dbSchema.billingAccount)
       .values({
-        id: crypto.randomUUID(),
+        id: createId(),
         subjectType,
         subjectId,
         provider,
@@ -205,7 +211,7 @@ export const createDrizzleBillingStore = ({
       .update(dbSchema.billingAccount)
       .set({
         providerCustomerId,
-        updatedAt: new Date(),
+        updatedAt: readNow(),
       })
       .where(eq(dbSchema.billingAccount.id, billingAccountId));
   },
@@ -249,7 +255,7 @@ export const createDrizzleBillingStore = ({
   },
 
   async upsertSubscription(input: BillingSubscriptionUpsert) {
-    const now = new Date();
+    const now = readNow();
     const existingRows = input.providerSubscriptionId
       ? await database
           .select()
@@ -277,7 +283,7 @@ export const createDrizzleBillingStore = ({
       const rows = await database
         .insert(dbSchema.billingSubscription)
         .values({
-          id: crypto.randomUUID(),
+          id: createId(),
           billingAccountId: input.billingAccountId,
           provider: input.provider,
           providerSubscriptionId: input.providerSubscriptionId ?? null,
@@ -338,10 +344,10 @@ export const createDrizzleBillingStore = ({
       return;
     }
 
-    const now = new Date();
+    const now = readNow();
     await database.insert(dbSchema.billingEntitlement).values(
       entitlements.map((entitlement: BillingEntitlementInput) => ({
-        id: crypto.randomUUID(),
+        id: createId(),
         billingAccountId,
         key: entitlement.key,
         active: entitlement.active,
@@ -365,11 +371,11 @@ export const createDrizzleBillingStore = ({
   },
 
   async upsertPaymentIssue(input: BillingPaymentIssueUpsert) {
-    const now = new Date();
+    const now = readNow();
     await database
       .insert(dbSchema.billingPaymentIssue)
       .values({
-        id: crypto.randomUUID(),
+        id: createId(),
         billingAccountId: input.billingAccountId,
         billingSubscriptionId: input.billingSubscriptionId ?? null,
         state: input.state,
@@ -402,7 +408,7 @@ export const createDrizzleBillingStore = ({
     await database
       .insert(dbSchema.billingInvoiceEvent)
       .values({
-        id: crypto.randomUUID(),
+        id: createId(),
         billingAccountId: input.billingAccountId,
         billingSubscriptionId: input.billingSubscriptionId ?? null,
         eventType: input.eventType,

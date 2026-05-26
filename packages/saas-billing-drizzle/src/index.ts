@@ -1,7 +1,10 @@
 export type { DrizzleBillingDatabase } from './database.js';
+export type { DrizzleBillingEventStoreOptions } from './event-store.js';
 export { createDrizzleBillingEventStore } from './event-store.js';
+export type { DrizzleBillingOperationStoreOptions } from './operation-store.js';
 export { createDrizzleBillingOperationStore } from './operation-store.js';
 export type { BillingSequencedTableName } from './sequence.js';
 export { retryBillingSequenceInsert } from './sequence.js';
 export * from './schema.js';
+export type { DrizzleBillingStoreOptions } from './store.js';
 export { createDrizzleBillingStore } from './store.js';
