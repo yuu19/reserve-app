@@ -49,7 +49,7 @@
 
 ### Tests for User Story 1
 
-- [ ] T019 [P] [US1] Add backend integration tests for authenticated chat success, unauthenticated rejection, request validation, safe fallback, and no operation execution in `apps/backend/src/app.test.ts`.
+- [x] T019 [P] [US1] Add backend integration tests for authenticated chat success, unauthenticated rejection, request validation, safe fallback, and no operation execution in `apps/backend/src/app.test.ts`.
 - [x] T020 [P] [US1] Add answer generation tests for source-grounded output, confidence calculation, suggested actions, and low-confidence fallback in `apps/backend/src/features/ai/answer-generator.test.ts`.
 - [x] T021 [P] [US1] Add web component tests for sending a message, rendering assistant text, showing sources, and showing suggested actions in `apps/web/src/lib/components/ai/AiChatWidget.svelte.spec.ts`.
 
@@ -79,7 +79,7 @@
 ### Tests for User Story 2
 
 - [x] T032 [P] [US2] Extend visibility tests for owner/admin/manager/staff/participant roles, owner-only billing, and internal specs in `apps/backend/src/features/ai/source-visibility.test.ts`.
-- [ ] T033 [P] [US2] Add backend integration tests for cross-organization denial, classroom scoping, participant billing redaction, and internal source filtering in `apps/backend/src/app.test.ts`.
+- [x] T033 [P] [US2] Add backend integration tests for cross-organization denial, classroom scoping, participant billing redaction, and internal source filtering in `apps/backend/src/app.test.ts`.
 - [x] T034 [P] [US2] Add UI tests for hiding restricted source paths and showing safe owner-contact guidance in `apps/web/src/lib/components/ai/AiSourceList.svelte.spec.ts`.
 
 ### Implementation for User Story 2
@@ -104,7 +104,7 @@
 
 - [x] T040 [P] [US3] Add business-fact resolver tests for booking, service, invitation, participant, ticket, and billing summaries in `apps/backend/src/features/ai/business-facts.test.ts`.
 - [x] T041 [P] [US3] Add prompt tests verifying DB facts are structured separately from retrieved docs and excluded when not permitted in `apps/backend/src/features/ai/prompt.test.ts`.
-- [ ] T042 [P] [US3] Add backend integration tests for answer-time fact refresh and currentPage-as-hint-only behavior in `apps/backend/src/app.test.ts`.
+- [x] T042 [P] [US3] Add backend integration tests for answer-time fact refresh and currentPage-as-hint-only behavior in `apps/backend/src/app.test.ts`.
 
 ### Implementation for User Story 3
 
@@ -126,7 +126,7 @@
 
 ### Tests for User Story 4
 
-- [ ] T048 [P] [US4] Add backend integration tests for `POST /api/v1/ai/messages/{messageId}/feedback`, ownership checks, duplicate handling, and validation in `apps/backend/src/app.test.ts`.
+- [x] T048 [P] [US4] Add backend integration tests for `POST /api/v1/ai/messages/{messageId}/feedback`, ownership checks, duplicate handling, and validation in `apps/backend/src/app.test.ts`.
 - [x] T049 [P] [US4] Add widget tests for helpful/unhelpful feedback, optional comment, submitted state, and low-confidence human-support display in `apps/web/src/lib/components/ai/AiChatWidget.svelte.spec.ts`.
 
 ### Implementation for User Story 4
@@ -149,7 +149,7 @@
 ### Tests for User Story 5
 
 - [ ] T054 [P] [US5] Add indexer tests for markdown/spec chunking, checksum reuse, visibility metadata, and failed-run recording in `apps/backend/src/features/ai/indexer.test.ts`.
-- [ ] T055 [P] [US5] Add internal endpoint tests for operator access, normal-user denial, knowledge freshness response, and feedback themes response in `apps/backend/src/app.test.ts`.
+- [x] T055 [P] [US5] Add internal endpoint tests for operator access, normal-user denial, knowledge freshness response, and feedback themes response in `apps/backend/src/app.test.ts`.
 
 ### Implementation for User Story 5
 
