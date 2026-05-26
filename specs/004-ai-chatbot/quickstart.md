@@ -104,6 +104,17 @@ Keep existing bindings:
 
 ## Verification Commands
 
+Current AI route integration checks:
+
+```bash
+pnpm --filter @apps/backend exec vitest run src/app.test.ts --maxWorkers=1 -t "AI route integration"
+pnpm --filter @apps/backend exec vitest run src/app.test.ts --maxWorkers=1
+pnpm --filter @apps/backend exec vitest run src/features/ai/ai-contract.test.ts src/features/ai/ai-chat.usecase.test.ts src/features/ai/ai-feedback.usecase.test.ts src/features/ai/ai-route-context.test.ts --maxWorkers=1
+```
+
+Expected output: the focused `AI route integration` subset and the full backend app integration file exit with code 0.
+The usecase and contract sanity command exits with code 0 and confirms the route-facing contracts still match the current usecase behavior.
+
 Targeted backend checks:
 
 ```bash
@@ -176,9 +187,14 @@ Expected output for the implemented web AI subset:
 Docs and contract sync checks:
 
 ```bash
+pnpm --filter @apps/backend run typecheck
+pnpm --filter @apps/docs build
+pnpm exec prettier --check docs/README.md docs/ai-chat-reusable-architecture.md specs/004-ai-chatbot/quickstart.md apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
 pnpm exec prettier --check docs/ai-chat-proposal.md docs/ai-chat-reusable-architecture.md specs/004-ai-chatbot apps/docs/src/routes/manuals/common/ai-chatbot
 git diff --check
 ```
+
+For AI-chatbot-only documentation releases, stage only AI chatbot files. Leave unrelated billing, CI, `apps/backend/tmp/`, and `docs/reserve-app-ai-chatbot-reusable-plan.md` changes out of the PR unless the release scope explicitly includes them.
 
 Broader checks before completion:
 
@@ -237,6 +253,35 @@ Then verify:
 - `open_page` suggested actions with `href: null` render as text instead of links.
 - Feedback success/failure is visible and controls are disabled after success.
 - Layout remains usable at mobile and desktop widths without text overlap.
+
+## Production Promotion for AI Chatbot Docs/Test Updates
+
+Use the PR and CI path for production promotion. Do not deploy this release directly with local `wrangler deploy` commands.
+
+1. Push the AI chatbot branch and open a pull request.
+2. Confirm PR checks pass.
+3. Squash merge into `main`.
+4. Confirm `.github/workflows/deploy-workers.yml` completes backend, web, and docs deployment from the `main` push.
+5. Run the production smoke checks:
+
+```bash
+curl -sS https://api.wakureserve.com/api/health
+curl -I -s https://docs.wakureserve.com/manuals/common/ai-chatbot
+curl -I -s https://web.wakureserve.com
+```
+
+Expected output:
+
+- Backend health returns `{ "ok": true }`.
+- Docs manual returns HTTP 200.
+- Web app returns HTTP 200.
+
+After the Worker deployment is complete, refresh only the public AI chatbot manual in the production knowledge index:
+
+```bash
+pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --dry-run --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+CF_AI_GATEWAY_TOKEN=... WRANGLER_CLOUDFLARE_API_TOKEN=... pnpm --filter @apps/backend exec node scripts/index-ai-knowledge.mjs --apply --source-path apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+```
 
 ## Release Evidence
 

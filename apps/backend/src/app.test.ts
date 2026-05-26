@@ -1599,6 +1599,508 @@ const createClassroomOperatorInvitation = async ({
   };
 };
 
+type AiSourceVisibilityFixture =
+  | 'public'
+  | 'authenticated'
+  | 'participant'
+  | 'staff'
+  | 'manager'
+  | 'admin'
+  | 'owner';
+
+type AiKnowledgeFixtureInput = {
+  sourceKind?: 'docs' | 'specs' | 'faq';
+  title?: string;
+  sourcePath?: string;
+  content?: string;
+  visibility?: AiSourceVisibilityFixture;
+  internalOnly?: boolean;
+  organizationId?: string | null;
+  classroomId?: string | null;
+  indexStatus?: 'pending' | 'indexed' | 'failed' | 'stale' | 'deleted';
+  vectorStatus?: 'pending' | 'upserted' | 'failed' | 'deleted';
+  indexedAt?: Date;
+  lastError?: string | null;
+};
+
+type AiTestRuntimeOptions = {
+  answer?: string;
+  matchedChunkIds?: string[];
+  retrievalShouldFail?: boolean;
+  operatorEmails?: string;
+};
+
+const isRecordValue = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const uniqueAiTestToken = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+
+const createAiTestRuntime = ({
+  answer = 'AI統合テストの回答です。',
+  matchedChunkIds = [],
+  retrievalShouldFail = false,
+  operatorEmails,
+}: AiTestRuntimeOptions = {}) => {
+  let currentMatchedChunkIds = [...matchedChunkIds];
+  let shouldFailRetrieval = retrievalShouldFail;
+  const answerPrompts: Array<{ systemPrompt: string; userPrompt: string }> = [];
+
+  const aiRun = vi.fn(
+    async (
+      _model: string,
+      inputs: Record<string, unknown>,
+      _options?: Record<string, unknown>,
+    ): Promise<unknown> => {
+      if (Array.isArray(inputs.messages)) {
+        const messages = inputs.messages.filter(isRecordValue);
+        const readContent = (role: string) => {
+          const message = messages.find((entry) => entry.role === role);
+          return typeof message?.content === 'string' ? message.content : '';
+        };
+        answerPrompts.push({
+          systemPrompt: readContent('system'),
+          userPrompt: readContent('user'),
+        });
+
+        return {
+          response: JSON.stringify({
+            answer,
+            confidence: 86,
+            needsHumanSupport: false,
+            suggestedActions: [
+              {
+                label: '予約運用を開く',
+                href: '/admin/bookings',
+                actionKind: 'open_page',
+              },
+            ],
+          }),
+          usage: {
+            input_tokens: 21,
+            output_tokens: 8,
+          },
+          headers: {
+            get: (name: string) => (name.toLowerCase() === 'cf-aig-log-id' ? 'log-ai-test' : null),
+          },
+        };
+      }
+
+      return {
+        data: [[0.11, 0.22, 0.33]],
+        shape: [1, 3],
+      };
+    },
+  );
+
+  const query = vi.fn(
+    async (): Promise<{
+      matches: Array<{ id: string; score: number; metadata: Record<string, never> }>;
+    }> => {
+      if (shouldFailRetrieval) {
+        throw new Error('vectorize_unavailable');
+      }
+
+      return {
+        matches: currentMatchedChunkIds.map((id, index) => ({
+          id,
+          score: 0.92 - index * 0.08,
+          metadata: {},
+        })),
+      };
+    },
+  );
+
+  const env = {
+    BETTER_AUTH_URL: 'http://localhost:3000',
+    BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+    BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+    PUBLIC_EVENTS_ORG_SLUG: 'public-events-org',
+    PUBLIC_EVENTS_CLASSROOM_SLUG: 'public-events-org',
+    GOOGLE_CLIENT_ID: 'test-google-client-id',
+    GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+    INTERNAL_OPERATOR_EMAILS: operatorEmails,
+    AI: {
+      run: aiRun,
+    },
+    AI_KNOWLEDGE_INDEX: {
+      query,
+    },
+    AI_ANSWER_MODEL: 'test-answer-model',
+    AI_EMBEDDING_MODEL: 'test-embedding-model',
+  };
+
+  const authRuntime = createAuthRuntime({
+    database: drizzle(d1),
+    env,
+  });
+
+  return {
+    application: createApp(authRuntime),
+    aiRun,
+    query,
+    answerPrompts,
+    setMatchedChunkIds: (chunkIds: string[]) => {
+      currentMatchedChunkIds = [...chunkIds];
+    },
+    setRetrievalShouldFail: (value: boolean) => {
+      shouldFailRetrieval = value;
+    },
+  };
+};
+
+const createAiOwnerFixture = async ({
+  application,
+  prefix,
+  emailVerified = false,
+}: {
+  application: ReturnType<typeof createApp>;
+  prefix: string;
+  emailVerified?: boolean;
+}) => {
+  const token = uniqueAiTestToken(prefix);
+  const email = `${token}@example.com`;
+  const slug = token;
+  const agent = createAuthAgent(application);
+
+  await signUpUser({
+    agent,
+    name: `AI Owner ${token}`,
+    email,
+  });
+  if (emailVerified) {
+    await setUserEmailVerified({ email });
+  }
+  const organizationId = await createOrganization({
+    agent,
+    name: `AI Org ${token}`,
+    slug,
+  });
+  const classroomId = await selectClassroomIdBySlug(organizationId, slug);
+  expect(classroomId).toBeTruthy();
+
+  return {
+    agent,
+    email,
+    userId: (await selectUserIdByEmail(email)) as string,
+    organizationId,
+    organizationSlug: slug,
+    classroomId: classroomId as string,
+  };
+};
+
+const createAiAuthenticatedUser = async ({
+  application,
+  prefix,
+  emailVerified = false,
+}: {
+  application: ReturnType<typeof createApp>;
+  prefix: string;
+  emailVerified?: boolean;
+}) => {
+  const token = uniqueAiTestToken(prefix);
+  const email = `${token}@example.com`;
+  const agent = createAuthAgent(application);
+
+  await signUpUser({
+    agent,
+    name: `AI User ${token}`,
+    email,
+  });
+  if (emailVerified) {
+    await setUserEmailVerified({ email });
+  }
+
+  return {
+    agent,
+    email,
+    userId: (await selectUserIdByEmail(email)) as string,
+  };
+};
+
+const createAiParticipantFixture = async ({
+  application,
+  organizationId,
+  classroomId,
+  prefix,
+}: {
+  application: ReturnType<typeof createApp>;
+  organizationId: string;
+  classroomId: string;
+  prefix: string;
+}) => {
+  const user = await createAiAuthenticatedUser({
+    application,
+    prefix,
+  });
+
+  await d1
+    .prepare(
+      'INSERT INTO participant (id, organization_id, classroom_id, user_id, email, name) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      crypto.randomUUID(),
+      organizationId,
+      classroomId,
+      user.userId,
+      user.email,
+      `AI Participant ${prefix}`,
+    )
+    .run();
+
+  return user;
+};
+
+const insertAiClassroomFixture = async ({
+  organizationId,
+  slug,
+  name,
+}: {
+  organizationId: string;
+  slug: string;
+  name: string;
+}) => {
+  const id = crypto.randomUUID();
+  await d1
+    .prepare('INSERT INTO classroom (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
+    .bind(id, organizationId, slug, name)
+    .run();
+  return id;
+};
+
+const insertAiKnowledgeFixture = async ({
+  sourceKind = 'docs',
+  title = 'AI test knowledge',
+  sourcePath,
+  content = 'AI test knowledge content',
+  visibility = 'authenticated',
+  internalOnly = false,
+  organizationId = null,
+  classroomId = null,
+  indexStatus = 'indexed',
+  vectorStatus = 'upserted',
+  indexedAt = new Date('2026-05-20T00:00:00.000Z'),
+  lastError = null,
+}: AiKnowledgeFixtureInput = {}) => {
+  const documentId = crypto.randomUUID();
+  const chunkId = crypto.randomUUID();
+  const resolvedSourcePath = sourcePath ?? `ai-test/${documentId}.md`;
+  const now = Date.now();
+
+  await d1
+    .prepare(
+      'INSERT INTO ai_knowledge_document (id, source_kind, source_path, title, locale, visibility, internal_only, organization_id, classroom_id, feature, checksum, index_status, indexed_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      documentId,
+      sourceKind,
+      resolvedSourcePath,
+      title,
+      'ja',
+      visibility,
+      internalOnly ? 1 : 0,
+      organizationId,
+      classroomId,
+      'ai-test',
+      `checksum-${documentId}`,
+      indexStatus,
+      indexedAt.getTime(),
+      lastError,
+      now,
+      now,
+    )
+    .run();
+
+  await d1
+    .prepare(
+      'INSERT INTO ai_knowledge_chunk (id, document_id, chunk_index, content, content_hash, title, source_kind, source_path, locale, visibility, internal_only, organization_id, classroom_id, feature, tags_json, indexed_at, vector_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      chunkId,
+      documentId,
+      0,
+      content,
+      `hash-${chunkId}`,
+      title,
+      sourceKind,
+      resolvedSourcePath,
+      'ja',
+      visibility,
+      internalOnly ? 1 : 0,
+      organizationId,
+      classroomId,
+      'ai-test',
+      JSON.stringify(['ai-test']),
+      indexedAt.getTime(),
+      vectorStatus,
+    )
+    .run();
+
+  return {
+    documentId,
+    chunkId,
+    sourcePath: resolvedSourcePath,
+    title,
+    indexedAt,
+  };
+};
+
+const postAiChat = async (
+  agent: ReturnType<typeof createAuthAgent>,
+  body: Record<string, unknown>,
+) =>
+  agent.request('/api/v1/ai/chat', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+const postAiFeedback = async ({
+  agent,
+  messageId,
+  body,
+}: {
+  agent: ReturnType<typeof createAuthAgent>;
+  messageId: string;
+  body: Record<string, unknown>;
+}) =>
+  agent.request(`/api/v1/ai/messages/${encodeURIComponent(messageId)}/feedback`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+const selectAiOperationRowCounts = async (organizationId: string) => {
+  const [bookingRow, ticketPurchaseRow, ticketPackRow, invitationRow] = await Promise.all([
+    d1
+      .prepare('SELECT COUNT(*) as count FROM booking WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>(),
+    d1
+      .prepare('SELECT COUNT(*) as count FROM ticket_purchase WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>(),
+    d1
+      .prepare(
+        'SELECT COUNT(*) as count FROM ticket_pack WHERE participant_id IN (SELECT id FROM participant WHERE organization_id = ?)',
+      )
+      .bind(organizationId)
+      .first<{ count: number | string }>(),
+    d1
+      .prepare('SELECT COUNT(*) as count FROM invitation WHERE organization_id = ?')
+      .bind(organizationId)
+      .first<{ count: number | string }>(),
+  ]);
+
+  return {
+    bookingCount: Number(bookingRow?.count ?? 0),
+    ticketPurchaseCount: Number(ticketPurchaseRow?.count ?? 0),
+    ticketPackCount: Number(ticketPackRow?.count ?? 0),
+    invitationCount: Number(invitationRow?.count ?? 0),
+  };
+};
+
+const selectAiConversationRow = async (conversationId: string) =>
+  d1
+    .prepare(
+      'SELECT id, actor_user_id as actorUserId, subject_id as subjectId, classroom_id as classroomId, title FROM ai_conversation WHERE id = ? LIMIT 1',
+    )
+    .bind(conversationId)
+    .first<{
+      id: string;
+      actorUserId: string;
+      subjectId: string;
+      classroomId: string | null;
+      title: string | null;
+    }>();
+
+const selectAiMessagesForConversation = async (conversationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT id, role, content, sources_json as sourcesJson, retrieved_context_json as retrievedContextJson, generation_status as generationStatus, error_code as errorCode, error_summary as errorSummary FROM ai_message WHERE conversation_id = ? ORDER BY created_at ASC',
+    )
+    .bind(conversationId)
+    .all<{
+      id: string;
+      role: string;
+      content: string;
+      sourcesJson: string | null;
+      retrievedContextJson: string | null;
+      generationStatus: string | null;
+      errorCode: string | null;
+      errorSummary: string | null;
+    }>();
+
+  return result.results;
+};
+
+const selectAiUsageEventsForConversation = async (conversationId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT id, message_id as messageId, generation_status as generationStatus, error_code as errorCode, error_summary as errorSummary FROM ai_usage_event WHERE conversation_id = ? ORDER BY created_at ASC',
+    )
+    .bind(conversationId)
+    .all<{
+      id: string;
+      messageId: string | null;
+      generationStatus: string;
+      errorCode: string | null;
+      errorSummary: string | null;
+    }>();
+
+  return result.results;
+};
+
+const selectAiFeedbackRowsForMessage = async (messageId: string) => {
+  const result = await d1
+    .prepare(
+      'SELECT id, message_id as messageId, user_id as userId, rating, comment FROM ai_feedback WHERE message_id = ? ORDER BY created_at ASC',
+    )
+    .bind(messageId)
+    .all<{
+      id: string;
+      messageId: string;
+      userId: string;
+      rating: string;
+      comment: string | null;
+    }>();
+
+  return result.results;
+};
+
+const insertAiFeedbackFixture = async ({
+  messageId,
+  userId,
+  rating,
+  comment,
+  createdAt,
+}: {
+  messageId: string;
+  userId: string;
+  rating: 'helpful' | 'unhelpful';
+  comment?: string | null;
+  createdAt: Date;
+}) => {
+  await d1
+    .prepare(
+      'INSERT INTO ai_feedback (id, message_id, user_id, rating, comment, resolved, created_at, aggregate_retention_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      crypto.randomUUID(),
+      messageId,
+      userId,
+      rating,
+      comment ?? null,
+      0,
+      createdAt.getTime(),
+      createdAt.getTime() + 365 * 24 * 60 * 60 * 1000,
+    )
+    .run();
+};
+
 beforeAll(async () => {
   mf = new Miniflare({
     modules: true,
@@ -1798,6 +2300,600 @@ describe('backend app', () => {
 
     const detailResponse = await app.request(buildInvitationDetailPath('dummy-id'));
     expect(detailResponse.status).toBe(401);
+  });
+
+  describe('AI route integration', () => {
+    it('rejects unauthenticated and invalid chat requests', async () => {
+      const runtime = createAiTestRuntime();
+
+      const unauthenticatedResponse = await runtime.application.request('/api/v1/ai/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: '予約枠の作り方を教えてください',
+        }),
+      });
+      expect(unauthenticatedResponse.status).toBe(401);
+      expect(await toJson(unauthenticatedResponse)).toEqual({
+        message: 'Unauthorized or forbidden.',
+      });
+
+      const owner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-invalid-chat',
+      });
+      const invalidBodyResponse = await postAiChat(owner.agent, {
+        message: '',
+        organizationId: owner.organizationId,
+      });
+      expect(invalidBodyResponse.status).toBe(400);
+    });
+
+    it('persists a grounded chat answer with sources, usage, and no operation side effects', async () => {
+      const runtime = createAiTestRuntime({
+        answer: '予約枠は予約運用画面から作成できます。',
+      });
+      const owner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-chat-success',
+      });
+      const knowledge = await insertAiKnowledgeFixture({
+        title: '予約枠の作成手順',
+        sourcePath: `docs/ai-chat-success-${crypto.randomUUID()}.md`,
+        content: '予約枠は管理画面の予約運用から作成します。',
+        visibility: 'authenticated',
+        organizationId: owner.organizationId,
+        classroomId: owner.classroomId,
+      });
+      runtime.setMatchedChunkIds([knowledge.chunkId]);
+
+      const beforeCounts = await selectAiOperationRowCounts(owner.organizationId);
+      const response = await postAiChat(owner.agent, {
+        message: '予約枠の作り方を教えてください',
+        organizationId: owner.organizationId,
+      });
+
+      expect(response.status).toBe(200);
+      const payload = (await toJson(response)) as Record<string, unknown>;
+      expect(typeof payload.conversationId).toBe('string');
+      expect(typeof payload.messageId).toBe('string');
+      expect(payload).toMatchObject({
+        answer: '予約枠は予約運用画面から作成できます。',
+        confidence: 86,
+        needsHumanSupport: false,
+      });
+      expect(payload.rateLimit).toMatchObject({
+        userRemainingThisHour: expect.any(Number),
+        organizationRemainingToday: expect.any(Number),
+      });
+      expect(payload.suggestedActions).toEqual([
+        {
+          label: '予約運用を開く',
+          href: '/admin/bookings',
+          actionKind: 'open_page',
+        },
+      ]);
+
+      const sources = payload.sources as Array<Record<string, unknown>>;
+      expect(sources).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            title: knowledge.title,
+            sourcePath: knowledge.sourcePath,
+            chunkId: knowledge.chunkId,
+            visibility: 'authenticated',
+          }),
+          expect.objectContaining({
+            sourceKind: 'db_summary',
+            title: '現在の業務データ',
+          }),
+        ]),
+      );
+
+      const conversation = await selectAiConversationRow(payload.conversationId as string);
+      expect(conversation).toMatchObject({
+        id: payload.conversationId,
+        actorUserId: owner.userId,
+        subjectId: owner.organizationId,
+        classroomId: owner.classroomId,
+      });
+
+      const messages = await selectAiMessagesForConversation(payload.conversationId as string);
+      expect(messages).toHaveLength(2);
+      expect(messages.find((message) => message.role === 'user')).toMatchObject({
+        content: '予約枠の作り方を教えてください',
+      });
+      const assistantMessage = messages.find((message) => message.role === 'assistant');
+      expect(assistantMessage).toMatchObject({
+        id: payload.messageId,
+        content: '予約枠は予約運用画面から作成できます。',
+        generationStatus: 'generated',
+        errorCode: null,
+      });
+      expect(JSON.parse(assistantMessage?.sourcesJson ?? '[]')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            chunkId: knowledge.chunkId,
+          }),
+        ]),
+      );
+
+      const usageEvents = await selectAiUsageEventsForConversation(
+        payload.conversationId as string,
+      );
+      expect(usageEvents).toEqual([
+        expect.objectContaining({
+          messageId: payload.messageId,
+          generationStatus: 'generated',
+          errorCode: null,
+        }),
+      ]);
+      expect(await selectAiOperationRowCounts(owner.organizationId)).toEqual(beforeCounts);
+      expect(runtime.answerPrompts[0]?.userPrompt).toContain('Retrieved docs:');
+    });
+
+    it('stores retrieval fallback status when Vectorize search fails', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const runtime = createAiTestRuntime({
+          retrievalShouldFail: true,
+        });
+        const owner = await createAiOwnerFixture({
+          application: runtime.application,
+          prefix: 'ai-chat-retrieval-fallback',
+        });
+
+        const response = await postAiChat(owner.agent, {
+          message: '予約状況を確認したいです',
+          organizationId: owner.organizationId,
+        });
+
+        expect(response.status).toBe(200);
+        const payload = (await toJson(response)) as Record<string, unknown>;
+        expect(payload.answer).toContain('ナレッジ検索が一時的に利用できないため');
+        expect(payload.needsHumanSupport).toBe(true);
+        expect(payload.confidence).toBe(30);
+
+        const messages = await selectAiMessagesForConversation(payload.conversationId as string);
+        const assistantMessage = messages.find((message) => message.role === 'assistant');
+        expect(assistantMessage).toMatchObject({
+          id: payload.messageId,
+          generationStatus: 'fallback_retrieval_failed',
+          errorCode: 'retrieval_failed',
+        });
+        expect(assistantMessage?.errorSummary).toContain('vectorize_unavailable');
+        expect(JSON.parse(assistantMessage?.retrievedContextJson ?? '{}')).toMatchObject({
+          retrievalErrorSummary: expect.stringContaining('vectorize_unavailable'),
+        });
+
+        const usageEvents = await selectAiUsageEventsForConversation(
+          payload.conversationId as string,
+        );
+        expect(usageEvents).toEqual([
+          expect.objectContaining({
+            messageId: payload.messageId,
+            generationStatus: 'fallback_retrieval_failed',
+            errorCode: 'retrieval_failed',
+          }),
+        ]);
+        expect(runtime.answerPrompts).toHaveLength(0);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('denies cross-organization chat and rejects conversation reuse across scopes', async () => {
+      const runtime = createAiTestRuntime();
+      const owner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-cross-org-owner',
+      });
+      const otherOwner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-cross-org-other',
+      });
+
+      const crossOrganizationResponse = await postAiChat(owner.agent, {
+        message: '別組織の情報を見せてください',
+        organizationId: otherOwner.organizationId,
+      });
+      expect(crossOrganizationResponse.status).toBe(401);
+      expect(await toJson(crossOrganizationResponse)).toEqual({
+        message: 'Unauthorized or forbidden.',
+      });
+
+      const firstChatResponse = await postAiChat(owner.agent, {
+        message: '最初の会話です',
+        organizationId: owner.organizationId,
+      });
+      expect(firstChatResponse.status).toBe(200);
+      const firstChatPayload = (await toJson(firstChatResponse)) as Record<string, unknown>;
+
+      const secondOrganizationSlug = uniqueAiTestToken('ai-conversation-scope');
+      const secondOrganizationId = await createOrganization({
+        agent: owner.agent,
+        name: 'AI Conversation Scope Org',
+        slug: secondOrganizationSlug,
+      });
+
+      const reuseResponse = await postAiChat(owner.agent, {
+        message: '別組織で同じ会話を使います',
+        organizationId: secondOrganizationId,
+        conversationId: firstChatPayload.conversationId,
+      });
+      expect(reuseResponse.status).toBe(403);
+      expect(await toJson(reuseResponse)).toEqual({
+        message: 'Conversation scope is not permitted.',
+      });
+    });
+
+    it('keeps classroom scoping inside the requested organization', async () => {
+      const runtime = createAiTestRuntime();
+      const owner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-classroom-scope',
+      });
+      const secondClassroomId = await insertAiClassroomFixture({
+        organizationId: owner.organizationId,
+        slug: uniqueAiTestToken('ai-second-room'),
+        name: 'AI Second Room',
+      });
+      const otherOwner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-other-classroom-owner',
+      });
+
+      const wrongOrganizationClassroomResponse = await postAiChat(owner.agent, {
+        message: '別組織の教室を見せてください',
+        organizationId: owner.organizationId,
+        classroomId: otherOwner.classroomId,
+      });
+      expect(wrongOrganizationClassroomResponse.status).toBe(401);
+
+      const knowledge = await insertAiKnowledgeFixture({
+        title: '第二教室の予約案内',
+        sourcePath: `docs/ai-second-room-${crypto.randomUUID()}.md`,
+        content: '第二教室では予約枠の公開前に定員を確認します。',
+        visibility: 'authenticated',
+        organizationId: owner.organizationId,
+        classroomId: secondClassroomId,
+      });
+      runtime.setMatchedChunkIds([knowledge.chunkId]);
+
+      const response = await postAiChat(owner.agent, {
+        message: '第二教室の予約運用を教えてください',
+        organizationId: owner.organizationId,
+        classroomId: secondClassroomId,
+      });
+      expect(response.status).toBe(200);
+      const payload = (await toJson(response)) as Record<string, unknown>;
+      const conversation = await selectAiConversationRow(payload.conversationId as string);
+      expect(conversation?.classroomId).toBe(secondClassroomId);
+      expect(payload.sources).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            chunkId: knowledge.chunkId,
+            sourcePath: knowledge.sourcePath,
+          }),
+        ]),
+      );
+    });
+
+    it('treats currentPage as a hint without expanding participant billing or source access', async () => {
+      const runtime = createAiTestRuntime({
+        answer: '請求の詳細はownerへ確認してください。',
+      });
+      const owner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-participant-redaction',
+      });
+      await setOrganizationBillingState({
+        organizationId: owner.organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'active',
+        billingInterval: 'month',
+        currentPeriodStart: new Date('2026-05-01T00:00:00.000Z'),
+        currentPeriodEnd: new Date('2026-06-01T00:00:00.000Z'),
+        stripeCustomerId: `cus_${crypto.randomUUID()}`,
+        stripeSubscriptionId: `sub_${crypto.randomUUID()}`,
+        stripePriceId: `price_${crypto.randomUUID()}`,
+      });
+      const participant = await createAiParticipantFixture({
+        application: runtime.application,
+        organizationId: owner.organizationId,
+        classroomId: owner.classroomId,
+        prefix: 'ai-participant-redaction-user',
+      });
+      const participantKnowledge = await insertAiKnowledgeFixture({
+        title: '参加者向け予約案内',
+        sourcePath: `docs/ai-participant-${crypto.randomUUID()}.md`,
+        content: '参加者は予約確認画面で自分の予約状況を確認できます。',
+        visibility: 'participant',
+        organizationId: owner.organizationId,
+        classroomId: owner.classroomId,
+      });
+      const ownerOnlyKnowledge = await insertAiKnowledgeFixture({
+        title: 'Owner billing detail',
+        sourcePath: `docs/ai-owner-billing-${crypto.randomUUID()}.md`,
+        content:
+          'Owner-only billing detail: 課金プラン premium 契約状態 active 支払い問題開始 なし',
+        visibility: 'owner',
+        organizationId: owner.organizationId,
+        classroomId: owner.classroomId,
+      });
+      const internalKnowledge = await insertAiKnowledgeFixture({
+        title: 'Internal participant note',
+        sourcePath: `docs/ai-internal-${crypto.randomUUID()}.md`,
+        content: 'Internal-only participant note should not be exposed.',
+        visibility: 'participant',
+        internalOnly: true,
+        organizationId: owner.organizationId,
+        classroomId: owner.classroomId,
+      });
+      runtime.setMatchedChunkIds([
+        ownerOnlyKnowledge.chunkId,
+        internalKnowledge.chunkId,
+        participantKnowledge.chunkId,
+      ]);
+
+      const response = await postAiChat(participant.agent, {
+        message: '請求と予約状況について教えてください',
+        organizationId: owner.organizationId,
+        classroomId: owner.classroomId,
+        currentPage: '/admin/billing?tab=payment',
+      });
+
+      expect(response.status).toBe(200);
+      const payload = (await toJson(response)) as Record<string, unknown>;
+      const sources = payload.sources as Array<Record<string, unknown>>;
+      expect(sources.some((source) => source.chunkId === participantKnowledge.chunkId)).toBe(true);
+      expect(sources.some((source) => source.chunkId === ownerOnlyKnowledge.chunkId)).toBe(false);
+      expect(sources.some((source) => source.chunkId === internalKnowledge.chunkId)).toBe(false);
+
+      const prompt = runtime.answerPrompts.at(-1)?.userPrompt ?? '';
+      expect(prompt).toContain('currentPageHint: /admin/billing?tab=payment');
+      expect(prompt).toContain('課金情報: ownerのみ詳細を確認できます。ownerへ確認してください。');
+      expect(prompt).not.toContain('Owner-only billing detail');
+      expect(prompt).not.toContain('課金プラン: premium');
+      expect(prompt).not.toContain('契約状態: active');
+      expect(prompt).not.toContain('支払い問題開始:');
+    });
+
+    it('upserts feedback only for the message owner and validates feedback payloads', async () => {
+      const runtime = createAiTestRuntime();
+      const owner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-feedback-owner',
+      });
+      const chatResponse = await postAiChat(owner.agent, {
+        message: '予約枠の見方を教えてください',
+        organizationId: owner.organizationId,
+      });
+      expect(chatResponse.status).toBe(200);
+      const chatPayload = (await toJson(chatResponse)) as Record<string, unknown>;
+      const messageId = chatPayload.messageId as string;
+
+      const helpfulResponse = await postAiFeedback({
+        agent: owner.agent,
+        messageId,
+        body: {
+          rating: 'helpful',
+          comment: 'わかりやすいです',
+        },
+      });
+      expect(helpfulResponse.status).toBe(200);
+      expect(await toJson(helpfulResponse)).toMatchObject({
+        messageId,
+        rating: 'helpful',
+      });
+      expect(await selectAiFeedbackRowsForMessage(messageId)).toEqual([
+        expect.objectContaining({
+          userId: owner.userId,
+          rating: 'helpful',
+          comment: 'わかりやすいです',
+        }),
+      ]);
+
+      const updatedResponse = await postAiFeedback({
+        agent: owner.agent,
+        messageId,
+        body: {
+          rating: 'unhelpful',
+          comment: '根拠が足りません',
+        },
+      });
+      expect(updatedResponse.status).toBe(200);
+      const updatedRows = await selectAiFeedbackRowsForMessage(messageId);
+      expect(updatedRows).toHaveLength(1);
+      expect(updatedRows[0]).toMatchObject({
+        userId: owner.userId,
+        rating: 'unhelpful',
+        comment: '根拠が足りません',
+      });
+
+      const sameOrganizationUser = await createAiAuthenticatedUser({
+        application: runtime.application,
+        prefix: 'ai-feedback-same-org',
+      });
+      await insertOrganizationMember({
+        organizationId: owner.organizationId,
+        userId: sameOrganizationUser.userId,
+        role: 'member',
+      });
+      const setSameOrganizationActiveResponse = await sameOrganizationUser.agent.request(
+        '/api/v1/auth/organizations/set-active',
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            organizationId: owner.organizationId,
+          }),
+        },
+      );
+      expect(setSameOrganizationActiveResponse.status).toBe(200);
+      const sameOrganizationResponse = await postAiFeedback({
+        agent: sameOrganizationUser.agent,
+        messageId,
+        body: {
+          rating: 'helpful',
+        },
+      });
+      expect(sameOrganizationResponse.status).toBe(403);
+      expect(await selectAiFeedbackRowsForMessage(messageId)).toHaveLength(1);
+
+      const otherOwner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-feedback-other-org',
+      });
+      const otherOrganizationResponse = await postAiFeedback({
+        agent: otherOwner.agent,
+        messageId,
+        body: {
+          rating: 'helpful',
+        },
+      });
+      expect(otherOrganizationResponse.status).toBe(403);
+      expect(await selectAiFeedbackRowsForMessage(messageId)).toHaveLength(1);
+
+      const invalidRatingResponse = await postAiFeedback({
+        agent: owner.agent,
+        messageId,
+        body: {
+          rating: 'neutral',
+        },
+      });
+      expect(invalidRatingResponse.status).toBe(400);
+
+      const invalidCommentResponse = await postAiFeedback({
+        agent: owner.agent,
+        messageId,
+        body: {
+          rating: 'helpful',
+          comment: 'a'.repeat(1001),
+        },
+      });
+      expect(invalidCommentResponse.status).toBe(400);
+      expect(await selectAiFeedbackRowsForMessage(messageId)).toEqual(updatedRows);
+    });
+
+    it('protects internal AI endpoints and returns knowledge freshness and feedback themes', async () => {
+      const operatorEmail = `${uniqueAiTestToken('ai-operator')}@example.com`;
+      const runtime = createAiTestRuntime({
+        operatorEmails: operatorEmail,
+      });
+      const indexedAt = new Date('2026-05-22T03:04:05.000Z');
+      const knowledge = await insertAiKnowledgeFixture({
+        title: 'Internal freshness fixture',
+        sourcePath: `docs/internal-freshness-${crypto.randomUUID()}.md`,
+        visibility: 'owner',
+        indexStatus: 'indexed',
+        indexedAt,
+        lastError: null,
+      });
+
+      const owner = await createAiOwnerFixture({
+        application: runtime.application,
+        prefix: 'ai-feedback-theme-owner',
+      });
+      const firstChatResponse = await postAiChat(owner.agent, {
+        message: '低評価テーマ用の回答1',
+        organizationId: owner.organizationId,
+      });
+      const secondChatResponse = await postAiChat(owner.agent, {
+        message: '低評価テーマ用の回答2',
+        organizationId: owner.organizationId,
+      });
+      expect(firstChatResponse.status).toBe(200);
+      expect(secondChatResponse.status).toBe(200);
+      const firstChatPayload = (await toJson(firstChatResponse)) as Record<string, unknown>;
+      const secondChatPayload = (await toJson(secondChatResponse)) as Record<string, unknown>;
+      const longComment =
+        '回答が古く、予約運用の現在仕様と異なります。画面名と手順を最新化してください。'.repeat(2);
+      await insertAiFeedbackFixture({
+        messageId: firstChatPayload.messageId as string,
+        userId: owner.userId,
+        rating: 'unhelpful',
+        comment: longComment,
+        createdAt: new Date('2026-05-23T00:00:00.000Z'),
+      });
+      await insertAiFeedbackFixture({
+        messageId: secondChatPayload.messageId as string,
+        userId: owner.userId,
+        rating: 'unhelpful',
+        comment: longComment,
+        createdAt: new Date('2026-05-24T00:00:00.000Z'),
+      });
+
+      const unauthenticatedKnowledgeResponse = await runtime.application.request(
+        '/api/v1/internal/ai/knowledge',
+      );
+      expect(unauthenticatedKnowledgeResponse.status).toBe(401);
+      const unauthenticatedThemesResponse = await runtime.application.request(
+        '/api/v1/internal/ai/feedback-themes',
+      );
+      expect(unauthenticatedThemesResponse.status).toBe(401);
+
+      const normalUser = await createAiAuthenticatedUser({
+        application: runtime.application,
+        prefix: 'ai-internal-normal',
+      });
+      const normalKnowledgeResponse = await normalUser.agent.request(
+        '/api/v1/internal/ai/knowledge',
+      );
+      expect(normalKnowledgeResponse.status).toBe(403);
+      const normalThemesResponse = await normalUser.agent.request(
+        '/api/v1/internal/ai/feedback-themes',
+      );
+      expect(normalThemesResponse.status).toBe(403);
+
+      const operatorAgent = createAuthAgent(runtime.application);
+      await signUpUser({
+        agent: operatorAgent,
+        name: 'AI Internal Operator',
+        email: operatorEmail,
+      });
+      await setUserEmailVerified({ email: operatorEmail });
+
+      const knowledgeResponse = await operatorAgent.request('/api/v1/internal/ai/knowledge');
+      expect(knowledgeResponse.status).toBe(200);
+      const knowledgePayload = (await toJson(knowledgeResponse)) as {
+        documents?: Array<Record<string, unknown>>;
+      };
+      expect(knowledgePayload.documents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentId: knowledge.documentId,
+            sourceKind: 'docs',
+            title: 'Internal freshness fixture',
+            sourcePath: knowledge.sourcePath,
+            visibility: 'owner',
+            internalOnly: false,
+            indexStatus: 'indexed',
+            indexedAt: indexedAt.toISOString(),
+            lastError: null,
+          }),
+        ]),
+      );
+
+      const themesResponse = await operatorAgent.request('/api/v1/internal/ai/feedback-themes');
+      expect(themesResponse.status).toBe(200);
+      const themesPayload = (await toJson(themesResponse)) as {
+        themes?: Array<Record<string, unknown>>;
+      };
+      expect(themesPayload.themes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            theme: longComment.slice(0, 80),
+            count: 2,
+            latestAt: new Date('2026-05-24T00:00:00.000Z').toISOString(),
+          }),
+        ]),
+      );
+    });
   });
 
   it('allows first registrants and owners to create organizations but blocks invited users', async () => {
