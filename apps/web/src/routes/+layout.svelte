@@ -8,6 +8,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { SvelteURL } from 'svelte/reactivity';
 	import { AiChatWidget } from '$lib/components/ai';
+	import type { AiChatContext } from '@repo/saas-chatbot-core';
 	import ContextSwitcher from '$lib/components/context-switcher.svelte';
 	import { Toaster, toast } from 'svelte-sonner';
 	import { Badge } from '$lib/components/ui/badge';
@@ -70,7 +71,8 @@
 	const brandIcon16Href = '/brand/reservation-logo-16x16.svg';
 	const brandIcon32Href = '/brand/reservation-logo-32x32.svg';
 	const brandAppleTouchHref = '/brand/reservation-logo-180x180.svg';
-	const aiChatFeatureEnabled = env.PUBLIC_AI_CHAT_ENABLED !== 'false';
+	const shouldShowAiChatWidget = (featureFlag: string | undefined, loggedIn: boolean) =>
+		featureFlag !== 'false' && loggedIn;
 
 	let loadingSession = $state(true);
 	let isLoggedIn = $state(false);
@@ -187,6 +189,14 @@
 
 	const rawPathname = $derived(page.url.pathname);
 	const pathname = $derived(getRoutePathFromUrlPath(rawPathname));
+	const aiChatWidgetEnabled = $derived(
+		shouldShowAiChatWidget(env.PUBLIC_AI_CHAT_ENABLED, isLoggedIn)
+	);
+	const aiChatContext: AiChatContext = $derived({
+		organizationId: activeOrganization?.id ?? null,
+		classroomId: activeClassroom?.id ?? null,
+		currentPage: pathname
+	});
 	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
 	const showSidebarLayout = $derived(
 		!isPublicAuthRoute && pathname !== '/admin/onboarding' && isLoggedIn
@@ -1258,10 +1268,10 @@
 		</div>
 	{/if}
 	<AiChatWidget
-		enabled={isLoggedIn && aiChatFeatureEnabled}
-		organizationId={activeOrganization?.id ?? null}
-		classroomId={activeClassroom?.id ?? null}
-		currentPage={pathname}
+		enabled={aiChatWidgetEnabled}
+		organizationId={aiChatContext.organizationId}
+		classroomId={aiChatContext.classroomId}
+		currentPage={aiChatContext.currentPage}
 	/>
 {:else}
 	<div class="min-h-screen bg-background">

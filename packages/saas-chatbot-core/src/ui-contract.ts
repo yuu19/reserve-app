@@ -65,6 +65,16 @@ export type AiFeedbackResponse = {
   rating: AiFeedbackRating;
 };
 
+export type AiChatUiStatus = 'closed' | 'ready' | 'sending' | 'error';
+
+export type AiChatClientErrorPayload = {
+  kind: 'api' | 'network' | 'parse';
+  message: string;
+  status?: number;
+  statusText?: string;
+  retryAfterSeconds?: number;
+};
+
 export type AiChatMessage = {
   id: string;
   role: 'user' | 'assistant';

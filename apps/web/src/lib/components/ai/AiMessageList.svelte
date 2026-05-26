@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import type { AiChatMessage } from '@repo/saas-chatbot-core';
+	import type { AiChatMessage, AiFeedbackRating } from '@repo/saas-chatbot-core';
 	import { AlertTriangle, Bot, Check, ThumbsDown, ThumbsUp, UserRound } from '@lucide/svelte';
 	import AiSourceList from './AiSourceList.svelte';
 	import AiSuggestedActions from './AiSuggestedActions.svelte';
@@ -8,7 +8,7 @@
 	type Props = {
 		messages?: AiChatMessage[];
 		sending?: boolean;
-		onFeedback?: (messageId: string, rating: 'helpful' | 'unhelpful', comment?: string) => void;
+		onFeedback?: (messageId: string, rating: AiFeedbackRating, comment?: string) => void;
 	};
 
 	let { messages = [], sending = false, onFeedback }: Props = $props();

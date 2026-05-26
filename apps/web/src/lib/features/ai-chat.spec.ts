@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AiChatResponse } from '@repo/saas-chatbot-core';
+import { createAiClientError } from '$lib/ai-client';
 import { createAiChatState, type AiChatClient } from './ai-chat.svelte';
 
 const createClientMock = (): AiChatClient => ({
@@ -31,6 +32,7 @@ describe('ai-chat state', () => {
 		});
 
 		const state = createAiChatState(client);
+		state.openConversation();
 		state.input = '予約枠を作るには？';
 		await state.send({
 			organizationId: 'org-a',
@@ -47,6 +49,7 @@ describe('ai-chat state', () => {
 		});
 		expect(state.conversationId).toBe('conv-a');
 		expect(state.input).toBe('');
+		expect(state.status).toBe('ready');
 		expect(state.messages).toHaveLength(2);
 		expect(state.messages[1]).toMatchObject({
 			id: 'msg-assistant-a',
@@ -62,15 +65,29 @@ describe('ai-chat state', () => {
 		});
 	});
 
-	it('restores input and exposes an error when the chat request fails', async () => {
+	it('restores input and exposes a typed API error when the chat request fails', async () => {
 		const client = createClientMock();
-		vi.mocked(client.ask).mockRejectedValue(new Error('AIサポートを利用できません。'));
+		vi.mocked(client.ask).mockRejectedValue(
+			createAiClientError({
+				kind: 'api',
+				status: 429,
+				message: 'AIサポートを利用できません。 5分後に再試行できます。',
+				retryAfterSeconds: 300
+			})
+		);
 
 		const state = createAiChatState(client);
+		state.openConversation();
 		state.input = 'エラーになる質問';
 		await state.send();
 
-		expect(state.error).toBe('AIサポートを利用できません。');
+		expect(state.error).toBe('AIサポートを利用できません。 5分後に再試行できます。');
+		expect(state.status).toBe('error');
+		expect(state.lastClientError).toMatchObject({
+			kind: 'api',
+			status: 429,
+			retryAfterSeconds: 300
+		});
 		expect(state.input).toBe('エラーになる質問');
 		expect(state.sending).toBe(false);
 		expect(state.messages[0]).toMatchObject({
@@ -79,8 +96,29 @@ describe('ai-chat state', () => {
 		});
 	});
 
+	it('restores input and exposes a typed network error when the chat request cannot connect', async () => {
+		const client = createClientMock();
+		vi.mocked(client.ask).mockRejectedValue(
+			createAiClientError({
+				kind: 'network',
+				message: 'AIサポートへ接続できません。通信状態を確認してください。'
+			})
+		);
+
+		const state = createAiChatState(client);
+		state.openConversation();
+		state.input = '通信失敗になる質問';
+		await state.send();
+
+		expect(state.error).toBe('AIサポートへ接続できません。通信状態を確認してください。');
+		expect(state.status).toBe('error');
+		expect(state.lastClientError).toMatchObject({ kind: 'network' });
+		expect(state.input).toBe('通信失敗になる質問');
+	});
+
 	it('clears conversation-scoped chat data when reset', () => {
 		const state = createAiChatState();
+		state.openConversation();
 		state.messages = [
 			{
 				id: 'assistant-a',
@@ -103,7 +141,9 @@ describe('ai-chat state', () => {
 		expect(state.messages).toEqual([]);
 		expect(state.input).toBe('');
 		expect(state.conversationId).toBeNull();
+		expect(state.status).toBe('ready');
 		expect(state.error).toBeNull();
+		expect(state.lastClientError).toBeNull();
 		expect(state.lastRateLimit).toBeNull();
 	});
 
@@ -117,6 +157,7 @@ describe('ai-chat state', () => {
 		);
 
 		const state = createAiChatState(client);
+		state.openConversation();
 		state.input = '切替前の質問';
 		const sendPromise = state.send();
 		state.resetConversation();
@@ -138,7 +179,7 @@ describe('ai-chat state', () => {
 
 		expect(state.messages).toEqual([]);
 		expect(state.conversationId).toBeNull();
-		expect(state.status).toBe('idle');
+		expect(state.status).toBe('ready');
 	});
 
 	it('submits feedback and records failed feedback attempts', async () => {

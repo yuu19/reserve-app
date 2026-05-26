@@ -10,7 +10,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('$lib/ai-client', () => ({
 	askAi: mocks.askAi,
-	submitAiFeedback: mocks.submitAiFeedback
+	submitAiFeedback: mocks.submitAiFeedback,
+	getAiClientErrorPayload: (error: unknown, fallbackMessage: string) => ({
+		kind: 'network',
+		message: error instanceof Error && error.message.length > 0 ? error.message : fallbackMessage
+	})
 }));
 
 describe('AiChatWidget.svelte', () => {
@@ -66,6 +70,44 @@ describe('AiChatWidget.svelte', () => {
 			classroomId: 'class-a',
 			currentPage: '/admin/dashboard'
 		});
+	});
+
+	it('renders nothing while the feature is disabled', async () => {
+		render(AiChatWidget, { enabled: false });
+
+		expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
+	});
+
+	it('disables input while a response is in flight', async () => {
+		let resolveResponse: (value: unknown) => void = () => {};
+		mocks.askAi.mockReturnValue(
+			new Promise((resolve) => {
+				resolveResponse = resolve;
+			})
+		);
+		render(AiChatWidget, { enabled: true });
+
+		await page.getByRole('button', { name: 'AIサポートを開く' }).click();
+		await page.getByRole('textbox', { name: 'AIサポートへの質問' }).fill('送信中の質問');
+		await page.getByRole('button', { name: 'AIサポートへ送信' }).click();
+
+		await expect.element(page.getByText('回答を作成しています。')).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'AIサポートへ送信' })).toBeDisabled();
+
+		resolveResponse({
+			conversationId: 'conv-a',
+			messageId: 'assistant-a',
+			answer: '回答しました。',
+			sources: [],
+			suggestedActions: [],
+			confidence: 80,
+			needsHumanSupport: false,
+			rateLimit: {
+				userRemainingThisHour: 19,
+				organizationRemainingToday: 199
+			}
+		});
+		await expect.element(page.getByText('回答しました。')).toBeInTheDocument();
 	});
 
 	it('clears the stale conversation id when the active organization or classroom changes', async () => {
@@ -162,6 +204,37 @@ describe('AiChatWidget.svelte', () => {
 		expect(mocks.submitAiFeedback).toHaveBeenCalledWith('assistant-a', {
 			rating: 'unhelpful',
 			comment: '根拠が足りません'
+		});
+	});
+
+	it('shows feedback failure state', async () => {
+		mocks.askAi.mockResolvedValue({
+			conversationId: 'conv-a',
+			messageId: 'assistant-a',
+			answer: '回答しました。',
+			sources: [],
+			suggestedActions: [],
+			confidence: 80,
+			needsHumanSupport: false,
+			rateLimit: {
+				userRemainingThisHour: 19,
+				organizationRemainingToday: 199
+			}
+		});
+		mocks.submitAiFeedback.mockRejectedValue(new Error('送信失敗'));
+		render(AiChatWidget, { enabled: true });
+
+		await page.getByRole('button', { name: 'AIサポートを開く' }).click();
+		await page.getByRole('textbox', { name: 'AIサポートへの質問' }).fill('フィードバック対象');
+		await page.getByRole('button', { name: 'AIサポートへ送信' }).click();
+		await expect.element(page.getByText('回答しました。')).toBeInTheDocument();
+
+		await page.getByRole('button', { name: '役に立った' }).click();
+
+		await expect.element(page.getByText('送信失敗')).toBeInTheDocument();
+		expect(mocks.submitAiFeedback).toHaveBeenCalledWith('assistant-a', {
+			rating: 'helpful',
+			comment: undefined
 		});
 	});
 });

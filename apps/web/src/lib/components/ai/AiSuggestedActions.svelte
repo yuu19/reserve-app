@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { Pathname } from '$app/types';
-	import type { AiSuggestedAction } from '@repo/saas-chatbot-core';
+	import type { AiSuggestedAction, AiSuggestedActionKind } from '@repo/saas-chatbot-core';
 	import { ExternalLink, LifeBuoy, UserRoundCheck } from '@lucide/svelte';
 
 	type Props = {
@@ -10,7 +10,7 @@
 
 	let { actions = [] }: Props = $props();
 
-	const iconByKind = {
+	const iconByKind: Record<AiSuggestedActionKind, typeof ExternalLink> = {
 		open_page: ExternalLink,
 		contact_owner: UserRoundCheck,
 		contact_support: LifeBuoy
@@ -19,8 +19,8 @@
 
 {#if actions.length > 0}
 	<div class="flex flex-wrap gap-2" aria-label="次のアクション">
-		{#each actions as action (`${action.actionKind ?? 'contact_support'}-${action.label}`)}
-			{@const Icon = iconByKind[action.actionKind ?? 'contact_support']}
+		{#each actions as action (`${action.actionKind}-${action.label}`)}
+			{@const Icon = iconByKind[action.actionKind]}
 			{#if action.actionKind === 'open_page' && action.href}
 				<a
 					href={resolve(action.href as Pathname)}

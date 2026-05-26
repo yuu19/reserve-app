@@ -1,23 +1,28 @@
-import { askAi, submitAiFeedback } from '$lib/ai-client';
+import { askAi, getAiClientErrorPayload, submitAiFeedback } from '$lib/ai-client';
 import type {
+	AiChatClientErrorPayload,
 	AiChatContext,
 	AiChatMessage,
 	AiChatRequest,
 	AiChatResponse,
+	AiChatUiStatus,
 	AiFeedbackRequest,
 	AiFeedbackRating,
 	AiFeedbackResponse
 } from '@repo/saas-chatbot-core';
 import { SvelteDate } from 'svelte/reactivity';
 
-export type { AiChatContext, AiChatMessage } from '@repo/saas-chatbot-core';
+export type {
+	AiChatClientErrorPayload,
+	AiChatContext,
+	AiChatMessage,
+	AiChatUiStatus
+} from '@repo/saas-chatbot-core';
 
 export type AiChatClient = {
 	ask(request: AiChatRequest): Promise<AiChatResponse>;
 	submitFeedback(messageId: string, request: AiFeedbackRequest): Promise<AiFeedbackResponse>;
 };
-
-type AiChatStatus = 'idle' | 'sending';
 
 const defaultAiChatClient: AiChatClient = {
 	ask: askAi,
@@ -28,8 +33,9 @@ export class AiChatState {
 	messages = $state<AiChatMessage[]>([]);
 	input = $state('');
 	conversationId = $state<string | null>(null);
-	status = $state<AiChatStatus>('idle');
+	status = $state<AiChatUiStatus>('closed');
 	error = $state<string | null>(null);
+	lastClientError = $state<AiChatClientErrorPayload | null>(null);
 	lastRateLimit = $state<AiChatResponse['rateLimit'] | null>(null);
 	#client: AiChatClient;
 	#conversationVersion = 0;
@@ -38,12 +44,16 @@ export class AiChatState {
 		this.#client = client;
 	}
 
+	get open() {
+		return this.status !== 'closed';
+	}
+
 	get sending() {
 		return this.status === 'sending';
 	}
 
 	get canSend() {
-		return this.input.trim().length > 0 && this.input.length <= 4000 && this.status !== 'sending';
+		return this.open && this.input.trim().length > 0 && this.input.length <= 4000 && !this.sending;
 	}
 
 	get inputError() {
@@ -53,25 +63,37 @@ export class AiChatState {
 		return null;
 	}
 
+	openConversation() {
+		if (this.status === 'closed') {
+			this.status = this.error ? 'error' : 'ready';
+		}
+	}
+
+	closeConversation() {
+		this.status = 'closed';
+	}
+
 	resetConversation() {
-		// conversationId を破棄して、次の送信を backend 上でも新しい会話として扱う。
+		const wasOpen = this.open;
 		this.#conversationVersion += 1;
 		this.messages = [];
 		this.input = '';
 		this.conversationId = null;
-		this.status = 'idle';
+		this.status = wasOpen ? 'ready' : 'closed';
 		this.error = null;
+		this.lastClientError = null;
 		this.lastRateLimit = null;
 	}
 
 	async send(context: AiChatContext = {}) {
 		const message = this.input.trim();
-		if (!message || this.inputError || this.sending) {
+		if (!message || this.inputError || !this.canSend) {
 			return;
 		}
 		const conversationVersion = this.#conversationVersion;
 
 		this.error = null;
+		this.lastClientError = null;
 		this.status = 'sending';
 		this.input = '';
 		this.messages = [
@@ -117,11 +139,13 @@ export class AiChatState {
 			if (conversationVersion !== this.#conversationVersion) {
 				return;
 			}
-			this.error = error instanceof Error ? error.message : 'AIサポートを利用できません。';
+			const payload = getAiClientErrorPayload(error, 'AIサポートを利用できません。');
+			this.error = payload.message;
+			this.lastClientError = payload;
 			this.input = message;
 		} finally {
-			if (conversationVersion === this.#conversationVersion) {
-				this.status = 'idle';
+			if (conversationVersion === this.#conversationVersion && this.status === 'sending') {
+				this.status = this.error ? 'error' : 'ready';
 			}
 		}
 	}
@@ -142,13 +166,13 @@ export class AiChatState {
 					: message
 			);
 		} catch (error) {
+			const payload = getAiClientErrorPayload(error, 'フィードバックを送信できません。');
 			this.messages = this.messages.map((message) =>
 				message.id === messageId
 					? {
 							...message,
 							feedbackStatus: 'failed',
-							feedbackError:
-								error instanceof Error ? error.message : 'フィードバックを送信できません。'
+							feedbackError: payload.message
 						}
 					: message
 			);

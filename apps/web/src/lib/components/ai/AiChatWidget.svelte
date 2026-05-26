@@ -1,15 +1,13 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { createAiChatState } from '$lib/features/ai-chat.svelte';
+	import type { AiChatContext } from '@repo/saas-chatbot-core';
 	import { MessageCircle, Send, X } from '@lucide/svelte';
 	import { tick } from 'svelte';
 	import AiMessageList from './AiMessageList.svelte';
 
-	type Props = {
+	type Props = AiChatContext & {
 		enabled?: boolean;
-		organizationId?: string | null;
-		classroomId?: string | null;
-		currentPage?: string | null;
 	};
 
 	let {
@@ -20,7 +18,6 @@
 	}: Props = $props();
 
 	const chat = createAiChatState();
-	let open = $state(false);
 	let inputElement: HTMLTextAreaElement | null = $state(null);
 	let lastScopeKey: string | null = null;
 
@@ -28,6 +25,9 @@
 		const scopeKey = enabled ? `${organizationId ?? ''}:${classroomId ?? ''}` : 'inactive';
 		if (lastScopeKey !== null && scopeKey !== lastScopeKey) {
 			chat.resetConversation();
+			if (!enabled) {
+				chat.closeConversation();
+			}
 		}
 		lastScopeKey = scopeKey;
 	});
@@ -43,13 +43,13 @@
 	};
 
 	const openWidget = async () => {
-		open = true;
+		chat.openConversation();
 		await tick();
 		inputElement?.focus();
 	};
 
 	const closeWidget = () => {
-		open = false;
+		chat.closeConversation();
 	};
 
 	const submit = async () => {
@@ -65,7 +65,7 @@
 
 {#if enabled}
 	<div class="fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-3">
-		{#if open}
+		{#if chat.open}
 			<section
 				class="flex h-[min(42rem,calc(100vh-6rem))] w-[min(26rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl"
 				aria-label="AIサポート"

@@ -91,6 +91,10 @@ const pageState = vi.hoisted(() => ({
 	url: new URL('https://example.com/admin/dashboard')
 }));
 
+const publicEnv = vi.hoisted(() => ({
+	env: {} as Record<string, string | undefined>
+}));
+
 const navigationCallbacks = vi.hoisted(() => ({
 	before: new Set<(navigation: Record<string, unknown>) => void>(),
 	after: new Set<(navigation: Record<string, unknown>) => void>()
@@ -185,7 +189,7 @@ vi.mock('$lib/rpc-client', () => ({
 }));
 
 vi.mock('$env/dynamic/public', () => ({
-	env: {}
+	env: publicEnv.env
 }));
 
 const emitBeforeNavigate = (
@@ -231,6 +235,7 @@ const emitAfterNavigate = (
 describe('/+layout.svelte', () => {
 	beforeEach(() => {
 		vi.useRealTimers();
+		delete publicEnv.env.PUBLIC_AI_CHAT_ENABLED;
 		pageState.url = new URL('https://example.com/admin/dashboard');
 		navigationCallbacks.before.clear();
 		navigationCallbacks.after.clear();
@@ -293,6 +298,37 @@ describe('/+layout.svelte', () => {
 		mocks.signOut.mockResolvedValue(
 			new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
 		);
+	});
+
+	it('shows the AI widget after login when the feature flag is enabled', async () => {
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(document.querySelector('button[aria-label="AIサポートを開く"]')).not.toBeNull();
+		});
+	});
+
+	it('hides the AI widget when the feature flag is false', async () => {
+		publicEnv.env.PUBLIC_AI_CHAT_ENABLED = 'false';
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(document.querySelector('a[href="/admin/dashboard"]')).not.toBeNull();
+		});
+		expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
+	});
+
+	it('hides the AI widget before login', async () => {
+		mocks.loadSession.mockResolvedValue({
+			session: null,
+			status: 401
+		});
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(mocks.loadSession).toHaveBeenCalled();
+		});
+		expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
 	});
 
 	it('shows only admin sidebar items when active portal is admin', async () => {
