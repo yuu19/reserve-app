@@ -2604,6 +2604,79 @@ describe('backend app', () => {
     const billingAccountColumns = billingAccountTableInfo.results.map((row) => row.name);
     expect(billingAccountColumns).toContain('subject_id');
     expect(billingAccountColumns).not.toContain('classroom_id');
+    const readForeignKeys = async (tableName: string) => {
+      const result = await d1
+        .prepare(`PRAGMA foreign_key_list(${tableName})`)
+        .all<{ from: string; table: string }>();
+      return result.results;
+    };
+    const readIndexes = async (tableName: string) => {
+      const result = await d1
+        .prepare(`PRAGMA index_list(${tableName})`)
+        .all<{ name: string; unique: number }>();
+      return result.results;
+    };
+    const expectNoUserForeignKey = async ({
+      tableName,
+      columnName,
+    }: {
+      tableName: string;
+      columnName: string;
+    }) => {
+      const foreignKeys = await readForeignKeys(tableName);
+      expect(foreignKeys.some((row) => row.from === columnName && row.table === 'user')).toBe(
+        false,
+      );
+      expect(
+        foreignKeys.some(
+          (row) => row.from === 'billing_account_id' && row.table === 'billing_account',
+        ),
+      ).toBe(true);
+    };
+    const expectUniqueIndex = async ({
+      tableName,
+      indexName,
+    }: {
+      tableName: string;
+      indexName: string;
+    }) => {
+      const indexes = await readIndexes(tableName);
+      expect(indexes).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: indexName, unique: 1 })]),
+      );
+    };
+    await expectNoUserForeignKey({
+      tableName: 'billing_operation_attempt',
+      columnName: 'created_by_user_id',
+    });
+    await expectNoUserForeignKey({
+      tableName: 'billing_audit_event',
+      columnName: 'actor_user_id',
+    });
+    await expectNoUserForeignKey({
+      tableName: 'billing_notification',
+      columnName: 'recipient_user_id',
+    });
+    await expectUniqueIndex({
+      tableName: 'billing_operation_attempt',
+      indexName: 'billing_operation_attempt_idempotency_uidx',
+    });
+    await expectUniqueIndex({
+      tableName: 'billing_operation_attempt',
+      indexName: 'billing_operation_attempt_reuse_attempt_uidx',
+    });
+    await expectUniqueIndex({
+      tableName: 'billing_audit_event',
+      indexName: 'billing_audit_event_account_sequence_uidx',
+    });
+    await expectUniqueIndex({
+      tableName: 'billing_notification',
+      indexName: 'billing_notification_dedupe_uidx',
+    });
+    await expectUniqueIndex({
+      tableName: 'billing_notification',
+      indexName: 'billing_notification_account_sequence_uidx',
+    });
 
     const assertPremiumGate = async ({
       subscriptionStatus,
