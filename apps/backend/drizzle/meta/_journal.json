@@ -32,9 +32,9 @@
     },
     {
       "idx": 4,
-      "version": "7",
+      "version": "6",
       "when": 1774359600000,
-      "tag": "0012_organization_billing",
+      "tag": "0026_billing_user_fk_removal",
       "breakpoints": true
     }
   ]
