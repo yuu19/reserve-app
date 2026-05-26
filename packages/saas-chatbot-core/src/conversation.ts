@@ -60,6 +60,11 @@ export type CanUserAccessAssistantMessageInput = {
   scope: ConversationScope;
 };
 
+export type CanUserAccessAssistantMessageByUserInput = {
+  messageId: string;
+  userId: string;
+};
+
 export type SubmitFeedbackInput = {
   messageId: string;
   userId: string;
@@ -90,6 +95,9 @@ export interface ConversationStore {
   recordUsageEvent(input: AiUsageEventInput): Promise<void>;
   canUserAccessAssistantMessage(
     input: CanUserAccessAssistantMessageInput,
+  ): Promise<{ id: string; conversationId: string } | null>;
+  canUserAccessAssistantMessageByUser(
+    input: CanUserAccessAssistantMessageByUserInput,
   ): Promise<{ id: string; conversationId: string } | null>;
   submitFeedback(input: SubmitFeedbackInput): Promise<SubmittedFeedback>;
   cleanupExpiredConversationContent(input?: CleanupExpiredConversationContentInput): Promise<void>;

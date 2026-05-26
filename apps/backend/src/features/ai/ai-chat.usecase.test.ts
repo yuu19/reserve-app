@@ -120,6 +120,7 @@ const createConversationStore = (
       conversationId: input.conversationId,
     })),
     canUserAccessAssistantMessage: vi.fn(),
+    canUserAccessAssistantMessageByUser: vi.fn(),
     submitFeedback: vi.fn(),
     cleanupExpiredConversationContent: vi.fn(),
     countMessagesForConversation: vi.fn(),

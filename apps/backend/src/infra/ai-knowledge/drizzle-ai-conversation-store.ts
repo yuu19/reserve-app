@@ -237,6 +237,38 @@ export const canUserAccessAssistantMessage = async ({
   return rows[0] ?? null;
 };
 
+/** messageId がログインユーザー自身の assistant message を指すときだけ feedback 対象にする。 */
+export const canUserAccessAssistantMessageByUser = async ({
+  database,
+  messageId,
+  userId,
+}: {
+  database: AuthRuntimeDatabase;
+  messageId: string;
+  userId: string;
+}) => {
+  const rows = await database
+    .select({
+      id: dbSchema.aiMessage.id,
+      conversationId: dbSchema.aiMessage.conversationId,
+    })
+    .from(dbSchema.aiMessage)
+    .innerJoin(
+      dbSchema.aiConversation,
+      eq(dbSchema.aiMessage.conversationId, dbSchema.aiConversation.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.aiMessage.id, messageId),
+        eq(dbSchema.aiMessage.role, 'assistant'),
+        eq(dbSchema.aiConversation.actorUserId, userId),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
+};
+
 /** 集計用のフィードバック期間を維持しながら、ユーザー/メッセージごとに feedback を upsert する。 */
 export const submitAiFeedback = async ({
   database,
@@ -365,6 +397,10 @@ export type CanUserAccessAssistantMessageInput = Omit<
   Parameters<typeof canUserAccessAssistantMessage>[0],
   'database'
 >;
+export type CanUserAccessAssistantMessageByUserInput = Omit<
+  Parameters<typeof canUserAccessAssistantMessageByUser>[0],
+  'database'
+>;
 export type SubmitAiFeedbackInput = Omit<Parameters<typeof submitAiFeedback>[0], 'database'>;
 export type CleanupExpiredAiConversationContentInput = Omit<
   Parameters<typeof cleanupExpiredAiConversationContent>[0],
@@ -399,6 +435,11 @@ export const createDrizzleAiConversationStore = ({
     }),
   canUserAccessAssistantMessage: (input) =>
     canUserAccessAssistantMessage({
+      database,
+      ...input,
+    }),
+  canUserAccessAssistantMessageByUser: (input) =>
+    canUserAccessAssistantMessageByUser({
       database,
       ...input,
     }),

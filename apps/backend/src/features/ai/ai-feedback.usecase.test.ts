@@ -67,6 +67,10 @@ const createConversationStore = (
       id: 'message-a',
       conversationId: 'conversation-a',
     })),
+    canUserAccessAssistantMessageByUser: vi.fn(async () => ({
+      id: 'message-a',
+      conversationId: 'conversation-a',
+    })),
     submitFeedback: vi.fn(async () => ({
       id: 'feedback-a',
       messageId: 'message-a',
@@ -78,7 +82,19 @@ const createConversationStore = (
   }) as AiRouteContext['conversationStore'];
 
 const createContext = (overrides: Partial<AiRouteContext> = {}): AiRouteContext => ({
-  auth: {} as never,
+  auth: {
+    api: {
+      getSession: vi.fn(async () => ({
+        user: {
+          id: 'user-a',
+          email: 'participant@example.com',
+        },
+        session: {
+          activeOrganizationId: null,
+        },
+      })),
+    },
+  } as never,
   database: {} as never,
   env: {},
   resolveRequestContext: vi.fn(async () => requestContext),
@@ -98,11 +114,11 @@ const createContext = (overrides: Partial<AiRouteContext> = {}): AiRouteContext 
 });
 
 describe('submitAiMessageFeedback', () => {
-  it('returns 403 when the assistant message is outside the current scope', async () => {
+  it('returns 403 when the assistant message belongs to another user', async () => {
     const submitFeedback = vi.fn();
     const ctx = createContext({
       conversationStore: createConversationStore({
-        canUserAccessAssistantMessage: vi.fn(async () => null),
+        canUserAccessAssistantMessageByUser: vi.fn(async () => null),
         submitFeedback,
       }),
     });
@@ -123,7 +139,7 @@ describe('submitAiMessageFeedback', () => {
     expect(submitFeedback).not.toHaveBeenCalled();
   });
 
-  it('upserts feedback for an assistant message in the current scope', async () => {
+  it('upserts feedback for the authenticated user message without requiring an active organization', async () => {
     const submitFeedback = vi.fn(async () => ({
       id: 'feedback-a',
       messageId: 'message-a',

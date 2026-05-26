@@ -1,4 +1,5 @@
 import { jsonResult, type JsonRouteResult } from '../../shared/route-result.js';
+import { getSessionIdentity } from '../../domain/booking/authorization.js';
 import type { AiRouteContext } from './ai-route-context.js';
 import type {
   AiFeedbackRequestBody,
@@ -14,7 +15,7 @@ export type SubmitAiMessageFeedbackInput = {
 };
 
 /**
- * 呼び出し側の現在スコープ内の assistant message にだけ feedback を upsert する。
+ * 呼び出し側自身の assistant message にだけ feedback を upsert する。
  */
 export const submitAiMessageFeedback = async ({
   ctx,
@@ -22,21 +23,15 @@ export const submitAiMessageFeedback = async ({
   body,
   headers,
 }: SubmitAiMessageFeedbackInput): Promise<JsonRouteResult> => {
-  const requestContext = await ctx.resolveRequestContext({
-    headers,
-  });
+  const identity = await getSessionIdentity(ctx.auth, headers);
 
-  if (!requestContext) {
+  if (!identity) {
     return jsonResult({ message: 'Unauthorized.' }, 401);
   }
 
-  const allowed = await ctx.conversationStore.canUserAccessAssistantMessage({
+  const allowed = await ctx.conversationStore.canUserAccessAssistantMessageByUser({
     messageId: params.messageId,
-    scope: {
-      userId: requestContext.identity.userId,
-      organizationId: requestContext.access.organizationId,
-      classroomId: requestContext.access.classroomId,
-    },
+    userId: identity.userId,
   });
   if (!allowed) {
     return jsonResult({ message: 'Forbidden.' }, 403);
@@ -44,7 +39,7 @@ export const submitAiMessageFeedback = async ({
 
   const feedback = await ctx.conversationStore.submitFeedback({
     messageId: params.messageId,
-    userId: requestContext.identity.userId,
+    userId: identity.userId,
     rating: body.rating,
     comment: body.comment,
   });
