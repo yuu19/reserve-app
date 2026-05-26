@@ -6,6 +6,8 @@ on:
       - 'apps/backend/**'
       - 'apps/docs/**'
       - 'apps/web/**'
+      - 'packages/saas-billing-core/**'
+      - 'packages/saas-billing-drizzle/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -21,6 +23,8 @@ on:
       - 'apps/backend/**'
       - 'apps/docs/**'
       - 'apps/web/**'
+      - 'packages/saas-billing-core/**'
+      - 'packages/saas-billing-drizzle/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -65,6 +69,18 @@ jobs:
 
       - name: Run web server tests
         run: pnpm --filter @apps/web test:coverage
+
+      - name: Typecheck shared billing core
+        run: pnpm --filter @repo/saas-billing-core typecheck
+
+      - name: Test shared billing core
+        run: pnpm --filter @repo/saas-billing-core test
+
+      - name: Typecheck shared billing Drizzle store
+        run: pnpm --filter @repo/saas-billing-drizzle typecheck
+
+      - name: Test shared billing Drizzle store
+        run: pnpm --filter @repo/saas-billing-drizzle test
 
       - name: Write Vitest coverage summary
         run: node scripts/write-vitest-coverage-summary.mjs "Backend=apps/backend/coverage/coverage-summary.json" "Web server=apps/web/coverage/server/coverage-summary.json"

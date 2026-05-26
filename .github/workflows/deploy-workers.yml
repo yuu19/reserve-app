@@ -45,6 +45,18 @@ jobs:
       - name: Run web server tests
         run: pnpm --filter @apps/web test
 
+      - name: Typecheck shared billing core
+        run: pnpm --filter @repo/saas-billing-core typecheck
+
+      - name: Test shared billing core
+        run: pnpm --filter @repo/saas-billing-core test
+
+      - name: Typecheck shared billing Drizzle store
+        run: pnpm --filter @repo/saas-billing-drizzle typecheck
+
+      - name: Test shared billing Drizzle store
+        run: pnpm --filter @repo/saas-billing-drizzle test
+
       - name: Build backend worker
         run: pnpm --filter @apps/backend build
 
