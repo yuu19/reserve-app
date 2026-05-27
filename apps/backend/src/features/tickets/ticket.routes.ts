@@ -1,6 +1,7 @@
 import type { BookingRouteContext } from '../booking/booking-route-context.js';
 import { jsonRouteResult } from '../../shared/route-result.js';
 import {
+  adjustTicketPackRoute,
   approveTicketPurchaseRoute,
   cancelTicketPurchaseRoute,
   createTicketPurchaseRoute,
@@ -9,11 +10,14 @@ import {
   listMyTicketPacksRoute,
   listMyTicketPurchasesRoute,
   listPurchasableTicketTypesRoute,
+  listTicketPacksRoute,
   listTicketPurchasesRoute,
   listTicketTypesRoute,
   rejectTicketPurchaseRoute,
+  updateTicketTypeRoute,
 } from './ticket.schemas.js';
 import {
+  adjustExistingTicketPack,
   approveTicketPurchase,
   cancelExistingTicketPurchase,
   createTicketPurchase,
@@ -23,8 +27,10 @@ import {
   listMyTicketPacks,
   listMyTicketPurchases,
   listPurchasableTicketTypeOptions,
+  listStaffTicketPacks,
   listStaffTicketPurchases,
   rejectExistingTicketPurchase,
+  updateExistingTicketType,
 } from './ticket.usecases.js';
 
 /**
@@ -33,6 +39,10 @@ import {
 export const registerTicketRoutes = (ctx: BookingRouteContext) => {
   ctx.authRoutes.openapi(createTicketTypeRoute, async (c) =>
     jsonRouteResult(c, await createTicketType(ctx, c.req.valid('json'), c.req.raw.headers)),
+  );
+
+  ctx.authRoutes.openapi(updateTicketTypeRoute, async (c) =>
+    jsonRouteResult(c, await updateExistingTicketType(ctx, c.req.valid('json'), c.req.raw.headers)),
   );
 
   ctx.authRoutes.openapi(listTicketTypesRoute, async (c) =>
@@ -84,6 +94,14 @@ export const registerTicketRoutes = (ctx: BookingRouteContext) => {
 
   ctx.authRoutes.openapi(grantTicketPackRoute, async (c) =>
     jsonRouteResult(c, await grantTicketPack(ctx, c.req.valid('json'), c.req.raw.headers)),
+  );
+
+  ctx.authRoutes.openapi(listTicketPacksRoute, async (c) =>
+    jsonRouteResult(c, await listStaffTicketPacks(ctx, c.req.valid('query'), c.req.raw.headers)),
+  );
+
+  ctx.authRoutes.openapi(adjustTicketPackRoute, async (c) =>
+    jsonRouteResult(c, await adjustExistingTicketPack(ctx, c.req.valid('json'), c.req.raw.headers)),
   );
 
   ctx.authRoutes.openapi(listMyTicketPacksRoute, async (c) =>

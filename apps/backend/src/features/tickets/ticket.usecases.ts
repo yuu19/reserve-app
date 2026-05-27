@@ -4,6 +4,7 @@ import {
 } from '../../domain/booking/authorization.js';
 import { TICKET_PURCHASE_METHOD, TICKET_PURCHASE_STATUS } from '../../domain/booking/constants.js';
 import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
+import { parseIsoDateOrNull } from '../../shared/date.js';
 import {
   serializeTicketPack,
   serializeTicketPurchase,
@@ -25,6 +26,7 @@ import {
   countServicesByIds,
   expireActiveTicketPacks,
   findParticipantForTicketPackGrant,
+  findTicketPackForAdjustment,
   findTicketPurchaseScope,
   findTicketTypeForPurchase,
   findTicketTypeForTicketPackGrant,
@@ -37,15 +39,19 @@ import {
   listTicketPurchases,
   listTicketTypes,
   rejectTicketPurchase,
+  updateTicketType,
 } from './ticket.repository.js';
 import {
+  adjustTicketPackWithLedger,
   approveTicketPurchaseWithIssue,
   issueTicketPackWithLedger,
   resolveEndDate,
 } from './ticket.state.js';
 import type {
   OrgQuery,
+  TicketPackAdjustBody,
   TicketPackGrantBody,
+  TicketPackListQuery,
   TicketPackMineQuery,
   TicketPurchaseApproveBody,
   TicketPurchaseCancelBody,
@@ -55,6 +61,7 @@ import type {
   TicketPurchaseRejectBody,
   TicketTypeCreateBody,
   TicketTypeListQuery,
+  TicketTypeUpdateBody,
 } from './ticket.schemas.js';
 
 /**
@@ -136,6 +143,80 @@ export const createTicketType = async (
 
   const ticketType = await getTicketTypeById(ctx.database, ticketTypeId);
   return jsonResult(serializeTicketType(ticketType as Record<string, unknown> | undefined));
+};
+
+/**
+ * staff が既存 ticket type の future grant/purchase 向け設定を更新します。
+ */
+export const updateExistingTicketType = async (
+  ctx: BookingRouteContext,
+  body: TicketTypeUpdateBody,
+  headers: Headers,
+): Promise<JsonRouteResult> => {
+  const identity = await ctx.requireIdentity(headers);
+  if (!identity) {
+    return unauthorized();
+  }
+
+  const organizationId = resolveOrganizationId(body.organizationId, identity.activeOrganizationId);
+  if (!organizationId) {
+    return validationError('organizationId is required.');
+  }
+
+  const ticketType = await getTicketTypeById(ctx.database, body.ticketTypeId);
+  if (!ticketType || ticketType.organizationId !== organizationId) {
+    return notFound('Ticket type not found.');
+  }
+  if (isRequestedClassroomMismatch(body.classroomId, ticketType.classroomId)) {
+    return forbidden();
+  }
+
+  const hasAccess = await ctx.canManageClassroomScope({
+    organizationId,
+    classroomId: ticketType.classroomId,
+    userId: identity.userId,
+  });
+  if (!hasAccess) {
+    return forbidden();
+  }
+
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.TICKET_ENABLED,
+  });
+  if (!premiumGate.allowed) {
+    return jsonResult(premiumGate.body, premiumGate.status);
+  }
+
+  if (body.serviceIds && body.serviceIds.length > 0) {
+    const serviceCount = await countServicesByIds({
+      database: ctx.database,
+      organizationId,
+      classroomId: ticketType.classroomId,
+      serviceIds: body.serviceIds,
+    });
+
+    if (serviceCount !== body.serviceIds.length) {
+      return validationError('serviceIds includes unknown service.');
+    }
+  }
+
+  const updated = await updateTicketType({
+    database: ctx.database,
+    ticketTypeId: ticketType.id,
+    name: body.name,
+    serviceIds: body.serviceIds,
+    totalCount: body.totalCount,
+    expiresInDays: body.expiresInDays,
+    isActive: body.isActive,
+    isForSale: body.isForSale,
+  });
+  if (!updated) {
+    return notFound('Ticket type not found.');
+  }
+
+  const updatedTicketType = await getTicketTypeById(ctx.database, ticketType.id);
+  return jsonResult(serializeTicketType(updatedTicketType as Record<string, unknown> | undefined));
 };
 
 /**
@@ -607,6 +688,9 @@ export const grantTicketPack = async (
   if (participant.classroomId !== ticketType.classroomId) {
     return validationError('Participant and ticket type must belong to the same classroom.');
   }
+  if (!ticketType.isActive) {
+    return conflict('Ticket type is inactive.');
+  }
 
   const count = body.count ?? ticketType.totalCount;
   const expiresAt = resolveEndDate(ticketType.expiresInDays, body.expiresAt);
@@ -626,6 +710,141 @@ export const grantTicketPack = async (
     reason: 'staff-grant',
   });
   return jsonResult(issued.ticketPack);
+};
+
+/**
+ * staff が participant の発行済み ticket pack を一覧します。
+ */
+export const listStaffTicketPacks = async (
+  ctx: BookingRouteContext,
+  query: TicketPackListQuery,
+  headers: Headers,
+): Promise<JsonRouteResult> => {
+  const identity = await ctx.requireIdentity(headers);
+  if (!identity) {
+    return unauthorized();
+  }
+
+  const organizationId = resolveOrganizationId(query.organizationId, identity.activeOrganizationId);
+  if (!organizationId) {
+    return validationError('organizationId is required.');
+  }
+
+  const hasAccess = await ctx.canManageParticipantsScope({
+    organizationId,
+    classroomId: query.classroomId,
+    userId: identity.userId,
+  });
+  if (!hasAccess) {
+    return forbidden();
+  }
+
+  const participant = await findParticipantForTicketPackGrant({
+    database: ctx.database,
+    organizationId,
+    classroomId: query.classroomId,
+    participantId: query.participantId,
+  });
+  if (!participant) {
+    return notFound('Participant not found.');
+  }
+
+  await expireActiveTicketPacks({
+    database: ctx.database,
+    organizationId,
+    classroomId: participant.classroomId,
+    participantIds: [participant.id],
+    now: new Date(),
+  });
+
+  const rows = await listTicketPacks({
+    database: ctx.database,
+    organizationId,
+    classroomId: participant.classroomId,
+    participantIds: [participant.id],
+  });
+
+  return jsonResult(rows.map((row: Record<string, unknown>) => serializeTicketPack(row)));
+};
+
+/**
+ * staff が発行済み ticket pack の残数や期限を監査ログ付きで調整します。
+ */
+export const adjustExistingTicketPack = async (
+  ctx: BookingRouteContext,
+  body: TicketPackAdjustBody,
+  headers: Headers,
+): Promise<JsonRouteResult> => {
+  const identity = await ctx.requireIdentity(headers);
+  if (!identity) {
+    return unauthorized();
+  }
+
+  const ticketPack = await findTicketPackForAdjustment(ctx.database, body.ticketPackId);
+  if (!ticketPack) {
+    return notFound('Ticket pack not found.');
+  }
+  if (isRequestedClassroomMismatch(body.classroomId, ticketPack.classroomId)) {
+    return forbidden();
+  }
+
+  const hasAccess = await ctx.canManageParticipantsScope({
+    organizationId: ticketPack.organizationId,
+    classroomId: ticketPack.classroomId,
+    userId: identity.userId,
+  });
+  if (!hasAccess) {
+    return forbidden();
+  }
+
+  const premiumGate = await ctx.requireOrganizationEntitlement({
+    organizationId: ticketPack.organizationId,
+    key: RESERVE_APP_ENTITLEMENTS.TICKET_ENABLED,
+  });
+  if (!premiumGate.allowed) {
+    return jsonResult(premiumGate.body, premiumGate.status);
+  }
+
+  if (
+    body.remainingCount !== undefined &&
+    (body.remainingCount < 0 || body.remainingCount > ticketPack.initialCount)
+  ) {
+    return validationError('remainingCount must be between 0 and initialCount.');
+  }
+
+  const nextRemainingCount = body.remainingCount ?? ticketPack.remainingCount;
+  const nextExpiresAt =
+    body.expiresAt === undefined
+      ? ticketPack.expiresAt
+      : body.expiresAt === null
+        ? null
+        : parseIsoDateOrNull(body.expiresAt);
+  if (body.expiresAt && !nextExpiresAt) {
+    return validationError('Invalid expiresAt.');
+  }
+
+  const currentExpiresAtTime = ticketPack.expiresAt ? ticketPack.expiresAt.getTime() : null;
+  const nextExpiresAtTime = nextExpiresAt ? nextExpiresAt.getTime() : null;
+  if (
+    nextRemainingCount === ticketPack.remainingCount &&
+    nextExpiresAtTime === currentExpiresAtTime
+  ) {
+    return conflict('Ticket pack adjustment has no changes.');
+  }
+
+  const result = await adjustTicketPackWithLedger({
+    database: ctx.database,
+    ticketPackId: ticketPack.id,
+    remainingCount: nextRemainingCount,
+    expiresAt: nextExpiresAt,
+    actorUserId: identity.userId,
+    reason: body.reason,
+  });
+  if (result.kind === 'not_found') {
+    return notFound('Ticket pack not found.');
+  }
+
+  return jsonResult(result.ticketPack);
 };
 
 /**

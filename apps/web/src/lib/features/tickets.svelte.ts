@@ -108,10 +108,19 @@ export const toTicketErrorMessage = (
 		if (message === 'Ticket type not found.') {
 			return '回数券種別が見つかりません。';
 		}
+		if (message === 'Ticket pack not found.') {
+			return '回数券が見つかりません。';
+		}
 	}
 	if (status === 409) {
 		if (message === 'Ticket type is not purchasable.') {
 			return 'この回数券種別は現在購入できません。';
+		}
+		if (message === 'Ticket type is inactive.') {
+			return 'この回数券種別は無効化されています。';
+		}
+		if (message === 'Ticket pack adjustment has no changes.') {
+			return '変更内容がありません。';
 		}
 		if (message === 'Only pending approval purchase can be approved.') {
 			return '承認できるのは承認待ち申請のみです。';
@@ -129,6 +138,9 @@ export const toTicketErrorMessage = (
 		}
 		if (message === 'Stripe is not configured.') {
 			return 'Stripe 設定が未完了のため決済を開始できません。';
+		}
+		if (message === 'remainingCount must be between 0 and initialCount.') {
+			return '残数は 0 以上、発行時回数以下で入力してください。';
 		}
 	}
 	const validationError = extractValidationErrorMessage(payload);
@@ -254,6 +266,47 @@ export const createTicketType = async (input: {
 	};
 };
 
+export const updateTicketType = async (input: {
+	organizationId: string;
+	ticketTypeId: string;
+	name?: string;
+	totalCount?: number;
+	expiresInDays?: number | null;
+	serviceIds?: string[];
+	isActive?: boolean;
+	isForSale?: boolean;
+}) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			status: 422,
+			message: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.updateTicketTypeScoped(context, {
+		organizationId: input.organizationId,
+		ticketTypeId: input.ticketTypeId,
+		name: input.name,
+		totalCount: input.totalCount,
+		expiresInDays: input.expiresInDays,
+		serviceIds: input.serviceIds,
+		isActive: input.isActive,
+		isForSale: input.isForSale
+	});
+	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
+	return {
+		ok: response.ok,
+		status: response.status,
+		premiumRestriction,
+		ticketType: response.ok && isTicketType(payload) ? payload : null,
+		message: response.ok
+			? '回数券種別を更新しました。'
+			: toTicketErrorMessage(response.status, payload, '回数券種別の更新に失敗しました。')
+	};
+};
+
 export const grantTicketPack = async (input: {
 	organizationId: string;
 	participantId: string;
@@ -285,6 +338,63 @@ export const grantTicketPack = async (input: {
 		message: response.ok
 			? '回数券を付与しました。'
 			: toTicketErrorMessage(response.status, payload, '回数券付与に失敗しました。')
+	};
+};
+
+export const loadTicketPacks = async (input: { participantId: string }) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			packs: [] as TicketPackPayload[],
+			ok: false,
+			status: 422,
+			error: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.listTicketPacksScoped(context, {
+		participantId: input.participantId
+	});
+	const payload = await parseResponseBody(response);
+	return {
+		packs: response.ok ? asTicketPacks(payload) : [],
+		ok: response.ok,
+		status: response.status,
+		error: response.ok
+			? null
+			: toTicketErrorMessage(response.status, payload, '発行済み回数券の取得に失敗しました。')
+	};
+};
+
+export const adjustTicketPack = async (input: {
+	ticketPackId: string;
+	remainingCount?: number;
+	expiresAt?: string | null;
+	reason: string;
+}) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			status: 422,
+			message: 'URL に組織/教室コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.adjustTicketPackScoped(context, {
+		ticketPackId: input.ticketPackId,
+		remainingCount: input.remainingCount,
+		expiresAt: input.expiresAt,
+		reason: input.reason
+	});
+	const payload = await parseResponseBody(response);
+	const premiumRestriction = readOrganizationPremiumRestriction(payload);
+	return {
+		ok: response.ok,
+		status: response.status,
+		premiumRestriction,
+		ticketPack: response.ok && isTicketPack(payload) ? payload : null,
+		message: response.ok
+			? '回数券を調整しました。'
+			: toTicketErrorMessage(response.status, payload, '回数券の調整に失敗しました。')
 	};
 };
 

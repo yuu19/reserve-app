@@ -79,6 +79,59 @@ export const insertTicketType = async ({
 };
 
 /**
+ * ticket type の運用設定を更新します。
+ */
+export const updateTicketType = async ({
+  database,
+  ticketTypeId,
+  name,
+  serviceIds,
+  totalCount,
+  expiresInDays,
+  isActive,
+  isForSale,
+}: {
+  database: AuthRuntimeDatabase;
+  ticketTypeId: string;
+  name?: string;
+  serviceIds?: string[];
+  totalCount?: number;
+  expiresInDays?: number | null;
+  isActive?: boolean;
+  isForSale?: boolean;
+}) => {
+  const values: Partial<typeof dbSchema.ticketType.$inferInsert> = {};
+  if (name !== undefined) {
+    values.name = name;
+  }
+  if (serviceIds !== undefined) {
+    values.serviceIdsJson = serviceIds.length > 0 ? JSON.stringify(serviceIds) : null;
+  }
+  if (totalCount !== undefined) {
+    values.totalCount = totalCount;
+  }
+  if (expiresInDays !== undefined) {
+    values.expiresInDays = expiresInDays;
+  }
+  if (isActive !== undefined) {
+    values.isActive = isActive;
+  }
+  if (isForSale !== undefined) {
+    values.isForSale = isForSale;
+  }
+
+  const updatedRows = await database
+    .update(dbSchema.ticketType)
+    .set(values)
+    .where(eq(dbSchema.ticketType.id, ticketTypeId))
+    .returning({
+      id: dbSchema.ticketType.id,
+    });
+
+  return updatedRows[0] ?? null;
+};
+
+/**
  * ticket type の最新行を ID で取得します。
  */
 export const getTicketTypeById = async (database: AuthRuntimeDatabase, ticketTypeId: string) => {
@@ -396,6 +449,7 @@ export const findTicketTypeForTicketPackGrant = async ({
       classroomId: dbSchema.ticketType.classroomId,
       totalCount: dbSchema.ticketType.totalCount,
       expiresInDays: dbSchema.ticketType.expiresInDays,
+      isActive: dbSchema.ticketType.isActive,
     })
     .from(dbSchema.ticketType)
     .where(
@@ -407,6 +461,31 @@ export const findTicketTypeForTicketPackGrant = async ({
     )
     .limit(1);
   return ticketTypeRows[0] ?? null;
+};
+
+/**
+ * staff 操作前に ticket pack の scope と残数状態を取得します。
+ */
+export const findTicketPackForAdjustment = async (
+  database: AuthRuntimeDatabase,
+  ticketPackId: string,
+) => {
+  const rows = await database
+    .select({
+      id: dbSchema.ticketPack.id,
+      organizationId: dbSchema.ticketPack.organizationId,
+      classroomId: dbSchema.ticketPack.classroomId,
+      participantId: dbSchema.ticketPack.participantId,
+      ticketTypeId: dbSchema.ticketPack.ticketTypeId,
+      initialCount: dbSchema.ticketPack.initialCount,
+      remainingCount: dbSchema.ticketPack.remainingCount,
+      expiresAt: dbSchema.ticketPack.expiresAt,
+      status: dbSchema.ticketPack.status,
+    })
+    .from(dbSchema.ticketPack)
+    .where(eq(dbSchema.ticketPack.id, ticketPackId))
+    .limit(1);
+  return rows[0] ?? null;
 };
 
 /**

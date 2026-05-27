@@ -136,8 +136,11 @@ describe('/admin/tickets/+page.svelte', () => {
 			.toBeInTheDocument();
 		await expect.element(page.getByText('回数券種別作成')).toBeInTheDocument();
 		await expect.element(page.getByText('回数券付与')).toBeInTheDocument();
+		await expect.element(page.getByText('発行済み回数券調整')).toBeInTheDocument();
 		await expect.element(page.getByText('回数券購入管理')).toBeInTheDocument();
 		await expect.element(page.getByText('5回券', { exact: true })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '更新' })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '無効化' })).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '承認' })).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '却下' })).toBeInTheDocument();
 	});
@@ -165,6 +168,9 @@ describe('/admin/tickets/+page.svelte', () => {
 		await expect.element(page.getByText('回数券種別作成')).toBeInTheDocument();
 		await expect
 			.element(page.getByText('回数券付与には参加者管理権限が必要です。'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('発行済み回数券の調整には参加者管理権限が必要です。'))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByText('回数券購入申請の承認には参加者管理権限が必要です。'))

@@ -262,6 +262,78 @@ export const issueTicketPackWithLedger = async ({
 };
 
 /**
+ * staff による発行済み ticket pack 調整を反映し、adjust ledger を記録します。
+ */
+export const adjustTicketPackWithLedger = async ({
+  database,
+  ticketPackId,
+  remainingCount,
+  expiresAt,
+  actorUserId,
+  reason,
+}: {
+  database: AuthRuntimeDatabase;
+  ticketPackId: string;
+  remainingCount: number;
+  expiresAt: Date | null;
+  actorUserId: string;
+  reason: string;
+}) => {
+  const currentRows = await database
+    .select({
+      id: dbSchema.ticketPack.id,
+      organizationId: dbSchema.ticketPack.organizationId,
+      classroomId: dbSchema.ticketPack.classroomId,
+      remainingCount: dbSchema.ticketPack.remainingCount,
+    })
+    .from(dbSchema.ticketPack)
+    .where(eq(dbSchema.ticketPack.id, ticketPackId))
+    .limit(1);
+  const current = currentRows[0];
+  if (!current) {
+    return { kind: 'not_found' as const };
+  }
+
+  const status = normalizePackStatus({
+    remainingCount,
+    expiresAt,
+  });
+  const delta = remainingCount - current.remainingCount;
+
+  const updatedRows = await database
+    .update(dbSchema.ticketPack)
+    .set({
+      remainingCount,
+      expiresAt,
+      status,
+    })
+    .where(eq(dbSchema.ticketPack.id, ticketPackId))
+    .returning();
+  const updatedPack = updatedRows[0];
+  if (!updatedPack) {
+    return { kind: 'not_found' as const };
+  }
+
+  await database.insert(dbSchema.ticketLedger).values({
+    id: crypto.randomUUID(),
+    organizationId: current.organizationId,
+    classroomId: current.classroomId,
+    ticketPackId,
+    bookingId: null,
+    action: TICKET_LEDGER_ACTION.ADJUST,
+    delta,
+    balanceAfter: remainingCount,
+    actorUserId,
+    reason,
+  });
+
+  return {
+    kind: 'adjusted' as const,
+    ticketPack: serializeTicketPack(updatedPack as Record<string, unknown> | undefined),
+  };
+};
+
+/**
  * 承認待ち ticket purchase を承認し、ticket pack 発行と購入行更新をまとめて処理します。
  *
  * @remarks

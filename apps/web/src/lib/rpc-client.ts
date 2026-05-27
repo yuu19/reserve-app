@@ -310,6 +310,7 @@ export type TicketTypePayload = {
 export type TicketPackPayload = {
 	id: string;
 	organizationId: string;
+	classroomId: string;
 	participantId: string;
 	ticketTypeId: string;
 	initialCount: number;
@@ -722,6 +723,18 @@ type CreateTicketTypeInput = {
 	stripePriceId?: string;
 };
 
+type UpdateTicketTypeInput = {
+	organizationId?: string;
+	classroomId?: string;
+	ticketTypeId: string;
+	name?: string;
+	serviceIds?: string[];
+	totalCount?: number;
+	expiresInDays?: number | null;
+	isActive?: boolean;
+	isForSale?: boolean;
+};
+
 type ListTicketTypesQuery = {
 	organizationId?: string;
 	classroomId?: string;
@@ -735,6 +748,20 @@ type GrantTicketPackInput = {
 	ticketTypeId: string;
 	count?: number;
 	expiresAt?: string;
+};
+
+type ListTicketPacksQuery = {
+	organizationId?: string;
+	classroomId?: string;
+	participantId: string;
+};
+
+type AdjustTicketPackInput = {
+	ticketPackId: string;
+	classroomId?: string;
+	remainingCount?: number;
+	expiresAt?: string | null;
+	reason: string;
 };
 
 type CreateTicketPurchaseInput = {
@@ -922,16 +949,23 @@ type AuthRpcClient = {
 					'ticket-types': {
 						$get: (args?: { query: ListTicketTypesQuery }) => Promise<Response>;
 						$post: (args: { json: CreateTicketTypeInput }) => Promise<Response>;
+						update: {
+							$post: (args: { json: UpdateTicketTypeInput }) => Promise<Response>;
+						};
 						purchasable: {
 							$get: (args?: { query: OrganizationQuery }) => Promise<Response>;
 						};
 					};
 					'ticket-packs': {
+						$get: (args?: { query: ListTicketPacksQuery }) => Promise<Response>;
 						mine: {
 							$get: (args?: { query: OrganizationQuery }) => Promise<Response>;
 						};
 						grant: {
 							$post: (args: { json: GrantTicketPackInput }) => Promise<Response>;
+						};
+						adjust: {
+							$post: (args: { json: AdjustTicketPackInput }) => Promise<Response>;
 						};
 					};
 					'ticket-purchases': {
@@ -1321,6 +1355,8 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations.bookings['no-show'].$post({ json }),
 	createTicketType: (json: CreateTicketTypeInput) =>
 		rpcClient.api.v1.auth.organizations['ticket-types'].$post({ json }),
+	updateTicketType: (json: UpdateTicketTypeInput) =>
+		rpcClient.api.v1.auth.organizations['ticket-types'].update.$post({ json }),
 	listTicketTypes: (query?: ListTicketTypesQuery) =>
 		rpcClient.api.v1.auth.organizations['ticket-types'].$get(query ? { query } : undefined),
 	listPurchasableTicketTypes: (organizationId?: string) =>
@@ -1329,6 +1365,10 @@ export const authRpc = {
 		),
 	grantTicketPack: (json: GrantTicketPackInput) =>
 		rpcClient.api.v1.auth.organizations['ticket-packs'].grant.$post({ json }),
+	listTicketPacks: (query: ListTicketPacksQuery) =>
+		rpcClient.api.v1.auth.organizations['ticket-packs'].$get({ query }),
+	adjustTicketPack: (json: AdjustTicketPackInput) =>
+		rpcClient.api.v1.auth.organizations['ticket-packs'].adjust.$post({ json }),
 	listMyTicketPacks: (organizationId?: string) =>
 		rpcClient.api.v1.auth.organizations['ticket-packs'].mine.$get(
 			organizationId ? { query: { organizationId } } : undefined
@@ -1490,6 +1530,10 @@ export const authRpc = {
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/ticket-types', { json: resolvedJson })
 		),
+	updateTicketTypeScoped: (context: ScopedApiContext, json: UpdateTicketTypeInput) =>
+		withScopedJson(context, json, (resolvedJson) =>
+			authFetch('/api/v1/auth/organizations/ticket-types/update', { json: resolvedJson })
+		),
 	listTicketTypesScoped: (
 		context: ScopedApiContext,
 		query?: Omit<ListTicketTypesQuery, 'organizationId'>
@@ -1504,6 +1548,17 @@ export const authRpc = {
 	grantTicketPackScoped: (context: ScopedApiContext, json: GrantTicketPackInput) =>
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/ticket-packs/grant', { json: resolvedJson })
+		),
+	listTicketPacksScoped: (
+		context: ScopedApiContext,
+		query: Omit<ListTicketPacksQuery, 'organizationId'>
+	) =>
+		withScopedQuery(context, query, (resolvedQuery) =>
+			authFetch('/api/v1/auth/organizations/ticket-packs', { query: resolvedQuery })
+		),
+	adjustTicketPackScoped: (context: ScopedApiContext, json: AdjustTicketPackInput) =>
+		withScopedJson(context, json, (resolvedJson) =>
+			authFetch('/api/v1/auth/organizations/ticket-packs/adjust', { json: resolvedJson })
 		),
 	listMyTicketPacksScoped: (context: ScopedApiContext) =>
 		withScopedQuery(context, undefined, (resolvedQuery) =>

@@ -9,11 +9,14 @@
 	import { loadOrganizationBilling } from '$lib/features/organization-context.svelte';
 	import { loadTicketManagementPageData } from '$lib/features/ticket-management-page.svelte';
 	import {
+		adjustTicketPack,
 		approveTicketPurchase,
 		createTicketType,
 		grantTicketPack,
+		loadTicketPacks,
 		rejectTicketPurchase,
-		toIsoFromDateTimeLocal
+		toIsoFromDateTimeLocal,
+		updateTicketType
 	} from '$lib/features/tickets.svelte';
 	import {
 		getCurrentPathWithSearch,
@@ -25,6 +28,7 @@
 		OrganizationBillingPayload,
 		ParticipantPayload,
 		ServicePayload,
+		TicketPackPayload,
 		TicketPurchasePayload,
 		TicketTypePayload
 	} from '$lib/rpc-client';
@@ -40,6 +44,7 @@
 	let participants = $state<ParticipantPayload[]>([]);
 	let services = $state<ServicePayload[]>([]);
 	let ticketTypes = $state<TicketTypePayload[]>([]);
+	let ticketPacks = $state<TicketPackPayload[]>([]);
 	let ticketPurchases = $state<TicketPurchasePayload[]>([]);
 	let ticketTypeForm = $state({
 		name: '',
@@ -48,12 +53,39 @@
 		serviceIds: [] as string[],
 		isForSale: false
 	});
+	let ticketTypeEditForms = $state<
+		Record<
+			string,
+			{
+				name: string;
+				totalCount: string;
+				expiresInDays: string;
+				serviceIds: string[];
+				isActive: boolean;
+				isForSale: boolean;
+			}
+		>
+	>({});
 	let ticketGrantForm = $state({
 		participantId: '',
 		ticketTypeId: '',
 		count: '',
 		expiresAt: ''
 	});
+	let ticketPackFilterForm = $state({
+		participantId: ''
+	});
+	let ticketPackAdjustForms = $state<
+		Record<
+			string,
+			{
+				remainingCount: string;
+				expiresAt: string;
+				reason: string;
+			}
+		>
+	>({});
+	let loadingTicketPacks = $state(false);
 	let ticketPurchaseFilter = $state({
 		status: 'all' as 'all' | TicketPurchasePayload['status'],
 		paymentMethod: 'all' as 'all' | TicketPurchasePayload['paymentMethod'],
@@ -77,6 +109,17 @@
 		}
 		return parsed;
 	};
+	const parseNonNegativeInteger = (value: string | number): number | undefined => {
+		const normalized = normalizeToText(value);
+		if (!normalized) {
+			return undefined;
+		}
+		const parsed = Number(normalized);
+		if (!Number.isInteger(parsed) || parsed < 0) {
+			return undefined;
+		}
+		return parsed;
+	};
 
 	const toggleTicketTypeService = (serviceId: string, checked: boolean) => {
 		if (checked) {
@@ -88,6 +131,35 @@
 		ticketTypeForm.serviceIds = ticketTypeForm.serviceIds.filter(
 			(current) => current !== serviceId
 		);
+	};
+	const toggleTicketTypeEditService = (
+		ticketTypeId: string,
+		serviceId: string,
+		checked: boolean
+	) => {
+		const form = ticketTypeEditForms[ticketTypeId];
+		if (!form) {
+			return;
+		}
+		if (checked) {
+			ticketTypeEditForms = {
+				...ticketTypeEditForms,
+				[ticketTypeId]: {
+					...form,
+					serviceIds: form.serviceIds.includes(serviceId)
+						? form.serviceIds
+						: [...form.serviceIds, serviceId]
+				}
+			};
+			return;
+		}
+		ticketTypeEditForms = {
+			...ticketTypeEditForms,
+			[ticketTypeId]: {
+				...form,
+				serviceIds: form.serviceIds.filter((current) => current !== serviceId)
+			}
+		};
 	};
 
 	const formatDateTime = (value: string): string => {
@@ -102,6 +174,17 @@
 			hour: '2-digit',
 			minute: '2-digit'
 		});
+	};
+	const toDateTimeLocalValue = (value?: string | null): string => {
+		if (!value) {
+			return '';
+		}
+		const parsed = new Date(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return '';
+		}
+		const local = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60 * 1000);
+		return local.toISOString().slice(0, 16);
 	};
 
 	const ticketPurchaseStatusLabelMap: Record<TicketPurchasePayload['status'], string> = {
@@ -144,9 +227,19 @@
 	const pendingTicketPurchaseApprovalCount = $derived(
 		ticketPurchases.filter((purchase) => purchase.status === 'pending_approval').length
 	);
+	const activeTicketTypes = $derived(ticketTypes.filter((ticketType) => ticketType.isActive));
+	const ticketPackStatusLabelMap: Record<TicketPackPayload['status'], string> = {
+		active: '有効',
+		exhausted: '使い切り',
+		expired: '期限切れ'
+	};
 
 	const formatTicketPurchaseIdShort = (purchaseId: string): string => purchaseId.slice(0, 8);
 	const formatTicketTypeIdShort = (ticketTypeId: string): string => ticketTypeId.slice(0, 8);
+	const getTicketTypeLabel = (ticketTypeId: string) => {
+		const ticketType = ticketTypes.find((item) => item.id === ticketTypeId);
+		return ticketType ? `${ticketType.name} / ${ticketType.totalCount}回` : ticketTypeId;
+	};
 	const getParticipantLabel = (participantId: string) => {
 		const participant = participants.find((item) => item.id === participantId);
 		return participant ? `${participant.name} / ${participant.email}` : participantId;
@@ -161,6 +254,36 @@
 		}
 		return fallback;
 	};
+	const syncTicketTypeEditForms = (items: TicketTypePayload[]) => {
+		ticketTypeEditForms = Object.fromEntries(
+			items.map((ticketType) => [
+				ticketType.id,
+				{
+					name: ticketType.name,
+					totalCount: String(ticketType.totalCount),
+					expiresInDays:
+						ticketType.expiresInDays === null || ticketType.expiresInDays === undefined
+							? ''
+							: String(ticketType.expiresInDays),
+					serviceIds: ticketType.serviceIds ?? [],
+					isActive: ticketType.isActive,
+					isForSale: ticketType.isForSale
+				}
+			])
+		);
+	};
+	const syncTicketPackAdjustForms = (items: TicketPackPayload[]) => {
+		ticketPackAdjustForms = Object.fromEntries(
+			items.map((ticketPack) => [
+				ticketPack.id,
+				{
+					remainingCount: String(ticketPack.remainingCount),
+					expiresAt: toDateTimeLocalValue(ticketPack.expiresAt),
+					reason: ''
+				}
+			])
+		);
+	};
 	const resetTicketManagementViewState = () => {
 		activeOrganizationId = null;
 		canManageParticipants = false;
@@ -170,7 +293,11 @@
 		participants = [];
 		services = [];
 		ticketTypes = [];
+		ticketPacks = [];
 		ticketPurchases = [];
+		ticketTypeEditForms = {};
+		ticketPackFilterForm = { participantId: '' };
+		ticketPackAdjustForms = {};
 	};
 
 	const refresh = async () => {
@@ -201,10 +328,35 @@
 			participants = data.participants;
 			services = data.services;
 			ticketTypes = data.ticketTypes;
+			syncTicketTypeEditForms(data.ticketTypes);
 			ticketPurchases = data.ticketPurchases;
 		} catch (error) {
 			resetTicketManagementViewState();
 			toast.error(toExceptionMessage(error, '回数券管理データの取得に失敗しました。'));
+		}
+	};
+
+	const loadSelectedTicketPacks = async () => {
+		if (!canManageParticipants || !ticketPackFilterForm.participantId) {
+			ticketPacks = [];
+			ticketPackAdjustForms = {};
+			return;
+		}
+		loadingTicketPacks = true;
+		try {
+			const result = await loadTicketPacks({
+				participantId: ticketPackFilterForm.participantId
+			});
+			if (!result.ok) {
+				toast.error(result.error ?? '発行済み回数券の取得に失敗しました。');
+				ticketPacks = [];
+				ticketPackAdjustForms = {};
+				return;
+			}
+			ticketPacks = result.packs;
+			syncTicketPackAdjustForms(result.packs);
+		} finally {
+			loadingTicketPacks = false;
 		}
 	};
 
@@ -254,6 +406,81 @@
 		}
 	};
 
+	const submitUpdateTicketType = async (event: SubmitEvent, ticketTypeId: string) => {
+		event.preventDefault();
+		if (!activeOrganizationId || !canManageClassroom) return;
+
+		const form = ticketTypeEditForms[ticketTypeId];
+		if (!form) {
+			toast.error('編集対象の回数券種別が見つかりません。');
+			return;
+		}
+
+		const totalCount = parsePositiveInteger(form.totalCount);
+		if (!totalCount) {
+			toast.error('回数は 1 以上の整数で入力してください。');
+			return;
+		}
+
+		const expiresInDaysText = normalizeToText(form.expiresInDays);
+		const expiresInDays = parsePositiveInteger(form.expiresInDays);
+		if (expiresInDaysText && !expiresInDays) {
+			toast.error('有効日数は 1 以上の整数で入力してください。');
+			return;
+		}
+
+		busy = true;
+		try {
+			const result = await updateTicketType({
+				organizationId: activeOrganizationId,
+				ticketTypeId,
+				name: form.name,
+				totalCount,
+				expiresInDays: expiresInDaysText ? expiresInDays : null,
+				serviceIds: form.serviceIds,
+				isActive: form.isActive,
+				isForSale: form.isForSale
+			});
+			if (!result.ok) {
+				if (result.premiumRestriction) {
+					premiumRestriction = result.premiumRestriction;
+				}
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			busy = false;
+		}
+	};
+
+	const submitDeactivateTicketType = async (ticketTypeId: string) => {
+		if (!activeOrganizationId || !canManageClassroom || busy) return;
+		if (!confirm('この回数券種別を無効化しますか？ 発行済み回数券は残ります。')) {
+			return;
+		}
+		busy = true;
+		try {
+			const result = await updateTicketType({
+				organizationId: activeOrganizationId,
+				ticketTypeId,
+				isActive: false
+			});
+			if (!result.ok) {
+				if (result.premiumRestriction) {
+					premiumRestriction = result.premiumRestriction;
+				}
+				toast.error(result.message);
+				return;
+			}
+			toast.success('回数券種別を無効化しました。');
+			await refresh();
+		} finally {
+			busy = false;
+		}
+	};
+
 	const submitGrantTicketPack = async (event: SubmitEvent) => {
 		event.preventDefault();
 		if (!activeOrganizationId || !canManageParticipants) return;
@@ -281,6 +508,7 @@
 
 		busy = true;
 		try {
+			const grantedParticipantId = ticketGrantForm.participantId;
 			const result = await grantTicketPack({
 				organizationId: activeOrganizationId,
 				participantId: ticketGrantForm.participantId,
@@ -303,6 +531,73 @@
 				expiresAt: ''
 			};
 			await refresh();
+			if (ticketPackFilterForm.participantId === grantedParticipantId) {
+				await loadSelectedTicketPacks();
+			}
+		} finally {
+			busy = false;
+		}
+	};
+
+	const submitLoadTicketPacks = async (event: SubmitEvent) => {
+		event.preventDefault();
+		if (!ticketPackFilterForm.participantId) {
+			toast.error('参加者を選択してください。');
+			return;
+		}
+		await loadSelectedTicketPacks();
+	};
+
+	const submitAdjustTicketPack = async (event: SubmitEvent, ticketPack: TicketPackPayload) => {
+		event.preventDefault();
+		if (!canManageParticipants) return;
+
+		const form = ticketPackAdjustForms[ticketPack.id];
+		if (!form) {
+			toast.error('調整対象の回数券が見つかりません。');
+			return;
+		}
+
+		const remainingCount = parseNonNegativeInteger(form.remainingCount);
+		if (remainingCount === undefined) {
+			toast.error('残数は 0 以上の整数で入力してください。');
+			return;
+		}
+		if (remainingCount > ticketPack.initialCount) {
+			toast.error('残数は発行時回数以下で入力してください。');
+			return;
+		}
+
+		const expiresAtText = normalizeToText(form.expiresAt);
+		const expiresAt = expiresAtText ? toIsoFromDateTimeLocal(form.expiresAt) : null;
+		if (expiresAtText && !expiresAt) {
+			toast.error('有効期限の形式が不正です。');
+			return;
+		}
+
+		const reason = form.reason.trim();
+		if (!reason) {
+			toast.error('調整理由を入力してください。');
+			return;
+		}
+
+		busy = true;
+		try {
+			const result = await adjustTicketPack({
+				ticketPackId: ticketPack.id,
+				remainingCount,
+				expiresAt,
+				reason
+			});
+			if (!result.ok) {
+				if (result.premiumRestriction) {
+					premiumRestriction = result.premiumRestriction;
+				}
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await loadSelectedTicketPacks();
 		} finally {
 			busy = false;
 		}
@@ -579,7 +874,7 @@
 											required
 										>
 											<option value="" disabled>回数券種別を選択</option>
-											{#each ticketTypes as ticketType (ticketType.id)}
+											{#each activeTicketTypes as ticketType (ticketType.id)}
 												<option value={ticketType.id}
 													>{ticketType.name} / {ticketType.totalCount}回</option
 												>
@@ -626,26 +921,265 @@
 							{:else}
 								<div class="space-y-2">
 									{#each ticketTypes as ticketType (ticketType.id)}
-										<div
-											class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-card/80 p-3"
+										{@const editForm = ticketTypeEditForms[ticketType.id]}
+										<form
+											class="space-y-3 rounded-lg border border-border/80 bg-card/80 p-3"
+											onsubmit={(event) => submitUpdateTicketType(event, ticketType.id)}
 										>
-											<div>
-												<p class="text-sm font-semibold">{ticketType.name}</p>
+											<div class="flex flex-wrap items-start justify-between gap-3">
+												<div>
+													<p class="text-sm font-semibold">{ticketType.name}</p>
+													<p class="text-xs text-muted-foreground">
+														作成: {formatDateTime(ticketType.createdAt)}
+													</p>
+												</div>
+												<div class="flex flex-wrap gap-2">
+													<Badge variant={ticketType.isActive ? 'outline' : 'secondary'}>
+														{ticketType.isActive ? '有効' : '無効'}
+													</Badge>
+													<Badge variant={ticketType.isForSale ? 'outline' : 'secondary'}>
+														{ticketType.isForSale ? '販売中' : '販売停止'}
+													</Badge>
+												</div>
+											</div>
+
+											{#if canManageClassroom && editForm}
+												<div class="grid gap-3 md:grid-cols-[1.4fr_0.7fr_0.7fr]">
+													<div class="space-y-2">
+														<Label for={`ticket-type-edit-name-${ticketType.id}`}>券種名</Label>
+														<Input
+															id={`ticket-type-edit-name-${ticketType.id}`}
+															name={`ticket_type_edit_name_${ticketType.id}`}
+															type="text"
+															bind:value={editForm.name}
+															required
+														/>
+													</div>
+													<div class="space-y-2">
+														<Label for={`ticket-type-edit-count-${ticketType.id}`}>回数</Label>
+														<Input
+															id={`ticket-type-edit-count-${ticketType.id}`}
+															name={`ticket_type_edit_count_${ticketType.id}`}
+															type="number"
+															min="1"
+															bind:value={editForm.totalCount}
+															required
+														/>
+													</div>
+													<div class="space-y-2">
+														<Label for={`ticket-type-edit-expiry-${ticketType.id}`}>有効日数</Label>
+														<Input
+															id={`ticket-type-edit-expiry-${ticketType.id}`}
+															name={`ticket_type_edit_expiry_${ticketType.id}`}
+															type="number"
+															min="1"
+															placeholder="無期限"
+															bind:value={editForm.expiresInDays}
+														/>
+													</div>
+												</div>
+
+												<div class="grid gap-3 md:grid-cols-2">
+													<label
+														class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm"
+														for={`ticket-type-edit-active-${ticketType.id}`}
+													>
+														<input
+															id={`ticket-type-edit-active-${ticketType.id}`}
+															name={`ticket_type_edit_active_${ticketType.id}`}
+															type="checkbox"
+															bind:checked={editForm.isActive}
+														/>
+														<span>有効にする</span>
+													</label>
+													<label
+														class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm"
+														for={`ticket-type-edit-sale-${ticketType.id}`}
+													>
+														<input
+															id={`ticket-type-edit-sale-${ticketType.id}`}
+															name={`ticket_type_edit_sale_${ticketType.id}`}
+															type="checkbox"
+															bind:checked={editForm.isForSale}
+														/>
+														<span>販売中にする</span>
+													</label>
+												</div>
+
+												<div class="space-y-2">
+													<p class="text-sm font-medium">対象サービス</p>
+													{#if services.length === 0}
+														<p class="text-sm text-muted-foreground">
+															選択可能なサービスがありません。
+														</p>
+													{:else}
+														<div
+															class="grid gap-2 rounded-md border border-border/80 bg-secondary/60 p-2 md:grid-cols-2"
+														>
+															{#each services as service (service.id)}
+																<label
+																	class="flex items-center gap-2 text-sm text-secondary-foreground"
+																	for={`ticket-type-edit-service-${ticketType.id}-${service.id}`}
+																>
+																	<input
+																		id={`ticket-type-edit-service-${ticketType.id}-${service.id}`}
+																		name={`ticket_type_edit_service_${ticketType.id}_${service.id}`}
+																		type="checkbox"
+																		checked={editForm.serviceIds.includes(service.id)}
+																		onchange={(event) =>
+																			toggleTicketTypeEditService(
+																				ticketType.id,
+																				service.id,
+																				(event.currentTarget as HTMLInputElement).checked
+																			)}
+																	/>
+																	<span>{service.name}</span>
+																</label>
+															{/each}
+														</div>
+													{/if}
+												</div>
+
+												<div class="flex flex-wrap gap-2">
+													<Button type="submit" size="sm" disabled={busy}>更新</Button>
+													{#if ticketType.isActive}
+														<Button
+															type="button"
+															size="sm"
+															variant="outline"
+															disabled={busy}
+															onclick={() => submitDeactivateTicketType(ticketType.id)}
+														>
+															無効化
+														</Button>
+													{/if}
+												</div>
+											{:else}
 												<p class="text-xs text-muted-foreground">
 													回数: {ticketType.totalCount} / 有効日数: {ticketType.expiresInDays ??
-														'無期限'} / 対象サービス: {ticketType.serviceIds?.length ?? 0}件 / 販売:
-													{ticketType.isForSale ? '公開' : '非公開'}
+														'無期限'} / 対象サービス: {ticketType.serviceIds?.length ?? 0}件
 												</p>
-												<p class="text-xs text-muted-foreground">
-													作成: {formatDateTime(ticketType.createdAt)}
-												</p>
-											</div>
-											<Badge variant={ticketType.isActive ? 'outline' : 'secondary'}>
-												{ticketType.isActive ? 'active' : 'inactive'}
-											</Badge>
-										</div>
+											{/if}
+										</form>
 									{/each}
 								</div>
+							{/if}
+						</section>
+
+						<section class="space-y-3">
+							<h3 class="text-sm font-semibold">発行済み回数券調整</h3>
+							{#if !canManageParticipants}
+								<p class="text-sm text-muted-foreground">
+									発行済み回数券の調整には参加者管理権限が必要です。
+								</p>
+							{:else}
+								<form
+									class="grid gap-3 rounded-lg border border-border/80 bg-card/80 p-3 md:grid-cols-[1fr_auto]"
+									onsubmit={submitLoadTicketPacks}
+								>
+									<div class="space-y-2">
+										<Label for="ticket-pack-filter-participant">参加者</Label>
+										<select
+											id="ticket-pack-filter-participant"
+											name="ticket_pack_filter_participant"
+											class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											bind:value={ticketPackFilterForm.participantId}
+											required
+										>
+											<option value="" disabled>参加者を選択</option>
+											{#each participants as participant (participant.id)}
+												<option value={participant.id}
+													>{participant.name} / {participant.email}</option
+												>
+											{/each}
+										</select>
+									</div>
+									<div class="flex items-end">
+										<Button type="submit" disabled={loadingTicketPacks}>表示</Button>
+									</div>
+								</form>
+
+								{#if loadingTicketPacks}
+									<p class="text-sm text-muted-foreground">発行済み回数券を読み込み中…</p>
+								{:else if !ticketPackFilterForm.participantId}
+									<p class="text-sm text-muted-foreground">参加者を選択してください。</p>
+								{:else if ticketPacks.length === 0}
+									<p class="text-sm text-muted-foreground">発行済み回数券はありません。</p>
+								{:else}
+									<div class="space-y-2">
+										{#each ticketPacks as ticketPack (ticketPack.id)}
+											{@const adjustForm = ticketPackAdjustForms[ticketPack.id]}
+											<form
+												class="space-y-3 rounded-lg border border-border/80 bg-card/80 p-3"
+												onsubmit={(event) => submitAdjustTicketPack(event, ticketPack)}
+											>
+												<div class="flex flex-wrap items-start justify-between gap-3">
+													<div>
+														<p class="text-sm font-semibold">
+															{getTicketTypeLabel(ticketPack.ticketTypeId)}
+														</p>
+														<p class="text-xs text-muted-foreground">
+															発行時回数: {ticketPack.initialCount} / 現在残数:
+															{ticketPack.remainingCount} / 有効期限:
+															{ticketPack.expiresAt
+																? formatDateTime(ticketPack.expiresAt)
+																: '無期限'}
+														</p>
+													</div>
+													<Badge
+														variant={ticketPack.status === 'active'
+															? 'outline'
+															: ticketPack.status === 'expired'
+																? 'destructive'
+																: 'secondary'}
+													>
+														{ticketPackStatusLabelMap[ticketPack.status]}
+													</Badge>
+												</div>
+
+												{#if adjustForm}
+													<div class="grid gap-3 md:grid-cols-[0.7fr_1fr_1.3fr_auto]">
+														<div class="space-y-2">
+															<Label for={`ticket-pack-remaining-${ticketPack.id}`}>残数</Label>
+															<Input
+																id={`ticket-pack-remaining-${ticketPack.id}`}
+																name={`ticket_pack_remaining_${ticketPack.id}`}
+																type="number"
+																min="0"
+																max={ticketPack.initialCount}
+																bind:value={adjustForm.remainingCount}
+																required
+															/>
+														</div>
+														<div class="space-y-2">
+															<Label for={`ticket-pack-expires-${ticketPack.id}`}>有効期限</Label>
+															<Input
+																id={`ticket-pack-expires-${ticketPack.id}`}
+																name={`ticket_pack_expires_${ticketPack.id}`}
+																type="datetime-local"
+																bind:value={adjustForm.expiresAt}
+															/>
+														</div>
+														<div class="space-y-2">
+															<Label for={`ticket-pack-reason-${ticketPack.id}`}>調整理由</Label>
+															<Input
+																id={`ticket-pack-reason-${ticketPack.id}`}
+																name={`ticket_pack_reason_${ticketPack.id}`}
+																type="text"
+																maxlength={500}
+																bind:value={adjustForm.reason}
+																required
+															/>
+														</div>
+														<div class="flex items-end">
+															<Button type="submit" size="sm" disabled={busy}>調整</Button>
+														</div>
+													</div>
+												{/if}
+											</form>
+										{/each}
+									</div>
+								{/if}
 							{/if}
 						</section>
 
