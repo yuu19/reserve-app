@@ -6,7 +6,7 @@ import type { BillingEntitlement, BillingEntitlementInput } from './ports.js';
  * @param input.entitlements 対象 billing account に紐づく entitlement 一覧。
  * @param input.key 判定したい機能 entitlement の key。
  * @param input.now 有効期間の境界判定に使う時刻。未指定時は現在時刻。
- * @returns active かつ `validFrom <= now < validUntil` を満たす entitlement があれば `true`。
+ * @returns active で、かつ `validFrom <= now < validUntil` を満たす entitlement があれば `true`。
  */
 export const hasActiveBillingEntitlement = ({
   entitlements,
@@ -33,7 +33,7 @@ export const hasActiveBillingEntitlement = ({
  * @param input.reason 管理画面や監査ログで読める付与理由。
  * @param input.validFrom entitlement の有効開始時刻。未指定時は即時有効扱い。
  * @param input.validUntil entitlement の有効終了時刻。未指定時は期限なし。
- * @returns store に渡せる active な entitlement 入力。
+ * @returns 永続化処理に渡せる active な entitlement 入力。
  */
 export const createActiveEntitlementInput = ({
   key,

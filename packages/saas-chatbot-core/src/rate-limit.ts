@@ -38,7 +38,7 @@ export type RateLimitConsumeInput = {
   now?: Date;
 };
 
-/** chat 送信の rate limit を永続化しながら判定する port。 */
+/** chat 送信の rate limit を永続化しながら判定する境界。 */
 export interface ChatRateLimiter {
   /** 現在の利用量を確認し、許可時は counter を加算する。 */
   checkAndIncrement(input: RateLimitConsumeInput): Promise<AiUsageLimitResult>;

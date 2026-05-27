@@ -1,12 +1,12 @@
-/** 同期実装と非同期実装の両方を許す port 戻り値。 */
+/** 同期実装と非同期実装の両方を許す境界の戻り値。 */
 export type MaybePromise<T> = T | Promise<T>;
 
-/** knowledge source の由来分類として許可する値。 */
+/** ナレッジ参照元の由来分類として許可する値。 */
 export const AI_SOURCE_KINDS = ['docs', 'specs', 'faq', 'db_summary'] as const;
-/** knowledge source の由来分類。 */
+/** ナレッジ参照元の由来分類。 */
 export type AiSourceKind = (typeof AI_SOURCE_KINDS)[number];
 
-/** source の最小公開範囲として許可する値。 */
+/** 参照元の最小公開範囲として許可する値。 */
 export const AI_SOURCE_VISIBILITIES = [
   'public',
   'authenticated',
@@ -16,7 +16,7 @@ export const AI_SOURCE_VISIBILITIES = [
   'admin',
   'owner',
 ] as const;
-/** source visibility と role-safe retrieval に使う公開範囲。 */
+/** 参照元の公開範囲と権限に応じたナレッジ検索に使う値。 */
 export type AiSourceVisibility = (typeof AI_SOURCE_VISIBILITIES)[number];
 
 /** UI に提示できる suggested action の分類。 */
@@ -32,7 +32,7 @@ export type AiFeedbackRating = (typeof AI_FEEDBACK_RATINGS)[number];
 /** conversation message の送信者 role。 */
 export type AiMessageRole = 'user' | 'assistant';
 
-/** 回答生成の成功・fallback・失敗を UI と usage log が共有する分類。 */
+/** 回答生成の成功・代替応答・失敗を UI と usage log が共有する分類。 */
 export type AiGenerationStatus =
   | 'generated'
   | 'fallback_no_grounding'
@@ -46,7 +46,7 @@ export type AiLocale = 'ja' | 'en';
 /** chatbot の subject scope。 */
 export type ChatSubjectType = 'organization' | 'classroom' | 'public_site' | 'user' | 'admin';
 
-/** chatbot core の port に渡す runtime context。 */
+/** chatbot core の境界に渡す実行時の文脈。 */
 export type ChatRuntimeContext = {
   /** 現在の subject 種別。 */
   subjectType: ChatSubjectType;

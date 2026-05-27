@@ -147,23 +147,23 @@ const readNextAttemptNumber = async ({
   return Number(rows[0]?.attemptNumber ?? 0) + 1;
 };
 
-/** Drizzle 版 operation store を構成する依存。 */
+/** Drizzle 版の課金操作試行の永続化処理を構成する依存。 */
 export type DrizzleBillingOperationStoreOptions = {
-  /** billing operation attempt table を含む Drizzle database。 */
+  /** billing_operation_attempt table を含む Drizzle database。 */
   database: DrizzleBillingDatabase;
-  /** 新規 attempt row の ID を生成する関数。未指定時は `crypto.randomUUID()`。 */
+  /** 新規の試行 row の ID を生成する関数。未指定時は `crypto.randomUUID()`。 */
   createId?: () => string;
-  /** mark 系更新時刻に使う時刻 provider。 */
+  /** mark 系更新時刻に使う時刻の取得関数。 */
   now?: () => Date;
 };
 
 /**
- * provider handoff 操作の冪等性と再利用を Drizzle table で管理する store を作る。
+ * 決済プロバイダーへの引き渡し操作の冪等性と再利用を Drizzle table で管理する永続化処理を作る。
  *
- * @param input.database billing operation attempt table を含む Drizzle database。
- * @param input.createId 新規 attempt row の ID を生成する関数。
- * @param input.now mark 系更新時刻に使う時刻 provider。
- * @returns `BillingOperationStore` port 実装。
+ * @param input.database billing_operation_attempt table を含む Drizzle database。
+ * @param input.createId 新規の試行 row の ID を生成する関数。
+ * @param input.now mark 系更新時刻に使う時刻の取得関数。
+ * @returns `BillingOperationStore` の実装。
  *
  * @throws Error insert conflict を解消できない場合は `BILLING_OPERATION_ATTEMPT_CLAIM_FAILED`。
  */
@@ -206,7 +206,7 @@ export const createDrizzleBillingOperationStore = ({
       };
     }
 
-    // stale な processing は expired に倒してから、新しい attempt を同じ reuse key で claim する。
+    // 古い処理中状態は expired に倒してから、新しい試行を同じ reuse key で取得する。
     await database
       .update(dbSchema.billingOperationAttempt)
       .set({

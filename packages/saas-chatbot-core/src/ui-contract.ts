@@ -18,17 +18,17 @@ export type {
   AiSuggestedActionKind,
 } from './types.js';
 
-/** API response と UI message が共有する source 表示情報。 */
+/** API response と UI message が共有する参照元表示情報。 */
 export type AiSourceReference = {
-  /** source の由来分類。 */
+  /** 参照元の由来分類。 */
   sourceKind: AiSourceKind;
-  /** 利用者に表示する source title。 */
+  /** 利用者に表示する参照元 title。 */
   title: string;
-  /** source を開ける場合の path。非表示 source では `null`。 */
+  /** 参照元を開ける場合の path。非表示の参照元では `null`。 */
   sourcePath?: string | null;
   /** 参照した knowledge chunk ID。 */
   chunkId?: string | null;
-  /** source の公開範囲。 */
+  /** 参照元の公開範囲。 */
   visibility?: AiSourceVisibility;
 };
 
@@ -64,11 +64,11 @@ export type AiChatResponse = {
   messageId: string;
   /** 利用者へ表示する回答本文。 */
   answer: string;
-  /** 回答根拠として表示できる source。 */
+  /** 回答根拠として表示できる参照元。 */
   sources: AiSourceReference[];
   /** 回答後に UI が提示できる次アクション。 */
   suggestedActions: AiSuggestedAction[];
-  /** grounding と生成品質を 0-1 の範囲で示す信頼度。 */
+  /** 根拠との対応と生成品質を 0-1 の範囲で示す信頼度。 */
   confidence: number;
   /** 人によるサポートへ誘導すべき場合は `true`。 */
   needsHumanSupport: boolean;
@@ -124,7 +124,7 @@ export type AiChatMessage = {
   role: 'user' | 'assistant';
   /** 表示する message 本文。 */
   content: string;
-  /** assistant message に表示する source。 */
+  /** assistant message に表示する参照元。 */
   sources?: AiSourceReference[];
   /** assistant message に表示する suggested action。 */
   suggestedActions?: AiSuggestedAction[];

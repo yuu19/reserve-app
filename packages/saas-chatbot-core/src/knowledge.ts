@@ -1,27 +1,27 @@
 import type { AiLocale, AiSourceKind, AiSourceVisibility } from './types.js';
 import type { AiSourceReference } from './ui-contract.js';
 
-/** 回答生成時に backend が注入する最新の業務 facts。 */
+/** 回答生成時に backend が注入する最新の業務情報。 */
 export type BusinessFactSummary = {
-  /** 回答生成に使った fact の識別子。 */
+  /** 回答生成に使った業務情報の識別子。 */
   factKeys: string[];
-  /** prompt に差し込める短い fact 行。 */
+  /** prompt に差し込める短い業務情報の行。 */
   lines: string[];
-  /** 機微情報を含むため source 表示やログで注意が必要な場合は `true`。 */
+  /** 機微情報を含むため参照元表示やログで注意が必要な場合は `true`。 */
   sensitive: boolean;
 };
 
-/** runtime context から回答時点の業務 facts を取得する port。 */
+/** 実行時の文脈から回答時点の業務情報を取得する境界。 */
 export interface BusinessFactsProvider<TContext = unknown> {
-  /** context に基づき、回答生成へ渡す business facts を返す。 */
+  /** 文脈に基づき、回答生成へ渡す業務情報を返す。 */
   getFacts(context: TContext): Promise<BusinessFactSummary>;
 }
 
-/** retrieval 結果として prompt と source 表示へ渡す context。 */
+/** ナレッジ検索結果として prompt と参照元表示へ渡す文脈。 */
 export type RetrievedKnowledgeContext = AiSourceReference & {
   /** prompt に渡す chunk 本文。 */
   content: string;
-  /** retriever が返した関連度 score。 */
+  /** 検索処理が返した関連度 score。 */
   score?: number;
 };
 
@@ -29,21 +29,21 @@ export type RetrievedKnowledgeContext = AiSourceReference & {
 export type RetrievedKnowledgeChunk = RetrievedKnowledgeContext & {
   /** chunk の内部 ID。 */
   id: string;
-  /** retrieval の関連度 score。 */
+  /** ナレッジ検索の関連度 score。 */
   score: number;
   /** chunk 本文の hash。再 index 判定や監査に使う。 */
   contentHash: string;
-  /** この chunk を読める最小 visibility。 */
+  /** この chunk を読める最小公開範囲。 */
   visibility: AiSourceVisibility;
 };
 
-/** knowledge retrieval の入力。 */
+/** ナレッジ検索の入力。 */
 export type RetrieveKnowledgeInput<TContext = unknown> = {
   /** 利用者の質問本文。 */
   message: string;
-  /** visibility や scope 絞り込みに使う runtime context。 */
+  /** 公開範囲や scope 絞り込みに使う実行時の文脈。 */
   context: TContext;
-  /** 呼び出し側で許可済みの source visibility。 */
+  /** 呼び出し側で許可済みの参照元公開範囲。 */
   allowedVisibilities: AiSourceVisibility[];
   /** 内部向け knowledge を利用できる operator かどうか。 */
   internalOperator: boolean;
@@ -51,38 +51,38 @@ export type RetrieveKnowledgeInput<TContext = unknown> = {
   locale?: string;
 };
 
-/** Vectorize などから role-safe な knowledge chunk を取得する port。 */
+/** Vectorize などから権限に応じた knowledge chunk を取得する境界。 */
 export interface KnowledgeRetriever<
   TContext = unknown,
   TChunk extends RetrievedKnowledgeContext = RetrievedKnowledgeChunk,
 > {
-  /** 入力 context と visibility に合う knowledge chunk を返す。 */
+  /** 入力文脈と公開範囲に合う knowledge chunk を返す。 */
   retrieveKnowledge(input: RetrieveKnowledgeInput<TContext>): Promise<TChunk[]>;
 }
 
-/** index 可能な knowledge document の source metadata と本文。 */
+/** index 可能な knowledge document の参照元メタデータと本文。 */
 export type KnowledgeSource = {
   /** document の由来分類。 */
   sourceKind: AiSourceKind;
-  /** source を再取得または表示するための path。 */
+  /** 参照元を再取得または表示するための path。 */
   sourcePath: string;
-  /** source 表示に使う title。 */
+  /** 参照元表示に使う title。 */
   title: string;
   /** index 対象の document 本文。 */
   content: string;
   /** document の主 locale。 */
   locale?: AiLocale;
-  /** document を読める最小 visibility。 */
+  /** document を読める最小公開範囲。 */
   visibility?: AiSourceVisibility;
-  /** 内部 operator 以外へ出さない source の場合は `true`。 */
+  /** 内部 operator 以外へ出さない参照元の場合は `true`。 */
   internalOnly?: boolean;
-  /** organization 固有 source の organization ID。 */
+  /** organization 固有参照元の organization ID。 */
   organizationId?: string | null;
-  /** classroom 固有 source の classroom ID。 */
+  /** classroom 固有参照元の classroom ID。 */
   classroomId?: string | null;
-  /** 機能単位で source を絞るための feature key。 */
+  /** 機能単位で参照元を絞るための feature key。 */
   feature?: string | null;
-  /** source の検索・運用分類に使う tag。 */
+  /** 参照元の検索・運用分類に使う tag。 */
   tags?: string[];
 };
 
@@ -101,15 +101,15 @@ export type KnowledgeChunk = {
   content: string;
   /** chunk 本文の hash。 */
   contentHash: string;
-  /** source 表示に使う title。 */
+  /** 参照元表示に使う title。 */
   title: string;
   /** document の由来分類。 */
   sourceKind: AiSourceKind;
-  /** source を再取得または表示するための path。 */
+  /** 参照元を再取得または表示するための path。 */
   sourcePath: string;
   /** chunk の locale。 */
   locale: AiLocale;
-  /** chunk を読める最小 visibility。 */
+  /** chunk を読める最小公開範囲。 */
   visibility: AiSourceVisibility;
   /** 内部 operator 以外へ出さない chunk の場合は `true`。 */
   internalOnly: boolean;
@@ -139,7 +139,7 @@ export type KnowledgeIndexResult = {
   chunksUpserted: number;
 };
 
-/** knowledge document を chunk 化して検索 index へ反映する port。 */
+/** knowledge document を chunk 化して検索 index へ反映する境界。 */
 export interface KnowledgeIndexer<TDocument extends KnowledgeSource = KnowledgeSource> {
   /** document を upsert し、検索可能な chunk に反映する。 */
   upsertKnowledgeDocument(

@@ -9,45 +9,45 @@ import type {
   BillingSubscriptionStatus,
 } from './types.js';
 
-/** provider 側に作成された customer の最小表現。 */
+/** 決済プロバイダー側に作成された customer の最小表現。 */
 export type ProviderCustomer = {
-  /** provider API で customer を参照する ID。 */
+  /** 決済プロバイダー API で customer を参照する ID。 */
   id: string;
 };
 
-/** provider 側 subscription を SaaS 側の状態更新へ使う最小表現。 */
+/** 決済プロバイダー側 subscription を SaaS 側の状態更新へ使う最小表現。 */
 export type ProviderSubscription = {
-  /** provider API で subscription を参照する ID。 */
+  /** 決済プロバイダー API で subscription を参照する ID。 */
   id: string;
-  /** subscription が紐づく provider customer ID。 */
+  /** subscription が紐づく決済プロバイダー側 customer ID。 */
   customerId: string | null;
-  /** provider 固有の subscription status。store へ入る前に正規化する。 */
+  /** 決済プロバイダー固有の subscription status。永続化前に正規化する。 */
   status: string | null;
   /** 現在期間末でキャンセル予定かどうか。 */
   cancelAtPeriodEnd: boolean;
-  /** provider が示す現在請求期間の開始時刻。 */
+  /** 決済プロバイダーが示す現在請求期間の開始時刻。 */
   currentPeriodStart: Date | null;
-  /** provider が示す現在請求期間の終了時刻。 */
+  /** 決済プロバイダーが示す現在請求期間の終了時刻。 */
   currentPeriodEnd: Date | null;
-  /** subscription item の provider price ID。 */
+  /** subscription item の決済プロバイダー側 price ID。 */
   priceId: string | null;
 };
 
-/** provider が作成した Checkout Session の handoff 情報。 */
+/** 決済プロバイダーが作成した Checkout Session の遷移情報。 */
 export type ProviderCheckoutSession = {
-  /** provider 側 Checkout Session ID。 */
+  /** 決済プロバイダー側 Checkout Session ID。 */
   id: string;
   /** 利用者を遷移させる Checkout URL。 */
   url: string;
-  /** provider が返す payment status。確認できない provider では省略される。 */
+  /** 決済プロバイダーが返す payment status。確認できない場合は省略される。 */
   paymentStatus?: string;
-  /** provider が返す session status。確認できない provider では省略される。 */
+  /** 決済プロバイダーが返す session status。確認できない場合は省略される。 */
   status?: string;
 };
 
-/** provider が作成した Customer Portal Session の handoff 情報。 */
+/** 決済プロバイダーが作成した Customer Portal Session の遷移情報。 */
 export type ProviderPortalSession = {
-  /** provider 側 Portal Session ID。provider が返さない場合は `null`。 */
+  /** 決済プロバイダー側 Portal Session ID。返されない場合は `null`。 */
   id: string | null;
   /** 利用者を遷移させる Customer Portal URL。 */
   url: string;
@@ -55,15 +55,15 @@ export type ProviderPortalSession = {
 
 /** 課金画面で支払い方法の登録状態を確認するための customer 要約。 */
 export type ProviderCustomerSummary = {
-  /** provider 側 customer ID。 */
+  /** 決済プロバイダー側 customer ID。 */
   id: string;
-  /** 既定支払い方法の provider ID。未登録なら `null`。 */
+  /** 既定支払い方法の決済プロバイダー側 ID。未登録なら `null`。 */
   defaultPaymentMethodId: string | null;
 };
 
-/** Stripe などの provider API を billing usecase から分離する port。 */
+/** Stripe などの決済プロバイダー API を課金ユースケースから分離する境界。 */
 export interface BillingProvider {
-  /** 課金対象に対応する provider customer を冪等に作成する。 */
+  /** 課金対象に対応する決済プロバイダー側 customer を冪等に作成する。 */
   createCustomer(input: {
     email?: string | null;
     name?: string | null;
@@ -71,7 +71,7 @@ export interface BillingProvider {
     idempotencyKey: string;
   }): Promise<ProviderCustomer>;
 
-  /** trial 付き subscription を provider 側に冪等に作成する。 */
+  /** trial 付き subscription を決済プロバイダー側に冪等に作成する。 */
   createTrialSubscription(input: {
     customerId: string;
     priceId: string;
@@ -107,24 +107,24 @@ export interface BillingProvider {
     idempotencyKey: string;
   }): Promise<ProviderPortalSession>;
 
-  /** provider subscription ID から最新の provider 状態を取得する。 */
+  /** 決済プロバイダー側 subscription ID から最新状態を取得する。 */
   retrieveSubscription(subscriptionId: string): Promise<ProviderSubscription | null>;
 
-  /** provider customer ID から支払い方法登録状態を含む要約を取得する。 */
+  /** 決済プロバイダー側 customer ID から支払い方法登録状態を含む要約を取得する。 */
   retrieveCustomerSummary(customerId: string): Promise<ProviderCustomerSummary | null>;
 }
 
-/** SaaS plan と provider price の公開対応情報。 */
+/** SaaS plan と決済プロバイダー側 price の公開対応情報。 */
 export type BillingPlanPrice = {
   /** SaaS 側で選択・表示に使う plan code。 */
   planCode: string;
   /** plan price の請求間隔。 */
   interval: BillingInterval;
-  /** provider API に渡す price ID。 */
+  /** 決済プロバイダー API に渡す price ID。 */
   providerPriceId: string;
 };
 
-/** subject-scoped な課金ルート。provider customer と請求先情報を保持する。 */
+/** 課金対象ごとの課金ルート。決済プロバイダー側 customer と請求先情報を保持する。 */
 export type BillingAccount = {
   /** billing account の内部 ID。 */
   id: string;
@@ -132,9 +132,9 @@ export type BillingAccount = {
   subjectType: BillingSubjectType;
   /** 課金対象の ID。 */
   subjectId: string;
-  /** この account が利用する provider。 */
+  /** この account が利用する決済プロバイダー。 */
   provider: BillingProviderCode;
-  /** provider customer ID。未作成時は `null`。 */
+  /** 決済プロバイダー側 customer ID。未作成時は `null`。 */
   providerCustomerId: string | null;
   /** 請求連絡先メールアドレス。未設定時は `null`。 */
   billingEmail: string | null;
@@ -152,11 +152,11 @@ export type BillingSubscription = {
   id: string;
   /** 紐づく billing account ID。 */
   billingAccountId: string;
-  /** subscription を管理する provider。 */
+  /** subscription を管理する決済プロバイダー。 */
   provider: BillingProviderCode;
-  /** provider subscription ID。trial/free など未作成時は `null`。 */
+  /** 決済プロバイダー側 subscription ID。trial/free など未作成時は `null`。 */
   providerSubscriptionId: string | null;
-  /** provider schedule ID。利用しない provider では `null`。 */
+  /** 決済プロバイダー側 schedule ID。利用しない場合は `null`。 */
   providerScheduleId: string | null;
   /** SaaS 側の plan code。 */
   planCode: string;
@@ -166,15 +166,15 @@ export type BillingSubscription = {
   interval: BillingInterval | null;
   /** entitlement と支払い制御に使う正規化済み状態。 */
   status: BillingSubscriptionStatus;
-  /** provider が示す現在請求期間の開始時刻。 */
+  /** 決済プロバイダーが示す現在請求期間の開始時刻。 */
   currentPeriodStart: Date | null;
-  /** provider が示す現在請求期間の終了時刻。 */
+  /** 決済プロバイダーが示す現在請求期間の終了時刻。 */
   currentPeriodEnd: Date | null;
   /** trial 開始時刻。trial でない場合は `null`。 */
   trialStart: Date | null;
   /** trial 終了時刻。trial でない場合は `null`。 */
   trialEnd: Date | null;
-  /** provider 側のキャンセル予定時刻。未設定時は `null`。 */
+  /** 決済プロバイダー側のキャンセル予定時刻。未設定時は `null`。 */
   cancelAt: Date | null;
   /** 現在期間末でキャンセル予定かどうか。 */
   cancelAtPeriodEnd: boolean;
@@ -214,9 +214,9 @@ export type BillingPaymentIssue = {
   id: string;
   /** 紐づく billing account ID。 */
   billingAccountId: string;
-  /** 関連 subscription ID。特定できない provider event では `null`。 */
+  /** 関連 subscription ID。特定できない決済プロバイダーイベントでは `null`。 */
   billingSubscriptionId: string | null;
-  /** owner-facing に正規化された支払い問題状態。 */
+  /** オーナー表示用に正規化された支払い問題状態。 */
   state: BillingPaymentIssueState;
   /** 支払い問題が始まったと扱う時刻。 */
   issueStartedAt: Date | null;
@@ -224,7 +224,7 @@ export type BillingPaymentIssue = {
   issueStartedAtSource: BillingPaymentIssueStartedAtSource;
   /** past_due 猶予の終了時刻。猶予がなければ `null`。 */
   pastDueGraceEndsAt: Date | null;
-  /** 状態更新の根拠になった最新 provider event ID。 */
+  /** 状態更新の根拠になった最新の決済プロバイダーイベント ID。 */
   latestProviderEventId: string | null;
   /** 状態更新の根拠になった最新 invoice ID。 */
   latestInvoiceId: string | null;
@@ -236,15 +236,15 @@ export type BillingPaymentIssue = {
   updatedAt: Date;
 };
 
-/** subscription の作成・更新で store に渡す正規化済み入力。 */
+/** subscription の作成・更新で永続化処理に渡す正規化済み入力。 */
 export type BillingSubscriptionUpsert = {
   /** 更新対象の billing account ID。 */
   billingAccountId: string;
-  /** subscription を管理する provider。 */
+  /** subscription を管理する決済プロバイダー。 */
   provider: BillingProviderCode;
-  /** provider subscription ID。まだ確定していない場合は省略可能。 */
+  /** 決済プロバイダー側 subscription ID。まだ確定していない場合は省略可能。 */
   providerSubscriptionId?: string | null;
-  /** provider schedule ID。利用しない場合は省略可能。 */
+  /** 決済プロバイダー側 schedule ID。利用しない場合は省略可能。 */
   providerScheduleId?: string | null;
   /** SaaS 側の plan code。 */
   planCode: string;
@@ -262,13 +262,13 @@ export type BillingSubscriptionUpsert = {
   trialStart?: Date | null;
   /** trial 終了時刻。 */
   trialEnd?: Date | null;
-  /** provider 側のキャンセル予定時刻。 */
+  /** 決済プロバイダー側のキャンセル予定時刻。 */
   cancelAt?: Date | null;
   /** 現在期間末キャンセル予定かどうか。 */
   cancelAtPeriodEnd?: boolean;
 };
 
-/** entitlement を replace する際の入力。 */
+/** entitlement を現在値へ置き換える際の入力。 */
 export type BillingEntitlementInput = {
   /** 機能利用可否を判定する key。 */
   key: string;
@@ -284,13 +284,13 @@ export type BillingEntitlementInput = {
   validUntil?: Date | null;
 };
 
-/** 現在の支払い問題を upsert するための入力。 */
+/** 現在の支払い問題を作成または更新するための入力。 */
 export type BillingPaymentIssueUpsert = {
   /** 更新対象の billing account ID。 */
   billingAccountId: string;
   /** 関連 subscription ID。特定できない場合は省略可能。 */
   billingSubscriptionId?: string | null;
-  /** owner-facing に正規化済みの支払い問題状態。 */
+  /** オーナー表示用に正規化済みの支払い問題状態。 */
   state: BillingPaymentIssueState;
   /** 支払い問題が始まったと扱う時刻。 */
   issueStartedAt?: Date | null;
@@ -298,7 +298,7 @@ export type BillingPaymentIssueUpsert = {
   issueStartedAtSource: BillingPaymentIssueStartedAtSource;
   /** past_due 猶予の終了時刻。 */
   pastDueGraceEndsAt?: Date | null;
-  /** 状態更新の根拠になった provider event ID。 */
+  /** 状態更新の根拠になった決済プロバイダーイベント ID。 */
   latestProviderEventId?: string | null;
   /** 状態更新の根拠になった invoice ID。 */
   latestInvoiceId?: string | null;
@@ -306,27 +306,27 @@ export type BillingPaymentIssueUpsert = {
   latestPaymentIntentId?: string | null;
 };
 
-/** 支払い問題に関連する invoice/payment event の append-only 履歴入力。 */
+/** 支払い問題に関連する invoice/payment event の追記専用履歴入力。 */
 export type BillingPaymentIssueEventInput = {
   /** 履歴を紐づける billing account ID。 */
   billingAccountId: string;
   /** 関連 subscription ID。特定できない場合は省略可能。 */
   billingSubscriptionId?: string | null;
-  /** provider event から正規化した支払いイベント種別。 */
+  /** 決済プロバイダーイベントから正規化した支払いイベント種別。 */
   eventType: string;
-  /** event を発行した provider。 */
+  /** event を発行した決済プロバイダー。 */
   provider: BillingProviderCode;
-  /** provider event ID。合成イベントでは省略可能。 */
+  /** 決済プロバイダーイベント ID。合成イベントでは省略可能。 */
   providerEventId?: string | null;
-  /** provider invoice ID。 */
+  /** 決済プロバイダー側 invoice ID。 */
   providerInvoiceId?: string | null;
-  /** provider payment intent ID。 */
+  /** 決済プロバイダー側 payment intent ID。 */
   providerPaymentIntentId?: string | null;
-  /** provider event が発生した時刻。未取得時は省略可能。 */
+  /** 決済プロバイダーイベントが発生した時刻。未取得時は省略可能。 */
   occurredAt?: Date | null;
 };
 
-/** billing account、subscription、entitlement、支払い問題を永続化する store port。 */
+/** billing account、subscription、entitlement、支払い問題を永続化する境界。 */
 export interface BillingStore {
   /** subject から billing account を検索する。 */
   findAccountBySubject(input: {
@@ -343,13 +343,13 @@ export interface BillingStore {
     billingName?: string | null;
   }): Promise<BillingAccount>;
 
-  /** provider customer 作成後に billing account と customer ID を紐づける。 */
+  /** 決済プロバイダー側 customer 作成後に billing account と customer ID を紐づける。 */
   updateProviderCustomerId(input: {
     billingAccountId: string;
     providerCustomerId: string;
   }): Promise<void>;
 
-  /** provider customer ID から billing account を逆引きする。 */
+  /** 決済プロバイダー側 customer ID から billing account を逆引きする。 */
   findAccountByProviderCustomer(input: {
     provider: BillingProviderCode;
     providerCustomerId: string;
@@ -358,13 +358,13 @@ export interface BillingStore {
   /** billing account の現在扱いの subscription を取得する。 */
   findCurrentSubscription(input: { billingAccountId: string }): Promise<BillingSubscription | null>;
 
-  /** provider subscription ID から subscription を逆引きする。 */
+  /** 決済プロバイダー側 subscription ID から subscription を逆引きする。 */
   findSubscriptionByProviderSubscription(input: {
     provider: BillingProviderCode;
     providerSubscriptionId: string;
   }): Promise<BillingSubscription | null>;
 
-  /** provider またはアプリ操作から得た subscription 状態を作成・更新する。 */
+  /** 決済プロバイダーまたはアプリ操作から得た subscription 状態を作成・更新する。 */
   upsertSubscription(input: BillingSubscriptionUpsert): Promise<BillingSubscription>;
 
   /** billing account の entitlement 一覧を読む。 */
@@ -382,6 +382,6 @@ export interface BillingStore {
   /** billing account の現在の支払い問題を作成・更新する。 */
   upsertPaymentIssue(input: BillingPaymentIssueUpsert): Promise<void>;
 
-  /** 支払い問題に関連する invoice/payment event を append-only で記録する。 */
+  /** 支払い問題に関連する invoice/payment event を追記専用で記録する。 */
   appendPaymentIssueEvent(input: BillingPaymentIssueEventInput): Promise<void>;
 }

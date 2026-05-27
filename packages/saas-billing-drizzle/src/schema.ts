@@ -12,7 +12,7 @@ const defaultUpdatedTimestampMs = () =>
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull();
 
-/** 課金対象 subject と provider customer を結びつける root table。 */
+/** 課金対象 subject と決済プロバイダー側 customer を結びつける root table。 */
 export const billingAccount = sqliteTable(
   'billing_account',
   {
@@ -35,7 +35,7 @@ export const billingAccount = sqliteTable(
   ],
 );
 
-/** billing account ごとの現在または最新 subscription 状態を保持する table。 */
+/** billing account ごとの現在または最新の subscription 状態を保持する table。 */
 export const billingSubscription = sqliteTable(
   'billing_subscription',
   {
@@ -100,7 +100,7 @@ export const billingPaymentIssue = sqliteTable(
   ],
 );
 
-/** invoice/payment event の append-only 履歴を保持する table。 */
+/** invoice/payment event の追記専用履歴を保持する table。 */
 export const billingInvoiceEvent = sqliteTable(
   'billing_invoice_event',
   {
@@ -157,7 +157,7 @@ export const billingEntitlement = sqliteTable(
   ],
 );
 
-/** provider webhook event の受領・重複・処理状態を保持する table。 */
+/** 決済プロバイダー webhook event の受領・重複・処理状態を保持する table。 */
 export const billingProviderEvent = sqliteTable(
   'billing_provider_event',
   {
@@ -201,7 +201,7 @@ export const billingProviderEvent = sqliteTable(
   ],
 );
 
-/** Checkout/Portal など provider handoff 操作の attempt 履歴を保持する table。 */
+/** Checkout/Portal など決済プロバイダーへの引き渡し操作の試行履歴を保持する table。 */
 export const billingOperationAttempt = sqliteTable(
   'billing_operation_attempt',
   {
@@ -306,7 +306,7 @@ export const billingSignal = sqliteTable(
   ],
 );
 
-/** 支払い失敗や trial 期限などの通知 attempt 履歴を sequence 付きで保持する table。 */
+/** 支払い失敗や trial 期限などの通知試行履歴を sequence 付きで保持する table。 */
 export const billingNotification = sqliteTable(
   'billing_notification',
   {
@@ -353,7 +353,7 @@ export const billingNotification = sqliteTable(
   ],
 );
 
-/** invoice PDF や領収書 URL など provider document 参照を保持する table。 */
+/** invoice PDF や領収書 URL など決済プロバイダー側 document 参照を保持する table。 */
 export const billingDocumentReference = sqliteTable(
   'billing_document_reference',
   {
@@ -400,5 +400,5 @@ export const billingTables = {
   billingDocumentReference,
 };
 
-/** `billingTables` の型。consumer 側の schema 合成で利用する。 */
+/** `billingTables` の型。利用側の schema 合成で利用する。 */
 export type BillingTables = typeof billingTables;

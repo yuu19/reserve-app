@@ -5,22 +5,22 @@ import * as dbSchema from './schema.js';
 
 const BILLING_PROVIDER_EVENT_SCOPE = 'billing';
 
-/** provider webhook event store を構成する依存。 */
+/** 決済プロバイダー webhook event の永続化処理を構成する依存。 */
 export type DrizzleBillingEventStoreOptions = {
-  /** billing provider event table を含む Drizzle database。 */
+  /** billing_provider_event table を含む Drizzle database。 */
   database: DrizzleBillingDatabase;
-  /** 新規 provider event row の ID を生成する関数。未指定時は `crypto.randomUUID()`。 */
+  /** 新規の決済プロバイダーイベント row の ID を生成する関数。未指定時は `crypto.randomUUID()`。 */
   createId?: () => string;
-  /** 互換用の時刻 provider。claim 時刻は core port の input.now を優先する。 */
+  /** 互換用の時刻取得関数。処理権取得時刻は core の input.now を優先する。 */
   now?: () => Date;
 };
 
 /**
- * Drizzle schema 上に provider webhook event の冪等 claim store を作る。
+ * Drizzle schema 上に決済プロバイダー webhook event の冪等な処理権取得を扱う永続化処理を作る。
  *
- * @param input.database billing provider event table を含む Drizzle database。
- * @param input.createId 新規 provider event row の ID を生成する関数。
- * @returns `BillingEventStore` port 実装。
+ * @param input.database billing_provider_event table を含む Drizzle database。
+ * @param input.createId 新規の決済プロバイダーイベント row の ID を生成する関数。
+ * @returns `BillingEventStore` の実装。
  */
 export const createDrizzleBillingEventStore = ({
   database,
@@ -104,7 +104,7 @@ export const createDrizzleBillingEventStore = ({
       (!existing.processingStartedAt ||
         existing.processingStartedAt.getTime() <= staleBefore.getTime());
 
-    // failed event は再試行し、stale processing は同じ provider event の処理権を取り直す。
+    // 失敗済み event は再試行し、古い処理中状態は同じ決済プロバイダーイベントの処理権を取り直す。
     if (isFailedRetry || isStaleProcessing) {
       const nextAttempt = existing.attemptCount + 1;
       await database

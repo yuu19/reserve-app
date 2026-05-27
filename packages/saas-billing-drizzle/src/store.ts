@@ -18,7 +18,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { DrizzleBillingDatabase } from './database.js';
 import * as dbSchema from './schema.js';
 
-// Drizzle schema は text column で provider を保持するため、core port へ返す前に既知 provider へ丸める。
+// Drizzle schema は text column で provider を保持するため、core の境界へ返す前に既知の決済プロバイダーへ丸める。
 const normalizeProvider = (value: string): BillingProviderCode =>
   value === 'stripe' ? value : 'stripe';
 
@@ -138,23 +138,23 @@ const toPaymentIssue = (
   updatedAt: row.updatedAt,
 });
 
-/** Drizzle 版 billing store を構成する依存。 */
+/** Drizzle 版の課金永続化処理を構成する依存。 */
 export type DrizzleBillingStoreOptions = {
   /** billing schema tables を含む Drizzle database。 */
   database: DrizzleBillingDatabase;
   /** 新規 billing row の ID を生成する関数。未指定時は `crypto.randomUUID()`。 */
   createId?: () => string;
-  /** 作成・更新時刻に使う時刻 provider。 */
+  /** 作成・更新時刻に使う時刻の取得関数。 */
   now?: () => Date;
 };
 
 /**
- * core の `BillingStore` port を Drizzle schema 上で実装する。
+ * core の `BillingStore` 永続化境界を Drizzle schema 上で実装する。
  *
  * @param input.database billing schema tables を含む Drizzle database。
  * @param input.createId 新規 billing row の ID を生成する関数。
- * @param input.now 作成・更新時刻に使う時刻 provider。
- * @returns `BillingStore` port 実装。
+ * @param input.now 作成・更新時刻に使う時刻の取得関数。
+ * @returns `BillingStore` の実装。
  *
  * @throws Error account insert が競合し、再読込でも取得できない場合は `BILLING_ACCOUNT_ENSURE_FAILED`。
  */

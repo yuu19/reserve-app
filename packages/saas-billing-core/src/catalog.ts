@@ -15,29 +15,29 @@ export type CatalogValidationError = {
   planCode?: string;
   /** 対象請求間隔を特定できる場合の interval。 */
   interval?: BillingInterval;
-  /** 対象 provider を特定できる場合の provider code。 */
+  /** 対象の決済プロバイダーを特定できる場合の識別子。 */
   provider?: BillingProviderCode;
-  /** provider 側 price ID の逆引き失敗時に含める ID。 */
+  /** 決済プロバイダー側 price ID の逆引き失敗時に含める ID。 */
   providerPriceId?: string;
   /** 運用ログや管理画面で読める短い説明。 */
   message: string;
 };
 
-/** アプリ内 plan と provider 側 price ID を対応付ける公開カタログ行。 */
+/** アプリ内 plan と決済プロバイダー側 price ID を対応付ける公開カタログ行。 */
 export type BillingCatalogPrice = {
   /** SaaS 側の entitlement や表示に使う plan code。 */
   planCode: string;
   /** 月額・年額など、同じ plan の請求間隔。 */
   interval: BillingInterval;
-  /** この価格を作成する決済 provider。 */
+  /** この価格を作成する決済プロバイダー。 */
   provider: BillingProviderCode;
-  /** Checkout や subscription 作成に渡す provider 側 price ID。 */
+  /** Checkout や subscription 作成に渡す決済プロバイダー側 price ID。 */
   providerPriceId: string;
 };
 
 /** 課金開始や webhook の price 逆引きで共有する価格カタログ。 */
 export type BillingCatalog = {
-  /** 利用可能な plan/interval/provider price の一覧。 */
+  /** 利用可能な plan、interval、決済プロバイダー price の一覧。 */
   prices: BillingCatalogPrice[];
 };
 
@@ -72,11 +72,11 @@ export const findCatalogPrice = ({
   null;
 
 /**
- * provider 側 price ID から SaaS 側の価格行を逆引きする。
+ * 決済プロバイダー側 price ID から SaaS 側の価格行を逆引きする。
  *
  * @param input.catalog 検索対象の課金カタログ。
- * @param input.provider webhook や provider API から得た provider code。
- * @param input.providerPriceId webhook や provider API から得た price ID。
+ * @param input.provider webhook や決済プロバイダー API から得たプロバイダー識別子。
+ * @param input.providerPriceId webhook や決済プロバイダー API から得た price ID。
  * @returns 対応する価格行。未知の price の場合は `null`。
  */
 export const findCatalogPriceByProviderPriceId = ({

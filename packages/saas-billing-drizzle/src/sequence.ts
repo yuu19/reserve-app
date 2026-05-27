@@ -4,7 +4,7 @@ const sequenceIndexNames = {
   billing_notification: 'billing_notification_account_sequence_uidx',
 } as const;
 
-/** sequence_number の一意制約衝突を retry 対象にする append-only table 名。 */
+/** sequence_number の一意制約衝突を retry 対象にする追記専用 table 名。 */
 export type BillingSequencedTableName = keyof typeof sequenceIndexNames;
 
 const MAX_BILLING_SEQUENCE_INSERT_ATTEMPTS = 3;
@@ -55,7 +55,7 @@ const isBillingSequenceConstraintError = ({
 };
 
 /**
- * append-only history table の sequence_number 衝突だけを短く retry する。
+ * 追記専用 history table の sequence_number 衝突だけを短く retry する。
  *
  * @template Result operation が返す値。
  * @param input.tableName retry 対象の sequence unique index を持つ table 名。

@@ -1,7 +1,7 @@
 import type { BillingPaymentIssueState, BillingSubscriptionStatus } from './types.js';
 
 /**
- * subscription 状態と最新の支払いイベントから owner-facing な支払い問題状態を決める。
+ * subscription 状態と最新の支払いイベントから、オーナーに表示する支払い問題状態を決める。
  *
  * @param input.subscriptionStatus SaaS 側に正規化済みの subscription 状態。
  * @param input.graceActive past_due の猶予期間が現在有効かどうか。

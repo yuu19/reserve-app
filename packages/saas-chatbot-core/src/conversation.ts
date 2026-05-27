@@ -27,7 +27,7 @@ export type EnsureConversationInput = {
   scope: ConversationScope;
   /** 初回質問などから付ける conversation title。 */
   title?: string | null;
-  /** 保存時刻。未指定時は store 実装の現在時刻を使う。 */
+  /** 保存時刻。未指定時は永続化実装の現在時刻を使う。 */
   now?: Date;
 };
 
@@ -39,9 +39,9 @@ export type InsertMessageInput = {
   role: AiMessageRole;
   /** 保存する message 本文。 */
   content: string;
-  /** assistant 回答の表示可能な source。 */
+  /** assistant 回答の表示可能な参照元。 */
   sources?: AiSourceReference[] | null;
-  /** retrieval 結果の監査用 payload。 */
+  /** ナレッジ検索結果の監査用 payload。 */
   retrievedContext?: unknown;
   /** assistant 回答の信頼度。 */
   confidence?: number | null;
@@ -49,7 +49,7 @@ export type InsertMessageInput = {
   needsHumanSupport?: boolean;
   /** AI Gateway log ID。 */
   aiGatewayLogId?: string | null;
-  /** 利用した provider 名。 */
+  /** 利用したプロバイダー名。 */
   provider?: string | null;
   /** 利用した model 名。 */
   model?: string | null;
@@ -57,19 +57,19 @@ export type InsertMessageInput = {
   inputTokens?: number | null;
   /** 出力 token 数。 */
   outputTokens?: number | null;
-  /** 生成 latency。 */
+  /** 生成にかかった時間。 */
   latencyMs?: number | null;
-  /** 生成成功または fallback の分類。 */
+  /** 生成成功または代替応答の分類。 */
   generationStatus?: AiGenerationStatus | string | null;
-  /** 失敗や fallback の安定コード。 */
+  /** 失敗や代替応答の安定コード。 */
   errorCode?: string | null;
-  /** 失敗や fallback の短い説明。 */
+  /** 失敗や代替応答の短い説明。 */
   errorSummary?: string | null;
-  /** 保存時刻。未指定時は store 実装の現在時刻を使う。 */
+  /** 保存時刻。未指定時は永続化実装の現在時刻を使う。 */
   now?: Date;
 };
 
-/** AI usage counter と observability に記録する生成イベント。 */
+/** AI usage counter と可観測性基盤に記録する生成イベント。 */
 export type AiUsageEventInput = {
   /** usage を加算する認可境界。 */
   scope: ConversationScope;
@@ -77,7 +77,7 @@ export type AiUsageEventInput = {
   conversationId: string;
   /** 対象 message ID。 */
   messageId: string;
-  /** 利用した provider 名。 */
+  /** 利用したプロバイダー名。 */
   provider?: string | null;
   /** 利用した model 名。 */
   model?: string | null;
@@ -85,17 +85,17 @@ export type AiUsageEventInput = {
   inputTokens?: number | null;
   /** 出力 token 数。 */
   outputTokens?: number | null;
-  /** 生成 latency。 */
+  /** 生成にかかった時間。 */
   latencyMs?: number | null;
-  /** 生成成功または fallback の分類。 */
+  /** 生成成功または代替応答の分類。 */
   generationStatus: AiGenerationStatus | string;
-  /** 失敗や fallback の安定コード。 */
+  /** 失敗や代替応答の安定コード。 */
   errorCode?: string | null;
-  /** 失敗や fallback の短い説明。 */
+  /** 失敗や代替応答の短い説明。 */
   errorSummary?: string | null;
   /** AI Gateway log ID。 */
   aiGatewayLogId?: string | null;
-  /** 記録時刻。未指定時は store 実装の現在時刻を使う。 */
+  /** 記録時刻。未指定時は永続化実装の現在時刻を使う。 */
   now?: Date;
 };
 
@@ -125,7 +125,7 @@ export type SubmitFeedbackInput = {
   rating: AiFeedbackRating;
   /** 任意の自由記述コメント。 */
   comment?: string | null;
-  /** 保存時刻。未指定時は store 実装の現在時刻を使う。 */
+  /** 保存時刻。未指定時は永続化実装の現在時刻を使う。 */
   now?: Date;
 };
 
@@ -141,7 +141,7 @@ export type SubmittedFeedback = {
 
 /** retention policy に従って会話本文を削除する入力。 */
 export type CleanupExpiredConversationContentInput = {
-  /** 期限判定に使う基準時刻。未指定時は store 実装の現在時刻を使う。 */
+  /** 期限判定に使う基準時刻。未指定時は永続化実装の現在時刻を使う。 */
   now?: Date;
 };
 
@@ -151,7 +151,7 @@ export type CountMessagesForConversationInput = {
   conversationId: string;
 };
 
-/** conversation、message、feedback、usage を永続化する store port。 */
+/** conversation、message、feedback、usage を永続化する境界。 */
 export interface ConversationStore {
   /** conversation を作成または既存確認し、アクセス不可なら `null` を返す。 */
   ensureConversation(
