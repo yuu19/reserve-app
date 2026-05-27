@@ -4,6 +4,7 @@ const sequenceIndexNames = {
   billing_notification: 'billing_notification_account_sequence_uidx',
 } as const;
 
+/** sequence_number の一意制約衝突を retry 対象にする append-only table 名。 */
 export type BillingSequencedTableName = keyof typeof sequenceIndexNames;
 
 const MAX_BILLING_SEQUENCE_INSERT_ATTEMPTS = 3;
@@ -28,6 +29,7 @@ const collectErrorMessages = (error: unknown): string[] => {
   return messages;
 };
 
+// D1/SQLite adapter によって一意制約エラーの message 形状が違うため、index 名と列名の両方で判定する。
 const isBillingSequenceConstraintError = ({
   error,
   tableName,
@@ -52,6 +54,15 @@ const isBillingSequenceConstraintError = ({
   });
 };
 
+/**
+ * append-only history table の sequence_number 衝突だけを短く retry する。
+ *
+ * @template Result operation が返す値。
+ * @param input.tableName retry 対象の sequence unique index を持つ table 名。
+ * @param input.operation sequence_number を採番して insert する処理。
+ * @returns `operation` の成功結果。
+ * @throws sequence unique 以外のエラー、または retry 上限後のエラー。
+ */
 export const retryBillingSequenceInsert = async <Result>({
   tableName,
   operation,

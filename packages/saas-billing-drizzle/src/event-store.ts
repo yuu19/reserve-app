@@ -5,12 +5,23 @@ import * as dbSchema from './schema.js';
 
 const BILLING_PROVIDER_EVENT_SCOPE = 'billing';
 
+/** provider webhook event store を構成する依存。 */
 export type DrizzleBillingEventStoreOptions = {
+  /** billing provider event table を含む Drizzle database。 */
   database: DrizzleBillingDatabase;
+  /** 新規 provider event row の ID を生成する関数。未指定時は `crypto.randomUUID()`。 */
   createId?: () => string;
+  /** 互換用の時刻 provider。claim 時刻は core port の input.now を優先する。 */
   now?: () => Date;
 };
 
+/**
+ * Drizzle schema 上に provider webhook event の冪等 claim store を作る。
+ *
+ * @param input.database billing provider event table を含む Drizzle database。
+ * @param input.createId 新規 provider event row の ID を生成する関数。
+ * @returns `BillingEventStore` port 実装。
+ */
 export const createDrizzleBillingEventStore = ({
   database,
   createId = () => crypto.randomUUID(),
@@ -93,6 +104,7 @@ export const createDrizzleBillingEventStore = ({
       (!existing.processingStartedAt ||
         existing.processingStartedAt.getTime() <= staleBefore.getTime());
 
+    // failed event は再試行し、stale processing は同じ provider event の処理権を取り直す。
     if (isFailedRetry || isStaleProcessing) {
       const nextAttempt = existing.attemptCount + 1;
       await database
