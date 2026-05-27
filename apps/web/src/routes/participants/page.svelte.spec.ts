@@ -75,9 +75,7 @@ describe('/participants/+page.svelte', () => {
 			participants: [],
 			sentInvitations: [],
 			receivedInvitations: [],
-			services: [],
-			ticketTypes: [],
-			ticketPurchases: []
+			loadError: null
 		});
 	});
 
@@ -88,14 +86,14 @@ describe('/participants/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('shows offline ticket purchase guidance and hides Stripe setup fields', async () => {
+	it('does not render ticket management operations on the participants page', async () => {
 		render(ParticipantsPage);
 
-		await expect
-			.element(page.getByText(/参加者の購入申請は、現地決済または銀行振込の承認フロー/))
-			.toBeInTheDocument();
+		await expect.element(page.getByText('参加者一覧・参加者招待を行います。')).toBeInTheDocument();
+		await expect.element(page.getByText('回数券種別作成')).not.toBeInTheDocument();
+		await expect.element(page.getByText('回数券付与')).not.toBeInTheDocument();
+		await expect.element(page.getByText('回数券購入管理')).not.toBeInTheDocument();
 		await expect.element(page.getByText('Stripe 価格ID（販売時必須）')).not.toBeInTheDocument();
-		await expect.element(page.getByRole('option', { name: 'stripe' })).not.toBeInTheDocument();
 	});
 
 	it('should show loading message and hide organization-required message during initial load', async () => {
@@ -120,9 +118,7 @@ describe('/participants/+page.svelte', () => {
 			participants: [],
 			sentInvitations: [],
 			receivedInvitations: [],
-			services: [],
-			ticketTypes: [],
-			ticketPurchases: []
+			loadError: null
 		});
 
 		render(ParticipantsPage);
@@ -132,7 +128,7 @@ describe('/participants/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('shows participant operations for staff while hiding ticket type creation', async () => {
+	it('shows participant operations for staff without ticket management', async () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
@@ -156,33 +152,14 @@ describe('/participants/+page.svelte', () => {
 			],
 			sentInvitations: [],
 			receivedInvitations: [],
-			services: [],
-			ticketTypes: [
-				{
-					id: 'ticket-type-1',
-					organizationId: 'org-1',
-					classroomId: 'room-1',
-					name: '5回券',
-					totalCount: 5,
-					expiresInDays: null,
-					serviceIds: [],
-					isActive: true,
-					isForSale: false,
-					stripePriceId: null,
-					createdAt: '2026-03-01T00:00:00.000Z',
-					updatedAt: '2026-03-01T00:00:00.000Z'
-				}
-			],
-			ticketPurchases: []
+			loadError: null
 		});
 
 		render(ParticipantsPage);
 
-		await expect.element(page.getByText('回数券付与')).toBeInTheDocument();
-		await expect
-			.element(page.getByText('回数券種別の作成には教室管理権限が必要です。'))
-			.toBeInTheDocument();
-		await expect.element(page.getByText('回数券購入管理')).toBeInTheDocument();
+		await expect.element(page.getByText('Participant One')).toBeInTheDocument();
+		await expect.element(page.getByText('回数券付与')).not.toBeInTheDocument();
+		await expect.element(page.getByText('回数券購入管理')).not.toBeInTheDocument();
 	});
 
 	it('shows read-only premium restriction guidance without owner CTA', async () => {
@@ -207,9 +184,7 @@ describe('/participants/+page.svelte', () => {
 			participants: [],
 			sentInvitations: [],
 			receivedInvitations: [],
-			services: [],
-			ticketTypes: [],
-			ticketPurchases: []
+			loadError: null
 		});
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
@@ -233,7 +208,7 @@ describe('/participants/+page.svelte', () => {
 			.element(
 				page.getByRole('heading', {
 					level: 2,
-					name: '参加者・回数券管理には Premiumプランが必要です'
+					name: '参加者管理には Premiumプランが必要です'
 				})
 			)
 			.toBeInTheDocument();

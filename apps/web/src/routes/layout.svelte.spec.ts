@@ -337,6 +337,8 @@ describe('/+layout.svelte', () => {
 
 		await vi.waitFor(() => {
 			expect(document.querySelector('a[href="/admin/dashboard"]')).not.toBeNull();
+			expect(document.querySelector('a[href="/admin/tickets"]')).not.toBeNull();
+			expect(document.body.textContent).toContain('回数券管理');
 			expect(document.querySelector('a[href="/events"]')).toBeNull();
 			expect(document.body.textContent).toContain('参加者へ切替');
 			expect(document.body.textContent).not.toContain('管理者へ切替');
@@ -444,6 +446,7 @@ describe('/+layout.svelte', () => {
 		await vi.waitFor(() => {
 			expect(document.querySelector('a[href="/org-one/room-a/admin/bookings"]')).not.toBeNull();
 			expect(document.querySelector('a[href="/org-one/room-a/admin/participants"]')).not.toBeNull();
+			expect(document.querySelector('a[href="/org-one/room-a/admin/tickets"]')).not.toBeNull();
 			expect(document.querySelector('a[href="/org-one/room-a/admin/services"]')).toBeNull();
 			expect(document.querySelector('a[href="/org-one/room-a/admin/classrooms"]')).toBeNull();
 			expect(document.body.textContent).not.toContain('参加者へ切替');

@@ -69,9 +69,6 @@ describe('/admin/participants/+page.svelte', () => {
 			participants: [],
 			sentInvitations: [],
 			receivedInvitations: [],
-			services: [],
-			ticketTypes: [],
-			ticketPurchases: [],
 			loadError: null
 		});
 	});
@@ -81,5 +78,14 @@ describe('/admin/participants/+page.svelte', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '参加者管理' }))
 			.toBeInTheDocument();
+	});
+
+	it('does not render ticket management operations', async () => {
+		render(AdminParticipantsPage);
+
+		await expect.element(page.getByText('参加者一覧・参加者招待を行います。')).toBeInTheDocument();
+		await expect.element(page.getByText('回数券種別作成')).not.toBeInTheDocument();
+		await expect.element(page.getByText('回数券付与')).not.toBeInTheDocument();
+		await expect.element(page.getByText('回数券購入管理')).not.toBeInTheDocument();
 	});
 });

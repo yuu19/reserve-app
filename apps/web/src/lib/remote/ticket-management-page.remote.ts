@@ -1,12 +1,13 @@
 import { query } from '$app/server';
-import type {
-	ParticipantInvitationPayload,
-	ParticipantPayload,
-	ScopedApiContext
-} from '$lib/rpc-client';
 import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
+import type {
+	ParticipantPayload,
+	ScopedApiContext,
+	ServicePayload,
+	TicketPurchasePayload,
+	TicketTypePayload
+} from '$lib/rpc-client';
 import {
-	buildScopedInvitationPath,
 	createApiGetter,
 	resolveScopedAccessContext,
 	type ApiResult,
@@ -16,7 +17,7 @@ import { z } from 'zod';
 
 type JsonRecord = Record<string, unknown>;
 
-type ParticipantsPageData = {
+type TicketManagementPageData = {
 	activeContext: ScopedApiContext | null;
 	organizationId: string | null;
 	canManage: boolean;
@@ -24,8 +25,9 @@ type ParticipantsPageData = {
 	canManageClassroom: boolean;
 	premiumRestriction: ReturnType<typeof readOrganizationPremiumRestriction>;
 	participants: ParticipantPayload[];
-	sentInvitations: ParticipantInvitationPayload[];
-	receivedInvitations: ParticipantInvitationPayload[];
+	services: ServicePayload[];
+	ticketTypes: TicketTypePayload[];
+	ticketPurchases: TicketPurchasePayload[];
 	loadError: string | null;
 };
 
@@ -58,18 +60,35 @@ const toExceptionMessage = (error: unknown, fallback: string): string => {
 const isParticipant = (value: unknown): value is ParticipantPayload =>
 	isRecord(value) && typeof value.id === 'string' && typeof value.organizationId === 'string';
 
-const isParticipantInvitation = (value: unknown): value is ParticipantInvitationPayload =>
+const isService = (value: unknown): value is ServicePayload =>
+	isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string';
+
+const isTicketType = (value: unknown): value is TicketTypePayload =>
 	isRecord(value) &&
 	typeof value.id === 'string' &&
 	typeof value.organizationId === 'string' &&
-	typeof value.email === 'string' &&
-	value.subjectKind === 'participant';
+	typeof value.name === 'string';
+
+const isTicketPurchase = (value: unknown): value is TicketPurchasePayload =>
+	isRecord(value) &&
+	typeof value.id === 'string' &&
+	typeof value.organizationId === 'string' &&
+	typeof value.participantId === 'string' &&
+	typeof value.ticketTypeId === 'string' &&
+	typeof value.paymentMethod === 'string' &&
+	typeof value.status === 'string';
 
 const asParticipants = (value: unknown): ParticipantPayload[] =>
 	Array.isArray(value) ? value.filter(isParticipant) : [];
 
-const asParticipantInvitations = (value: unknown): ParticipantInvitationPayload[] =>
-	Array.isArray(value) ? value.filter(isParticipantInvitation) : [];
+const asServices = (value: unknown): ServicePayload[] =>
+	Array.isArray(value) ? value.filter(isService) : [];
+
+const asTicketTypes = (value: unknown): TicketTypePayload[] =>
+	Array.isArray(value) ? value.filter(isTicketType) : [];
+
+const asTicketPurchases = (value: unknown): TicketPurchasePayload[] =>
+	Array.isArray(value) ? value.filter(isTicketPurchase) : [];
 
 const createFailedApiResult = (message: string): ApiResult => ({
 	response: new Response(JSON.stringify({ message }), {
@@ -79,6 +98,11 @@ const createFailedApiResult = (message: string): ApiResult => ({
 	payload: { message }
 });
 
+const createSkippedApiResult = (): ApiResult => ({
+	response: new Response(null, { status: 204 }),
+	payload: null
+});
+
 const createSafeApiGetter =
 	(getApi: ReturnType<typeof createApiGetter>) =>
 	async (path: string, query?: Record<string, QueryValue>): Promise<ApiResult> => {
@@ -86,7 +110,7 @@ const createSafeApiGetter =
 			return await getApi(path, query);
 		} catch (error) {
 			const message = toExceptionMessage(error, 'API リクエストに失敗しました。');
-			console.error('getParticipantsPageData request failed', { path, query, message });
+			console.error('getTicketManagementPageData request failed', { path, query, message });
 			return createFailedApiResult(message);
 		}
 	};
@@ -107,17 +131,17 @@ const getDependencyFailureMessage = (
 
 const createLoadError = (messages: Array<string | null>): string | null =>
 	messages.some(Boolean)
-		? '一部の参加者データを取得できませんでした。時間をおいて再読み込みしてください。'
+		? '一部の回数券管理データを取得できませんでした。時間をおいて再読み込みしてください。'
 		: null;
 
-const participantsPageQuerySchema = z.object({
+const ticketManagementPageQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
 	classroomSlug: z.string().trim().min(1)
 });
 
-export const getParticipantsPageData = query(
-	participantsPageQuerySchema,
-	async ({ orgSlug, classroomSlug }): Promise<ParticipantsPageData> => {
+export const getTicketManagementPageData = query(
+	ticketManagementPageQuerySchema,
+	async ({ orgSlug, classroomSlug }): Promise<TicketManagementPageData> => {
 		const getApi = createSafeApiGetter(createApiGetter());
 		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
 		const scopedAccess = await resolveScopedAccessContext(getApi, activeContext);
@@ -130,8 +154,28 @@ export const getParticipantsPageData = query(
 				canManageClassroom: false,
 				premiumRestriction: null,
 				participants: [],
-				sentInvitations: [],
-				receivedInvitations: [],
+				services: [],
+				ticketTypes: [],
+				ticketPurchases: [],
+				loadError: null
+			};
+		}
+
+		const canManageParticipants = scopedAccess.effective.canManageParticipants;
+		const canManageClassroom = scopedAccess.effective.canManageClassroom;
+		const canManage = canManageParticipants || canManageClassroom;
+		if (!canManage) {
+			return {
+				activeContext,
+				organizationId: scopedAccess.organizationId,
+				canManage: false,
+				canManageParticipants: false,
+				canManageClassroom: false,
+				premiumRestriction: null,
+				participants: [],
+				services: [],
+				ticketTypes: [],
+				ticketPurchases: [],
 				loadError: null
 			};
 		}
@@ -141,26 +185,32 @@ export const getParticipantsPageData = query(
 			classroomId: scopedAccess.classroomId
 		};
 
-		const [participantsResult, sentInvitationsResult, receivedInvitationsResult] =
+		const [participantsResult, servicesResult, ticketTypesResult, ticketPurchasesResult] =
 			await Promise.all([
 				getApi('/api/v1/auth/organizations/participants', scopedQuery),
-				getApi(buildScopedInvitationPath(activeContext)),
-				getApi('/api/v1/auth/invitations/user')
+				canManageClassroom
+					? getApi('/api/v1/auth/organizations/services', scopedQuery)
+					: createSkippedApiResult(),
+				getApi('/api/v1/auth/organizations/ticket-types', scopedQuery),
+				canManageParticipants
+					? getApi('/api/v1/auth/organizations/ticket-purchases', scopedQuery)
+					: createSkippedApiResult()
 			]);
 
 		const debugResults = [
 			['participants', participantsResult],
-			['classroom invitations', sentInvitationsResult],
-			['user invitations', receivedInvitationsResult]
+			['services', servicesResult],
+			['ticket types', ticketTypesResult],
+			['ticket purchases', ticketPurchasesResult]
 		] as const;
 		for (const [label, result] of debugResults) {
 			if (result.response.ok || result.response.status === 403) {
 				continue;
 			}
-			console.error('getParticipantsPageData dependency failed', {
+			console.error('getTicketManagementPageData dependency failed', {
 				label,
 				status: result.response.status,
-				detail: toErrorMessage(result.payload, '参加者ページ依存データの取得に失敗しました。'),
+				detail: toErrorMessage(result.payload, '回数券管理ページ依存データの取得に失敗しました。'),
 				orgSlug,
 				classroomSlug
 			});
@@ -168,25 +218,22 @@ export const getParticipantsPageData = query(
 
 		const premiumRestriction =
 			readOrganizationPremiumRestriction(participantsResult.payload) ??
-			readOrganizationPremiumRestriction(sentInvitationsResult.payload);
+			readOrganizationPremiumRestriction(servicesResult.payload) ??
+			readOrganizationPremiumRestriction(ticketTypesResult.payload) ??
+			readOrganizationPremiumRestriction(ticketPurchasesResult.payload);
 		if (premiumRestriction) {
 			return {
 				activeContext,
 				organizationId: scopedAccess.organizationId,
-				canManage:
-					scopedAccess.effective.canManageParticipants || scopedAccess.effective.canManageClassroom,
-				canManageParticipants: scopedAccess.effective.canManageParticipants,
-				canManageClassroom: scopedAccess.effective.canManageClassroom,
+				canManage,
+				canManageParticipants,
+				canManageClassroom,
 				premiumRestriction,
 				participants: [],
-				sentInvitations: [],
-				receivedInvitations: asParticipantInvitations(receivedInvitationsResult.payload),
-				loadError: createLoadError([
-					getDependencyFailureMessage(
-						receivedInvitationsResult,
-						'受信した参加者招待の取得に失敗しました。'
-					)
-				])
+				services: [],
+				ticketTypes: [],
+				ticketPurchases: [],
+				loadError: null
 			};
 		}
 
@@ -194,26 +241,28 @@ export const getParticipantsPageData = query(
 			getDependencyFailureMessage(participantsResult, '参加者情報の取得に失敗しました。', {
 				allowForbidden: true
 			}),
-			getDependencyFailureMessage(sentInvitationsResult, '参加者招待情報の取得に失敗しました。', {
+			getDependencyFailureMessage(servicesResult, 'サービス情報の取得に失敗しました。', {
 				allowForbidden: true
 			}),
-			getDependencyFailureMessage(
-				receivedInvitationsResult,
-				'受信した参加者招待の取得に失敗しました。'
-			)
+			getDependencyFailureMessage(ticketTypesResult, '回数券種別の取得に失敗しました。', {
+				allowForbidden: true
+			}),
+			getDependencyFailureMessage(ticketPurchasesResult, '回数券購入申請の取得に失敗しました。', {
+				allowForbidden: true
+			})
 		]);
 
 		return {
 			activeContext,
 			organizationId: scopedAccess.organizationId,
-			canManage:
-				scopedAccess.effective.canManageParticipants || scopedAccess.effective.canManageClassroom,
-			canManageParticipants: scopedAccess.effective.canManageParticipants,
-			canManageClassroom: scopedAccess.effective.canManageClassroom,
+			canManage,
+			canManageParticipants,
+			canManageClassroom,
 			premiumRestriction: null,
 			participants: asParticipants(participantsResult.payload),
-			sentInvitations: asParticipantInvitations(sentInvitationsResult.payload),
-			receivedInvitations: asParticipantInvitations(receivedInvitationsResult.payload),
+			services: asServices(servicesResult.payload),
+			ticketTypes: asTicketTypes(ticketTypesResult.payload),
+			ticketPurchases: asTicketPurchases(ticketPurchasesResult.payload),
 			loadError
 		};
 	}

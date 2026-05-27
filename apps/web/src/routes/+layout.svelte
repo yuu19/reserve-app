@@ -57,6 +57,7 @@
 		PanelLeftOpen,
 		Settings,
 		ShieldCheck,
+		TicketCheck,
 		Users,
 		X
 	} from '@lucide/svelte';
@@ -128,6 +129,7 @@
 			| '/admin/schedules/slots'
 			| '/admin/schedules/recurring'
 			| '/admin/participants'
+			| '/admin/tickets'
 			| '/admin/invitations'
 			| '/admin/settings'
 			| '/admin/contracts'
@@ -169,6 +171,7 @@
 				{ href: '/admin/schedules/slots', label: '単発一覧', icon: CalendarDays },
 				{ href: '/admin/schedules/recurring', label: '定期一覧', icon: CalendarDays },
 				{ href: '/admin/participants', label: '参加者管理', icon: Users },
+				{ href: '/admin/tickets', label: '回数券管理', icon: TicketCheck },
 				{ href: '/admin/invitations', label: '管理者招待', icon: ShieldCheck },
 				{ href: '/admin/settings', label: '設定', icon: Settings },
 				{ href: '/admin/contracts', label: '契約', icon: Building2 }
@@ -220,6 +223,12 @@
 				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageClassroom;
 			case '/admin/participants':
 				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageParticipants;
+			case '/admin/tickets':
+				return (
+					portalAccess.hasOrganizationAdminAccess ||
+					portalAccess.canManageParticipants ||
+					portalAccess.canManageClassroom
+				);
 			default:
 				return false;
 		}

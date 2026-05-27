@@ -30,6 +30,7 @@
 
 - `/admin/bookings` と `/participant/bookings` 表示データ: `bookings-page.remote.ts` の `getBookingsPageData`
 - `/admin/participants` と `/participant/invitations` 表示データ: `participants-page.remote.ts` の `getParticipantsPageData`
+- `/admin/tickets` 表示データ: `ticket-management-page.remote.ts` の `getTicketManagementPageData`
 - `/events` 公開閲覧データ: `events-page.remote.ts` の `getPublicEvents` / `getPublicEventDetail`
 - bookings/participants 系は active organization 解決を query 内で行う
 

@@ -200,6 +200,12 @@
 					<Button
 						type="button"
 						variant="outline"
+						onclick={() => goto(resolve(toResolvablePath('/admin/tickets')))}
+						>回数券管理へ移動</Button
+					>
+					<Button
+						type="button"
+						variant="outline"
 						onclick={() => goto(resolve(toResolvablePath('/admin/invitations')))}
 						>管理者招待へ移動</Button
 					>
