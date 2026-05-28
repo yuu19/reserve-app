@@ -5,21 +5,35 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { formatJaDateTime } from '$lib/date/format';
+	import { buildLoginRedirectHref } from '$lib/features/auth-portal';
 	import { loadPublicEventDetail, reservePublicEvent } from '$lib/features/events.svelte';
 	import {
-		getCurrentPathWithSearch,
 		loadSession,
-		redirectToLoginWithNext
+		redirectToLoginWithNext,
+		getCurrentPathWithSearch
 	} from '$lib/features/auth-session.svelte';
-	import type { PublicEventDetailPayload } from '$lib/rpc-client';
+	import type { PublicEventDetailPayload, PublicTicketTypePayload } from '$lib/rpc-client';
 	import { toast } from 'svelte-sonner';
 
 	const slotId = $derived(page.params.slotId ?? '');
 
 	let loading = $state(true);
 	let busy = $state(false);
+	let authenticated = $state(false);
 	let detail = $state<PublicEventDetailPayload | null>(null);
 	let errorMessage = $state<string | null>(null);
+
+	const participantBookingsPath = '/participant/bookings';
+	const applicableTicketTypes = $derived.by(() => {
+		const currentDetail = detail;
+		if (!currentDetail) {
+			return [];
+		}
+		return currentDetail.ticketTypes.filter(
+			(ticketType) =>
+				ticketType.serviceScope === 'all' || ticketType.serviceIds.includes(currentDetail.serviceId)
+		);
+	});
 
 	const toExceptionMessage = (error: unknown, fallback: string): string => {
 		if (error instanceof Error && error.message) {
@@ -27,6 +41,21 @@
 		}
 		return fallback;
 	};
+
+	const getTicketServiceLabel = (ticketType: PublicTicketTypePayload): string => {
+		if (ticketType.serviceScope === 'all') {
+			return 'すべてのサービス';
+		}
+		return ticketType.serviceNames.length > 0
+			? ticketType.serviceNames.join('、')
+			: '対象サービス未設定';
+	};
+
+	const getTicketExpirationLabel = (ticketType: PublicTicketTypePayload): string =>
+		ticketType.expiresInDays ? `${ticketType.expiresInDays}日` : '期限なし';
+
+	const getTicketPurchaseHref = (): string =>
+		authenticated ? participantBookingsPath : buildLoginRedirectHref(participantBookingsPath);
 
 	const refresh = async () => {
 		if (!slotId) {
@@ -80,7 +109,10 @@
 		void (async () => {
 			loading = true;
 			try {
+				const sessionPromise = loadSession().catch(() => ({ session: null, status: 0 }));
 				await refresh();
+				const sessionResult = await sessionPromise;
+				authenticated = Boolean(sessionResult.session);
 			} finally {
 				loading = false;
 			}
@@ -114,7 +146,7 @@
 				{/if}
 			</CardDescription>
 		</CardHeader>
-		<CardContent class="space-y-4">
+		<CardContent class="space-y-5">
 			{#if detail?.serviceImageUrl}
 				<div class="overflow-hidden rounded-md border border-border/80 bg-secondary/60">
 					<img
@@ -147,6 +179,42 @@
 						<p>場所: {detail.locationLabel}</p>
 					{/if}
 				</div>
+
+				<section class="space-y-3" aria-labelledby="event-ticket-types-heading">
+					<div class="space-y-1">
+						<h3 id="event-ticket-types-heading" class="text-lg font-semibold text-foreground">
+							回数券
+						</h3>
+						<p class="text-sm text-muted-foreground">支払方法: 現地決済 / 銀行振込</p>
+					</div>
+
+					{#if applicableTicketTypes.length === 0}
+						<div class="rounded-md border border-border/80 bg-secondary/30 p-4">
+							<p class="text-sm text-muted-foreground">現在購入可能な回数券はありません。</p>
+						</div>
+					{:else}
+						<div class="grid gap-3 md:grid-cols-2">
+							{#each applicableTicketTypes as ticketType (ticketType.id)}
+								<div class="rounded-md border border-border/80 bg-background p-4">
+									<div class="flex flex-wrap items-center justify-between gap-2">
+										<h4 class="font-semibold text-foreground">{ticketType.name}</h4>
+										<Badge variant="outline">{getTicketServiceLabel(ticketType)}</Badge>
+									</div>
+									<div class="mt-3 space-y-1 text-sm text-muted-foreground">
+										<p>
+											{ticketType.totalCount}回 / 有効期限 {getTicketExpirationLabel(ticketType)}
+										</p>
+										<p>対象サービス: {getTicketServiceLabel(ticketType)}</p>
+										<p>支払方法: 現地決済 / 銀行振込</p>
+									</div>
+									<Button class="mt-4" type="button" href={getTicketPurchaseHref()}>
+										{authenticated ? '購入申請へ' : 'ログインして購入申請'}
+									</Button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</section>
 			{/if}
 
 			<Button

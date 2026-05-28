@@ -383,7 +383,25 @@ export type PublicEventListItemPayload = {
 	[key: string]: unknown;
 };
 
-export type PublicEventDetailPayload = PublicEventListItemPayload;
+export type PublicTicketTypePayload = {
+	id: string;
+	name: string;
+	totalCount: number;
+	expiresInDays?: number | null;
+	serviceScope: 'all' | 'specific';
+	serviceIds: string[];
+	serviceNames: string[];
+	[key: string]: unknown;
+};
+
+export type PublicEventsPagePayload = {
+	events: PublicEventListItemPayload[];
+	ticketTypes: PublicTicketTypePayload[];
+};
+
+export type PublicEventDetailPayload = PublicEventListItemPayload & {
+	ticketTypes: PublicTicketTypePayload[];
+};
 
 export type OrganizationMembershipRole = 'owner' | 'admin' | 'member';
 export type OrganizationInvitationRole = 'admin' | 'member';

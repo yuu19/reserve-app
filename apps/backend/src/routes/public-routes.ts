@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import { and, asc, eq, gte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import { resolveOrganizationClassroomContext } from '../domain/booking/authorization.js';
 import { SLOT_STATUS } from '../domain/booking/constants.js';
 import {
@@ -9,6 +9,21 @@ import {
   type AuthRuntimeEnv,
 } from '../auth-runtime.js';
 import * as dbSchema from '../infra/db/schema.js';
+import {
+  parseTicketServiceIds,
+  resolveTicketServiceScope,
+  type TicketServiceScope,
+} from '../shared/serializers.js';
+
+const publicTicketTypeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  totalCount: z.number(),
+  expiresInDays: z.number().nullable().optional(),
+  serviceScope: z.enum(['all', 'specific']),
+  serviceIds: z.array(z.string()),
+  serviceNames: z.array(z.string()),
+});
 
 const publicEventSchema = z.object({
   organizationId: z.string(),
@@ -36,6 +51,15 @@ const publicEventSchema = z.object({
   locationLabel: z.string().nullable().optional(),
 });
 
+const publicEventsPageSchema = z.object({
+  events: z.array(publicEventSchema),
+  ticketTypes: z.array(publicTicketTypeSchema),
+});
+
+const publicEventDetailSchema = publicEventSchema.extend({
+  ticketTypes: z.array(publicTicketTypeSchema),
+});
+
 const publicEventRouteParamsSchema = z.object({
   orgSlug: z.string().min(1),
   classroomSlug: z.string().min(1),
@@ -54,7 +78,7 @@ const listPublicEventsRoute = createRoute({
       description: 'Public event list',
       content: {
         'application/json': {
-          schema: z.array(publicEventSchema),
+          schema: publicEventsPageSchema,
         },
       },
     },
@@ -81,7 +105,7 @@ const getPublicEventDetailRoute = createRoute({
       description: 'Public event detail',
       content: {
         'application/json': {
-          schema: publicEventSchema,
+          schema: publicEventDetailSchema,
         },
       },
     },
@@ -92,6 +116,24 @@ const getPublicEventDetailRoute = createRoute({
 });
 
 const toIsoDate = (value: Date): string => value.toISOString();
+
+type PublicTicketType = {
+  id: string;
+  name: string;
+  totalCount: number;
+  expiresInDays: number | null;
+  serviceScope: TicketServiceScope;
+  serviceIds: string[];
+  serviceNames: string[];
+};
+
+type PublicTicketTypeRow = {
+  id: string;
+  name: string;
+  serviceIdsJson: string | null;
+  totalCount: number;
+  expiresInDays: number | null;
+};
 
 const isBookableSlot = ({
   slotStatus,
@@ -175,6 +217,71 @@ const formatPublicEvent = (
     staffLabel: row.staffLabel,
     locationLabel: row.locationLabel,
   };
+};
+
+const listPublicTicketTypes = async ({
+  database,
+  organizationId,
+  classroomId,
+}: {
+  database: AuthRuntimeDatabase;
+  organizationId: string;
+  classroomId: string;
+}): Promise<PublicTicketType[]> => {
+  const rows = (await database
+    .select({
+      id: dbSchema.ticketType.id,
+      name: dbSchema.ticketType.name,
+      serviceIdsJson: dbSchema.ticketType.serviceIdsJson,
+      totalCount: dbSchema.ticketType.totalCount,
+      expiresInDays: dbSchema.ticketType.expiresInDays,
+    })
+    .from(dbSchema.ticketType)
+    .where(
+      and(
+        eq(dbSchema.ticketType.organizationId, organizationId),
+        eq(dbSchema.ticketType.classroomId, classroomId),
+        eq(dbSchema.ticketType.isActive, true),
+        eq(dbSchema.ticketType.isForSale, true),
+      ),
+    )
+    .orderBy(desc(dbSchema.ticketType.createdAt))) as PublicTicketTypeRow[];
+
+  const serviceIds = Array.from(
+    new Set(rows.flatMap((row) => parseTicketServiceIds(row.serviceIdsJson))),
+  );
+  const serviceRows: Array<{ id: string; name: string }> =
+    serviceIds.length > 0
+      ? ((await database
+          .select({
+            id: dbSchema.service.id,
+            name: dbSchema.service.name,
+          })
+          .from(dbSchema.service)
+          .where(
+            and(
+              eq(dbSchema.service.organizationId, organizationId),
+              eq(dbSchema.service.classroomId, classroomId),
+              inArray(dbSchema.service.id, serviceIds),
+            ),
+          )) as Array<{ id: string; name: string }>)
+      : [];
+  const serviceNameById = new Map(serviceRows.map((service) => [service.id, service.name]));
+
+  return rows.map((row) => {
+    const ticketServiceIds = parseTicketServiceIds(row.serviceIdsJson);
+    return {
+      id: row.id,
+      name: row.name,
+      totalCount: row.totalCount,
+      expiresInDays: row.expiresInDays,
+      serviceScope: resolveTicketServiceScope(ticketServiceIds),
+      serviceIds: ticketServiceIds,
+      serviceNames: ticketServiceIds
+        .map((serviceId) => serviceNameById.get(serviceId))
+        .filter((serviceName): serviceName is string => typeof serviceName === 'string'),
+    };
+  });
 };
 
 const resolvePublicOrganizationClassroom = async ({
@@ -281,52 +388,62 @@ export const createPublicRoutes = ({
     }
 
     const now = new Date();
-    const rows = await database
-      .select({
-        organizationId: dbSchema.slot.organizationId,
-        serviceId: dbSchema.service.id,
-        serviceName: dbSchema.service.name,
-        serviceDescription: dbSchema.service.description,
-        serviceImageUrl: dbSchema.service.imageUrl,
-        serviceKind: dbSchema.service.kind,
-        bookingPolicy: dbSchema.service.bookingPolicy,
-        requiresTicket: dbSchema.service.requiresTicket,
-        slotId: dbSchema.slot.id,
-        startAt: dbSchema.slot.startAt,
-        endAt: dbSchema.slot.endAt,
-        slotStatus: dbSchema.slot.status,
-        capacity: dbSchema.slot.capacity,
-        reservedCount: dbSchema.slot.reservedCount,
-        bookingOpenAt: dbSchema.slot.bookingOpenAt,
-        bookingCloseAt: dbSchema.slot.bookingCloseAt,
-        staffLabel: dbSchema.slot.staffLabel,
-        locationLabel: dbSchema.slot.locationLabel,
-      })
-      .from(dbSchema.slot)
-      .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.slot.serviceId))
-      .where(
-        and(
-          eq(dbSchema.slot.organizationId, publicContext.organization.id),
-          eq(dbSchema.slot.classroomId, publicContext.classroom.id),
-          eq(dbSchema.service.isActive, true),
-          gte(dbSchema.slot.startAt, now),
-        ),
-      )
-      .orderBy(asc(dbSchema.slot.startAt))
-      .limit(300);
+    const [rows, ticketTypes] = await Promise.all([
+      database
+        .select({
+          organizationId: dbSchema.slot.organizationId,
+          serviceId: dbSchema.service.id,
+          serviceName: dbSchema.service.name,
+          serviceDescription: dbSchema.service.description,
+          serviceImageUrl: dbSchema.service.imageUrl,
+          serviceKind: dbSchema.service.kind,
+          bookingPolicy: dbSchema.service.bookingPolicy,
+          requiresTicket: dbSchema.service.requiresTicket,
+          slotId: dbSchema.slot.id,
+          startAt: dbSchema.slot.startAt,
+          endAt: dbSchema.slot.endAt,
+          slotStatus: dbSchema.slot.status,
+          capacity: dbSchema.slot.capacity,
+          reservedCount: dbSchema.slot.reservedCount,
+          bookingOpenAt: dbSchema.slot.bookingOpenAt,
+          bookingCloseAt: dbSchema.slot.bookingCloseAt,
+          staffLabel: dbSchema.slot.staffLabel,
+          locationLabel: dbSchema.slot.locationLabel,
+        })
+        .from(dbSchema.slot)
+        .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.slot.serviceId))
+        .where(
+          and(
+            eq(dbSchema.slot.organizationId, publicContext.organization.id),
+            eq(dbSchema.slot.classroomId, publicContext.classroom.id),
+            eq(dbSchema.service.isActive, true),
+            gte(dbSchema.slot.startAt, now),
+          ),
+        )
+        .orderBy(asc(dbSchema.slot.startAt))
+        .limit(300),
+      listPublicTicketTypes({
+        database,
+        organizationId: publicContext.organization.id,
+        classroomId: publicContext.classroom.id,
+      }),
+    ]);
 
     return c.json(
-      rows.map((row: (typeof rows)[number]) =>
-        formatPublicEvent(
-          {
-            ...row,
-            organizationSlug: publicContext.organization.slug,
-            classroomId: publicContext.classroom.id,
-            classroomSlug: publicContext.classroom.slug,
-          },
-          now,
+      {
+        events: rows.map((row: (typeof rows)[number]) =>
+          formatPublicEvent(
+            {
+              ...row,
+              organizationSlug: publicContext.organization.slug,
+              classroomId: publicContext.classroom.id,
+              classroomSlug: publicContext.classroom.slug,
+            },
+            now,
+          ),
         ),
-      ),
+        ticketTypes,
+      },
       200,
     );
   });
@@ -380,16 +497,25 @@ export const createPublicRoutes = ({
       return c.json({ message: 'Public event not found.' }, 404);
     }
 
+    const ticketTypes = await listPublicTicketTypes({
+      database,
+      organizationId: publicContext.organization.id,
+      classroomId: publicContext.classroom.id,
+    });
+
     return c.json(
-      formatPublicEvent(
-        {
-          ...row,
-          organizationSlug: publicContext.organization.slug,
-          classroomId: publicContext.classroom.id,
-          classroomSlug: publicContext.classroom.slug,
-        },
-        new Date(),
-      ),
+      {
+        ...formatPublicEvent(
+          {
+            ...row,
+            organizationSlug: publicContext.organization.slug,
+            classroomId: publicContext.classroom.id,
+            classroomSlug: publicContext.classroom.slug,
+          },
+          new Date(),
+        ),
+        ticketTypes,
+      },
       200,
     );
   });

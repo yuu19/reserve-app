@@ -10413,6 +10413,7 @@ describe('backend app', () => {
       name: 'Public Events Org',
       slug: 'public-events-org',
     });
+    await enablePremiumForOrganization(organizationId);
 
     const serviceResponse = await owner.request('/api/v1/auth/organizations/services', {
       method: 'POST',
@@ -10451,16 +10452,118 @@ describe('backend app', () => {
     const slotPayload = (await toJson(slotResponse)) as Record<string, unknown>;
     const slotId = slotPayload.id as string;
 
+    const allTicketTypeResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Public All Service Ticket',
+        totalCount: 10,
+        expiresInDays: 60,
+        serviceScope: 'all',
+        isForSale: true,
+      }),
+    });
+    expect(allTicketTypeResponse.status).toBe(200);
+
+    const specificTicketTypeResponse = await owner.request(
+      '/api/v1/auth/organizations/ticket-types',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId,
+          name: 'Public Specific Ticket',
+          totalCount: 5,
+          serviceScope: 'specific',
+          serviceIds: [serviceId],
+          isForSale: true,
+        }),
+      },
+    );
+    expect(specificTicketTypeResponse.status).toBe(200);
+
+    const inactiveTicketTypeResponse = await owner.request(
+      '/api/v1/auth/organizations/ticket-types',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId,
+          name: 'Public Inactive Ticket',
+          totalCount: 5,
+          serviceScope: 'all',
+          isActive: false,
+          isForSale: true,
+        }),
+      },
+    );
+    expect(inactiveTicketTypeResponse.status).toBe(200);
+
+    const notForSaleTicketTypeResponse = await owner.request(
+      '/api/v1/auth/organizations/ticket-types',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationId,
+          name: 'Public Hidden Ticket',
+          totalCount: 5,
+          serviceScope: 'all',
+          isForSale: false,
+        }),
+      },
+    );
+    expect(notForSaleTicketTypeResponse.status).toBe(200);
+
     const publicEventsResponse = await app.request(
       '/api/v1/public/orgs/public-events-org/classrooms/public-events-org/events',
     );
     expect(publicEventsResponse.status).toBe(200);
-    const publicEventsPayload = (await toJson(publicEventsResponse)) as Array<
-      Record<string, unknown>
-    >;
-    const publicEvent = publicEventsPayload.find((row) => row.slotId === slotId);
+    const publicEventsPayload = (await toJson(publicEventsResponse)) as {
+      events?: Array<Record<string, unknown>>;
+      ticketTypes?: Array<Record<string, unknown>>;
+    };
+    const publicEvent = publicEventsPayload.events?.find((row) => row.slotId === slotId);
     expect(publicEvent).toBeTruthy();
     expect(publicEvent?.serviceDescription).toBe('公開向けのサービス説明テキストです。');
+    const publicTicketTypeNames =
+      publicEventsPayload.ticketTypes?.map((ticketType) => ticketType.name) ?? [];
+    expect(publicTicketTypeNames).toEqual(
+      expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']),
+    );
+    expect(publicTicketTypeNames).not.toContain('Public Inactive Ticket');
+    expect(publicTicketTypeNames).not.toContain('Public Hidden Ticket');
+
+    const allPublicTicketType = publicEventsPayload.ticketTypes?.find(
+      (ticketType) => ticketType.name === 'Public All Service Ticket',
+    );
+    expect(allPublicTicketType).toMatchObject({
+      totalCount: 10,
+      expiresInDays: 60,
+      serviceScope: 'all',
+      serviceIds: [],
+      serviceNames: [],
+    });
+
+    const specificPublicTicketType = publicEventsPayload.ticketTypes?.find(
+      (ticketType) => ticketType.name === 'Public Specific Ticket',
+    );
+    expect(specificPublicTicketType).toMatchObject({
+      totalCount: 5,
+      expiresInDays: null,
+      serviceScope: 'specific',
+      serviceIds: [serviceId],
+      serviceNames: ['Public Event Service'],
+    });
 
     const publicEventDetailResponse = await app.request(
       `/api/v1/public/orgs/public-events-org/classrooms/public-events-org/events/${encodeURIComponent(slotId)}`,
@@ -10470,6 +10573,11 @@ describe('backend app', () => {
     expect(publicEventDetail.slotId).toBe(slotId);
     expect(publicEventDetail.organizationId).toBe(organizationId);
     expect(publicEventDetail.serviceDescription).toBe('公開向けのサービス説明テキストです。');
+    expect(
+      (publicEventDetail.ticketTypes as Array<Record<string, unknown>> | undefined)?.map(
+        (ticketType) => ticketType.name,
+      ),
+    ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
 
     const unauthSelfEnrollResponse = await app.request(
       '/api/v1/auth/organizations/participants/self-enroll',

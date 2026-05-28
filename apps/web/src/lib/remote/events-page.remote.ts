@@ -1,6 +1,11 @@
 import { env } from '$env/dynamic/public';
 import { getRequestEvent, query } from '$app/server';
-import type { PublicEventDetailPayload, PublicEventListItemPayload } from '$lib/rpc-client';
+import type {
+	PublicEventDetailPayload,
+	PublicEventListItemPayload,
+	PublicEventsPagePayload,
+	PublicTicketTypePayload
+} from '$lib/rpc-client';
 import { z } from 'zod';
 
 const defaultBackendUrl = 'http://localhost:3000';
@@ -78,7 +83,47 @@ const isPublicEvent = (value: unknown): value is PublicEventListItemPayload =>
 const asPublicEvents = (value: unknown): PublicEventListItemPayload[] =>
 	Array.isArray(value) ? value.filter(isPublicEvent) : [];
 
-export const getPublicEvents = query(async (): Promise<PublicEventListItemPayload[]> => {
+const isPublicTicketType = (value: unknown): value is PublicTicketTypePayload =>
+	isRecord(value) &&
+	typeof value.id === 'string' &&
+	typeof value.name === 'string' &&
+	typeof value.totalCount === 'number' &&
+	(value.expiresInDays === undefined ||
+		value.expiresInDays === null ||
+		typeof value.expiresInDays === 'number') &&
+	(value.serviceScope === 'all' || value.serviceScope === 'specific') &&
+	Array.isArray(value.serviceIds) &&
+	value.serviceIds.every((serviceId) => typeof serviceId === 'string') &&
+	Array.isArray(value.serviceNames) &&
+	value.serviceNames.every((serviceName) => typeof serviceName === 'string');
+
+const asPublicTicketTypes = (value: unknown): PublicTicketTypePayload[] =>
+	Array.isArray(value) ? value.filter(isPublicTicketType) : [];
+
+const asPublicEventsPage = (value: unknown): PublicEventsPagePayload => {
+	if (Array.isArray(value)) {
+		return {
+			events: asPublicEvents(value),
+			ticketTypes: []
+		};
+	}
+	return {
+		events: isRecord(value) ? asPublicEvents(value.events) : [],
+		ticketTypes: isRecord(value) ? asPublicTicketTypes(value.ticketTypes) : []
+	};
+};
+
+const asPublicEventDetail = (value: unknown): PublicEventDetailPayload | null => {
+	if (!isPublicEvent(value)) {
+		return null;
+	}
+	return {
+		...value,
+		ticketTypes: isRecord(value) ? asPublicTicketTypes(value.ticketTypes) : []
+	};
+};
+
+export const getPublicEvents = query(async (): Promise<PublicEventsPagePayload> => {
 	const event = getRequestEvent();
 	const response = await event.fetch(createApiUrl(publicEventsPath()), {
 		method: 'GET'
@@ -90,7 +135,7 @@ export const getPublicEvents = query(async (): Promise<PublicEventListItemPayloa
 		}
 		throw new Error(toErrorMessage(payload, '公開イベントの取得に失敗しました。'));
 	}
-	return asPublicEvents(payload);
+	return asPublicEventsPage(payload);
 });
 
 export const getPublicEventDetail = query(
@@ -110,9 +155,10 @@ export const getPublicEventDetail = query(
 			}
 			throw new Error(toErrorMessage(payload, '公開イベント詳細の取得に失敗しました。'));
 		}
-		if (!isPublicEvent(payload)) {
+		const detail = asPublicEventDetail(payload);
+		if (!detail) {
 			throw new Error('公開イベント詳細の形式が不正です。');
 		}
-		return payload;
+		return detail;
 	}
 );

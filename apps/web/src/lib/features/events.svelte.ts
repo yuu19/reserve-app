@@ -1,4 +1,4 @@
-import type { PublicEventDetailPayload, PublicEventListItemPayload } from '$lib/rpc-client';
+import type { PublicEventDetailPayload, PublicEventsPagePayload } from '$lib/rpc-client';
 import { authRpc } from '$lib/rpc-client';
 import { getPublicEventDetail, getPublicEvents } from '$lib/remote/events-page.remote';
 import { createBooking } from './bookings.svelte';
@@ -22,7 +22,7 @@ const toSelfEnrollErrorMessage = (status: number, payload: unknown): string => {
 	return message;
 };
 
-export const loadPublicEvents = async (): Promise<PublicEventListItemPayload[]> => {
+export const loadPublicEvents = async (): Promise<PublicEventsPagePayload> => {
 	return getPublicEvents();
 };
 
