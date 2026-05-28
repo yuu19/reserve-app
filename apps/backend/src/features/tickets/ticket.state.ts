@@ -7,7 +7,11 @@ import {
 } from '../../domain/booking/constants.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import { parseIsoDateOrNull } from '../../shared/date.js';
-import { serializeTicketPack, serializeTicketPurchase } from '../../shared/serializers.js';
+import {
+  parseTicketServiceIds,
+  serializeTicketPack,
+  serializeTicketPurchase,
+} from '../../shared/serializers.js';
 
 /**
  * ticket type の有効期限日数または明示指定から ticket pack の終了日時を解決します。
@@ -59,6 +63,7 @@ export const consumeTicketPackForParticipant = async ({
   database,
   organizationId,
   classroomId,
+  serviceId,
   participantId,
   participantsCount,
   now,
@@ -66,6 +71,7 @@ export const consumeTicketPackForParticipant = async ({
   database: AuthRuntimeDatabase;
   organizationId: string;
   classroomId?: string | null;
+  serviceId: string;
   participantId: string;
   participantsCount: number;
   now: Date;
@@ -73,6 +79,7 @@ export const consumeTicketPackForParticipant = async ({
   const ticketRows = await database
     .select({
       id: dbSchema.ticketPack.id,
+      serviceIdsJson: dbSchema.ticketPack.serviceIdsJson,
       remainingCount: dbSchema.ticketPack.remainingCount,
       expiresAt: dbSchema.ticketPack.expiresAt,
       status: dbSchema.ticketPack.status,
@@ -91,8 +98,11 @@ export const consumeTicketPackForParticipant = async ({
 
   const candidate = ticketRows
     .filter(
-      (row: { expiresAt: Date | null }) =>
-        !row.expiresAt || row.expiresAt.getTime() > now.getTime(),
+      (row: { expiresAt: Date | null; serviceIdsJson: string | null }) => {
+        const serviceIds = parseTicketServiceIds(row.serviceIdsJson);
+        const matchesService = serviceIds.length === 0 || serviceIds.includes(serviceId);
+        return matchesService && (!row.expiresAt || row.expiresAt.getTime() > now.getTime());
+      },
     )
     .sort(
       (
@@ -203,6 +213,7 @@ export const issueTicketPackWithLedger = async ({
   ticketTypeId,
   count,
   expiresAt,
+  serviceIds,
   actorUserId,
   reason,
   bookingId,
@@ -214,6 +225,7 @@ export const issueTicketPackWithLedger = async ({
   ticketTypeId: string;
   count: number;
   expiresAt: Date | null;
+  serviceIds?: string[];
   actorUserId: string;
   reason: string;
   bookingId?: string | null;
@@ -230,6 +242,7 @@ export const issueTicketPackWithLedger = async ({
     classroomId,
     participantId,
     ticketTypeId,
+    serviceIdsJson: serviceIds && serviceIds.length > 0 ? JSON.stringify(serviceIds) : null,
     initialCount: count,
     remainingCount: count,
     expiresAt,
@@ -357,6 +370,7 @@ export const approveTicketPurchaseWithIssue = async ({
       classroomId: dbSchema.ticketPurchase.classroomId,
       participantId: dbSchema.ticketPurchase.participantId,
       ticketTypeId: dbSchema.ticketPurchase.ticketTypeId,
+      serviceIdsJson: dbSchema.ticketPurchase.serviceIdsJson,
       status: dbSchema.ticketPurchase.status,
       ticketPackId: dbSchema.ticketPurchase.ticketPackId,
     })
@@ -407,6 +421,7 @@ export const approveTicketPurchaseWithIssue = async ({
     ticketTypeId: purchase.ticketTypeId,
     count: ticketType.totalCount,
     expiresAt,
+    serviceIds: parseTicketServiceIds(purchase.serviceIdsJson),
     actorUserId,
     reason: actorReason,
   });

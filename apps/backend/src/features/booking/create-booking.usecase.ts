@@ -172,6 +172,7 @@ export const createBooking = async (
         database: ctx.database,
         organizationId: slot.organizationId,
         classroomId: slot.classroomId,
+        serviceId: slot.serviceId,
         participantId: participant.id,
         participantsCount,
         now,

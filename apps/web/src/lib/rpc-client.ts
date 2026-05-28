@@ -296,6 +296,7 @@ export type TicketTypePayload = {
 	id: string;
 	organizationId: string;
 	name: string;
+	serviceScope?: 'all' | 'specific';
 	serviceIds?: string[];
 	totalCount: number;
 	expiresInDays?: number | null;
@@ -313,6 +314,8 @@ export type TicketPackPayload = {
 	classroomId: string;
 	participantId: string;
 	ticketTypeId: string;
+	serviceScope?: 'all' | 'specific';
+	serviceIds?: string[];
 	initialCount: number;
 	remainingCount: number;
 	expiresAt?: string | null;
@@ -336,6 +339,8 @@ export type TicketPurchasePayload = {
 	organizationId: string;
 	participantId: string;
 	ticketTypeId: string;
+	serviceScope?: 'all' | 'specific';
+	serviceIds?: string[];
 	paymentMethod: TicketPurchaseMethod;
 	status: TicketPurchaseStatus;
 	ticketPackId?: string | null;
@@ -715,6 +720,7 @@ type CreateTicketTypeInput = {
 	organizationId?: string;
 	classroomId?: string;
 	name: string;
+	serviceScope?: 'all' | 'specific';
 	serviceIds?: string[];
 	totalCount: number;
 	expiresInDays?: number;
@@ -728,6 +734,7 @@ type UpdateTicketTypeInput = {
 	classroomId?: string;
 	ticketTypeId: string;
 	name?: string;
+	serviceScope?: 'all' | 'specific';
 	serviceIds?: string[];
 	totalCount?: number;
 	expiresInDays?: number | null;

@@ -123,6 +123,7 @@ export const approveBookingByStaff = async (
         database: ctx.database,
         organizationId: booking.organizationId,
         classroomId: booking.classroomId,
+        serviceId: booking.serviceId,
         participantId: booking.participantId,
         participantsCount: booking.participantsCount,
         now,

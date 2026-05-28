@@ -11,6 +11,13 @@ const boolStringSchema = z
   .optional()
   .transform((value) => (value === undefined ? undefined : value === 'true'));
 
+const ticketServiceScopeSchema = z.enum(['all', 'specific']);
+const ticketServiceIdsSchema = z.array(z.string().min(1));
+const hasSpecificServiceScopeWithoutServices = (value: {
+  serviceScope?: 'all' | 'specific';
+  serviceIds?: string[];
+}) => value.serviceScope === 'specific' && (!value.serviceIds || value.serviceIds.length === 0);
+
 /**
  * organization と任意の classroom scope を受け取る共通 query を検証します。
  */
@@ -22,17 +29,23 @@ export const orgQuerySchema = z.object({
 /**
  * staff が ticket type を作成する入力を検証します。
  */
-export const ticketTypeCreateBodySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
-  name: z.string().trim().min(1).max(120),
-  serviceIds: z.array(z.string().min(1)).optional(),
-  totalCount: z.int().min(1).max(1000),
-  expiresInDays: z.int().min(1).max(3650).optional(),
-  isActive: z.boolean().optional(),
-  isForSale: z.boolean().optional(),
-  stripePriceId: z.string().trim().min(1).max(200).optional(),
-});
+export const ticketTypeCreateBodySchema = z
+  .object({
+    organizationId: z.string().min(1).optional(),
+    classroomId: z.string().min(1).optional(),
+    name: z.string().trim().min(1).max(120),
+    serviceScope: ticketServiceScopeSchema.optional(),
+    serviceIds: ticketServiceIdsSchema.optional(),
+    totalCount: z.int().min(1).max(1000),
+    expiresInDays: z.int().min(1).max(3650).optional(),
+    isActive: z.boolean().optional(),
+    isForSale: z.boolean().optional(),
+    stripePriceId: z.string().trim().min(1).max(200).optional(),
+  })
+  .refine((value) => !hasSpecificServiceScopeWithoutServices(value), {
+    message: 'serviceIds is required when serviceScope is specific.',
+    path: ['serviceIds'],
+  });
 
 /**
  * staff が ticket type を編集・無効化する入力を検証します。
@@ -43,7 +56,8 @@ export const ticketTypeUpdateBodySchema = z
     classroomId: z.string().min(1).optional(),
     ticketTypeId: z.string().min(1),
     name: z.string().trim().min(1).max(120).optional(),
-    serviceIds: z.array(z.string().min(1)).optional(),
+    serviceScope: ticketServiceScopeSchema.optional(),
+    serviceIds: ticketServiceIdsSchema.optional(),
     totalCount: z.int().min(1).max(1000).optional(),
     expiresInDays: z.int().min(1).max(3650).nullable().optional(),
     isActive: z.boolean().optional(),
@@ -52,13 +66,18 @@ export const ticketTypeUpdateBodySchema = z
   .refine(
     (value) =>
       value.name !== undefined ||
+      value.serviceScope !== undefined ||
       value.serviceIds !== undefined ||
       value.totalCount !== undefined ||
       value.expiresInDays !== undefined ||
       value.isActive !== undefined ||
       value.isForSale !== undefined,
     'At least one ticket type field is required.',
-  );
+  )
+  .refine((value) => !hasSpecificServiceScopeWithoutServices(value), {
+    message: 'serviceIds is required when serviceScope is specific.',
+    path: ['serviceIds'],
+  });
 
 /**
  * staff 向け ticket type 一覧 query を検証します。

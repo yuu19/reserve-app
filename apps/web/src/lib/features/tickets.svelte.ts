@@ -235,6 +235,7 @@ export const createTicketType = async (input: {
 	name: string;
 	totalCount: number;
 	expiresInDays?: number;
+	serviceScope?: 'all' | 'specific';
 	serviceIds?: string[];
 	isForSale?: boolean;
 }) => {
@@ -251,7 +252,15 @@ export const createTicketType = async (input: {
 		name: input.name,
 		totalCount: input.totalCount,
 		expiresInDays: input.expiresInDays,
-		serviceIds: input.serviceIds && input.serviceIds.length > 0 ? input.serviceIds : undefined,
+		serviceScope: input.serviceScope,
+		serviceIds:
+			input.serviceScope === 'all'
+				? []
+				: input.serviceIds && input.serviceIds.length > 0
+					? input.serviceIds
+					: input.serviceScope === 'specific'
+						? []
+						: undefined,
 		isForSale: input.isForSale
 	});
 	const payload = await parseResponseBody(response);
@@ -272,6 +281,7 @@ export const updateTicketType = async (input: {
 	name?: string;
 	totalCount?: number;
 	expiresInDays?: number | null;
+	serviceScope?: 'all' | 'specific';
 	serviceIds?: string[];
 	isActive?: boolean;
 	isForSale?: boolean;
@@ -290,7 +300,13 @@ export const updateTicketType = async (input: {
 		name: input.name,
 		totalCount: input.totalCount,
 		expiresInDays: input.expiresInDays,
-		serviceIds: input.serviceIds,
+		serviceScope: input.serviceScope,
+		serviceIds:
+			input.serviceScope === 'specific' && input.serviceIds && input.serviceIds.length > 0
+				? input.serviceIds
+				: input.serviceScope === 'all'
+					? []
+					: input.serviceIds,
 		isActive: input.isActive,
 		isForSale: input.isForSale
 	});

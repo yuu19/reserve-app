@@ -1020,6 +1020,21 @@
 	const formatSlotIdShort = (slotId: string): string => slotId.slice(0, 8);
 	const formatRecurringIdShort = (recurringScheduleId: string): string =>
 		recurringScheduleId.slice(0, 8);
+	const resolveTicketServiceScope = (ticket: {
+		serviceScope?: 'all' | 'specific';
+		serviceIds?: string[];
+	}): 'all' | 'specific' =>
+		ticket.serviceScope ?? ((ticket.serviceIds?.length ?? 0) > 0 ? 'specific' : 'all');
+	const formatTicketServiceScope = (ticket: {
+		serviceScope?: 'all' | 'specific';
+		serviceIds?: string[];
+	}): string => {
+		if (resolveTicketServiceScope(ticket) === 'all') {
+			return 'すべて';
+		}
+		const serviceIds = ticket.serviceIds ?? [];
+		return serviceIds.length > 0 ? serviceIds.map(getServiceName).join('、') : '未指定';
+	};
 	const formatOptionalDateTime = (value?: string | null): string => {
 		if (!value) {
 			return '無期限';
@@ -3578,6 +3593,9 @@
 													</p>
 													<p class="text-xs text-muted-foreground">
 														有効期限: {formatOptionalDateTime(pack.expiresAt)}
+													</p>
+													<p class="text-xs text-muted-foreground">
+														対象サービス: {formatTicketServiceScope(pack)}
 													</p>
 												</div>
 												<Badge

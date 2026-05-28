@@ -50,6 +50,7 @@
 		name: '',
 		totalCount: '10',
 		expiresInDays: '',
+		serviceScope: 'all' as 'all' | 'specific',
 		serviceIds: [] as string[],
 		isForSale: false
 	});
@@ -60,6 +61,7 @@
 				name: string;
 				totalCount: string;
 				expiresInDays: string;
+				serviceScope: 'all' | 'specific';
 				serviceIds: string[];
 				isActive: boolean;
 				isForSale: boolean;
@@ -240,6 +242,25 @@
 		const ticketType = ticketTypes.find((item) => item.id === ticketTypeId);
 		return ticketType ? `${ticketType.name} / ${ticketType.totalCount}回` : ticketTypeId;
 	};
+	const getServiceName = (serviceId: string): string => {
+		const service = services.find((item) => item.id === serviceId);
+		return service?.name ?? serviceId;
+	};
+	const resolveTicketServiceScope = (ticket: {
+		serviceScope?: 'all' | 'specific';
+		serviceIds?: string[];
+	}): 'all' | 'specific' =>
+		ticket.serviceScope ?? ((ticket.serviceIds?.length ?? 0) > 0 ? 'specific' : 'all');
+	const formatTicketServiceScope = (ticket: {
+		serviceScope?: 'all' | 'specific';
+		serviceIds?: string[];
+	}): string => {
+		if (resolveTicketServiceScope(ticket) === 'all') {
+			return 'すべて';
+		}
+		const serviceIds = ticket.serviceIds ?? [];
+		return serviceIds.length > 0 ? serviceIds.map(getServiceName).join('、') : '未指定';
+	};
 	const getParticipantLabel = (participantId: string) => {
 		const participant = participants.find((item) => item.id === participantId);
 		return participant ? `${participant.name} / ${participant.email}` : participantId;
@@ -265,6 +286,7 @@
 						ticketType.expiresInDays === null || ticketType.expiresInDays === undefined
 							? ''
 							: String(ticketType.expiresInDays),
+					serviceScope: resolveTicketServiceScope(ticketType),
 					serviceIds: ticketType.serviceIds ?? [],
 					isActive: ticketType.isActive,
 					isForSale: ticketType.isForSale
@@ -375,6 +397,10 @@
 			toast.error('有効日数は 1 以上の整数で入力してください。');
 			return;
 		}
+		if (ticketTypeForm.serviceScope === 'specific' && ticketTypeForm.serviceIds.length === 0) {
+			toast.error('対象サービスを 1 件以上選択してください。');
+			return;
+		}
 		busy = true;
 		try {
 			const result = await createTicketType({
@@ -382,7 +408,8 @@
 				name: ticketTypeForm.name,
 				totalCount,
 				expiresInDays,
-				serviceIds: ticketTypeForm.serviceIds,
+				serviceScope: ticketTypeForm.serviceScope,
+				serviceIds: ticketTypeForm.serviceScope === 'specific' ? ticketTypeForm.serviceIds : [],
 				isForSale: ticketTypeForm.isForSale
 			});
 			if (!result.ok) {
@@ -397,6 +424,7 @@
 				name: '',
 				totalCount: '10',
 				expiresInDays: '',
+				serviceScope: 'all',
 				serviceIds: [],
 				isForSale: false
 			};
@@ -428,6 +456,10 @@
 			toast.error('有効日数は 1 以上の整数で入力してください。');
 			return;
 		}
+		if (form.serviceScope === 'specific' && form.serviceIds.length === 0) {
+			toast.error('対象サービスを 1 件以上選択してください。');
+			return;
+		}
 
 		busy = true;
 		try {
@@ -437,7 +469,8 @@
 				name: form.name,
 				totalCount,
 				expiresInDays: expiresInDaysText ? expiresInDays : null,
-				serviceIds: form.serviceIds,
+				serviceScope: form.serviceScope,
+				serviceIds: form.serviceScope === 'specific' ? form.serviceIds : [],
 				isActive: form.isActive,
 				isForSale: form.isForSale
 			});
@@ -798,37 +831,74 @@
 										/>
 										<Label for="ticket-type-is-for-sale">参加者が購入できるようにする</Label>
 									</div>
-									<div class="space-y-2">
-										<p class="text-sm font-medium">対象サービス（任意）</p>
-										{#if services.length === 0}
-											<p class="text-sm text-muted-foreground">選択可能なサービスがありません。</p>
-										{:else}
-											<div
-												class="max-h-40 space-y-2 overflow-y-auto rounded-md border border-border/80 bg-secondary/60 p-2"
+									<fieldset class="space-y-2">
+										<legend class="text-sm font-medium">対象サービス</legend>
+										<div class="grid gap-2 sm:grid-cols-2">
+											<label
+												class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm"
+												for="ticket-service-scope-all"
 											>
-												{#each services as service (service.id)}
-													<label
-														class="flex items-center gap-2 text-sm text-secondary-foreground"
-														for={`ticket-service-${service.id}`}
-													>
-														<input
-															id={`ticket-service-${service.id}`}
-															name={`ticket_service_${service.id}`}
-															type="checkbox"
-															checked={ticketTypeForm.serviceIds.includes(service.id)}
-															onchange={(event) =>
-																toggleTicketTypeService(
-																	service.id,
-																	(event.currentTarget as HTMLInputElement).checked
-																)}
-														/>
-														<span>{service.name}</span>
-													</label>
-												{/each}
-											</div>
+												<input
+													id="ticket-service-scope-all"
+													name="ticket_service_scope"
+													type="radio"
+													value="all"
+													bind:group={ticketTypeForm.serviceScope}
+												/>
+												<span>すべてのサービス</span>
+											</label>
+											<label
+												class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm"
+												for="ticket-service-scope-specific"
+											>
+												<input
+													id="ticket-service-scope-specific"
+													name="ticket_service_scope"
+													type="radio"
+													value="specific"
+													bind:group={ticketTypeForm.serviceScope}
+												/>
+												<span>サービスを個別指定</span>
+											</label>
+										</div>
+										{#if ticketTypeForm.serviceScope === 'specific'}
+											{#if services.length === 0}
+												<p class="text-sm text-muted-foreground">選択可能なサービスがありません。</p>
+											{:else}
+												<div
+													class="max-h-40 space-y-2 overflow-y-auto rounded-md border border-border/80 bg-secondary/60 p-2"
+												>
+													{#each services as service (service.id)}
+														<label
+															class="flex items-center gap-2 text-sm text-secondary-foreground"
+															for={`ticket-service-${service.id}`}
+														>
+															<input
+																id={`ticket-service-${service.id}`}
+																name={`ticket_service_${service.id}`}
+																type="checkbox"
+																checked={ticketTypeForm.serviceIds.includes(service.id)}
+																onchange={(event) =>
+																	toggleTicketTypeService(
+																		service.id,
+																		(event.currentTarget as HTMLInputElement).checked
+																	)}
+															/>
+															<span>{service.name}</span>
+														</label>
+													{/each}
+												</div>
+											{/if}
 										{/if}
-									</div>
-									<Button type="submit" disabled={busy}>作成</Button>
+									</fieldset>
+									<Button
+										type="submit"
+										disabled={busy ||
+											(ticketTypeForm.serviceScope === 'specific' &&
+												ticketTypeForm.serviceIds.length === 0)}
+									>
+										作成
+									</Button>
 								</form>
 							{:else}
 								<div
@@ -932,6 +1002,9 @@
 													<p class="text-xs text-muted-foreground">
 														作成: {formatDateTime(ticketType.createdAt)}
 													</p>
+													<p class="text-xs text-muted-foreground">
+														対象サービス: {formatTicketServiceScope(ticketType)}
+													</p>
 												</div>
 												<div class="flex flex-wrap gap-2">
 													<Badge variant={ticketType.isActive ? 'outline' : 'secondary'}>
@@ -1006,42 +1079,80 @@
 													</label>
 												</div>
 
-												<div class="space-y-2">
-													<p class="text-sm font-medium">対象サービス</p>
-													{#if services.length === 0}
-														<p class="text-sm text-muted-foreground">
-															選択可能なサービスがありません。
-														</p>
-													{:else}
-														<div
-															class="grid gap-2 rounded-md border border-border/80 bg-secondary/60 p-2 md:grid-cols-2"
+												<fieldset class="space-y-2">
+													<legend class="text-sm font-medium">対象サービス</legend>
+													<div class="grid gap-2 sm:grid-cols-2">
+														<label
+															class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm"
+															for={`ticket-type-edit-scope-all-${ticketType.id}`}
 														>
-															{#each services as service (service.id)}
-																<label
-																	class="flex items-center gap-2 text-sm text-secondary-foreground"
-																	for={`ticket-type-edit-service-${ticketType.id}-${service.id}`}
-																>
-																	<input
-																		id={`ticket-type-edit-service-${ticketType.id}-${service.id}`}
-																		name={`ticket_type_edit_service_${ticketType.id}_${service.id}`}
-																		type="checkbox"
-																		checked={editForm.serviceIds.includes(service.id)}
-																		onchange={(event) =>
-																			toggleTicketTypeEditService(
-																				ticketType.id,
-																				service.id,
-																				(event.currentTarget as HTMLInputElement).checked
-																			)}
-																	/>
-																	<span>{service.name}</span>
-																</label>
-															{/each}
-														</div>
+															<input
+																id={`ticket-type-edit-scope-all-${ticketType.id}`}
+																name={`ticket_type_edit_scope_${ticketType.id}`}
+																type="radio"
+																value="all"
+																bind:group={editForm.serviceScope}
+															/>
+															<span>すべてのサービス</span>
+														</label>
+														<label
+															class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm"
+															for={`ticket-type-edit-scope-specific-${ticketType.id}`}
+														>
+															<input
+																id={`ticket-type-edit-scope-specific-${ticketType.id}`}
+																name={`ticket_type_edit_scope_${ticketType.id}`}
+																type="radio"
+																value="specific"
+																bind:group={editForm.serviceScope}
+															/>
+															<span>サービスを個別指定</span>
+														</label>
+													</div>
+													{#if editForm.serviceScope === 'specific'}
+														{#if services.length === 0}
+															<p class="text-sm text-muted-foreground">
+																選択可能なサービスがありません。
+															</p>
+														{:else}
+															<div
+																class="grid gap-2 rounded-md border border-border/80 bg-secondary/60 p-2 md:grid-cols-2"
+															>
+																{#each services as service (service.id)}
+																	<label
+																		class="flex items-center gap-2 text-sm text-secondary-foreground"
+																		for={`ticket-type-edit-service-${ticketType.id}-${service.id}`}
+																	>
+																		<input
+																			id={`ticket-type-edit-service-${ticketType.id}-${service.id}`}
+																			name={`ticket_type_edit_service_${ticketType.id}_${service.id}`}
+																			type="checkbox"
+																			checked={editForm.serviceIds.includes(service.id)}
+																			onchange={(event) =>
+																				toggleTicketTypeEditService(
+																					ticketType.id,
+																					service.id,
+																					(event.currentTarget as HTMLInputElement).checked
+																				)}
+																		/>
+																		<span>{service.name}</span>
+																	</label>
+																{/each}
+															</div>
+														{/if}
 													{/if}
-												</div>
+												</fieldset>
 
 												<div class="flex flex-wrap gap-2">
-													<Button type="submit" size="sm" disabled={busy}>更新</Button>
+													<Button
+														type="submit"
+														size="sm"
+														disabled={busy ||
+															(editForm.serviceScope === 'specific' &&
+																editForm.serviceIds.length === 0)}
+													>
+														更新
+													</Button>
 													{#if ticketType.isActive}
 														<Button
 															type="button"
@@ -1057,7 +1168,7 @@
 											{:else}
 												<p class="text-xs text-muted-foreground">
 													回数: {ticketType.totalCount} / 有効日数: {ticketType.expiresInDays ??
-														'無期限'} / 対象サービス: {ticketType.serviceIds?.length ?? 0}件
+														'無期限'} / 対象サービス: {formatTicketServiceScope(ticketType)}
 												</p>
 											{/if}
 										</form>
@@ -1124,6 +1235,9 @@
 															{ticketPack.expiresAt
 																? formatDateTime(ticketPack.expiresAt)
 																: '無期限'}
+														</p>
+														<p class="text-xs text-muted-foreground">
+															対象サービス: {formatTicketServiceScope(ticketPack)}
 														</p>
 													</div>
 													<Badge

@@ -101,6 +101,7 @@ describe('/admin/tickets/+page.svelte', () => {
 					classroomId: 'room-1',
 					name: '5回券',
 					totalCount: 5,
+					serviceScope: 'all',
 					expiresInDays: null,
 					serviceIds: [],
 					isActive: true,
@@ -139,6 +140,7 @@ describe('/admin/tickets/+page.svelte', () => {
 		await expect.element(page.getByText('発行済み回数券調整')).toBeInTheDocument();
 		await expect.element(page.getByText('回数券購入管理')).toBeInTheDocument();
 		await expect.element(page.getByText('5回券', { exact: true })).toBeInTheDocument();
+		await expect.element(page.getByText('対象サービス: すべて')).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '更新' })).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '無効化' })).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '承認' })).toBeInTheDocument();

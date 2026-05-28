@@ -6,6 +6,7 @@ import {
   readStripeCheckoutSessionSummary,
   type StripeWebhookEvent,
 } from '../../infra/payment/stripe.js';
+import { parseTicketServiceIds } from '../../shared/serializers.js';
 import { normalizePackStatus, resolveEndDate } from './ticket.state.js';
 
 /**
@@ -43,6 +44,7 @@ export const handleLegacyTicketCheckoutWebhook = async ({
       classroomId: dbSchema.ticketPurchase.classroomId,
       participantId: dbSchema.ticketPurchase.participantId,
       ticketTypeId: dbSchema.ticketPurchase.ticketTypeId,
+      serviceIdsJson: dbSchema.ticketPurchase.serviceIdsJson,
       status: dbSchema.ticketPurchase.status,
       ticketPackId: dbSchema.ticketPurchase.ticketPackId,
     })
@@ -102,6 +104,10 @@ export const handleLegacyTicketCheckoutWebhook = async ({
     classroomId: purchase.classroomId,
     participantId: purchase.participantId,
     ticketTypeId: purchase.ticketTypeId,
+    serviceIdsJson:
+      purchase.serviceIdsJson && parseTicketServiceIds(purchase.serviceIdsJson).length > 0
+        ? purchase.serviceIdsJson
+        : null,
     initialCount: count,
     remainingCount: count,
     expiresAt,

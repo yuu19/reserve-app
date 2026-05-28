@@ -215,11 +215,12 @@ const selectTicketPackRemaining = async (ticketPackId: string) => {
 const selectTicketPackRow = async (ticketPackId: string) => {
   return d1
     .prepare(
-      'SELECT id, initial_count as initialCount, remaining_count as remainingCount, expires_at as expiresAt, status FROM ticket_pack WHERE id = ? LIMIT 1',
+      'SELECT id, service_ids_json as serviceIdsJson, initial_count as initialCount, remaining_count as remainingCount, expires_at as expiresAt, status FROM ticket_pack WHERE id = ? LIMIT 1',
     )
     .bind(ticketPackId)
     .first<{
       id: string;
+      serviceIdsJson: string | null;
       initialCount: number | string;
       remainingCount: number | string;
       expiresAt: number | string | null;
@@ -239,13 +240,14 @@ const selectTicketLedgerActionCount = async (ticketPackId: string, action: strin
 const selectTicketPurchaseRow = async (purchaseId: string) => {
   return d1
     .prepare(
-      'SELECT id, participant_id as participantId, ticket_type_id as ticketTypeId, payment_method as paymentMethod, status, ticket_pack_id as ticketPackId, stripe_checkout_session_id as stripeCheckoutSessionId FROM ticket_purchase WHERE id = ? LIMIT 1',
+      'SELECT id, participant_id as participantId, ticket_type_id as ticketTypeId, service_ids_json as serviceIdsJson, payment_method as paymentMethod, status, ticket_pack_id as ticketPackId, stripe_checkout_session_id as stripeCheckoutSessionId FROM ticket_purchase WHERE id = ? LIMIT 1',
     )
     .bind(purchaseId)
     .first<{
       id: string;
       participantId: string;
       ticketTypeId: string;
+      serviceIdsJson: string | null;
       paymentMethod: string;
       status: string;
       ticketPackId: string | null;
@@ -11231,6 +11233,223 @@ describe('backend app', () => {
     expect(noShowTwiceResponse.status).toBe(409);
   });
 
+  it('applies issued ticket pack service scopes when consuming tickets', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Scoped Ticket Owner',
+      email: 'scoped-ticket-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Scoped Ticket Org',
+      slug: 'scoped-ticket-org',
+    });
+    await enablePremiumForOrganization(organizationId);
+
+    const emptySpecificResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Empty Specific Ticket',
+        totalCount: 1,
+        serviceScope: 'specific',
+        serviceIds: [],
+      }),
+    });
+    expect(emptySpecificResponse.status).toBe(400);
+
+    const participantInvite = await createParticipantInvitation({
+      agent: owner,
+      email: 'scoped-ticket-participant@example.com',
+      participantName: 'Scoped Ticket Participant',
+      organizationId,
+    });
+    expect(participantInvite.response.status).toBe(200);
+
+    const participantUser = createAuthAgent(app);
+    await signUpUser({
+      agent: participantUser,
+      name: 'Scoped Ticket Participant',
+      email: 'scoped-ticket-participant@example.com',
+    });
+    const participantAcceptResponse = await participantUser.request(
+      buildInvitationActionPath(participantInvite.payload?.id as string, 'accept'),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          invitationId: participantInvite.payload?.id,
+        }),
+      },
+    );
+    expect(participantAcceptResponse.status).toBe(200);
+
+    const createTicketRequiredService = async (name: string) => {
+      const response = await owner.request('/api/v1/auth/organizations/services', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          name,
+          kind: 'single',
+          durationMinutes: 60,
+          capacity: 3,
+          cancellationDeadlineMinutes: 60,
+          requiresTicket: true,
+        }),
+      });
+      expect(response.status).toBe(200);
+      const payload = (await toJson(response)) as Record<string, unknown>;
+      return payload.id as string;
+    };
+
+    const createSlot = async (serviceId: string, offsetMs: number) => {
+      const startAt = new Date(Date.now() + offsetMs);
+      const endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
+      const response = await owner.request('/api/v1/auth/organizations/slots', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          serviceId,
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+        }),
+      });
+      expect(response.status).toBe(200);
+      const payload = (await toJson(response)) as Record<string, unknown>;
+      return payload.id as string;
+    };
+
+    const serviceAId = await createTicketRequiredService('Scoped Service A');
+    const serviceBId = await createTicketRequiredService('Scoped Service B');
+
+    const ticketTypeCreateResponse = await owner.request(
+      '/api/v1/auth/organizations/ticket-types',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          name: 'Service A Tickets',
+          totalCount: 2,
+          serviceScope: 'specific',
+          serviceIds: [serviceAId],
+        }),
+      },
+    );
+    expect(ticketTypeCreateResponse.status).toBe(200);
+    const ticketTypePayload = (await toJson(ticketTypeCreateResponse)) as Record<string, unknown>;
+    const ticketTypeId = ticketTypePayload.id as string;
+    expect(ticketTypePayload.serviceScope).toBe('specific');
+    expect(ticketTypePayload.serviceIds).toEqual([serviceAId]);
+
+    const participantId = await selectParticipantIdByEmail(
+      organizationId,
+      'scoped-ticket-participant@example.com',
+    );
+    expect(participantId).toBeTruthy();
+
+    const grantSpecificResponse = await owner.request(
+      '/api/v1/auth/organizations/ticket-packs/grant',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          participantId,
+          ticketTypeId,
+          count: 2,
+        }),
+      },
+    );
+    expect(grantSpecificResponse.status).toBe(200);
+    const grantSpecificPayload = (await toJson(grantSpecificResponse)) as Record<string, unknown>;
+    const specificPackId = grantSpecificPayload.id as string;
+    expect(grantSpecificPayload.serviceScope).toBe('specific');
+    expect(grantSpecificPayload.serviceIds).toEqual([serviceAId]);
+
+    const updateAllResponse = await owner.request(
+      '/api/v1/auth/organizations/ticket-types/update',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          ticketTypeId,
+          serviceScope: 'all',
+        }),
+      },
+    );
+    expect(updateAllResponse.status).toBe(200);
+    const updateAllPayload = (await toJson(updateAllResponse)) as Record<string, unknown>;
+    expect(updateAllPayload.serviceScope).toBe('all');
+    expect(updateAllPayload.serviceIds).toEqual([]);
+
+    const serviceBSlotId = await createSlot(serviceBId, 3 * 24 * 60 * 60 * 1000);
+    const serviceBBookingResponse = await participantUser.request(
+      '/api/v1/auth/organizations/bookings',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: serviceBSlotId,
+        }),
+      },
+    );
+    expect(serviceBBookingResponse.status).toBe(409);
+    expect(await selectSlotReservedCount(serviceBSlotId)).toBe(0);
+    expect(await selectTicketPackRemaining(specificPackId)).toBe(2);
+
+    const serviceASlotId = await createSlot(serviceAId, 4 * 24 * 60 * 60 * 1000);
+    const serviceABookingResponse = await participantUser.request(
+      '/api/v1/auth/organizations/bookings',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: serviceASlotId,
+        }),
+      },
+    );
+    expect(serviceABookingResponse.status).toBe(200);
+    expect(await selectTicketPackRemaining(specificPackId)).toBe(1);
+
+    const grantAllResponse = await owner.request('/api/v1/auth/organizations/ticket-packs/grant', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        participantId,
+        ticketTypeId,
+        count: 1,
+      }),
+    });
+    expect(grantAllResponse.status).toBe(200);
+    const grantAllPayload = (await toJson(grantAllResponse)) as Record<string, unknown>;
+    const allPackId = grantAllPayload.id as string;
+    expect(grantAllPayload.serviceScope).toBe('all');
+    expect(grantAllPayload.serviceIds).toEqual([]);
+
+    const serviceCId = await createTicketRequiredService('Scoped Service C');
+    const serviceCSlotId = await createSlot(serviceCId, 5 * 24 * 60 * 60 * 1000);
+    const serviceCBookingResponse = await participantUser.request(
+      '/api/v1/auth/organizations/bookings',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: serviceCSlotId,
+        }),
+      },
+    );
+    expect(serviceCBookingResponse.status).toBe(200);
+    expect(await selectTicketPackRemaining(specificPackId)).toBe(1);
+    expect(await selectTicketPackRemaining(allPackId)).toBe(0);
+  });
+
   it('handles ticket purchase approval, rejection and participant cancel flows', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
@@ -11271,6 +11490,25 @@ describe('backend app', () => {
     );
     expect(participantAcceptResponse.status).toBe(200);
 
+    const purchaseServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Purchase Ticket Service',
+        kind: 'single',
+        durationMinutes: 60,
+        capacity: 5,
+        requiresTicket: true,
+      }),
+    });
+    expect(purchaseServiceResponse.status).toBe(200);
+    const purchaseServicePayload = (await toJson(purchaseServiceResponse)) as Record<
+      string,
+      unknown
+    >;
+    const purchaseServiceId = purchaseServicePayload.id as string;
+
     const ticketTypeCreateResponse = await owner.request(
       '/api/v1/auth/organizations/ticket-types',
       {
@@ -11280,6 +11518,8 @@ describe('backend app', () => {
           organizationId,
           name: 'Purchase Ticket',
           totalCount: 5,
+          serviceScope: 'specific',
+          serviceIds: [purchaseServiceId],
           isForSale: true,
         }),
       },
@@ -11287,6 +11527,8 @@ describe('backend app', () => {
     expect(ticketTypeCreateResponse.status).toBe(200);
     const ticketTypePayload = (await toJson(ticketTypeCreateResponse)) as Record<string, unknown>;
     const ticketTypeId = ticketTypePayload.id as string;
+    expect(ticketTypePayload.serviceScope).toBe('specific');
+    expect(ticketTypePayload.serviceIds).toEqual([purchaseServiceId]);
     expect(ticketTypePayload.stripePriceId).toBeNull();
 
     const participantId = await selectParticipantIdByEmail(
@@ -11332,6 +11574,28 @@ describe('backend app', () => {
     const bankPurchasePayload = (await toJson(bankPurchaseResponse)) as Record<string, unknown>;
     const bankPurchaseId = bankPurchasePayload.id as string;
     expect(bankPurchasePayload.status).toBe('pending_approval');
+    expect(bankPurchasePayload.serviceScope).toBe('specific');
+    expect(bankPurchasePayload.serviceIds).toEqual([purchaseServiceId]);
+
+    const updateTicketTypeScopeResponse = await owner.request(
+      '/api/v1/auth/organizations/ticket-types/update',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          ticketTypeId,
+          serviceScope: 'all',
+        }),
+      },
+    );
+    expect(updateTicketTypeScopeResponse.status).toBe(200);
+    const updateTicketTypeScopePayload = (await toJson(updateTicketTypeScopeResponse)) as Record<
+      string,
+      unknown
+    >;
+    expect(updateTicketTypeScopePayload.serviceScope).toBe('all');
+    expect(updateTicketTypeScopePayload.serviceIds).toEqual([]);
 
     const approveResponse = await owner.request(
       '/api/v1/auth/organizations/ticket-purchases/approve',
@@ -11346,7 +11610,10 @@ describe('backend app', () => {
     expect(approveResponse.status).toBe(200);
     const approvedPurchase = await selectTicketPurchaseRow(bankPurchaseId);
     expect(approvedPurchase?.status).toBe('approved');
+    expect(JSON.parse(approvedPurchase?.serviceIdsJson ?? '[]')).toEqual([purchaseServiceId]);
     expect(approvedPurchase?.ticketPackId).toBeTruthy();
+    const approvedPack = await selectTicketPackRow(approvedPurchase?.ticketPackId as string);
+    expect(JSON.parse(approvedPack?.serviceIdsJson ?? '[]')).toEqual([purchaseServiceId]);
     expect(await countTicketPacksForParticipantAndType(participantId as string, ticketTypeId)).toBe(
       1,
     );

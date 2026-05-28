@@ -586,6 +586,7 @@ export const ticketPack = sqliteTable(
     ticketTypeId: text('ticket_type_id')
       .notNull()
       .references(() => ticketType.id, { onDelete: 'cascade' }),
+    serviceIdsJson: text('service_ids_json'),
     initialCount: integer('initial_count').notNull(),
     remainingCount: integer('remaining_count').notNull(),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }),
@@ -624,6 +625,7 @@ export const ticketPurchase = sqliteTable(
     ticketTypeId: text('ticket_type_id')
       .notNull()
       .references(() => ticketType.id, { onDelete: 'cascade' }),
+    serviceIdsJson: text('service_ids_json'),
     paymentMethod: text('payment_method').notNull(),
     status: text('status').notNull(),
     ticketPackId: text('ticket_pack_id').references(() => ticketPack.id, { onDelete: 'set null' }),

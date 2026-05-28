@@ -6,9 +6,11 @@ import { TICKET_PURCHASE_METHOD, TICKET_PURCHASE_STATUS } from '../../domain/boo
 import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
 import { parseIsoDateOrNull } from '../../shared/date.js';
 import {
+  parseTicketServiceIds,
   serializeTicketPack,
   serializeTicketPurchase,
   serializeTicketType,
+  type TicketServiceScope,
 } from '../../shared/serializers.js';
 import {
   conflict,
@@ -70,6 +72,53 @@ import type {
 export const TICKET_STRIPE_PURCHASE_UNAVAILABLE_MESSAGE =
   'Ticket purchase Stripe payment is currently unavailable.';
 
+const resolveTicketServiceScopeInput = ({
+  serviceScope,
+  serviceIds,
+}: {
+  serviceScope?: TicketServiceScope;
+  serviceIds?: string[];
+}): { serviceScope: TicketServiceScope; serviceIds: string[] } => {
+  if (serviceScope === 'all') {
+    return { serviceScope, serviceIds: [] };
+  }
+
+  if (serviceScope === 'specific') {
+    return { serviceScope, serviceIds: serviceIds ?? [] };
+  }
+
+  const normalizedServiceIds = serviceIds ?? [];
+  return normalizedServiceIds.length > 0
+    ? { serviceScope: 'specific', serviceIds: normalizedServiceIds }
+    : { serviceScope: 'all', serviceIds: [] };
+};
+
+const resolveTicketServiceScopeUpdate = ({
+  serviceScope,
+  serviceIds,
+}: {
+  serviceScope?: TicketServiceScope;
+  serviceIds?: string[];
+}): { serviceScope: TicketServiceScope; serviceIds: string[] } | undefined => {
+  if (serviceScope === undefined && serviceIds === undefined) {
+    return undefined;
+  }
+  return resolveTicketServiceScopeInput({ serviceScope, serviceIds });
+};
+
+const ensureSpecificServiceIds = ({
+  serviceScope,
+  serviceIds,
+}: {
+  serviceScope: TicketServiceScope;
+  serviceIds: string[];
+}): JsonRouteResult | null => {
+  if (serviceScope === 'specific' && serviceIds.length === 0) {
+    return validationError('serviceIds is required when serviceScope is specific.');
+  }
+  return null;
+};
+
 /**
  * classroom 管理権限と premium を確認し、必要なら serviceIds 所属も検証して ticket type を作成します。
  */
@@ -113,15 +162,21 @@ export const createTicketType = async (
     return jsonResult(premiumGate.body, premiumGate.status);
   }
 
-  if (body.serviceIds && body.serviceIds.length > 0) {
+  const serviceScope = resolveTicketServiceScopeInput(body);
+  const serviceScopeError = ensureSpecificServiceIds(serviceScope);
+  if (serviceScopeError) {
+    return serviceScopeError;
+  }
+
+  if (serviceScope.serviceScope === 'specific') {
     const serviceCount = await countServicesByIds({
       database: ctx.database,
       organizationId,
       classroomId: classroomContext.classroomId,
-      serviceIds: body.serviceIds,
+      serviceIds: serviceScope.serviceIds,
     });
 
-    if (serviceCount !== body.serviceIds.length) {
+    if (serviceCount !== serviceScope.serviceIds.length) {
       return validationError('serviceIds includes unknown service.');
     }
   }
@@ -133,7 +188,7 @@ export const createTicketType = async (
     organizationId,
     classroomId: classroomContext.classroomId,
     name: body.name,
-    serviceIds: body.serviceIds,
+    serviceIds: serviceScope.serviceIds,
     totalCount: body.totalCount,
     expiresInDays: body.expiresInDays,
     isActive: body.isActive,
@@ -188,15 +243,23 @@ export const updateExistingTicketType = async (
     return jsonResult(premiumGate.body, premiumGate.status);
   }
 
-  if (body.serviceIds && body.serviceIds.length > 0) {
+  const serviceScopeUpdate = resolveTicketServiceScopeUpdate(body);
+  if (serviceScopeUpdate) {
+    const serviceScopeError = ensureSpecificServiceIds(serviceScopeUpdate);
+    if (serviceScopeError) {
+      return serviceScopeError;
+    }
+  }
+
+  if (serviceScopeUpdate?.serviceScope === 'specific') {
     const serviceCount = await countServicesByIds({
       database: ctx.database,
       organizationId,
       classroomId: ticketType.classroomId,
-      serviceIds: body.serviceIds,
+      serviceIds: serviceScopeUpdate.serviceIds,
     });
 
-    if (serviceCount !== body.serviceIds.length) {
+    if (serviceCount !== serviceScopeUpdate.serviceIds.length) {
       return validationError('serviceIds includes unknown service.');
     }
   }
@@ -205,7 +268,7 @@ export const updateExistingTicketType = async (
     database: ctx.database,
     ticketTypeId: ticketType.id,
     name: body.name,
-    serviceIds: body.serviceIds,
+    serviceIds: serviceScopeUpdate?.serviceIds,
     totalCount: body.totalCount,
     expiresInDays: body.expiresInDays,
     isActive: body.isActive,
@@ -376,6 +439,7 @@ export const createTicketPurchase = async (
     classroomId: ticketType.classroomId,
     participantId: participant.id,
     ticketTypeId: ticketType.id,
+    serviceIds: parseTicketServiceIds(ticketType.serviceIdsJson),
     paymentMethod: body.paymentMethod,
   });
 
@@ -706,6 +770,7 @@ export const grantTicketPack = async (
     ticketTypeId: ticketType.id,
     count,
     expiresAt,
+    serviceIds: parseTicketServiceIds(ticketType.serviceIdsJson),
     actorUserId: identity.userId,
     reason: 'staff-grant',
   });

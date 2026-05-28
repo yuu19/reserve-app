@@ -69,7 +69,7 @@ export const insertTicketType = async ({
     organizationId,
     classroomId,
     name,
-    serviceIdsJson: serviceIds ? JSON.stringify(serviceIds) : null,
+    serviceIdsJson: serviceIds && serviceIds.length > 0 ? JSON.stringify(serviceIds) : null,
     totalCount,
     expiresInDays: expiresInDays ?? null,
     isActive: isActive ?? true,
@@ -221,6 +221,7 @@ export const findTicketTypeForPurchase = async ({
       id: dbSchema.ticketType.id,
       organizationId: dbSchema.ticketType.organizationId,
       classroomId: dbSchema.ticketType.classroomId,
+      serviceIdsJson: dbSchema.ticketType.serviceIdsJson,
       totalCount: dbSchema.ticketType.totalCount,
       isActive: dbSchema.ticketType.isActive,
       isForSale: dbSchema.ticketType.isForSale,
@@ -247,6 +248,7 @@ export const insertTicketPurchase = async ({
   classroomId,
   participantId,
   ticketTypeId,
+  serviceIds,
   paymentMethod,
 }: {
   database: AuthRuntimeDatabase;
@@ -255,6 +257,7 @@ export const insertTicketPurchase = async ({
   classroomId: string;
   participantId: string;
   ticketTypeId: string;
+  serviceIds: string[];
   paymentMethod: string;
 }) => {
   await database.insert(dbSchema.ticketPurchase).values({
@@ -263,6 +266,7 @@ export const insertTicketPurchase = async ({
     classroomId,
     participantId,
     ticketTypeId,
+    serviceIdsJson: serviceIds.length > 0 ? JSON.stringify(serviceIds) : null,
     paymentMethod,
     status: TICKET_PURCHASE_STATUS.PENDING_APPROVAL,
   });
@@ -447,6 +451,7 @@ export const findTicketTypeForTicketPackGrant = async ({
     .select({
       id: dbSchema.ticketType.id,
       classroomId: dbSchema.ticketType.classroomId,
+      serviceIdsJson: dbSchema.ticketType.serviceIdsJson,
       totalCount: dbSchema.ticketType.totalCount,
       expiresInDays: dbSchema.ticketType.expiresInDays,
       isActive: dbSchema.ticketType.isActive,
