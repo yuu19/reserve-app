@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -11,7 +13,6 @@
 	import {
 		adjustTicketPack,
 		approveTicketPurchase,
-		createTicketType,
 		grantTicketPack,
 		loadTicketPacks,
 		rejectTicketPurchase,
@@ -32,6 +33,7 @@
 		TicketPurchasePayload,
 		TicketTypePayload
 	} from '$lib/rpc-client';
+	import { Plus } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let loading = $state(true);
@@ -46,14 +48,6 @@
 	let ticketTypes = $state<TicketTypePayload[]>([]);
 	let ticketPacks = $state<TicketPackPayload[]>([]);
 	let ticketPurchases = $state<TicketPurchasePayload[]>([]);
-	let ticketTypeForm = $state({
-		name: '',
-		totalCount: '10',
-		expiresInDays: '',
-		serviceScope: 'all' as 'all' | 'specific',
-		serviceIds: [] as string[],
-		isForSale: false
-	});
 	let ticketTypeEditForms = $state<
 		Record<
 			string,
@@ -123,17 +117,6 @@
 		return parsed;
 	};
 
-	const toggleTicketTypeService = (serviceId: string, checked: boolean) => {
-		if (checked) {
-			if (!ticketTypeForm.serviceIds.includes(serviceId)) {
-				ticketTypeForm.serviceIds = [...ticketTypeForm.serviceIds, serviceId];
-			}
-			return;
-		}
-		ticketTypeForm.serviceIds = ticketTypeForm.serviceIds.filter(
-			(current) => current !== serviceId
-		);
-	};
 	const toggleTicketTypeEditService = (
 		ticketTypeId: string,
 		serviceId: string,
@@ -275,6 +258,9 @@
 		}
 		return fallback;
 	};
+	const navigateToTicketTypeCreate = () => {
+		void goto(resolve('/admin/tickets/new'));
+	};
 	const syncTicketTypeEditForms = (items: TicketTypePayload[]) => {
 		ticketTypeEditForms = Object.fromEntries(
 			items.map((ticketType) => [
@@ -379,58 +365,6 @@
 			syncTicketPackAdjustForms(result.packs);
 		} finally {
 			loadingTicketPacks = false;
-		}
-	};
-
-	const submitCreateTicketType = async (event: SubmitEvent) => {
-		event.preventDefault();
-		if (!activeOrganizationId || !canManageClassroom) return;
-
-		const totalCount = parsePositiveInteger(ticketTypeForm.totalCount);
-		if (!totalCount) {
-			toast.error('回数は 1 以上の整数で入力してください。');
-			return;
-		}
-
-		const expiresInDays = parsePositiveInteger(ticketTypeForm.expiresInDays);
-		if (normalizeToText(ticketTypeForm.expiresInDays) && !expiresInDays) {
-			toast.error('有効日数は 1 以上の整数で入力してください。');
-			return;
-		}
-		if (ticketTypeForm.serviceScope === 'specific' && ticketTypeForm.serviceIds.length === 0) {
-			toast.error('対象サービスを 1 件以上選択してください。');
-			return;
-		}
-		busy = true;
-		try {
-			const result = await createTicketType({
-				organizationId: activeOrganizationId,
-				name: ticketTypeForm.name,
-				totalCount,
-				expiresInDays,
-				serviceScope: ticketTypeForm.serviceScope,
-				serviceIds: ticketTypeForm.serviceScope === 'specific' ? ticketTypeForm.serviceIds : [],
-				isForSale: ticketTypeForm.isForSale
-			});
-			if (!result.ok) {
-				if (result.premiumRestriction) {
-					premiumRestriction = result.premiumRestriction;
-				}
-				toast.error(result.message);
-				return;
-			}
-			toast.success(result.message);
-			ticketTypeForm = {
-				name: '',
-				totalCount: '10',
-				expiresInDays: '',
-				serviceScope: 'all',
-				serviceIds: [],
-				isForSale: false
-			};
-			await refresh();
-		} finally {
-			busy = false;
 		}
 	};
 
@@ -782,135 +716,7 @@
 							回数券管理には教室管理権限または参加者管理権限が必要です。
 						</p>
 					{:else}
-						<section class="grid gap-4 xl:grid-cols-[1fr_1fr]">
-							{#if canManageClassroom}
-								<form
-									class="space-y-3 rounded-lg border border-border/80 bg-card/80 p-4"
-									onsubmit={submitCreateTicketType}
-								>
-									<h3 class="text-sm font-semibold">回数券種別作成</h3>
-									<div class="space-y-2">
-										<Label for="ticket-type-name">券種名</Label>
-										<Input
-											id="ticket-type-name"
-											name="ticket_type_name"
-											type="text"
-											bind:value={ticketTypeForm.name}
-											required
-										/>
-									</div>
-									<div class="space-y-2">
-										<Label for="ticket-type-total-count">回数</Label>
-										<Input
-											id="ticket-type-total-count"
-											name="ticket_type_total_count"
-											type="number"
-											min="1"
-											bind:value={ticketTypeForm.totalCount}
-											required
-										/>
-									</div>
-									<div class="space-y-2">
-										<Label for="ticket-type-expires-in-days">有効日数（任意）</Label>
-										<Input
-											id="ticket-type-expires-in-days"
-											name="ticket_type_expires_in_days"
-											type="number"
-											min="1"
-											bind:value={ticketTypeForm.expiresInDays}
-										/>
-									</div>
-									<div
-										class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2"
-									>
-										<input
-											id="ticket-type-is-for-sale"
-											name="ticket_type_is_for_sale"
-											type="checkbox"
-											bind:checked={ticketTypeForm.isForSale}
-										/>
-										<Label for="ticket-type-is-for-sale">参加者が購入できるようにする</Label>
-									</div>
-									<fieldset class="space-y-2">
-										<legend class="text-sm font-medium">対象サービス</legend>
-										<div class="grid gap-2 sm:grid-cols-2">
-											<label
-												class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm"
-												for="ticket-service-scope-all"
-											>
-												<input
-													id="ticket-service-scope-all"
-													name="ticket_service_scope"
-													type="radio"
-													value="all"
-													bind:group={ticketTypeForm.serviceScope}
-												/>
-												<span>すべてのサービス</span>
-											</label>
-											<label
-												class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm"
-												for="ticket-service-scope-specific"
-											>
-												<input
-													id="ticket-service-scope-specific"
-													name="ticket_service_scope"
-													type="radio"
-													value="specific"
-													bind:group={ticketTypeForm.serviceScope}
-												/>
-												<span>サービスを個別指定</span>
-											</label>
-										</div>
-										{#if ticketTypeForm.serviceScope === 'specific'}
-											{#if services.length === 0}
-												<p class="text-sm text-muted-foreground">選択可能なサービスがありません。</p>
-											{:else}
-												<div
-													class="max-h-40 space-y-2 overflow-y-auto rounded-md border border-border/80 bg-secondary/60 p-2"
-												>
-													{#each services as service (service.id)}
-														<label
-															class="flex items-center gap-2 text-sm text-secondary-foreground"
-															for={`ticket-service-${service.id}`}
-														>
-															<input
-																id={`ticket-service-${service.id}`}
-																name={`ticket_service_${service.id}`}
-																type="checkbox"
-																checked={ticketTypeForm.serviceIds.includes(service.id)}
-																onchange={(event) =>
-																	toggleTicketTypeService(
-																		service.id,
-																		(event.currentTarget as HTMLInputElement).checked
-																	)}
-															/>
-															<span>{service.name}</span>
-														</label>
-													{/each}
-												</div>
-											{/if}
-										{/if}
-									</fieldset>
-									<Button
-										type="submit"
-										disabled={busy ||
-											(ticketTypeForm.serviceScope === 'specific' &&
-												ticketTypeForm.serviceIds.length === 0)}
-									>
-										作成
-									</Button>
-								</form>
-							{:else}
-								<div
-									class="space-y-2 rounded-lg border border-dashed border-stone-03 bg-secondary/70 p-4"
-								>
-									<h3 class="text-sm font-semibold">回数券種別作成</h3>
-									<p class="text-sm text-muted-foreground">
-										回数券種別の作成には教室管理権限が必要です。
-									</p>
-								</div>
-							{/if}
-
+						<section class="space-y-4">
 							{#if canManageParticipants}
 								<form
 									class="space-y-3 rounded-lg border border-border/80 bg-card/80 p-4"
@@ -985,7 +791,15 @@
 						</section>
 
 						<section class="space-y-2">
-							<h3 class="text-sm font-semibold">回数券種別一覧</h3>
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<h3 class="text-sm font-semibold">回数券種別一覧</h3>
+								{#if canManageClassroom}
+									<Button type="button" size="sm" onclick={navigateToTicketTypeCreate}>
+										<Plus class="size-4" aria-hidden="true" />
+										追加する
+									</Button>
+								{/if}
+							</div>
 							{#if ticketTypes.length === 0}
 								<p class="text-sm text-muted-foreground">回数券種別はまだ作成されていません。</p>
 							{:else}
