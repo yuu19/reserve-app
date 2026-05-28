@@ -9,6 +9,14 @@ const mocks = vi.hoisted(() => ({
 	loadSession: vi.fn()
 }));
 
+const pageState = vi.hoisted(() => ({
+	params: {} as Record<string, string | undefined>
+}));
+
+vi.mock('$app/state', () => ({
+	page: pageState
+}));
+
 vi.mock('$app/navigation', () => ({
 	goto: mocks.goto
 }));
@@ -27,6 +35,7 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 
 describe('/events/+page.svelte', () => {
 	beforeEach(() => {
+		pageState.params = {};
 		mocks.goto.mockReset();
 		mocks.loadPublicEvents.mockReset();
 		mocks.loadSession.mockReset();
@@ -101,6 +110,22 @@ describe('/events/+page.svelte', () => {
 		await expect
 			.element(loginCta)
 			.toHaveAttribute('href', '/participant/login?next=%2Fparticipant%2Fbookings');
+	});
+
+	it('loads scoped public events from route params', async () => {
+		pageState.params = { orgSlug: 'org2', classroomSlug: 'world' };
+		render(EventsPage);
+
+		await vi.waitFor(() => {
+			expect(mocks.loadPublicEvents).toHaveBeenCalledWith({
+				orgSlug: 'org2',
+				classroomSlug: 'world'
+			});
+		});
+		const loginCta = page.getByRole('link', { name: 'ログインして購入申請' }).first();
+		await expect
+			.element(loginCta)
+			.toHaveAttribute('href', '/participant/login?next=%2Forg2%2Fworld%2Fparticipant%2Fbookings');
 	});
 
 	it('renders empty ticket message when no ticket type is purchasable', async () => {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
@@ -10,6 +11,7 @@
 	import { buildLoginRedirectHref } from '$lib/features/auth-portal';
 	import { loadSession } from '$lib/features/auth-session.svelte';
 	import { loadPublicEvents } from '$lib/features/events.svelte';
+	import { buildScopedPath, type ScopedRouteContext } from '$lib/features/scoped-routing';
 	import type { PublicEventListItemPayload, PublicTicketTypePayload } from '$lib/rpc-client';
 
 	let loading = $state(true);
@@ -20,6 +22,12 @@
 
 	type ResolvablePath = Pathname;
 	const participantBookingsPath = '/participant/bookings';
+
+	const publicEventsContext = $derived.by((): ScopedRouteContext | undefined => {
+		const orgSlug = page.params.orgSlug?.trim();
+		const classroomSlug = page.params.classroomSlug?.trim();
+		return orgSlug && classroomSlug ? { orgSlug, classroomSlug } : undefined;
+	});
 
 	const toExceptionMessage = (error: unknown, fallback: string): string => {
 		if (error instanceof Error && error.message) {
@@ -40,10 +48,15 @@
 	const getTicketExpirationLabel = (ticketType: PublicTicketTypePayload): string =>
 		ticketType.expiresInDays ? `${ticketType.expiresInDays}日` : '期限なし';
 
+	const getParticipantBookingsPath = (): string =>
+		publicEventsContext
+			? buildScopedPath(publicEventsContext, participantBookingsPath)
+			: participantBookingsPath;
+
 	const getTicketPurchaseHref = (): string =>
 		authenticated
-			? resolve(participantBookingsPath as ResolvablePath)
-			: buildLoginRedirectHref(participantBookingsPath);
+			? resolve(getParticipantBookingsPath() as ResolvablePath)
+			: buildLoginRedirectHref(getParticipantBookingsPath());
 
 	const goToEventDetail = async (slotId: string) => {
 		const event = events.find((item) => item.slotId === slotId);
@@ -61,7 +74,7 @@
 			try {
 				const sessionPromise = loadSession().catch(() => ({ session: null, status: 0 }));
 				const [publicEventsPage, sessionResult] = await Promise.all([
-					loadPublicEvents(),
+					loadPublicEvents(publicEventsContext),
 					sessionPromise
 				]);
 				events = publicEventsPage.events;

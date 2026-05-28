@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 const pageState = vi.hoisted(() => ({
 	params: {
 		slotId: 'slot-1'
-	}
+	} as Record<string, string | undefined>
 }));
 
 vi.mock('$app/state', () => ({
@@ -121,6 +121,22 @@ describe('/events/[slotId]/+page.svelte', () => {
 		await expect
 			.element(loginCta)
 			.toHaveAttribute('href', '/participant/login?next=%2Fparticipant%2Fbookings');
+	});
+
+	it('loads scoped public event detail from route params', async () => {
+		pageState.params = { orgSlug: 'org2', classroomSlug: 'world', slotId: 'slot-1' };
+		render(EventDetailPage);
+
+		await vi.waitFor(() => {
+			expect(mocks.loadPublicEventDetail).toHaveBeenCalledWith('slot-1', {
+				orgSlug: 'org2',
+				classroomSlug: 'world'
+			});
+		});
+		const loginCta = page.getByRole('link', { name: 'ログインして購入申請' }).first();
+		await expect
+			.element(loginCta)
+			.toHaveAttribute('href', '/participant/login?next=%2Forg2%2Fworld%2Fparticipant%2Fbookings');
 	});
 
 	it('renders empty message when no ticket type matches this event', async () => {

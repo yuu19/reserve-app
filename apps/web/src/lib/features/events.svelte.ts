@@ -6,6 +6,11 @@ import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
 
 type JsonRecord = Record<string, unknown>;
 
+type PublicEventsContext = {
+	orgSlug?: string;
+	classroomSlug?: string;
+};
+
 const isRecord = (value: unknown): value is JsonRecord =>
 	typeof value === 'object' && value !== null;
 
@@ -22,12 +27,17 @@ const toSelfEnrollErrorMessage = (status: number, payload: unknown): string => {
 	return message;
 };
 
-export const loadPublicEvents = async (): Promise<PublicEventsPagePayload> => {
-	return getPublicEvents();
+export const loadPublicEvents = async (
+	context?: PublicEventsContext
+): Promise<PublicEventsPagePayload> => {
+	return getPublicEvents(context ?? {});
 };
 
-export const loadPublicEventDetail = async (slotId: string): Promise<PublicEventDetailPayload> => {
-	return getPublicEventDetail({ slotId });
+export const loadPublicEventDetail = async (
+	slotId: string,
+	context?: PublicEventsContext
+): Promise<PublicEventDetailPayload> => {
+	return getPublicEventDetail({ slotId, ...(context ?? {}) });
 };
 
 export const ensureParticipantSelfEnrollment = async ({

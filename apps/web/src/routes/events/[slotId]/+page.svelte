@@ -12,10 +12,16 @@
 		redirectToLoginWithNext,
 		getCurrentPathWithSearch
 	} from '$lib/features/auth-session.svelte';
+	import { buildScopedPath, type ScopedRouteContext } from '$lib/features/scoped-routing';
 	import type { PublicEventDetailPayload, PublicTicketTypePayload } from '$lib/rpc-client';
 	import { toast } from 'svelte-sonner';
 
 	const slotId = $derived(page.params.slotId ?? '');
+	const publicEventsContext = $derived.by((): ScopedRouteContext | undefined => {
+		const orgSlug = page.params.orgSlug?.trim();
+		const classroomSlug = page.params.classroomSlug?.trim();
+		return orgSlug && classroomSlug ? { orgSlug, classroomSlug } : undefined;
+	});
 
 	let loading = $state(true);
 	let busy = $state(false);
@@ -54,8 +60,15 @@
 	const getTicketExpirationLabel = (ticketType: PublicTicketTypePayload): string =>
 		ticketType.expiresInDays ? `${ticketType.expiresInDays}日` : '期限なし';
 
+	const getParticipantBookingsPath = (): string =>
+		publicEventsContext
+			? buildScopedPath(publicEventsContext, participantBookingsPath)
+			: participantBookingsPath;
+
 	const getTicketPurchaseHref = (): string =>
-		authenticated ? participantBookingsPath : buildLoginRedirectHref(participantBookingsPath);
+		authenticated
+			? getParticipantBookingsPath()
+			: buildLoginRedirectHref(getParticipantBookingsPath());
 
 	const refresh = async () => {
 		if (!slotId) {
@@ -66,7 +79,7 @@
 
 		errorMessage = null;
 		try {
-			detail = await loadPublicEventDetail(slotId);
+			detail = await loadPublicEventDetail(slotId, publicEventsContext);
 		} catch (error) {
 			detail = null;
 			errorMessage = toExceptionMessage(error, '公開イベント詳細の取得に失敗しました。');

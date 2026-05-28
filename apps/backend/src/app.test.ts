@@ -10579,6 +10579,54 @@ describe('backend app', () => {
       ),
     ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
 
+    const scopedOrganizationId = await createOrganization({
+      agent: owner,
+      name: 'Scoped Public Events Org',
+      slug: 'scoped-public-events-org',
+    });
+    await enablePremiumForOrganization(scopedOrganizationId);
+    const scopedServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId: scopedOrganizationId,
+        name: 'Scoped Public Event Service',
+        kind: 'single',
+        bookingPolicy: 'instant',
+        durationMinutes: 45,
+        capacity: 4,
+      }),
+    });
+    expect(scopedServiceResponse.status).toBe(200);
+    const scopedServicePayload = (await toJson(scopedServiceResponse)) as Record<string, unknown>;
+    const scopedServiceId = scopedServicePayload.id as string;
+    const scopedSlotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId: scopedOrganizationId,
+        serviceId: scopedServiceId,
+        startAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        endAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
+      }),
+    });
+    expect(scopedSlotResponse.status).toBe(200);
+    const scopedSlotPayload = (await toJson(scopedSlotResponse)) as Record<string, unknown>;
+    const scopedPublicEventsResponse = await app.request(
+      '/api/v1/public/orgs/scoped-public-events-org/classrooms/scoped-public-events-org/events',
+    );
+    expect(scopedPublicEventsResponse.status).toBe(200);
+    const scopedPublicEventsPayload = (await toJson(scopedPublicEventsResponse)) as {
+      events?: Array<Record<string, unknown>>;
+    };
+    expect(
+      scopedPublicEventsPayload.events?.some((row) => row.slotId === scopedSlotPayload.id),
+    ).toBe(true);
+
     const unauthSelfEnrollResponse = await app.request(
       '/api/v1/auth/organizations/participants/self-enroll',
       {

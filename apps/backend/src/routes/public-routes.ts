@@ -2,12 +2,7 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import { resolveOrganizationClassroomContext } from '../domain/booking/authorization.js';
 import { SLOT_STATUS } from '../domain/booking/constants.js';
-import {
-  resolvePublicEventsClassroomSlug,
-  resolvePublicEventsOrganizationSlug,
-  type AuthRuntimeDatabase,
-  type AuthRuntimeEnv,
-} from '../auth-runtime.js';
+import { type AuthRuntimeDatabase, type AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../infra/db/schema.js';
 import {
   parseTicketServiceIds,
@@ -286,27 +281,13 @@ const listPublicTicketTypes = async ({
 
 const resolvePublicOrganizationClassroom = async ({
   database,
-  env,
   orgSlug,
   classroomSlug,
 }: {
   database: AuthRuntimeDatabase;
-  env: AuthRuntimeEnv;
   orgSlug: string;
   classroomSlug: string;
 }) => {
-  const configuredOrgSlug = resolvePublicEventsOrganizationSlug(env);
-  if (configuredOrgSlug && configuredOrgSlug !== orgSlug) {
-    return {
-      error: {
-        status: 404 as const,
-        message: 'Public events organization was not found.',
-      },
-      organization: null,
-      classroom: null,
-    };
-  }
-
   const rows = await database
     .select({ value: dbSchema.organization.id })
     .from(dbSchema.organization)
@@ -317,18 +298,6 @@ const resolvePublicOrganizationClassroom = async ({
       error: {
         status: 404 as const,
         message: 'Public events organization was not found.',
-      },
-      organization: null,
-      classroom: null,
-    };
-  }
-
-  const configuredClassroomSlug = resolvePublicEventsClassroomSlug(env);
-  if (configuredClassroomSlug && classroomSlug !== configuredClassroomSlug) {
-    return {
-      error: {
-        status: 404 as const,
-        message: 'Public events classroom was not found.',
       },
       organization: null,
       classroom: null,
@@ -368,7 +337,6 @@ const resolvePublicOrganizationClassroom = async ({
 
 export const createPublicRoutes = ({
   database,
-  env,
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
@@ -379,7 +347,6 @@ export const createPublicRoutes = ({
     const { orgSlug, classroomSlug } = c.req.valid('param');
     const publicContext = await resolvePublicOrganizationClassroom({
       database,
-      env,
       orgSlug,
       classroomSlug,
     });
@@ -452,7 +419,6 @@ export const createPublicRoutes = ({
     const { slotId, orgSlug, classroomSlug } = c.req.valid('param');
     const publicContext = await resolvePublicOrganizationClassroom({
       database,
-      env,
       orgSlug,
       classroomSlug,
     });

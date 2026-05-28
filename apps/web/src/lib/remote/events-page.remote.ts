@@ -13,7 +13,9 @@ const defaultBackendUrl = 'http://localhost:3000';
 type JsonRecord = Record<string, unknown>;
 
 const publicEventDetailQuerySchema = z.object({
-	slotId: z.string().trim().min(1)
+	slotId: z.string().trim().min(1),
+	orgSlug: z.string().trim().min(1).optional(),
+	classroomSlug: z.string().trim().min(1).optional()
 });
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -53,9 +55,28 @@ const createApiUrl = (path: string): string => {
 	return new URL(path, backendUrl).toString();
 };
 
-const publicEventsPath = (suffix = ''): string => {
-	const orgSlug = env.PUBLIC_EVENTS_ORG_SLUG || 'public-events';
-	const classroomSlug = env.PUBLIC_EVENTS_CLASSROOM_SLUG || orgSlug;
+type PublicEventsContextInput = {
+	orgSlug?: string;
+	classroomSlug?: string;
+};
+
+const publicEventsQuerySchema = z
+	.object({
+		orgSlug: z.string().trim().min(1).optional(),
+		classroomSlug: z.string().trim().min(1).optional()
+	})
+	.optional();
+
+const resolvePublicEventsContext = (input?: PublicEventsContextInput) => {
+	const scopedOrgSlug = input?.orgSlug?.trim();
+	const scopedClassroomSlug = input?.classroomSlug?.trim();
+	const orgSlug = scopedOrgSlug || env.PUBLIC_EVENTS_ORG_SLUG || 'public-events';
+	const classroomSlug = scopedClassroomSlug || env.PUBLIC_EVENTS_CLASSROOM_SLUG || orgSlug;
+	return { orgSlug, classroomSlug };
+};
+
+const publicEventsPath = (context: PublicEventsContextInput, suffix = ''): string => {
+	const { orgSlug, classroomSlug } = resolvePublicEventsContext(context);
 	return `/api/v1/public/orgs/${encodeURIComponent(orgSlug)}/classrooms/${encodeURIComponent(
 		classroomSlug
 	)}/events${suffix}`;
@@ -123,27 +144,30 @@ const asPublicEventDetail = (value: unknown): PublicEventDetailPayload | null =>
 	};
 };
 
-export const getPublicEvents = query(async (): Promise<PublicEventsPagePayload> => {
-	const event = getRequestEvent();
-	const response = await event.fetch(createApiUrl(publicEventsPath()), {
-		method: 'GET'
-	});
-	const payload = await parseResponseBody(response);
-	if (!response.ok) {
-		if (response.status === 503) {
-			throw new Error('公開イベント未設定です。');
+export const getPublicEvents = query(
+	publicEventsQuerySchema,
+	async (context): Promise<PublicEventsPagePayload> => {
+		const event = getRequestEvent();
+		const response = await event.fetch(createApiUrl(publicEventsPath(context ?? {})), {
+			method: 'GET'
+		});
+		const payload = await parseResponseBody(response);
+		if (!response.ok) {
+			if (response.status === 503) {
+				throw new Error('公開イベント未設定です。');
+			}
+			throw new Error(toErrorMessage(payload, '公開イベントの取得に失敗しました。'));
 		}
-		throw new Error(toErrorMessage(payload, '公開イベントの取得に失敗しました。'));
+		return asPublicEventsPage(payload);
 	}
-	return asPublicEventsPage(payload);
-});
+);
 
 export const getPublicEventDetail = query(
 	publicEventDetailQuerySchema,
-	async ({ slotId }): Promise<PublicEventDetailPayload> => {
+	async ({ slotId, orgSlug, classroomSlug }): Promise<PublicEventDetailPayload> => {
 		const event = getRequestEvent();
 		const response = await event.fetch(
-			createApiUrl(publicEventsPath(`/${encodeURIComponent(slotId)}`)),
+			createApiUrl(publicEventsPath({ orgSlug, classroomSlug }, `/${encodeURIComponent(slotId)}`)),
 			{
 				method: 'GET'
 			}
