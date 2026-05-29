@@ -59,12 +59,12 @@ describe('/admin/participants/+page.svelte', () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
 			canManageParticipants: true,
-			canManageClassroom: true,
+			canManageStore: true,
 			premiumRestriction: null,
 			participants: [],
 			sentInvitations: [],

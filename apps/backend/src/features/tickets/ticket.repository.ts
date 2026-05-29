@@ -4,17 +4,17 @@ import { TICKET_PACK_STATUS, TICKET_PURCHASE_STATUS } from '../../domain/booking
 import * as dbSchema from '../../infra/db/schema.js';
 
 /**
- * ticket type に紐づける serviceIds が同一 organization/classroom に存在する数を返します。
+ * ticket type に紐づける serviceIds が同一 organization/store に存在する数を返します。
  */
 export const countServicesByIds = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   serviceIds,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   serviceIds: string[];
 }) => {
   const serviceCount = await database
@@ -25,7 +25,7 @@ export const countServicesByIds = async ({
     .where(
       and(
         eq(dbSchema.service.organizationId, organizationId),
-        eq(dbSchema.service.classroomId, classroomId),
+        eq(dbSchema.service.storeId, storeId),
         sql`${dbSchema.service.id} in (${sql.join(
           serviceIds.map((id) => sql`${id}`),
           sql`,`,
@@ -43,7 +43,7 @@ export const insertTicketType = async ({
   database,
   ticketTypeId,
   organizationId,
-  classroomId,
+  storeId,
   name,
   serviceIds,
   totalCount,
@@ -55,7 +55,7 @@ export const insertTicketType = async ({
   database: AuthRuntimeDatabase;
   ticketTypeId: string;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   name: string;
   serviceIds?: string[];
   totalCount: number;
@@ -67,7 +67,7 @@ export const insertTicketType = async ({
   await database.insert(dbSchema.ticketType).values({
     id: ticketTypeId,
     organizationId,
-    classroomId,
+    storeId,
     name,
     serviceIdsJson: serviceIds && serviceIds.length > 0 ? JSON.stringify(serviceIds) : null,
     totalCount,
@@ -144,22 +144,22 @@ export const getTicketTypeById = async (database: AuthRuntimeDatabase, ticketTyp
 };
 
 /**
- * staff 向けに organization/classroom/status で ticket type を一覧します。
+ * staff 向けに organization/store/status で ticket type を一覧します。
  */
 export const listTicketTypes = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   isActive,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   isActive?: boolean;
 }) => {
   const filters = [eq(dbSchema.ticketType.organizationId, organizationId)];
-  if (classroomId) {
-    filters.push(eq(dbSchema.ticketType.classroomId, classroomId));
+  if (storeId) {
+    filters.push(eq(dbSchema.ticketType.storeId, storeId));
   }
   if (isActive !== undefined) {
     filters.push(eq(dbSchema.ticketType.isActive, isActive));
@@ -173,18 +173,18 @@ export const listTicketTypes = async ({
 };
 
 /**
- * participant が所属する classroom のうち販売中の ticket type だけを一覧します。
+ * participant が所属する store のうち販売中の ticket type だけを一覧します。
  */
 export const listPurchasableTicketTypes = async ({
   database,
   organizationId,
-  classroomId,
-  accessibleClassroomIds,
+  storeId,
+  accessibleStoreIds,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
-  accessibleClassroomIds: string[];
+  storeId?: string;
+  accessibleStoreIds: string[];
 }) => {
   return database
     .select()
@@ -192,9 +192,9 @@ export const listPurchasableTicketTypes = async ({
     .where(
       and(
         eq(dbSchema.ticketType.organizationId, organizationId),
-        ...(classroomId
-          ? [eq(dbSchema.ticketType.classroomId, classroomId)]
-          : [inArray(dbSchema.ticketType.classroomId, accessibleClassroomIds)]),
+        ...(storeId
+          ? [eq(dbSchema.ticketType.storeId, storeId)]
+          : [inArray(dbSchema.ticketType.storeId, accessibleStoreIds)]),
         eq(dbSchema.ticketType.isActive, true),
         eq(dbSchema.ticketType.isForSale, true),
       ),
@@ -209,18 +209,18 @@ export const findTicketTypeForPurchase = async ({
   database,
   ticketTypeId,
   organizationId,
-  classroomId,
+  storeId,
 }: {
   database: AuthRuntimeDatabase;
   ticketTypeId: string;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
 }) => {
   const ticketTypeRows = await database
     .select({
       id: dbSchema.ticketType.id,
       organizationId: dbSchema.ticketType.organizationId,
-      classroomId: dbSchema.ticketType.classroomId,
+      storeId: dbSchema.ticketType.storeId,
       serviceIdsJson: dbSchema.ticketType.serviceIdsJson,
       totalCount: dbSchema.ticketType.totalCount,
       isActive: dbSchema.ticketType.isActive,
@@ -231,7 +231,7 @@ export const findTicketTypeForPurchase = async ({
       and(
         eq(dbSchema.ticketType.id, ticketTypeId),
         eq(dbSchema.ticketType.organizationId, organizationId),
-        ...(classroomId ? [eq(dbSchema.ticketType.classroomId, classroomId)] : []),
+        ...(storeId ? [eq(dbSchema.ticketType.storeId, storeId)] : []),
       ),
     )
     .limit(1);
@@ -245,7 +245,7 @@ export const insertTicketPurchase = async ({
   database,
   purchaseId,
   organizationId,
-  classroomId,
+  storeId,
   participantId,
   ticketTypeId,
   serviceIds,
@@ -254,7 +254,7 @@ export const insertTicketPurchase = async ({
   database: AuthRuntimeDatabase;
   purchaseId: string;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   participantId: string;
   ticketTypeId: string;
   serviceIds: string[];
@@ -263,7 +263,7 @@ export const insertTicketPurchase = async ({
   await database.insert(dbSchema.ticketPurchase).values({
     id: purchaseId,
     organizationId,
-    classroomId,
+    storeId,
     participantId,
     ticketTypeId,
     serviceIdsJson: serviceIds.length > 0 ? JSON.stringify(serviceIds) : null,
@@ -290,7 +290,7 @@ export const getTicketPurchaseById = async (database: AuthRuntimeDatabase, purch
 export const listTicketPurchases = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   participantId,
   participantIds,
   paymentMethod,
@@ -298,7 +298,7 @@ export const listTicketPurchases = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   participantId?: string;
   participantIds?: string[];
   paymentMethod?: string;
@@ -308,8 +308,8 @@ export const listTicketPurchases = async ({
   if (participantIds) {
     filters.push(inArray(dbSchema.ticketPurchase.participantId, participantIds));
   }
-  if (classroomId) {
-    filters.push(eq(dbSchema.ticketPurchase.classroomId, classroomId));
+  if (storeId) {
+    filters.push(eq(dbSchema.ticketPurchase.storeId, storeId));
   }
   if (participantId) {
     filters.push(eq(dbSchema.ticketPurchase.participantId, participantId));
@@ -339,7 +339,7 @@ export const findTicketPurchaseScope = async (
     .select({
       id: dbSchema.ticketPurchase.id,
       organizationId: dbSchema.ticketPurchase.organizationId,
-      classroomId: dbSchema.ticketPurchase.classroomId,
+      storeId: dbSchema.ticketPurchase.storeId,
       participantId: dbSchema.ticketPurchase.participantId,
       status: dbSchema.ticketPurchase.status,
     })
@@ -403,30 +403,30 @@ export const cancelTicketPurchase = async ({
 };
 
 /**
- * staff による ticket pack 付与前に participant の所属 classroom を確認します。
+ * staff による ticket pack 付与前に participant の所属 store を確認します。
  */
 export const findParticipantForTicketPackGrant = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   participantId,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   participantId: string;
 }) => {
   const participantRows = await database
     .select({
       id: dbSchema.participant.id,
-      classroomId: dbSchema.participant.classroomId,
+      storeId: dbSchema.participant.storeId,
     })
     .from(dbSchema.participant)
     .where(
       and(
         eq(dbSchema.participant.id, participantId),
         eq(dbSchema.participant.organizationId, organizationId),
-        ...(classroomId ? [eq(dbSchema.participant.classroomId, classroomId)] : []),
+        ...(storeId ? [eq(dbSchema.participant.storeId, storeId)] : []),
       ),
     )
     .limit(1);
@@ -439,18 +439,18 @@ export const findParticipantForTicketPackGrant = async ({
 export const findTicketTypeForTicketPackGrant = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   ticketTypeId,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   ticketTypeId: string;
 }) => {
   const ticketTypeRows = await database
     .select({
       id: dbSchema.ticketType.id,
-      classroomId: dbSchema.ticketType.classroomId,
+      storeId: dbSchema.ticketType.storeId,
       serviceIdsJson: dbSchema.ticketType.serviceIdsJson,
       totalCount: dbSchema.ticketType.totalCount,
       expiresInDays: dbSchema.ticketType.expiresInDays,
@@ -461,7 +461,7 @@ export const findTicketTypeForTicketPackGrant = async ({
       and(
         eq(dbSchema.ticketType.id, ticketTypeId),
         eq(dbSchema.ticketType.organizationId, organizationId),
-        ...(classroomId ? [eq(dbSchema.ticketType.classroomId, classroomId)] : []),
+        ...(storeId ? [eq(dbSchema.ticketType.storeId, storeId)] : []),
       ),
     )
     .limit(1);
@@ -479,7 +479,7 @@ export const findTicketPackForAdjustment = async (
     .select({
       id: dbSchema.ticketPack.id,
       organizationId: dbSchema.ticketPack.organizationId,
-      classroomId: dbSchema.ticketPack.classroomId,
+      storeId: dbSchema.ticketPack.storeId,
       participantId: dbSchema.ticketPack.participantId,
       ticketTypeId: dbSchema.ticketPack.ticketTypeId,
       initialCount: dbSchema.ticketPack.initialCount,
@@ -499,13 +499,13 @@ export const findTicketPackForAdjustment = async (
 export const expireActiveTicketPacks = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   participantIds,
   now,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   participantIds: string[];
   now: Date;
 }) => {
@@ -517,7 +517,7 @@ export const expireActiveTicketPacks = async ({
     .where(
       and(
         eq(dbSchema.ticketPack.organizationId, organizationId),
-        ...(classroomId ? [eq(dbSchema.ticketPack.classroomId, classroomId)] : []),
+        ...(storeId ? [eq(dbSchema.ticketPack.storeId, storeId)] : []),
         inArray(dbSchema.ticketPack.participantId, participantIds),
         eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
         lte(dbSchema.ticketPack.expiresAt, now),
@@ -531,12 +531,12 @@ export const expireActiveTicketPacks = async ({
 export const listTicketPacks = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   participantIds,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   participantIds: string[];
 }) => {
   return database
@@ -545,7 +545,7 @@ export const listTicketPacks = async ({
     .where(
       and(
         eq(dbSchema.ticketPack.organizationId, organizationId),
-        ...(classroomId ? [eq(dbSchema.ticketPack.classroomId, classroomId)] : []),
+        ...(storeId ? [eq(dbSchema.ticketPack.storeId, storeId)] : []),
         inArray(dbSchema.ticketPack.participantId, participantIds),
       ),
     )

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 	getCurrentPathWithSearch: vi.fn(() => '/admin/schedules/recurring/new'),
 	getAdminRecurringPageData: vi.fn(),
 	loadOrganizationBilling: vi.fn(),
-	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', classroomSlug: 'room-1' }))
+	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', storeSlug: 'room-1' }))
 }));
 
 vi.mock('$env/dynamic/public', () => ({
@@ -64,12 +64,12 @@ describe('/admin/schedules/recurring/new/+page.svelte', () => {
 		mocks.getCurrentPathWithSearch.mockReturnValue('/admin/schedules/recurring/new');
 		mocks.readWindowScopedRouteContext.mockReturnValue({
 			orgSlug: 'org-1',
-			classroomSlug: 'room-1'
+			storeSlug: 'room-1'
 		});
 		mocks.getAdminRecurringPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
@@ -85,9 +85,7 @@ describe('/admin/schedules/recurring/new/+page.svelte', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '定期Schedule作成' }))
 			.toBeInTheDocument();
-		await expect
-			.element(page.getByRole('button', { name: '定期一覧へ戻る' }))
-			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '定期一覧へ戻る' })).toBeInTheDocument();
 		await expect
 			.element(page.getByRole('heading', { level: 2, name: '定期Schedule作成' }))
 			.toBeInTheDocument();
@@ -115,7 +113,7 @@ describe('/admin/schedules/recurring/new/+page.svelte', () => {
 		mocks.getAdminRecurringPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,

@@ -1,6 +1,6 @@
 import { writeBookingAuditLog } from '../../domain/booking/audit.js';
 import { BOOKING_STATUS } from '../../domain/booking/constants.js';
-import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
+import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import {
   conflict,
   forbidden,
@@ -48,13 +48,13 @@ export const approveBookingByStaff = async (
     return notFound('Booking not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, booking.storeId)) {
     return forbidden();
   }
 
   const hasAccess = await ctx.canManageBookingsScope({
     organizationId: booking.organizationId,
-    classroomId: booking.classroomId,
+    storeId: booking.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -122,7 +122,7 @@ export const approveBookingByStaff = async (
       const consumed = await consumeTicketPackForParticipant({
         database: ctx.database,
         organizationId: booking.organizationId,
-        classroomId: booking.classroomId,
+        storeId: booking.storeId,
         serviceId: booking.serviceId,
         participantId: booking.participantId,
         participantsCount: booking.participantsCount,
@@ -145,7 +145,7 @@ export const approveBookingByStaff = async (
       await consumeBookingTicketLedger({
         database: ctx.database,
         organizationId: booking.organizationId,
-        classroomId: booking.classroomId,
+        storeId: booking.storeId,
         ticketPackId: consumedTicketPackId,
         bookingId: booking.id,
         participantsCount: booking.participantsCount,
@@ -159,7 +159,7 @@ export const approveBookingByStaff = async (
       database: ctx.database,
       bookingId: booking.id,
       organizationId: booking.organizationId,
-      classroomId: booking.classroomId,
+      storeId: booking.storeId,
       actorUserId: identity.userId,
       action: 'booking.approved',
       metadata: {
@@ -217,13 +217,13 @@ export const rejectBookingByStaff = async (
     return notFound('Booking not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, booking.storeId)) {
     return forbidden();
   }
 
   const hasAccess = await ctx.canManageBookingsScope({
     organizationId: booking.organizationId,
-    classroomId: booking.classroomId,
+    storeId: booking.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -256,7 +256,7 @@ export const rejectBookingByStaff = async (
     database: ctx.database,
     bookingId: booking.id,
     organizationId: booking.organizationId,
-    classroomId: booking.classroomId,
+    storeId: booking.storeId,
     actorUserId: identity.userId,
     action: 'booking.rejected_by_staff',
     metadata: {

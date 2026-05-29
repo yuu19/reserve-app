@@ -33,7 +33,7 @@ const jsonServiceImageUploadError = (
   jsonResult({ message: error.message }, serviceImageUploadErrorStatus(error.status));
 
 /**
- * service image の署名付き upload URL を、認証・classroom 権限確認後に発行します。
+ * service image の署名付き upload URL を、認証・store 権限確認後に発行します。
  */
 export const createServiceImageUploadUrl = async (
   ctx: BookingRouteContext,
@@ -54,17 +54,17 @@ export const createServiceImageUploadUrl = async (
     return validationError('organizationId is required.');
   }
 
-  const classroomContext = await ctx.resolveRequestedClassroomContext({
+  const storeContext = await ctx.resolveRequestedStoreContext({
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
   });
-  if (!classroomContext) {
-    return notFound('Classroom not found.');
+  if (!storeContext) {
+    return notFound('Store not found.');
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {

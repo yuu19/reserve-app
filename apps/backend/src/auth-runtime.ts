@@ -13,7 +13,7 @@ export type AuthRuntimeEnv = {
   INTERNAL_OPERATOR_EMAILS?: string;
   PUBLIC_EVENTS_ORG_SLUG?: string;
   PUBLIC_EVENTS_ORGANIZATION_SLUG?: string;
-  PUBLIC_EVENTS_CLASSROOM_SLUG?: string;
+  PUBLIC_EVENTS_STORE_SLUG?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PREMIUM_MONTHLY_PRICE_ID?: string;
@@ -28,8 +28,8 @@ export type AuthRuntimeEnv = {
 export const resolvePublicEventsOrganizationSlug = (env: AuthRuntimeEnv): string | undefined =>
   env.PUBLIC_EVENTS_ORG_SLUG?.trim() || env.PUBLIC_EVENTS_ORGANIZATION_SLUG?.trim() || undefined;
 
-export const resolvePublicEventsClassroomSlug = (env: AuthRuntimeEnv): string | undefined =>
-  env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() || resolvePublicEventsOrganizationSlug(env);
+export const resolvePublicEventsStoreSlug = (env: AuthRuntimeEnv): string | undefined =>
+  env.PUBLIC_EVENTS_STORE_SLUG?.trim() || resolvePublicEventsOrganizationSlug(env);
 
 type DrizzleDatabase = Parameters<typeof drizzleAdapter>[0];
 export type AuthRuntimeDatabase = DrizzleDatabase;

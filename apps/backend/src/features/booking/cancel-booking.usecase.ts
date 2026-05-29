@@ -4,7 +4,7 @@ import {
   BOOKING_STATUS,
   DEFAULT_CANCELLATION_DEADLINE_MINUTES,
 } from '../../domain/booking/constants.js';
-import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
+import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import {
   conflict,
   forbidden,
@@ -46,14 +46,14 @@ export const cancelBookingByParticipant = async (
     return notFound('Booking not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, booking.storeId)) {
     return forbidden();
   }
 
   const participant = await findParticipantByUserAndOrganization({
     database: ctx.database,
     organizationId: booking.organizationId,
-    classroomId: body.classroomId ?? booking.classroomId,
+    storeId: body.storeId ?? booking.storeId,
     userId: identity.userId,
   });
   if (!participant || participant.id !== booking.participantId) {
@@ -100,7 +100,7 @@ export const cancelBookingByParticipant = async (
       await restoreTicketPackForBookingCancel({
         database: ctx.database,
         organizationId: booking.organizationId,
-        classroomId: booking.classroomId,
+        storeId: booking.storeId,
         ticketPackId: booking.ticketPackId,
         bookingId: booking.id,
         participantsCount: booking.participantsCount,
@@ -114,7 +114,7 @@ export const cancelBookingByParticipant = async (
     database: ctx.database,
     bookingId: booking.id,
     organizationId: booking.organizationId,
-    classroomId: booking.classroomId,
+    storeId: booking.storeId,
     actorUserId: identity.userId,
     action: 'booking.cancelled_by_participant',
     metadata: {
@@ -152,13 +152,13 @@ export const cancelBookingByStaff = async (
     return notFound('Booking not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, booking.storeId)) {
     return forbidden();
   }
 
   const hasAccess = await ctx.canManageBookingsScope({
     organizationId: booking.organizationId,
-    classroomId: booking.classroomId,
+    storeId: booking.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -186,7 +186,7 @@ export const cancelBookingByStaff = async (
     database: ctx.database,
     bookingId: booking.id,
     organizationId: booking.organizationId,
-    classroomId: booking.classroomId,
+    storeId: booking.storeId,
     actorUserId: identity.userId,
     action: 'booking.cancelled_by_staff',
     metadata: {
@@ -224,13 +224,13 @@ export const markBookingNoShow = async (
     return notFound('Booking not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, booking.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, booking.storeId)) {
     return forbidden();
   }
 
   const hasAccess = await ctx.canManageBookingsScope({
     organizationId: booking.organizationId,
-    classroomId: booking.classroomId,
+    storeId: booking.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -250,7 +250,7 @@ export const markBookingNoShow = async (
     database: ctx.database,
     bookingId: booking.id,
     organizationId: booking.organizationId,
-    classroomId: booking.classroomId,
+    storeId: booking.storeId,
     actorUserId: identity.userId,
     action: 'booking.no_show',
     headers,

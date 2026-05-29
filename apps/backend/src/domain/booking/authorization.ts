@@ -14,37 +14,37 @@ export type SessionIdentity = {
 };
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | null;
-export type ClassroomStaffRole = 'manager' | 'staff' | null;
+export type StoreStaffRole = 'manager' | 'staff' | null;
 export type AccessDisplayRole = 'owner' | 'admin' | 'manager' | 'staff' | 'participant' | null;
-export type AccessSource = 'org_role' | 'classroom_member' | 'participant_record' | null;
+export type AccessSource = 'org_role' | 'store_member' | 'participant_record' | null;
 
-export type OrganizationClassroomContext = {
+export type OrganizationStoreContext = {
   organizationId: string;
   organizationSlug: string;
   organizationName: string;
-  classroomId: string;
-  classroomSlug: string;
-  classroomName: string;
+  storeId: string;
+  storeSlug: string;
+  storeName: string;
 };
 
-export type OrganizationClassroomAccess = OrganizationClassroomContext & {
+export type OrganizationStoreAccess = OrganizationStoreContext & {
   facts: {
     orgRole: OrganizationRole;
-    classroomStaffRole: ClassroomStaffRole;
+    storeStaffRole: StoreStaffRole;
     hasParticipantRecord: boolean;
   };
   effective: {
     canManageOrganization: boolean;
-    canManageClassroom: boolean;
+    canManageStore: boolean;
     canManageBookings: boolean;
     canManageParticipants: boolean;
     canUseParticipantBooking: boolean;
   };
   sources: {
     canManageOrganization: Extract<AccessSource, 'org_role'> | null;
-    canManageClassroom: Extract<AccessSource, 'org_role' | 'classroom_member'> | null;
-    canManageBookings: Extract<AccessSource, 'org_role' | 'classroom_member'> | null;
-    canManageParticipants: Extract<AccessSource, 'org_role' | 'classroom_member'> | null;
+    canManageStore: Extract<AccessSource, 'org_role' | 'store_member'> | null;
+    canManageBookings: Extract<AccessSource, 'org_role' | 'store_member'> | null;
+    canManageParticipants: Extract<AccessSource, 'org_role' | 'store_member'> | null;
     canUseParticipantBooking: Extract<AccessSource, 'participant_record'> | null;
   };
   display: {
@@ -97,7 +97,7 @@ export const resolveOrganizationId = (
   return requestedOrganizationId ?? activeOrganizationId;
 };
 
-export const toClassroomSlug = (organizationSlug: string): string => {
+export const toStoreSlug = (organizationSlug: string): string => {
   return organizationSlug;
 };
 
@@ -108,7 +108,7 @@ const normalizeOrganizationRole = (value: string | null): OrganizationRole => {
   return null;
 };
 
-const normalizeClassroomStaffRole = (value: string | null): ClassroomStaffRole => {
+const normalizeStoreStaffRole = (value: string | null): StoreStaffRole => {
   if (value === 'manager' || value === 'staff') {
     return value;
   }
@@ -123,7 +123,7 @@ export const canViewOrganizationBillingByRole = (role: OrganizationRole): boolea
   return role === 'owner' || role === 'admin' || role === 'member';
 };
 
-export const canManageClassroomByRole = (role: OrganizationRole): boolean => {
+export const canManageStoreByRole = (role: OrganizationRole): boolean => {
   return role === 'owner' || role === 'admin';
 };
 
@@ -135,15 +135,15 @@ export const canManageParticipantsByRole = (role: OrganizationRole): boolean => 
   return role === 'owner' || role === 'admin';
 };
 
-export const canManageClassroomByClassroomRole = (role: ClassroomStaffRole): boolean => {
+export const canManageStoreByStoreRole = (role: StoreStaffRole): boolean => {
   return role === 'manager';
 };
 
-export const canManageBookingsByClassroomRole = (role: ClassroomStaffRole): boolean => {
+export const canManageBookingsByStoreRole = (role: StoreStaffRole): boolean => {
   return role === 'manager' || role === 'staff';
 };
 
-export const canManageParticipantsByClassroomRole = (role: ClassroomStaffRole): boolean => {
+export const canManageParticipantsByStoreRole = (role: StoreStaffRole): boolean => {
   return role === 'manager' || role === 'staff';
 };
 
@@ -289,19 +289,19 @@ export const readOrganizationPremiumFeatureGate = async ({
 
 const buildDisplayBadges = ({
   organizationRole,
-  classroomStaffRole,
+  storeStaffRole,
   hasParticipantRecord,
 }: {
   organizationRole: OrganizationRole;
-  classroomStaffRole: ClassroomStaffRole;
+  storeStaffRole: StoreStaffRole;
   hasParticipantRecord: boolean;
 }): Exclude<AccessDisplayRole, null>[] => {
   const badges: Exclude<AccessDisplayRole, null>[] = [];
   if (organizationRole === 'owner' || organizationRole === 'admin') {
     badges.push(organizationRole);
   }
-  if (classroomStaffRole) {
-    badges.push(classroomStaffRole);
+  if (storeStaffRole) {
+    badges.push(storeStaffRole);
   }
   if (hasParticipantRecord) {
     badges.push('participant');
@@ -329,21 +329,21 @@ const resolvePrimaryRole = (badges: Exclude<AccessDisplayRole, null>[]): AccessD
 };
 
 /**
- * organization id/slug と optional classroom slug から、scope 付き classroom context を解決する。
+ * organization id/slug と optional store slug から、scope 付き store context を解決する。
  *
- * classroom slug が省略された場合は legacy organization-as-classroom 形状にも fallback する。
+ * store slug が省略された場合は legacy organization-as-store 形状にも fallback する。
  */
-export const resolveOrganizationClassroomContext = async ({
+export const resolveOrganizationStoreContext = async ({
   database,
   organizationId,
   organizationSlug,
-  classroomSlug,
+  storeSlug,
 }: {
   database: AuthRuntimeDatabase;
   organizationId?: string | null;
   organizationSlug?: string | null;
-  classroomSlug?: string | null;
-}): Promise<OrganizationClassroomContext | null> => {
+  storeSlug?: string | null;
+}): Promise<OrganizationStoreContext | null> => {
   if (!organizationId && !organizationSlug) {
     return null;
   }
@@ -366,30 +366,28 @@ export const resolveOrganizationClassroomContext = async ({
     return null;
   }
 
-  const defaultClassroomSlug = toClassroomSlug(organization.slug);
-  const targetClassroomSlug = (classroomSlug ?? defaultClassroomSlug).trim();
+  const defaultStoreSlug = toStoreSlug(organization.slug);
+  const targetStoreSlug = (storeSlug ?? defaultStoreSlug).trim();
 
-  const classroomRows = await database
+  const storeRows = await database
     .select({
-      id: dbSchema.classroom.id,
-      slug: dbSchema.classroom.slug,
-      name: dbSchema.classroom.name,
+      id: dbSchema.store.id,
+      slug: dbSchema.store.slug,
+      name: dbSchema.store.name,
     })
-    .from(dbSchema.classroom)
-    .where(eq(dbSchema.classroom.organizationId, organization.id))
-    .orderBy(asc(dbSchema.classroom.createdAt));
+    .from(dbSchema.store)
+    .where(eq(dbSchema.store.organizationId, organization.id))
+    .orderBy(asc(dbSchema.store.createdAt));
 
-  const resolvedClassroom =
-    classroomRows.find((row: (typeof classroomRows)[number]) => row.slug === targetClassroomSlug) ??
-    (classroomSlug
+  const resolvedStore =
+    storeRows.find((row: (typeof storeRows)[number]) => row.slug === targetStoreSlug) ??
+    (storeSlug
       ? null
-      : (classroomRows.find((row: (typeof classroomRows)[number]) => row.id === organization.id) ??
-        classroomRows.find(
-          (row: (typeof classroomRows)[number]) => row.slug === defaultClassroomSlug,
-        ) ??
-        classroomRows[0]));
+      : (storeRows.find((row: (typeof storeRows)[number]) => row.id === organization.id) ??
+        storeRows.find((row: (typeof storeRows)[number]) => row.slug === defaultStoreSlug) ??
+        storeRows[0]));
 
-  if (!resolvedClassroom) {
+  if (!resolvedStore) {
     return null;
   }
 
@@ -397,14 +395,14 @@ export const resolveOrganizationClassroomContext = async ({
     organizationId: organization.id,
     organizationSlug: organization.slug,
     organizationName: organization.name,
-    classroomId: resolvedClassroom.id,
-    classroomSlug: resolvedClassroom.slug,
-    classroomName: resolvedClassroom.name,
+    storeId: resolvedStore.id,
+    storeSlug: resolvedStore.slug,
+    storeName: resolvedStore.name,
   };
 };
 
-/** organization 配下の classroom context を一覧し、scoped routing の切替候補として返す。 */
-export const listOrganizationClassroomContexts = async ({
+/** organization 配下の store context を一覧し、scoped routing の切替候補として返す。 */
+export const listOrganizationStoreContexts = async ({
   database,
   organizationId,
   organizationSlug,
@@ -412,7 +410,7 @@ export const listOrganizationClassroomContexts = async ({
   database: AuthRuntimeDatabase;
   organizationId?: string | null;
   organizationSlug?: string | null;
-}): Promise<OrganizationClassroomContext[]> => {
+}): Promise<OrganizationStoreContext[]> => {
   if (!organizationId && !organizationSlug) {
     return [];
   }
@@ -435,39 +433,39 @@ export const listOrganizationClassroomContexts = async ({
     return [];
   }
 
-  const classroomRows = await database
+  const storeRows = await database
     .select({
-      id: dbSchema.classroom.id,
-      slug: dbSchema.classroom.slug,
-      name: dbSchema.classroom.name,
+      id: dbSchema.store.id,
+      slug: dbSchema.store.slug,
+      name: dbSchema.store.name,
     })
-    .from(dbSchema.classroom)
-    .where(eq(dbSchema.classroom.organizationId, organization.id))
-    .orderBy(asc(dbSchema.classroom.createdAt));
+    .from(dbSchema.store)
+    .where(eq(dbSchema.store.organizationId, organization.id))
+    .orderBy(asc(dbSchema.store.createdAt));
 
-  return classroomRows.map((classroom: (typeof classroomRows)[number]) => ({
+  return storeRows.map((store: (typeof storeRows)[number]) => ({
     organizationId: organization.id,
     organizationSlug: organization.slug,
     organizationName: organization.name,
-    classroomId: classroom.id,
-    classroomSlug: classroom.slug,
-    classroomName: classroom.name,
+    storeId: store.id,
+    storeSlug: store.slug,
+    storeName: store.name,
   }));
 };
 
 /**
- * organization role、classroom member role、participant record を合成し、画面と API で使う effective access を返す。
+ * organization role、store member role、participant record を合成し、画面と API で使う effective access を返す。
  */
-export const resolveOrganizationClassroomAccess = async ({
+export const resolveOrganizationStoreAccess = async ({
   database,
   userId,
   context,
 }: {
   database: AuthRuntimeDatabase;
   userId: string;
-  context: OrganizationClassroomContext;
-}): Promise<OrganizationClassroomAccess> => {
-  const [memberRows, classroomMemberRows, participantRows] = await Promise.all([
+  context: OrganizationStoreContext;
+}): Promise<OrganizationStoreAccess> => {
+  const [memberRows, storeMemberRows, participantRows] = await Promise.all([
     database
       .select({
         role: dbSchema.member.role,
@@ -482,13 +480,13 @@ export const resolveOrganizationClassroomAccess = async ({
       .limit(1),
     database
       .select({
-        role: dbSchema.classroomMember.role,
+        role: dbSchema.storeMember.role,
       })
-      .from(dbSchema.classroomMember)
+      .from(dbSchema.storeMember)
       .where(
         and(
-          eq(dbSchema.classroomMember.classroomId, context.classroomId),
-          eq(dbSchema.classroomMember.userId, userId),
+          eq(dbSchema.storeMember.storeId, context.storeId),
+          eq(dbSchema.storeMember.userId, userId),
         ),
       )
       .limit(1),
@@ -499,7 +497,7 @@ export const resolveOrganizationClassroomAccess = async ({
       .from(dbSchema.participant)
       .where(
         and(
-          eq(dbSchema.participant.classroomId, context.classroomId),
+          eq(dbSchema.participant.storeId, context.storeId),
           eq(dbSchema.participant.userId, userId),
         ),
       )
@@ -507,25 +505,24 @@ export const resolveOrganizationClassroomAccess = async ({
   ]);
 
   const organizationRole = normalizeOrganizationRole(memberRows[0]?.role ?? null);
-  const classroomStaffRole = normalizeClassroomStaffRole(classroomMemberRows[0]?.role ?? null);
+  const storeStaffRole = normalizeStoreStaffRole(storeMemberRows[0]?.role ?? null);
   const hasParticipantRecord = Boolean(participantRows[0]);
 
   const canManageOrganization = canManageOrganizationByRole(organizationRole);
-  const canManageClassroomFromOrganization = canManageClassroomByRole(organizationRole);
-  const canManageClassroomFromMembership = canManageClassroomByClassroomRole(classroomStaffRole);
+  const canManageStoreFromOrganization = canManageStoreByRole(organizationRole);
+  const canManageStoreFromMembership = canManageStoreByStoreRole(storeStaffRole);
   const canManageBookingsFromOrganization = canManageBookingsByRole(organizationRole);
-  const canManageBookingsFromMembership = canManageBookingsByClassroomRole(classroomStaffRole);
+  const canManageBookingsFromMembership = canManageBookingsByStoreRole(storeStaffRole);
   const canManageParticipantsFromOrganization = canManageParticipantsByRole(organizationRole);
-  const canManageParticipantsFromMembership =
-    canManageParticipantsByClassroomRole(classroomStaffRole);
-  const canManageClassroom = canManageClassroomFromOrganization || canManageClassroomFromMembership;
+  const canManageParticipantsFromMembership = canManageParticipantsByStoreRole(storeStaffRole);
+  const canManageStore = canManageStoreFromOrganization || canManageStoreFromMembership;
   const canManageBookings = canManageBookingsFromOrganization || canManageBookingsFromMembership;
   const canManageParticipants =
     canManageParticipantsFromOrganization || canManageParticipantsFromMembership;
   const canUseParticipantBooking = hasParticipantRecord;
   const badges = buildDisplayBadges({
     organizationRole,
-    classroomStaffRole,
+    storeStaffRole,
     hasParticipantRecord,
   });
 
@@ -533,32 +530,32 @@ export const resolveOrganizationClassroomAccess = async ({
     ...context,
     facts: {
       orgRole: organizationRole,
-      classroomStaffRole,
+      storeStaffRole,
       hasParticipantRecord,
     },
     effective: {
       canManageOrganization,
-      canManageClassroom,
+      canManageStore,
       canManageBookings,
       canManageParticipants,
       canUseParticipantBooking,
     },
     sources: {
       canManageOrganization: canManageOrganization ? 'org_role' : null,
-      canManageClassroom: canManageClassroomFromOrganization
+      canManageStore: canManageStoreFromOrganization
         ? 'org_role'
-        : canManageClassroomFromMembership
-          ? 'classroom_member'
+        : canManageStoreFromMembership
+          ? 'store_member'
           : null,
       canManageBookings: canManageBookingsFromOrganization
         ? 'org_role'
         : canManageBookingsFromMembership
-          ? 'classroom_member'
+          ? 'store_member'
           : null,
       canManageParticipants: canManageParticipantsFromOrganization
         ? 'org_role'
         : canManageParticipantsFromMembership
-          ? 'classroom_member'
+          ? 'store_member'
           : null,
       canUseParticipantBooking: canUseParticipantBooking ? 'participant_record' : null,
     },
@@ -578,7 +575,7 @@ export const hasAdminOrOwnerAccess = async ({
   organizationId: string;
   userId: string;
 }): Promise<boolean> => {
-  const context = await resolveOrganizationClassroomContext({
+  const context = await resolveOrganizationStoreContext({
     database,
     organizationId,
   });
@@ -586,7 +583,7 @@ export const hasAdminOrOwnerAccess = async ({
     return false;
   }
 
-  const access = await resolveOrganizationClassroomAccess({
+  const access = await resolveOrganizationStoreAccess({
     database,
     userId,
     context,
@@ -597,7 +594,7 @@ export const hasAdminOrOwnerAccess = async ({
 export type ParticipantAccessRecord = {
   id: string;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   userId: string;
   email: string;
 };
@@ -605,18 +602,18 @@ export type ParticipantAccessRecord = {
 export const findParticipantByUserAndOrganization = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   userId,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string | null;
+  storeId?: string | null;
   userId: string;
 }): Promise<ParticipantAccessRecord | null> => {
   const rows = await findParticipantsByUserAndOrganization({
     database,
     organizationId,
-    classroomId,
+    storeId,
     userId,
   });
   return rows[0] ?? null;
@@ -625,19 +622,19 @@ export const findParticipantByUserAndOrganization = async ({
 export const findParticipantsByUserAndOrganization = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   userId,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string | null;
+  storeId?: string | null;
   userId: string;
 }): Promise<ParticipantAccessRecord[]> => {
   return database
     .select({
       id: dbSchema.participant.id,
       organizationId: dbSchema.participant.organizationId,
-      classroomId: dbSchema.participant.classroomId,
+      storeId: dbSchema.participant.storeId,
       userId: dbSchema.participant.userId,
       email: dbSchema.participant.email,
     })
@@ -645,7 +642,7 @@ export const findParticipantsByUserAndOrganization = async ({
     .where(
       and(
         eq(dbSchema.participant.organizationId, organizationId),
-        ...(classroomId ? [eq(dbSchema.participant.classroomId, classroomId)] : []),
+        ...(storeId ? [eq(dbSchema.participant.storeId, storeId)] : []),
         eq(dbSchema.participant.userId, userId),
       ),
     )

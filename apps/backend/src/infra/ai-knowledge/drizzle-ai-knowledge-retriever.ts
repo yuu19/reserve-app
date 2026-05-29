@@ -6,7 +6,7 @@ import type {
 } from '@repo/saas-chatbot-core';
 import { eq, inArray } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 import {
   AI_SOURCE_KINDS,
   type AiSourceKind,
@@ -61,9 +61,9 @@ export const retrieveKnowledge = async ({
   env: AiRetrieverEnv;
   database: AuthRuntimeDatabase;
   embeddingProvider?: EmbeddingProvider;
-  sourceVisibilityPolicy: SourceVisibilityPolicy<OrganizationClassroomAccess>;
+  sourceVisibilityPolicy: SourceVisibilityPolicy<OrganizationStoreAccess>;
   message: string;
-  context: OrganizationClassroomAccess;
+  context: OrganizationStoreAccess;
   allowedVisibilities: AiSourceVisibility[];
   internalOperator: boolean;
   locale?: string;
@@ -107,7 +107,7 @@ export const retrieveKnowledge = async ({
       visibility: dbSchema.aiKnowledgeChunk.visibility,
       internalOnly: dbSchema.aiKnowledgeChunk.internalOnly,
       organizationId: dbSchema.aiKnowledgeChunk.organizationId,
-      classroomId: dbSchema.aiKnowledgeChunk.classroomId,
+      storeId: dbSchema.aiKnowledgeChunk.storeId,
       vectorStatus: dbSchema.aiKnowledgeChunk.vectorStatus,
       documentIndexStatus: dbSchema.aiKnowledgeDocument.indexStatus,
     })
@@ -129,7 +129,7 @@ export const retrieveKnowledge = async ({
     visibility: string;
     internalOnly: boolean;
     organizationId: string | null;
-    classroomId: string | null;
+    storeId: string | null;
     vectorStatus: string;
     documentIndexStatus: string;
   };
@@ -146,7 +146,7 @@ export const retrieveKnowledge = async ({
     score: number;
     locale: string;
     organizationId: string | null;
-    classroomId: string | null;
+    storeId: string | null;
     vectorStatus: string;
     documentIndexStatus: string;
   };
@@ -167,7 +167,7 @@ export const retrieveKnowledge = async ({
         score: match?.score ?? 0,
         locale: row.locale,
         organizationId: row.organizationId,
-        classroomId: row.classroomId,
+        storeId: row.storeId,
         vectorStatus: row.vectorStatus,
         documentIndexStatus: row.documentIndexStatus,
       } satisfies CandidateChunk;
@@ -217,7 +217,7 @@ export type RetrieveKnowledgeInput = Omit<
 >;
 
 export type DrizzleAiKnowledgeRetriever = KnowledgeRetriever<
-  OrganizationClassroomAccess,
+  OrganizationStoreAccess,
   RetrievedKnowledgeChunk
 >;
 
@@ -229,7 +229,7 @@ export const createDrizzleAiKnowledgeRetriever = ({
 }: {
   env: AiRetrieverEnv;
   database: AuthRuntimeDatabase;
-  sourceVisibilityPolicy: SourceVisibilityPolicy<OrganizationClassroomAccess>;
+  sourceVisibilityPolicy: SourceVisibilityPolicy<OrganizationStoreAccess>;
   embeddingProvider?: EmbeddingProvider;
 }): DrizzleAiKnowledgeRetriever => ({
   retrieveKnowledge: (input) =>

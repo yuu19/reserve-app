@@ -21,26 +21,26 @@ export class AdminOnboardingPage extends BasePage {
 
 	async createInitialOrganization({
 		organizationName,
-		classroomName
+		storeName
 	}: {
 		organizationName: string;
-		classroomName: string;
+		storeName: string;
 	}) {
 		await this.page.getByLabel('組織名').fill(organizationName);
-		await this.page.getByLabel('初期教室名').fill(classroomName);
-		await this.page.getByRole('button', { name: '組織と教室を作成' }).click();
+		await this.page.getByLabel('初期店舗名').fill(storeName);
+		await this.page.getByRole('button', { name: '組織と店舗を作成' }).click();
 	}
 
 	async expectDashboard({
 		organizationName,
-		classroomName
+		storeName
 	}: {
 		organizationName: string;
-		classroomName: string;
+		storeName: string;
 	}) {
 		await expect(this.page).toHaveURL(/\/admin\/dashboard/);
 		await expect(this.page.getByRole('heading', { name: 'ダッシュボード' })).toBeVisible();
 		await expect(this.page.getByText(organizationName).first()).toBeVisible();
-		await expect(this.page.getByText(classroomName).first()).toBeVisible();
+		await expect(this.page.getByText(storeName).first()).toBeVisible();
 	}
 }

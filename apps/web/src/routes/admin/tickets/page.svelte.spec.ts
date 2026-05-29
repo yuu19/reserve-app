@@ -59,12 +59,12 @@ describe('/admin/tickets/+page.svelte', () => {
 		mocks.loadTicketManagementPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
 			canManageParticipants: true,
-			canManageClassroom: true,
+			canManageStore: true,
 			premiumRestriction: null,
 			participants: [
 				{
@@ -81,7 +81,7 @@ describe('/admin/tickets/+page.svelte', () => {
 				{
 					id: 'service-1',
 					organizationId: 'org-1',
-					classroomId: 'room-1',
+					storeId: 'room-1',
 					name: 'Yoga',
 					description: null,
 					durationMinutes: 60,
@@ -98,7 +98,7 @@ describe('/admin/tickets/+page.svelte', () => {
 				{
 					id: 'ticket-type-1',
 					organizationId: 'org-1',
-					classroomId: 'room-1',
+					storeId: 'room-1',
 					name: '5回券',
 					totalCount: 5,
 					serviceScope: 'all',
@@ -115,7 +115,7 @@ describe('/admin/tickets/+page.svelte', () => {
 				{
 					id: 'purchase-1',
 					organizationId: 'org-1',
-					classroomId: 'room-1',
+					storeId: 'room-1',
 					participantId: 'participant-1',
 					ticketTypeId: 'ticket-type-1',
 					paymentMethod: 'cash_on_site',
@@ -151,12 +151,12 @@ describe('/admin/tickets/+page.svelte', () => {
 		mocks.loadTicketManagementPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
 			canManageParticipants: false,
-			canManageClassroom: true,
+			canManageStore: true,
 			premiumRestriction: null,
 			participants: [],
 			services: [],

@@ -5,6 +5,7 @@
 **Purpose**: Organization-scoped source of truth for product billing state and provider linkage.
 
 **Key fields**:
+
 - `id`: billing row identifier
 - `organizationId`: owning organization; unique
 - `planState`: `free` | `premium_trial` | `premium_paid`
@@ -24,12 +25,14 @@
 - `lastSyncedAt`: nullable timestamp
 
 **Relationships**:
+
 - Belongs to one organization.
 - Has many subscription lifecycle events.
 - Has many notification records.
 - Has many audit entries and reconciliation signals.
 
 **Validation rules**:
+
 - Exactly one active billing row per organization.
 - `premium_trial` requires `trialEndsAt`.
 - `premium_paid` requires a provider subscription link or a documented migration exception.
@@ -41,6 +44,7 @@
 **Purpose**: Normalized record of external or application-triggered billing lifecycle input.
 
 **Key fields**:
+
 - `id`: internal event record identifier
 - `eventId`: external event id or application-generated idempotency key
 - `organizationId`: nullable until resolved
@@ -55,10 +59,12 @@
 - `failureReason`: nullable
 
 **Relationships**:
+
 - May resolve to one organization billing row.
 - May produce audit entries, notification records, and reconciliation signals.
 
 **Validation rules**:
+
 - `eventId` is unique for provider events.
 - Duplicate events do not re-apply state transitions.
 - Failed events retain enough context for retry or support classification.
@@ -69,6 +75,7 @@
 capabilities.
 
 **Key fields**:
+
 - `organizationId`
 - `planState`
 - `eligible`: boolean
@@ -79,18 +86,21 @@ capabilities.
 - `capabilities`: capability identifiers enabled for the organization
 
 **Relationships**:
+
 - Derived from Organization Billing.
 - Consumed by backend operational flows and UI status rendering.
 
 **Validation rules**:
+
 - Entitlement is derived; it is not manually edited as a separate source of truth.
-- Classroom-specific operations must use organization entitlement for premium gating.
+- Store-specific operations must use organization entitlement for premium gating.
 
 ## Entity: Billing Notification
 
 **Purpose**: History of owner-facing billing communication.
 
 **Key fields**:
+
 - `id`
 - `organizationId`
 - `recipientUserId`
@@ -106,10 +116,12 @@ capabilities.
 - `failureReason`: nullable
 
 **Relationships**:
+
 - Belongs to organization billing.
 - May be linked to a lifecycle event and audit/signal entries.
 
 **Validation rules**:
+
 - Trial reminder records must be queryable by organization and event id.
 - Failure must not be silent; a failed or pending state must be inspectable.
 
@@ -118,6 +130,7 @@ capabilities.
 **Purpose**: Append-only trail of billing state and entitlement changes.
 
 **Key fields**:
+
 - `id`
 - `organizationId`
 - `sequenceNumber`
@@ -133,10 +146,12 @@ capabilities.
 - `createdAt`
 
 **Relationships**:
+
 - Belongs to organization billing.
 - Correlates to lifecycle events and notifications.
 
 **Validation rules**:
+
 - Entries are append-only.
 - State-changing billing operations must emit audit entries.
 
@@ -145,6 +160,7 @@ capabilities.
 **Purpose**: Support-facing signal that identifies provider/application drift or recovery state.
 
 **Key fields**:
+
 - `id`
 - `organizationId`
 - `sequenceNumber`
@@ -160,10 +176,12 @@ capabilities.
 - `resolvedAt`
 
 **Relationships**:
+
 - Belongs to organization billing.
 - May be shown in internal billing inspection.
 
 **Validation rules**:
+
 - Signals must be queryable by organization and status.
 - Recovery must not erase historical signals.
 
@@ -172,6 +190,7 @@ capabilities.
 **Purpose**: Read model for support investigation.
 
 **Key fields**:
+
 - `organizationId`
 - `organizationName`
 - `currentBillingSummary`
@@ -183,10 +202,12 @@ capabilities.
 - `webhookTimeline`
 
 **Relationships**:
+
 - Composes Organization Billing, Billing Notification, Billing Audit Entry, Reconciliation
   Signal, and Subscription Lifecycle Event.
 
 **Validation rules**:
+
 - Accessible only to authorized internal operators.
 - Must not expose payment details beyond provider-derived status and identifiers needed for
   support.

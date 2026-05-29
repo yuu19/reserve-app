@@ -1,14 +1,13 @@
 export type ScopedRouteContext = {
 	orgSlug: string;
-	classroomSlug: string;
+	storeSlug: string;
 };
 
 export type PortalSection = 'admin' | 'participant';
 
-const scopedRouteRoots = new Set(['admin', 'participant', 'events']);
+const scopedRouteRoots = new Set(['admin', 'participant', 'events', 'tickets']);
 
-const ensureLeadingSlash = (value: string): string =>
-	value.startsWith('/') ? value : `/${value}`;
+const ensureLeadingSlash = (value: string): string => (value.startsWith('/') ? value : `/${value}`);
 
 const normalizePathname = (value: string): string => {
 	const trimmed = value.trim();
@@ -38,11 +37,11 @@ export const extractScopedRouteContext = (path: string): ScopedRouteContext | nu
 		return null;
 	}
 	const orgSlug = decodeURIComponent(match[1] ?? '').trim();
-	const classroomSlug = decodeURIComponent(match[2] ?? '').trim();
-	if (!orgSlug || !classroomSlug) {
+	const storeSlug = decodeURIComponent(match[2] ?? '').trim();
+	if (!orgSlug || !storeSlug) {
 		return null;
 	}
-	return { orgSlug, classroomSlug };
+	return { orgSlug, storeSlug };
 };
 
 export const splitScopedPath = (
@@ -59,7 +58,7 @@ export const splitScopedPath = (
 			remainderPath: pathname
 		};
 	}
-	const prefix = `/${encodeURIComponent(context.orgSlug)}/${encodeURIComponent(context.classroomSlug)}`;
+	const prefix = `/${encodeURIComponent(context.orgSlug)}/${encodeURIComponent(context.storeSlug)}`;
 	const remainder = pathname.slice(prefix.length);
 	return {
 		context,
@@ -73,22 +72,20 @@ export const buildScopedPath = (context: ScopedRouteContext, targetPath: string)
 	if (
 		alreadyScoped &&
 		alreadyScoped.orgSlug === context.orgSlug &&
-		alreadyScoped.classroomSlug === context.classroomSlug
+		alreadyScoped.storeSlug === context.storeSlug
 	) {
 		return `${pathname}${suffix}`;
 	}
 	const normalizedPath = normalizePathname(pathname);
-	const scopedBase = `/${encodeURIComponent(context.orgSlug)}/${encodeURIComponent(context.classroomSlug)}`;
+	const scopedBase = `/${encodeURIComponent(context.orgSlug)}/${encodeURIComponent(context.storeSlug)}`;
 	if (normalizedPath === '/') {
 		return `${scopedBase}${suffix}`;
 	}
 	return `${scopedBase}${normalizedPath}${suffix}`;
 };
 
-export const buildScopedPortalPath = (
-	context: ScopedRouteContext,
-	portal: PortalSection
-): string => buildScopedPath(context, portal === 'admin' ? '/admin/dashboard' : '/participant/home');
+export const buildScopedPortalPath = (context: ScopedRouteContext, portal: PortalSection): string =>
+	buildScopedPath(context, portal === 'admin' ? '/admin/dashboard' : '/participant/home');
 
 export const isPortalPath = (targetPath: string): boolean => {
 	const normalizedPath = normalizePathname(targetPath);
@@ -98,7 +95,9 @@ export const isPortalPath = (targetPath: string): boolean => {
 		normalizedPath === '/participant' ||
 		normalizedPath.startsWith('/participant/') ||
 		normalizedPath === '/events' ||
-		normalizedPath.startsWith('/events/')
+		normalizedPath.startsWith('/events/') ||
+		normalizedPath === '/tickets' ||
+		normalizedPath.startsWith('/tickets/')
 	);
 };
 
@@ -120,7 +119,7 @@ export const replacePortalPathWithScopedContext = (
 	if (
 		currentContext &&
 		currentContext.orgSlug === context.orgSlug &&
-		currentContext.classroomSlug === context.classroomSlug
+		currentContext.storeSlug === context.storeSlug
 	) {
 		return `${pathname}${suffix}`;
 	}

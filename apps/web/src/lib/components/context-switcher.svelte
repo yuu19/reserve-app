@@ -4,33 +4,33 @@
 	import { Input } from '$lib/components/ui/input';
 	import OrganizationLogo from '$lib/components/organization-logo.svelte';
 	import * as Popover from '$lib/components/ui/popover';
-	import type { ClassroomContextPayload } from '$lib/features/organization-context.svelte';
+	import type { StoreContextPayload } from '$lib/features/organization-context.svelte';
 	import type { OrganizationPayload } from '$lib/rpc-client';
 	import { cn } from '$lib/utils';
 	import { Check, ChevronDown, Search } from '@lucide/svelte';
 
 	type ContextSwitcherProps = {
 		organizations: OrganizationPayload[];
-		classrooms: ClassroomContextPayload[];
+		stores: StoreContextPayload[];
 		activeOrganization: OrganizationPayload | null;
-		activeClassroom: ClassroomContextPayload | null;
+		activeStore: StoreContextPayload | null;
 		loading: boolean;
 		busy: boolean;
 		compact?: boolean;
 		onSelectOrganization: (organizationId: string | null) => Promise<void> | void;
-		onSelectClassroom: (classroomSlug: string) => Promise<void> | void;
+		onSelectStore: (storeSlug: string) => Promise<void> | void;
 	};
 
 	let {
 		organizations = [],
-		classrooms = [],
+		stores = [],
 		activeOrganization = null,
-		activeClassroom = null,
+		activeStore = null,
 		loading = false,
 		busy = false,
 		compact = false,
 		onSelectOrganization = () => {},
-		onSelectClassroom = () => {}
+		onSelectStore = () => {}
 	}: ContextSwitcherProps = $props();
 
 	let open = $state(false);
@@ -43,14 +43,14 @@
 		return activeOrganization?.name ?? '組織未選択';
 	});
 
-	const classroomLabel = $derived.by(() => {
+	const storeLabel = $derived.by(() => {
 		if (loading) {
 			return '読み込み中…';
 		}
 		if (!activeOrganization) {
-			return '教室未選択';
+			return '店舗未選択';
 		}
-		return activeClassroom?.name ?? (classrooms.length > 0 ? '教室を選択' : '組織全体');
+		return activeStore?.name ?? (stores.length > 0 ? '店舗を選択' : '組織全体');
 	});
 
 	const normalizedKeyword = $derived(keyword.trim().toLowerCase());
@@ -62,12 +62,12 @@
 			`${organization.name} ${organization.slug}`.toLowerCase().includes(normalizedKeyword)
 		);
 	});
-	const filteredClassrooms = $derived.by(() => {
+	const filteredStores = $derived.by(() => {
 		if (normalizedKeyword.length === 0) {
-			return classrooms;
+			return stores;
 		}
-		return classrooms.filter((classroom) =>
-			`${classroom.name} ${classroom.slug}`.toLowerCase().includes(normalizedKeyword)
+		return stores.filter((store) =>
+			`${store.name} ${store.slug}`.toLowerCase().includes(normalizedKeyword)
 		);
 	});
 
@@ -81,8 +81,8 @@
 		resetPopover();
 	};
 
-	const selectClassroom = async (classroomSlug: string) => {
-		await onSelectClassroom(classroomSlug);
+	const selectStore = async (storeSlug: string) => {
+		await onSelectStore(storeSlug);
 		resetPopover();
 	};
 </script>
@@ -97,7 +97,7 @@
 				? 'h-auto min-h-10 w-[min(38vw,240px)] px-2 py-1.5'
 				: 'h-auto min-h-12 min-w-[320px] px-3 py-2'
 		)}
-		aria-label="利用中の組織と教室を切り替え"
+		aria-label="利用中の組織と店舗を切り替え"
 		aria-expanded={open}
 		disabled={loading || busy}
 	>
@@ -117,9 +117,9 @@
 					</span>
 				</span>
 				<span class="flex min-w-0 items-center gap-1">
-					<span class="shrink-0 text-[10px] leading-none text-muted-foreground">教室</span>
+					<span class="shrink-0 text-[10px] leading-none text-muted-foreground">店舗</span>
 					<span class="truncate text-[11px] font-normal text-muted-foreground">
-						{classroomLabel}
+						{storeLabel}
 					</span>
 				</span>
 			</span>
@@ -140,12 +140,12 @@
 				id="context-search"
 				name="context_search"
 				type="text"
-				placeholder="組織・教室を検索…"
-				aria-label="組織・教室を検索"
+				placeholder="組織・店舗を検索…"
+				aria-label="組織・店舗を検索"
 				autocomplete="off"
 				class="h-8 pl-7 text-xs md:text-sm"
 				bind:value={keyword}
-				disabled={busy || (organizations.length === 0 && classrooms.length === 0)}
+				disabled={busy || (organizations.length === 0 && stores.length === 0)}
 			/>
 		</div>
 
@@ -212,44 +212,44 @@
 
 		<section
 			class="space-y-1 border-t border-border/70 pt-3"
-			aria-labelledby="context-classroom-heading"
+			aria-labelledby="context-store-heading"
 		>
-			<h2 id="context-classroom-heading" class="px-1 text-xs font-semibold text-muted-foreground">
-				教室
+			<h2 id="context-store-heading" class="px-1 text-xs font-semibold text-muted-foreground">
+				店舗
 			</h2>
 
 			{#if !activeOrganization}
 				<p class="px-1 py-3 text-xs text-muted-foreground">
-					組織を選択すると教室を切り替えられます。
+					組織を選択すると店舗を切り替えられます。
 				</p>
-			{:else if classrooms.length === 0}
+			{:else if stores.length === 0}
 				<p class="px-1 py-3 text-xs text-muted-foreground">
-					この組織には利用可能な教室がありません。
+					この組織には利用可能な店舗がありません。
 				</p>
-			{:else if filteredClassrooms.length === 0}
-				<p class="px-1 py-3 text-xs text-muted-foreground">一致する教室がありません。</p>
+			{:else if filteredStores.length === 0}
+				<p class="px-1 py-3 text-xs text-muted-foreground">一致する店舗がありません。</p>
 			{:else}
 				<div class="max-h-44 space-y-1 overflow-y-auto pr-1">
-					{#each filteredClassrooms as classroom (classroom.id)}
+					{#each filteredStores as store (store.id)}
 						<button
 							type="button"
 							class={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
-								classroom.id === activeClassroom?.id
+								store.id === activeStore?.id
 									? 'border-primary/40 bg-primary/5'
 									: 'border-border/80 bg-card hover:bg-secondary'
 							}`}
-							onclick={() => void selectClassroom(classroom.slug)}
+							onclick={() => void selectStore(store.slug)}
 							disabled={busy}
-							aria-label={`${classroom.name}へ教室を切り替え`}
+							aria-label={`${store.name}へ店舗を切り替え`}
 						>
 							<div class="flex items-center justify-between gap-2">
 								<div class="min-w-0">
-									<p class="truncate text-sm font-medium text-foreground">{classroom.name}</p>
+									<p class="truncate text-sm font-medium text-foreground">{store.name}</p>
 									<p class="truncate text-xs text-muted-foreground">
-										URL識別子: <span translate="no">{classroom.slug}</span>
+										URL識別子: <span translate="no">{store.slug}</span>
 									</p>
 								</div>
-								{#if classroom.id === activeClassroom?.id}
+								{#if store.id === activeStore?.id}
 									<span class="flex shrink-0 items-center gap-1">
 										<Check class="size-3.5 text-primary" aria-hidden="true" />
 										<Badge variant="default">利用中</Badge>

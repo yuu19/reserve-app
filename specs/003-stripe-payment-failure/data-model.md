@@ -24,7 +24,7 @@ while webhook receipts, invoice/payment events, notifications, audit events, and
 
 **Validation rules**:
 
-- Billing remains organization-scoped; no classroom-scoped subscription ownership.
+- Billing remains organization-scoped; no store-scoped subscription ownership.
 - `past_due_grace_ends_at` is meaningful only for `past_due`.
 - `unpaid` and `incomplete` stop Premium immediately.
 - `past_due` allows Premium only while `past_due_grace_ends_at` is in the future.

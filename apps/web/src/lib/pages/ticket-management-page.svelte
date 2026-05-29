@@ -40,7 +40,7 @@
 	let busy = $state(false);
 	let activeOrganizationId = $state<string | null>(null);
 	let canManageParticipants = $state(false);
-	let canManageClassroom = $state(false);
+	let canManageStore = $state(false);
 	let billing = $state<OrganizationBillingPayload | null>(null);
 	let premiumRestriction = $state<OrganizationPremiumRestrictionPayload | null>(null);
 	let participants = $state<ParticipantPayload[]>([]);
@@ -295,7 +295,7 @@
 	const resetTicketManagementViewState = () => {
 		activeOrganizationId = null;
 		canManageParticipants = false;
-		canManageClassroom = false;
+		canManageStore = false;
 		billing = null;
 		premiumRestriction = null;
 		participants = [];
@@ -325,7 +325,7 @@
 			}
 			activeOrganizationId = data.organizationId;
 			canManageParticipants = data.canManageParticipants;
-			canManageClassroom = data.canManageClassroom;
+			canManageStore = data.canManageStore;
 			premiumRestriction = data.premiumRestriction ?? null;
 			if (data.premiumRestriction && data.organizationId) {
 				const billingResult = await loadOrganizationBilling(data.organizationId);
@@ -370,7 +370,7 @@
 
 	const submitUpdateTicketType = async (event: SubmitEvent, ticketTypeId: string) => {
 		event.preventDefault();
-		if (!activeOrganizationId || !canManageClassroom) return;
+		if (!activeOrganizationId || !canManageStore) return;
 
 		const form = ticketTypeEditForms[ticketTypeId];
 		if (!form) {
@@ -423,7 +423,7 @@
 	};
 
 	const submitDeactivateTicketType = async (ticketTypeId: string) => {
-		if (!activeOrganizationId || !canManageClassroom || busy) return;
+		if (!activeOrganizationId || !canManageStore || busy) return;
 		if (!confirm('この回数券種別を無効化しますか？ 発行済み回数券は残ります。')) {
 			return;
 		}
@@ -711,9 +711,9 @@
 						<p class="text-sm text-muted-foreground">
 							回数券管理は Premium 利用開始後に利用できます。
 						</p>
-					{:else if !canManageParticipants && !canManageClassroom}
+					{:else if !canManageParticipants && !canManageStore}
 						<p class="text-sm text-muted-foreground">
-							回数券管理には教室管理権限または参加者管理権限が必要です。
+							回数券管理には店舗管理権限または参加者管理権限が必要です。
 						</p>
 					{:else}
 						<section class="space-y-4">
@@ -793,7 +793,7 @@
 						<section class="space-y-2">
 							<div class="flex flex-wrap items-center justify-between gap-2">
 								<h3 class="text-sm font-semibold">回数券種別一覧</h3>
-								{#if canManageClassroom}
+								{#if canManageStore}
 									<Button type="button" size="sm" onclick={navigateToTicketTypeCreate}>
 										<Plus class="size-4" aria-hidden="true" />
 										追加する
@@ -830,7 +830,7 @@
 												</div>
 											</div>
 
-											{#if canManageClassroom && editForm}
+											{#if canManageStore && editForm}
 												<div class="grid gap-3 md:grid-cols-[1.4fr_0.7fr_0.7fr]">
 													<div class="space-y-2">
 														<Label for={`ticket-type-edit-name-${ticketType.id}`}>券種名</Label>

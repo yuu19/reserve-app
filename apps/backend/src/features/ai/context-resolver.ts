@@ -3,11 +3,11 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
   getSessionIdentity,
-  resolveOrganizationClassroomAccess,
-  resolveOrganizationClassroomContext,
+  resolveOrganizationStoreAccess,
+  resolveOrganizationStoreContext,
   resolveOrganizationId,
-  type OrganizationClassroomAccess,
-  type OrganizationClassroomContext,
+  type OrganizationStoreAccess,
+  type OrganizationStoreContext,
   type SessionIdentity,
 } from '../../domain/booking/authorization.js';
 import { canAccessInternalBillingInspection } from '../../domain/billing/internal-operator-access.js';
@@ -16,7 +16,7 @@ import { resolveAllowedVisibilities, type AiSourceVisibility } from './source-vi
 
 export type AiRequestContext = {
   identity: SessionIdentity;
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   runtimeContext: ChatRuntimeContext;
   allowedVisibilities: AiSourceVisibility[];
   internalOperator: boolean;
@@ -35,33 +35,28 @@ const getSessionEmailVerified = (session: unknown): boolean => {
   return (user as Record<string, unknown>).emailVerified === true;
 };
 
-const resolveContextByClassroomId = async ({
+const resolveContextByStoreId = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId: string;
-}): Promise<OrganizationClassroomContext | null> => {
+  storeId: string;
+}): Promise<OrganizationStoreContext | null> => {
   const rows = await database
     .select({
       organizationId: dbSchema.organization.id,
       organizationSlug: dbSchema.organization.slug,
       organizationName: dbSchema.organization.name,
-      classroomId: dbSchema.classroom.id,
-      classroomSlug: dbSchema.classroom.slug,
-      classroomName: dbSchema.classroom.name,
+      storeId: dbSchema.store.id,
+      storeSlug: dbSchema.store.slug,
+      storeName: dbSchema.store.name,
     })
-    .from(dbSchema.classroom)
-    .innerJoin(
-      dbSchema.organization,
-      eq(dbSchema.classroom.organizationId, dbSchema.organization.id),
-    )
-    .where(
-      and(eq(dbSchema.organization.id, organizationId), eq(dbSchema.classroom.id, classroomId)),
-    )
-    .orderBy(asc(dbSchema.classroom.createdAt))
+    .from(dbSchema.store)
+    .innerJoin(dbSchema.organization, eq(dbSchema.store.organizationId, dbSchema.organization.id))
+    .where(and(eq(dbSchema.organization.id, organizationId), eq(dbSchema.store.id, storeId)))
+    .orderBy(asc(dbSchema.store.createdAt))
     .limit(1);
 
   return rows[0] ?? null;
@@ -70,7 +65,7 @@ const resolveContextByClassroomId = async ({
 /**
  * AI リクエストのユーザー、スコープ、可視性予算、内部運用者フラグを解決する。
  *
- * クライアント指定の組織・教室 ID で所属レコード以上にアクセスが広がらないよう、
+ * クライアント指定の組織・店舗 ID で所属レコード以上にアクセスが広がらないよう、
  * チャットルートは検索・生成の前にこの関数を通す。
  */
 export const resolveAiRequestContext = async ({
@@ -79,7 +74,7 @@ export const resolveAiRequestContext = async ({
   env,
   headers,
   organizationId: requestedOrganizationId,
-  classroomId: requestedClassroomId,
+  storeId: requestedStoreId,
   currentPage,
 }: {
   auth: AuthInstance;
@@ -87,7 +82,7 @@ export const resolveAiRequestContext = async ({
   env: AuthRuntimeEnv;
   headers: Headers;
   organizationId?: string | null;
-  classroomId?: string | null;
+  storeId?: string | null;
   currentPage?: string | null;
 }): Promise<AiRequestContext | null> => {
   const [identity, rawSession] = await Promise.all([
@@ -107,13 +102,13 @@ export const resolveAiRequestContext = async ({
     return null;
   }
 
-  const context = requestedClassroomId
-    ? await resolveContextByClassroomId({
+  const context = requestedStoreId
+    ? await resolveContextByStoreId({
         database,
         organizationId,
-        classroomId: requestedClassroomId,
+        storeId: requestedStoreId,
       })
-    : await resolveOrganizationClassroomContext({
+    : await resolveOrganizationStoreContext({
         database,
         organizationId,
       });
@@ -122,7 +117,7 @@ export const resolveAiRequestContext = async ({
     return null;
   }
 
-  const access = await resolveOrganizationClassroomAccess({
+  const access = await resolveOrganizationStoreAccess({
     database,
     userId: identity.userId,
     context,
@@ -130,7 +125,7 @@ export const resolveAiRequestContext = async ({
 
   const hasAnyAccess =
     Boolean(access.facts.orgRole) ||
-    Boolean(access.facts.classroomStaffRole) ||
+    Boolean(access.facts.storeStaffRole) ||
     access.facts.hasParticipantRecord;
   if (!hasAnyAccess) {
     return null;
@@ -149,7 +144,7 @@ export const resolveAiRequestContext = async ({
       subjectType: 'organization',
       subjectId: access.organizationId,
       actorUserId: identity.userId,
-      classroomId: access.classroomId,
+      storeId: access.storeId,
       channel: 'web',
       locale: 'ja',
       currentPage: currentPage?.slice(0, 2048) ?? null,

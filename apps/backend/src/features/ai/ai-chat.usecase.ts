@@ -24,7 +24,7 @@ export const askAiChat = async ({
   const requestContext = await ctx.resolveRequestContext({
     headers,
     organizationId: body.organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
     currentPage: body.currentPage,
   });
 
@@ -49,7 +49,7 @@ export const askAiChat = async ({
   const conversationScope = {
     userId: requestContext.identity.userId,
     organizationId: requestContext.access.organizationId,
-    classroomId: requestContext.access.classroomId,
+    storeId: requestContext.access.storeId,
   };
   const conversation = await ctx.conversationStore.ensureConversation({
     conversationId: body.conversationId,

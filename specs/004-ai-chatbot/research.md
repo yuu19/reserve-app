@@ -4,7 +4,7 @@
 
 **Rationale**: `docs/ai-chat-proposal.md` matches the current reserve-app architecture: backend already runs on
 Cloudflare Workers + Hono + Better Auth + D1, and web already calls backend through the existing client layer. Keeping
-RAG in `apps/backend` preserves session handling, organization/classroom scope resolution, Sentry context, deployment
+RAG in `apps/backend` preserves session handling, organization/store scope resolution, Sentry context, deployment
 order, and D1 access without adding a new service boundary.
 
 **Alternatives considered**:
@@ -52,8 +52,8 @@ authorization-aware post-filtering before prompt construction.
 ## Decision: Enforce source visibility in both Vectorize metadata filtering and backend post-filtering
 
 **Rationale**: Vectorize metadata filtering narrows the candidate set before topK, but backend must still treat D1 as
-the source of truth because source visibility, internal specs, organization/classroom scope, and deleted/stale documents
-can change. The retriever therefore applies allowed visibility, organization/classroom scope, internal-only, and
+the source of truth because source visibility, internal specs, organization/store scope, and deleted/stale documents
+can change. The retriever therefore applies allowed visibility, organization/store scope, internal-only, and
 freshness checks after loading chunks from D1.
 
 **Alternatives considered**:
@@ -71,7 +71,7 @@ queries and capability checks, not copied wholesale into prompts.
 **Alternatives considered**:
 
 - Precomputed DB summaries only: rejected because they can be stale for billing/ticket/booking diagnostics.
-- Docs/FAQ only: rejected because many reserve-app support questions depend on current organization/classroom state.
+- Docs/FAQ only: rejected because many reserve-app support questions depend on current organization/store state.
 
 ## Decision: Add D1 usage counters in addition to AI Gateway observability
 

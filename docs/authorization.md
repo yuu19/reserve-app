@@ -1,14 +1,14 @@
-# 権限設計（全体Org + 複数Classroom）
+# 権限設計（全体Org + 複数Store）
 
 最終更新: 2026-03-10
 
 ## 1. 目的
 
-`organization = 全体Org`、`classroom = 教室` の2階層で認可する。
+`organization = 全体Org`、`store = 店舗` の2階層で認可する。
 
 - Org 層: 組織全体の管理責務
-- Classroom 層: 教室単位の運用責務
-- Participant: 教室ロールではなく、参加者レコードの有無で扱う
+- Store 層: 店舗単位の運用責務
+- Participant: 店舗ロールではなく、参加者レコードの有無で扱う
 
 ## 2. 事実モデル
 
@@ -18,7 +18,7 @@
 - `admin`
 - `member`
 
-### ClassroomStaffRole
+### StoreStaffRole
 
 - `manager`
 - `staff`
@@ -26,8 +26,8 @@
 ### Participant fact
 
 - `hasParticipantRecord: boolean`
-- participant は `classroom_member.role` には入れない
-- participant-only user は `orgRole = null | member` かつ `classroomStaffRole = null` になりうる
+- participant は `store_member.role` には入れない
+- participant-only user は `orgRole = null | member` かつ `storeStaffRole = null` になりうる
 
 ## 3. 認可の4層
 
@@ -38,7 +38,7 @@
 入力事実。権限の根拠そのもの。
 
 - `facts.orgRole: owner | admin | member | null`
-- `facts.classroomStaffRole: manager | staff | null`
+- `facts.storeStaffRole: manager | staff | null`
 - `facts.hasParticipantRecord: boolean`
 
 ### effective
@@ -46,7 +46,7 @@
 実際に判定へ使う capability。
 
 - `effective.canManageOrganization`
-- `effective.canManageClassroom`
+- `effective.canManageStore`
 - `effective.canManageBookings`
 - `effective.canManageParticipants`
 - `effective.canUseParticipantBooking`
@@ -56,9 +56,9 @@
 各 capability がどこから導出されたか。
 
 - `sources.canManageOrganization: org_role | null`
-- `sources.canManageClassroom: org_role | classroom_member | null`
-- `sources.canManageBookings: org_role | classroom_member | null`
-- `sources.canManageParticipants: org_role | classroom_member | null`
+- `sources.canManageStore: org_role | store_member | null`
+- `sources.canManageBookings: org_role | store_member | null`
+- `sources.canManageParticipants: org_role | store_member | null`
 - `sources.canUseParticipantBooking: participant_record | null`
 
 ### display
@@ -75,37 +75,37 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 
 ### 4-1. OrgRole 由来
 
-| OrgRole | Org全体管理 | 全教室の設定/招待 | 予約運用 | 参加者管理 | participant導線 |
-| --- | --- | --- | --- | --- | --- |
-| `owner` | 可 | 可 | 可 | 可 | 参加者レコードがある教室のみ可 |
-| `admin` | 可 | 可 | 可 | 可 | 参加者レコードがある教室のみ可 |
-| `member` | 不可 | 不可 | 不可 | 不可 | 不可 |
+| OrgRole  | Org全体管理 | 全店舗の設定/招待 | 予約運用 | 参加者管理 | participant導線                |
+| -------- | ----------- | ----------------- | -------- | ---------- | ------------------------------ |
+| `owner`  | 可          | 可                | 可       | 可         | 参加者レコードがある店舗のみ可 |
+| `admin`  | 可          | 可                | 可       | 可         | 参加者レコードがある店舗のみ可 |
+| `member` | 不可        | 不可              | 不可     | 不可       | 不可                           |
 
 補足:
 
-- `owner` / `admin` は classroom member がなくても全教室で管理権限を持つ。
+- `owner` / `admin` は store member がなくても全店舗で管理権限を持つ。
 - ただし `display.primaryRole` が `manager` に偽装されることはない。根拠は `sources.* = org_role` で追う。
 
-### 4-2. ClassroomStaffRole 由来
+### 4-2. StoreStaffRole 由来
 
-前提: OrgRole は `member` または `null` で、教室スタッフ権限だけが効いているケース。
+前提: OrgRole は `member` または `null` で、店舗スタッフ権限だけが効いているケース。
 
-| ClassroomStaffRole | 対象教室の設定/招待 | 予約運用 | 参加者管理 | participant導線 |
-| --- | --- | --- | --- | --- |
-| `manager` | 可 | 可 | 可 | 不可 |
-| `staff` | 不可 | 可 | 可 | 不可 |
+| StoreStaffRole | 対象店舗の設定/招待 | 予約運用 | 参加者管理 | participant導線 |
+| -------------- | ------------------- | -------- | ---------- | --------------- |
+| `manager`      | 可                  | 可       | 可         | 不可            |
+| `staff`        | 不可                | 可       | 可         | 不可            |
 
 補足:
 
-- `manager` は教室単位の管理操作を実行できる。
+- `manager` は店舗単位の管理操作を実行できる。
 - `staff` は予約運用と参加者管理までで、サービス/枠/定期の管理はできない。
 
 ### 4-3. Participant record 由来
 
-| 条件 | participant導線 |
-| --- | --- |
-| `hasParticipantRecord = true` | 可 |
-| `hasParticipantRecord = false` | 不可 |
+| 条件                           | participant導線 |
+| ------------------------------ | --------------- |
+| `hasParticipantRecord = true`  | 可              |
+| `hasParticipantRecord = false` | 不可            |
 
 補足:
 
@@ -122,7 +122,7 @@ UI 表示専用の補助値。権限判定の正本には使わない。
   - `{ id, slug, name, logo? }`
 - `orgs[].facts`
   - `{ orgRole }`
-- `orgs[].classrooms[]`
+- `orgs[].stores[]`
   - `id`, `slug`, `name`, `logo?`
   - `facts`
   - `effective`
@@ -143,26 +143,26 @@ UI 表示専用の補助値。権限判定の正本には使わない。
       "facts": {
         "orgRole": "admin"
       },
-      "classrooms": [
+      "stores": [
         {
           "id": "cls_123",
           "slug": "tokyo-school",
-          "name": "Default Classroom",
+          "name": "Default Store",
           "facts": {
             "orgRole": "admin",
-            "classroomStaffRole": "staff",
+            "storeStaffRole": "staff",
             "hasParticipantRecord": true
           },
           "effective": {
             "canManageOrganization": true,
-            "canManageClassroom": true,
+            "canManageStore": true,
             "canManageBookings": true,
             "canManageParticipants": true,
             "canUseParticipantBooking": true
           },
           "sources": {
             "canManageOrganization": "org_role",
-            "canManageClassroom": "org_role",
+            "canManageStore": "org_role",
             "canManageBookings": "org_role",
             "canManageParticipants": "org_role",
             "canUseParticipantBooking": "participant_record"
@@ -184,10 +184,10 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 
 ### invitation
 
-- `subjectKind: org_operator | classroom_operator | participant`
+- `subjectKind: org_operator | store_operator | participant`
 - `role: admin | member | manager | staff | participant`
 - `organizationId`
-- `classroomId | null`
+- `storeId | null`
 - `email`
 - `principalKind: email | existing_user`
 - `participantName | null`
@@ -195,7 +195,7 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 - `respondedByUserId | null`
 - `respondedAt | null`
 - `acceptedMemberId | null`
-- `acceptedClassroomMemberId | null`
+- `acceptedStoreMemberId | null`
 - `acceptedParticipantId | null`
 - `invitedByUserId`
 - `expiresAt`, `createdAt`, `updatedAt`
@@ -205,7 +205,7 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 - `eventType: created | resent | accepted | rejected | cancelled | expired`
 - `invitationId`
 - `organizationId`
-- `classroomId | null`
+- `storeId | null`
 - `actorUserId`
 - `targetEmail`
 - `metadata`
@@ -216,9 +216,9 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 - `subjectKind = org_operator`
   - `role = admin | member`
   - `member` を upsert
-- `subjectKind = classroom_operator`
+- `subjectKind = store_operator`
   - `role = manager | staff`
-  - org member を最低 `member` として存在保証し、`classroom_member` を upsert
+  - org member を最低 `member` として存在保証し、`store_member` を upsert
   - `manager -> admin` のような org 権限昇格は行わない
 - `subjectKind = participant`
   - `participant` を upsert
@@ -231,12 +231,12 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 - `POST /api/v1/auth/orgs/{orgSlug}/invitations`
 - `GET /api/v1/auth/orgs/{orgSlug}/invitations`
 
-### Classroom 招待
+### Store 招待
 
-- `POST /api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations`
-- `GET /api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations`
+- `POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations`
+- `GET /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations`
 
-`role = participant` は participant 招待、`role = manager | staff` は classroom operator 招待として同じ endpoint を使う。
+`role = participant` は participant 招待、`role = manager | staff` は store operator 招待として同じ endpoint を使う。
 
 ### ユーザー操作
 
@@ -250,8 +250,8 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 
 - Org admin/owner
   - `/admin/dashboard` へ誘導
-  - Org/Classroom 切替 UI を表示
-- Classroom staff/manager
+  - Org/Store 切替 UI を表示
+- Store staff/manager
   - 管理導線を表示
 - participant-only
   - `/participant/home` へ誘導
@@ -260,6 +260,6 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 
 ## 9. 実装メモ
 
-- organization 作成時、既定 classroom を自動作成する。
-- `classroom_id` は予約ドメイン全テーブルで必須。
-- 旧 `activeClassroomRole` ベースの判定と旧 `/api/v1/auth/organizations/access` は廃止済み。
+- organization 作成時、既定 store を自動作成する。
+- `store_id` は予約ドメイン全テーブルで必須。
+- 旧 `activeStoreRole` ベースの判定と旧 `/api/v1/auth/organizations/access` は廃止済み。

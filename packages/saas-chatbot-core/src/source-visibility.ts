@@ -9,8 +9,8 @@ export type AiSourceScope = {
   internalOnly?: boolean | null;
   /** organization 固有参照元の organization ID。 */
   organizationId?: string | null;
-  /** classroom 固有参照元の classroom ID。 */
-  classroomId?: string | null;
+  /** store 固有参照元の store ID。 */
+  storeId?: string | null;
   /** 参照元の locale。 */
   locale?: string | null;
 };
@@ -25,7 +25,7 @@ export type AiGeneratedSourceReference = AiSourceReference & {
 export type CanReadSourceInput<TContext = unknown> = {
   /** 判定対象参照元の scope メタデータ。 */
   source: AiSourceScope;
-  /** user/organization/classroom などの実行時の文脈。 */
+  /** user/organization/store などの実行時の文脈。 */
   context: TContext;
   /** 呼び出し側で許可済みの公開範囲一覧。 */
   allowedVisibilities?: AiSourceVisibility[];
@@ -39,7 +39,7 @@ export type CanReadSourceInput<TContext = unknown> = {
 export type SanitizeSourceReferenceInput<TContext = unknown> = {
   /** 整形対象の参照元情報。 */
   source: AiGeneratedSourceReference;
-  /** user/organization/classroom などの実行時の文脈。 */
+  /** user/organization/store などの実行時の文脈。 */
   context: TContext;
   /** 内部向け参照元を表示できる operator かどうか。 */
   internalOperator?: boolean;

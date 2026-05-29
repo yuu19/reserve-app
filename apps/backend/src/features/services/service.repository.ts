@@ -9,7 +9,7 @@ export const insertService = async ({
   database,
   createdId,
   organizationId,
-  classroomId,
+  storeId,
   name,
   description,
   kind,
@@ -27,7 +27,7 @@ export const insertService = async ({
   database: AuthRuntimeDatabase;
   createdId: string;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   name: string;
   description: string | null;
   kind: string;
@@ -45,7 +45,7 @@ export const insertService = async ({
   await database.insert(dbSchema.service).values({
     id: createdId,
     organizationId,
-    classroomId,
+    storeId,
     name,
     description,
     kind,
@@ -75,22 +75,22 @@ export const getServiceById = async (database: AuthRuntimeDatabase, serviceId: s
 };
 
 /**
- * organization/classroom scope の service を、必要に応じて archived も含めて一覧します。
+ * organization/store scope の service を、必要に応じて archived も含めて一覧します。
  */
 export const listServices = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   includeArchived,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   includeArchived?: boolean;
 }) => {
   const filters = [eq(dbSchema.service.organizationId, organizationId)];
-  if (classroomId) {
-    filters.push(eq(dbSchema.service.classroomId, classroomId));
+  if (storeId) {
+    filters.push(eq(dbSchema.service.storeId, storeId));
   }
   if (!includeArchived) {
     filters.push(eq(dbSchema.service.isActive, true));
@@ -111,7 +111,7 @@ export const findServiceForUpdate = async (database: AuthRuntimeDatabase, servic
     .select({
       id: dbSchema.service.id,
       organizationId: dbSchema.service.organizationId,
-      classroomId: dbSchema.service.classroomId,
+      storeId: dbSchema.service.storeId,
       bookingPolicy: dbSchema.service.bookingPolicy,
       requiresTicket: dbSchema.service.requiresTicket,
     })
@@ -122,14 +122,14 @@ export const findServiceForUpdate = async (database: AuthRuntimeDatabase, servic
 };
 
 /**
- * service の archive 可否判定に必要な organization/classroom scope を取得します。
+ * service の archive 可否判定に必要な organization/store scope を取得します。
  */
 export const findServiceScope = async (database: AuthRuntimeDatabase, serviceId: string) => {
   const serviceRows = await database
     .select({
       id: dbSchema.service.id,
       organizationId: dbSchema.service.organizationId,
-      classroomId: dbSchema.service.classroomId,
+      storeId: dbSchema.service.storeId,
     })
     .from(dbSchema.service)
     .where(eq(dbSchema.service.id, serviceId))

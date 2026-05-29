@@ -1,31 +1,31 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 import type { AiRequestContext } from './context-resolver.js';
 import type { AiRouteContext } from './ai-route-context.js';
 import { submitAiMessageFeedback } from './ai-feedback.usecase.js';
 
-const access: OrganizationClassroomAccess = {
+const access: OrganizationStoreAccess = {
   organizationId: 'org-a',
   organizationSlug: 'org-a',
   organizationName: 'Org A',
-  classroomId: 'class-a',
-  classroomSlug: 'class-a',
-  classroomName: 'Class A',
+  storeId: 'class-a',
+  storeSlug: 'class-a',
+  storeName: 'Class A',
   facts: {
     orgRole: null,
-    classroomStaffRole: null,
+    storeStaffRole: null,
     hasParticipantRecord: true,
   },
   effective: {
     canManageOrganization: false,
-    canManageClassroom: false,
+    canManageStore: false,
     canManageBookings: false,
     canManageParticipants: false,
     canUseParticipantBooking: true,
   },
   sources: {
     canManageOrganization: null,
-    canManageClassroom: null,
+    canManageStore: null,
     canManageBookings: null,
     canManageParticipants: null,
     canUseParticipantBooking: 'participant_record',
@@ -47,7 +47,7 @@ const requestContext: AiRequestContext = {
     subjectType: 'organization',
     subjectId: 'org-a',
     actorUserId: 'user-a',
-    classroomId: 'class-a',
+    storeId: 'class-a',
     channel: 'web',
     locale: 'ja',
     currentPage: null,

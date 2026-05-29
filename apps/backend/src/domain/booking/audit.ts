@@ -20,7 +20,7 @@ export const writeBookingAuditLog = async ({
   database,
   bookingId,
   organizationId,
-  classroomId,
+  storeId,
   actorUserId,
   action,
   metadata,
@@ -29,7 +29,7 @@ export const writeBookingAuditLog = async ({
   database: AuthRuntimeDatabase;
   bookingId: string;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   actorUserId: string;
   action: string;
   metadata?: Record<string, unknown>;
@@ -39,7 +39,7 @@ export const writeBookingAuditLog = async ({
     id: crypto.randomUUID(),
     bookingId,
     organizationId,
-    classroomId: classroomId ?? organizationId,
+    storeId: storeId ?? organizationId,
     actorUserId,
     action,
     metadata: metadata ? JSON.stringify(metadata) : null,

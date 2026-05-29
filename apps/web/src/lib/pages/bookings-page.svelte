@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
@@ -114,6 +115,7 @@
 	const isAdminRecurringPage = $derived(bookingPageMode === 'admin-recurring');
 	const isAdminRecurringCreatePage = $derived(bookingPageMode === 'admin-recurring-new');
 	const isAdminPage = $derived(!isParticipantPage);
+	const requestedTicketTypeId = $derived(page.url.searchParams.get('ticketTypeId')?.trim() ?? '');
 
 	let services = $state<ServicePayload[]>([]);
 	let slots = $state<SlotPayload[]>([]);
@@ -260,6 +262,7 @@
 		paymentMethod: 'cash_on_site' as 'stripe' | 'cash_on_site' | 'bank_transfer'
 	});
 	let ticketPurchaseAction = $state<{ kind: 'create' | 'cancel'; id: string } | null>(null);
+	let initialTicketTypeIdResolved = $state(false);
 	let slotSearchForm = $state({ serviceId: '', fromDate: '', toDate: '' });
 	let visibleMonth = $state(new Date());
 	const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
@@ -1216,6 +1219,15 @@
 				canUseParticipantBooking = !bookingData.participantAccessDenied;
 				canViewParticipantCalendar =
 					canUseParticipantBooking || (canManage && bookingData.participantAccessDenied);
+				if (!initialTicketTypeIdResolved) {
+					initialTicketTypeIdResolved = true;
+					if (
+						requestedTicketTypeId &&
+						purchasableTicketTypes.some((ticketType) => ticketType.id === requestedTicketTypeId)
+					) {
+						ticketPurchaseForm.ticketTypeId = requestedTicketTypeId;
+					}
+				}
 				if (
 					ticketPurchaseForm.ticketTypeId &&
 					!purchasableTicketTypes.some(

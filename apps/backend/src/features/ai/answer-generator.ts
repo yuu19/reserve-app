@@ -5,7 +5,7 @@ import type {
   PromptBuilder,
   RetrievedKnowledgeContext,
 } from '@repo/saas-chatbot-core';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 import type { AiSuggestedAction } from '@repo/saas-chatbot-core';
 import { createWorkersAiAnswerModelProvider, type AiAnswerEnv } from './answer-provider.js';
 import { reserveAppPromptBuilder } from './prompt.js';
@@ -157,7 +157,7 @@ const defaultSuggestedActions = ({
   access,
   needsHumanSupport,
 }: {
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   needsHumanSupport: boolean;
 }): AiSuggestedAction[] => {
   if (needsHumanSupport) {
@@ -197,14 +197,14 @@ export const generateAnswer = async ({
 }: {
   env: AiAnswerEnv;
   userId: string;
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   currentPage?: string | null;
   message: string;
   retrievedContexts: RetrievedKnowledgeContext[];
   businessFacts: BusinessFactSummary | null;
   retrievalErrorSummary?: string | null;
   answerProvider?: AnswerGenerationProvider;
-  promptBuilder?: PromptBuilder<OrganizationClassroomAccess>;
+  promptBuilder?: PromptBuilder<OrganizationStoreAccess>;
 }): Promise<GeneratedAiAnswer> => {
   const sources = buildAnswerSources({ retrievedContexts, businessFacts });
   const hasGrounding = retrievedContexts.length > 0 || Boolean(businessFacts?.factKeys.length);
@@ -277,7 +277,7 @@ export const generateAnswer = async ({
       ],
       skipCache: prompt.skipCache,
       cacheTtl: prompt.cacheTtl,
-      // 組織・教室のメタデータは AI Gateway の観測用に限定し、
+      // 組織・店舗のメタデータは AI Gateway の観測用に限定し、
       // プロンプト側にはアクセスフィルター済みの業務コンテキストだけを渡す。
       metadata: prompt.metadata,
     });

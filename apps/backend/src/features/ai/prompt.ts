@@ -3,7 +3,7 @@ import type {
   PromptBuilder,
   RetrievedKnowledgeContext,
 } from '@repo/saas-chatbot-core';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 
 export type { BusinessFactSummary, RetrievedKnowledgeContext } from '@repo/saas-chatbot-core';
 
@@ -33,13 +33,13 @@ export const formatUserContextForPrompt = ({
   currentPage,
 }: {
   userId: string;
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   currentPage?: string | null;
 }): string =>
   [
     `- userId: ${userId}`,
     `- organizationId: ${access.organizationId}`,
-    `- classroomId: ${access.classroomId}`,
+    `- storeId: ${access.storeId}`,
     `- role: ${access.display.primaryRole ?? 'authenticated'}`,
     `- currentPageHint: ${currentPage ?? 'none'}`,
     `- canManageBookings: ${access.effective.canManageBookings}`,
@@ -87,7 +87,7 @@ export const buildAnswerPrompt = ({
   message,
 }: {
   userId: string;
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   currentPage?: string | null;
   retrievedContexts: RetrievedKnowledgeContext[];
   businessFacts: BusinessFactSummary | null;
@@ -124,7 +124,7 @@ export const shouldSkipAiGatewayCache = (
   );
 };
 
-export const reserveAppPromptBuilder: PromptBuilder<OrganizationClassroomAccess> = {
+export const reserveAppPromptBuilder: PromptBuilder<OrganizationStoreAccess> = {
   build({ userId, context: access, currentPage, retrievedContexts, businessFacts, message }) {
     const skipCache = shouldSkipAiGatewayCache(message, businessFacts);
     return {
@@ -141,7 +141,7 @@ export const reserveAppPromptBuilder: PromptBuilder<OrganizationClassroomAccess>
       cacheTtl: skipCache ? undefined : 60,
       metadata: {
         organizationId: access.organizationId,
-        classroomId: access.classroomId,
+        storeId: access.storeId,
       },
     };
   },

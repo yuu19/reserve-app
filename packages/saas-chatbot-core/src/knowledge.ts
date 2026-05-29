@@ -78,8 +78,8 @@ export type KnowledgeSource = {
   internalOnly?: boolean;
   /** organization 固有参照元の organization ID。 */
   organizationId?: string | null;
-  /** classroom 固有参照元の classroom ID。 */
-  classroomId?: string | null;
+  /** store 固有参照元の store ID。 */
+  storeId?: string | null;
   /** 機能単位で参照元を絞るための feature key。 */
   feature?: string | null;
   /** 参照元の検索・運用分類に使う tag。 */
@@ -115,8 +115,8 @@ export type KnowledgeChunk = {
   internalOnly: boolean;
   /** organization 固有 chunk の organization ID。 */
   organizationId?: string | null;
-  /** classroom 固有 chunk の classroom ID。 */
-  classroomId?: string | null;
+  /** store 固有 chunk の store ID。 */
+  storeId?: string | null;
   /** 機能単位で chunk を絞るための feature key。 */
   feature?: string | null;
   /** chunk の検索・運用分類に使う tag。 */

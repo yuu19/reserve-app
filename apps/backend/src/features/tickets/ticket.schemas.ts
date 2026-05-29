@@ -19,11 +19,11 @@ const hasSpecificServiceScopeWithoutServices = (value: {
 }) => value.serviceScope === 'specific' && (!value.serviceIds || value.serviceIds.length === 0);
 
 /**
- * organization と任意の classroom scope を受け取る共通 query を検証します。
+ * organization と任意の store scope を受け取る共通 query を検証します。
  */
 export const orgQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 /**
@@ -32,7 +32,7 @@ export const orgQuerySchema = z.object({
 export const ticketTypeCreateBodySchema = z
   .object({
     organizationId: z.string().min(1).optional(),
-    classroomId: z.string().min(1).optional(),
+    storeId: z.string().min(1).optional(),
     name: z.string().trim().min(1).max(120),
     serviceScope: ticketServiceScopeSchema.optional(),
     serviceIds: ticketServiceIdsSchema.optional(),
@@ -53,7 +53,7 @@ export const ticketTypeCreateBodySchema = z
 export const ticketTypeUpdateBodySchema = z
   .object({
     organizationId: z.string().min(1).optional(),
-    classroomId: z.string().min(1).optional(),
+    storeId: z.string().min(1).optional(),
     ticketTypeId: z.string().min(1),
     name: z.string().trim().min(1).max(120).optional(),
     serviceScope: ticketServiceScopeSchema.optional(),
@@ -84,7 +84,7 @@ export const ticketTypeUpdateBodySchema = z
  */
 export const ticketTypeListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   isActive: boolStringSchema,
 });
 
@@ -93,7 +93,7 @@ export const ticketTypeListQuerySchema = z.object({
  */
 export const ticketPackGrantBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   participantId: z.string().min(1),
   ticketTypeId: z.string().min(1),
   count: z.int().min(1).max(1000).optional(),
@@ -105,7 +105,7 @@ export const ticketPackGrantBodySchema = z.object({
  */
 export const ticketPackMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 /**
@@ -113,7 +113,7 @@ export const ticketPackMineQuerySchema = z.object({
  */
 export const ticketPackListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   participantId: z.string().min(1),
 });
 
@@ -123,7 +123,7 @@ export const ticketPackListQuerySchema = z.object({
 export const ticketPackAdjustBodySchema = z
   .object({
     ticketPackId: z.string().min(1),
-    classroomId: z.string().min(1).optional(),
+    storeId: z.string().min(1).optional(),
     remainingCount: z.int().min(0).max(1000).optional(),
     expiresAt: isoDateTimeSchema.nullable().optional(),
     reason: z.string().trim().min(1).max(500),
@@ -152,7 +152,7 @@ const ticketPurchaseStatusSchema = z.enum([
  */
 export const ticketPurchaseCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   ticketTypeId: z.string().min(1),
   paymentMethod: ticketPurchaseMethodSchema,
 });
@@ -162,7 +162,7 @@ export const ticketPurchaseCreateBodySchema = z.object({
  */
 export const ticketPurchaseMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   status: ticketPurchaseStatusSchema.optional(),
 });
 
@@ -171,7 +171,7 @@ export const ticketPurchaseMineQuerySchema = z.object({
  */
 export const ticketPurchaseListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   participantId: z.string().min(1).optional(),
   paymentMethod: ticketPurchaseMethodSchema.optional(),
   status: ticketPurchaseStatusSchema.optional(),
@@ -182,7 +182,7 @@ export const ticketPurchaseListQuerySchema = z.object({
  */
 export const ticketPurchaseApproveBodySchema = z.object({
   purchaseId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 /**
@@ -190,7 +190,7 @@ export const ticketPurchaseApproveBodySchema = z.object({
  */
 export const ticketPurchaseRejectBodySchema = z.object({
   purchaseId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
@@ -199,11 +199,11 @@ export const ticketPurchaseRejectBodySchema = z.object({
  */
 export const ticketPurchaseCancelBodySchema = z.object({
   purchaseId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 /**
- * organization/classroom scope を受け取る参加者向け query 型です。
+ * organization/store scope を受け取る参加者向け query 型です。
  */
 export type OrgQuery = z.infer<typeof orgQuerySchema>;
 /**

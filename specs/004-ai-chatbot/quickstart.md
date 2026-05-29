@@ -51,10 +51,10 @@ Keep existing bindings:
    - Add `ai_knowledge_document`, `ai_knowledge_chunk`, `ai_knowledge_index_run`, `ai_conversation`, `ai_message`,
      `ai_usage_event`, `ai_feedback`, and `ai_usage_counter`.
    - Store chat threads with reusable `subject_type = organization` / `subject_id = organizationId` scope plus the
-     ReserveApp-specific `classroom_id`.
+     ReserveApp-specific `store_id`.
    - Store provider/model/token/latency/status/error metadata on assistant messages and append one `ai_usage_event` per
      assistant answer. Token usage remains nullable when Workers AI omits it.
-   - Keep existing auth, organization, classroom, booking, ticket, invitation, and billing rows untouched.
+   - Keep existing auth, organization, store, booking, ticket, invitation, and billing rows untouched.
 
 2. Add Cloudflare AI/Vectorize bindings and env types.
    - Update `apps/backend/wrangler.jsonc`.
@@ -64,7 +64,7 @@ Keep existing bindings:
 3. Build backend AI domain modules.
    - `packages/saas-chatbot-core`: shared UI, conversation, provider, prompt, knowledge, and rate-limit contracts.
    - `apps/backend/src/features/ai/source-visibility.ts`: role/scope visibility decisions, internal specs rule, owner-only billing guard.
-   - `apps/backend/src/features/ai/context-resolver.ts`: session, active organization, classroom, role, and effective capability resolution.
+   - `apps/backend/src/features/ai/context-resolver.ts`: session, active organization, store, role, and effective capability resolution.
    - `apps/backend/src/features/ai/rate-limit.ts`: 20 user messages/hour and 200 organization messages/day counters.
    - `apps/backend/src/infra/ai/cloudflare-ai-embedding-provider.ts`: Workers AI embedding call through Gateway options and provider shape parser.
    - `apps/backend/src/features/ai/retriever.ts`: Vectorize query with metadata filter, D1 chunk fetch, D1 post-filter, rerank/trim.
@@ -93,7 +93,7 @@ Keep existing bindings:
    - Mount widget in `apps/web/src/routes/+layout.svelte` for authenticated web users.
    - Keep `AiChatUiStatus = closed | ready | sending | error`.
    - Convert backend errors into `AiChatClientErrorPayload.kind = api | network | parse`.
-   - Reset conversation-scoped state when organization/classroom scope changes and ignore stale in-flight responses.
+   - Reset conversation-scoped state when organization/store scope changes and ignore stale in-flight responses.
 
 7. Add scheduled retention cleanup.
    - Extend `apps/backend/src/worker.ts` scheduled maintenance to delete or anonymize message content after 180 days.
@@ -225,7 +225,7 @@ Then verify:
 - Empty and >4,000 character messages are rejected.
 - User hourly limit blocks after 20 accepted messages and does not increment blocked attempts.
 - Organization daily limit blocks after 200 accepted messages and shows retry guidance.
-- Conversation continuation is rejected across organization/classroom scope.
+- Conversation continuation is rejected across organization/store scope.
 - Conversation rows store `actor_user_id`, `subject_type`, `subject_id`, `channel`, `status`, and `last_message_at`.
 - Assistant messages store provider/model/token/latency/status/error observability metadata.
 - Assistant answer generation inserts an append-only `ai_usage_event`, including retrieval-failure fallbacks.

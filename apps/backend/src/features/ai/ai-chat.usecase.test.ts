@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 import type { AiRequestContext } from './context-resolver.js';
 import type { BusinessFactSummary, RetrievedKnowledgeContext } from './prompt.js';
 import type { GeneratedAiAnswer } from './answer-generator.js';
@@ -7,28 +7,28 @@ import type { AiRouteContext } from './ai-route-context.js';
 import { askAiChat } from './ai-chat.usecase.js';
 import type { RetrievedKnowledgeChunk } from './retriever.js';
 
-const buildAccess = (): OrganizationClassroomAccess => ({
+const buildAccess = (): OrganizationStoreAccess => ({
   organizationId: 'org-a',
   organizationSlug: 'org-a',
   organizationName: 'Org A',
-  classroomId: 'class-a',
-  classroomSlug: 'class-a',
-  classroomName: 'Class A',
+  storeId: 'class-a',
+  storeSlug: 'class-a',
+  storeName: 'Class A',
   facts: {
     orgRole: 'owner',
-    classroomStaffRole: null,
+    storeStaffRole: null,
     hasParticipantRecord: false,
   },
   effective: {
     canManageOrganization: true,
-    canManageClassroom: true,
+    canManageStore: true,
     canManageBookings: true,
     canManageParticipants: true,
     canUseParticipantBooking: false,
   },
   sources: {
     canManageOrganization: 'org_role',
-    canManageClassroom: 'org_role',
+    canManageStore: 'org_role',
     canManageBookings: 'org_role',
     canManageParticipants: 'org_role',
     canUseParticipantBooking: null,
@@ -51,7 +51,7 @@ const requestContext: AiRequestContext = {
     subjectType: 'organization',
     subjectId: 'org-a',
     actorUserId: 'user-a',
-    classroomId: 'class-a',
+    storeId: 'class-a',
     channel: 'web',
     locale: 'ja',
     currentPage: '/admin/bookings',
@@ -63,7 +63,7 @@ const requestContext: AiRequestContext = {
 
 const businessFacts: BusinessFactSummary = {
   factKeys: ['service_count'],
-  lines: ['対象classroomのサービス数: 2'],
+  lines: ['対象storeのサービス数: 2'],
   sensitive: false,
 };
 
@@ -284,7 +284,7 @@ describe('askAiChat', () => {
         scope: {
           userId: 'user-a',
           organizationId: 'org-a',
-          classroomId: 'class-a',
+          storeId: 'class-a',
         },
         conversationId: 'conversation-a',
         messageId: 'assistant-message-a',
@@ -361,7 +361,7 @@ describe('askAiChat', () => {
       body: {
         message: '予約枠を作るには？',
         organizationId: 'org-a',
-        classroomId: 'class-a',
+        storeId: 'class-a',
         currentPage: '/admin/bookings',
       },
       headers: new Headers(),
@@ -404,7 +404,7 @@ describe('askAiChat', () => {
         scope: {
           userId: 'user-a',
           organizationId: 'org-a',
-          classroomId: 'class-a',
+          storeId: 'class-a',
         },
         messageId: 'assistant-message-a',
         generationStatus: 'generated',

@@ -7,8 +7,8 @@ import {
   hasAdminOrOwnerAccess,
   readOrganizationEntitlementGate,
   readOrganizationPremiumFeatureGate,
-  resolveOrganizationClassroomAccess,
-  resolveOrganizationClassroomContext,
+  resolveOrganizationStoreAccess,
+  resolveOrganizationStoreContext,
   type SessionIdentity,
 } from '../../domain/booking/authorization.js';
 import * as dbSchema from '../../infra/db/schema.js';
@@ -40,57 +40,55 @@ export type BookingRouteDeps = {
  */
 export type BookingRouteContext = BookingRouteDeps & {
   requireIdentity: (headers: Headers) => Promise<SessionIdentity | null>;
-  resolveRequestedClassroomContext: (input: {
+  resolveRequestedStoreContext: (input: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
   }) => Promise<{
     organizationId: string;
     organizationSlug: string;
     organizationName: string;
-    classroomId: string;
-    classroomSlug: string;
-    classroomName: string;
+    storeId: string;
+    storeSlug: string;
+    storeName: string;
   } | null>;
-  resolveRequestedClassroomAccess: (input: {
+  resolveRequestedStoreAccess: (input: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     userId: string;
   }) => Promise<{
-    context: NonNullable<
-      Awaited<ReturnType<BookingRouteContext['resolveRequestedClassroomContext']>>
-    >;
-    access: Awaited<ReturnType<typeof resolveOrganizationClassroomAccess>>;
+    context: NonNullable<Awaited<ReturnType<BookingRouteContext['resolveRequestedStoreContext']>>>;
+    access: Awaited<ReturnType<typeof resolveOrganizationStoreAccess>>;
   } | null>;
-  canManageClassroomScope: (input: {
+  canManageStoreScope: (input: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     userId: string;
   }) => Promise<boolean>;
   canManageBookingsScope: (input: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     userId: string;
   }) => Promise<boolean>;
   canManageParticipantsScope: (input: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     userId: string;
   }) => Promise<boolean>;
   canReadServicesScope: (input: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     userId: string;
   }) => Promise<boolean>;
   canReadTicketTypesScope: (input: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     userId: string;
   }) => Promise<boolean>;
   listParticipantRecordsForUser: (input: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     userId: string;
-  }) => Promise<Array<{ id: string; classroomId: string }>>;
+  }) => Promise<Array<{ id: string; storeId: string }>>;
   requireOrganizationPremiumFeature: (
     organizationId: string,
   ) => ReturnType<typeof readOrganizationPremiumFeatureGate>;
@@ -104,7 +102,7 @@ export type BookingRouteContext = BookingRouteDeps & {
  * Hono route と usecase の間で共有する予約系コンテキストを生成します。
  *
  * @remarks
- * organization 全体の操作は owner/admin 権限、classroom 指定の操作は教室ごとの有効権限で判定します。
+ * organization 全体の操作は owner/admin 権限、store 指定の操作は店舗ごとの有効権限で判定します。
  */
 export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteContext => {
   const { auth, database, env } = deps;
@@ -113,67 +111,64 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
     return getSessionIdentity(auth, headers);
   };
 
-  const resolveRequestedClassroomContext: BookingRouteContext['resolveRequestedClassroomContext'] =
-    async ({ organizationId, classroomId }) => {
-      if (!classroomId) {
-        return resolveOrganizationClassroomContext({
-          database,
-          organizationId,
-        });
-      }
-
-      const rows = await database
-        .select({
-          organizationId: dbSchema.organization.id,
-          organizationSlug: dbSchema.organization.slug,
-          organizationName: dbSchema.organization.name,
-          classroomId: dbSchema.classroom.id,
-          classroomSlug: dbSchema.classroom.slug,
-          classroomName: dbSchema.classroom.name,
-        })
-        .from(dbSchema.classroom)
-        .innerJoin(
-          dbSchema.organization,
-          eq(dbSchema.organization.id, dbSchema.classroom.organizationId),
-        )
-        .where(
-          and(
-            eq(dbSchema.classroom.organizationId, organizationId),
-            eq(dbSchema.classroom.id, classroomId),
-          ),
-        )
-        .limit(1);
-
-      return rows[0] ?? null;
-    };
-
-  const resolveRequestedClassroomAccess: BookingRouteContext['resolveRequestedClassroomAccess'] =
-    async ({ organizationId, classroomId, userId }) => {
-      const context = await resolveRequestedClassroomContext({
-        organizationId,
-        classroomId,
-      });
-      if (!context) {
-        return null;
-      }
-
-      const access = await resolveOrganizationClassroomAccess({
-        database,
-        userId,
-        context,
-      });
-      return {
-        context,
-        access,
-      };
-    };
-
-  const canManageClassroomScope: BookingRouteContext['canManageClassroomScope'] = async ({
+  const resolveRequestedStoreContext: BookingRouteContext['resolveRequestedStoreContext'] = async ({
     organizationId,
-    classroomId,
+    storeId,
+  }) => {
+    if (!storeId) {
+      return resolveOrganizationStoreContext({
+        database,
+        organizationId,
+      });
+    }
+
+    const rows = await database
+      .select({
+        organizationId: dbSchema.organization.id,
+        organizationSlug: dbSchema.organization.slug,
+        organizationName: dbSchema.organization.name,
+        storeId: dbSchema.store.id,
+        storeSlug: dbSchema.store.slug,
+        storeName: dbSchema.store.name,
+      })
+      .from(dbSchema.store)
+      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.store.organizationId))
+      .where(and(eq(dbSchema.store.organizationId, organizationId), eq(dbSchema.store.id, storeId)))
+      .limit(1);
+
+    return rows[0] ?? null;
+  };
+
+  const resolveRequestedStoreAccess: BookingRouteContext['resolveRequestedStoreAccess'] = async ({
+    organizationId,
+    storeId,
     userId,
   }) => {
-    if (!classroomId) {
+    const context = await resolveRequestedStoreContext({
+      organizationId,
+      storeId,
+    });
+    if (!context) {
+      return null;
+    }
+
+    const access = await resolveOrganizationStoreAccess({
+      database,
+      userId,
+      context,
+    });
+    return {
+      context,
+      access,
+    };
+  };
+
+  const canManageStoreScope: BookingRouteContext['canManageStoreScope'] = async ({
+    organizationId,
+    storeId,
+    userId,
+  }) => {
+    if (!storeId) {
       return hasAdminOrOwnerAccess({
         database,
         organizationId,
@@ -181,20 +176,20 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
       });
     }
 
-    const scoped = await resolveRequestedClassroomAccess({
+    const scoped = await resolveRequestedStoreAccess({
       organizationId,
-      classroomId,
+      storeId,
       userId,
     });
-    return scoped?.access.effective.canManageClassroom ?? false;
+    return scoped?.access.effective.canManageStore ?? false;
   };
 
   const canManageBookingsScope: BookingRouteContext['canManageBookingsScope'] = async ({
     organizationId,
-    classroomId,
+    storeId,
     userId,
   }) => {
-    if (!classroomId) {
+    if (!storeId) {
       return hasAdminOrOwnerAccess({
         database,
         organizationId,
@@ -202,9 +197,9 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
       });
     }
 
-    const scoped = await resolveRequestedClassroomAccess({
+    const scoped = await resolveRequestedStoreAccess({
       organizationId,
-      classroomId,
+      storeId,
       userId,
     });
     return scoped?.access.effective.canManageBookings ?? false;
@@ -212,10 +207,10 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
 
   const canManageParticipantsScope: BookingRouteContext['canManageParticipantsScope'] = async ({
     organizationId,
-    classroomId,
+    storeId,
     userId,
   }) => {
-    if (!classroomId) {
+    if (!storeId) {
       return hasAdminOrOwnerAccess({
         database,
         organizationId,
@@ -223,9 +218,9 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
       });
     }
 
-    const scoped = await resolveRequestedClassroomAccess({
+    const scoped = await resolveRequestedStoreAccess({
       organizationId,
-      classroomId,
+      storeId,
       userId,
     });
     return scoped?.access.effective.canManageParticipants ?? false;
@@ -233,10 +228,10 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
 
   const canReadServicesScope: BookingRouteContext['canReadServicesScope'] = async ({
     organizationId,
-    classroomId,
+    storeId,
     userId,
   }) => {
-    if (!classroomId) {
+    if (!storeId) {
       return hasAdminOrOwnerAccess({
         database,
         organizationId,
@@ -244,24 +239,24 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
       });
     }
 
-    const scoped = await resolveRequestedClassroomAccess({
+    const scoped = await resolveRequestedStoreAccess({
       organizationId,
-      classroomId,
+      storeId,
       userId,
     });
     if (!scoped) {
       return false;
     }
 
-    return scoped.access.effective.canManageClassroom || scoped.access.effective.canManageBookings;
+    return scoped.access.effective.canManageStore || scoped.access.effective.canManageBookings;
   };
 
   const canReadTicketTypesScope: BookingRouteContext['canReadTicketTypesScope'] = async ({
     organizationId,
-    classroomId,
+    storeId,
     userId,
   }) => {
-    if (!classroomId) {
+    if (!storeId) {
       return hasAdminOrOwnerAccess({
         database,
         organizationId,
@@ -269,26 +264,24 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
       });
     }
 
-    const scoped = await resolveRequestedClassroomAccess({
+    const scoped = await resolveRequestedStoreAccess({
       organizationId,
-      classroomId,
+      storeId,
       userId,
     });
     if (!scoped) {
       return false;
     }
 
-    return (
-      scoped.access.effective.canManageClassroom || scoped.access.effective.canManageParticipants
-    );
+    return scoped.access.effective.canManageStore || scoped.access.effective.canManageParticipants;
   };
 
   const listParticipantRecordsForUser: BookingRouteContext['listParticipantRecordsForUser'] =
-    async ({ organizationId, classroomId, userId }) => {
+    async ({ organizationId, storeId, userId }) => {
       return findParticipantsByUserAndOrganization({
         database,
         organizationId,
-        classroomId,
+        storeId,
         userId,
       });
     };
@@ -296,9 +289,9 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
   return {
     ...deps,
     requireIdentity,
-    resolveRequestedClassroomContext,
-    resolveRequestedClassroomAccess,
-    canManageClassroomScope,
+    resolveRequestedStoreContext,
+    resolveRequestedStoreAccess,
+    canManageStoreScope,
     canManageBookingsScope,
     canManageParticipantsScope,
     canReadServicesScope,

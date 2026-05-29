@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/admin/schedules/slots/new'),
 	getAdminSlotsPageData: vi.fn(),
-	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', classroomSlug: 'room-1' }))
+	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', storeSlug: 'room-1' }))
 }));
 
 vi.mock('$env/dynamic/public', () => ({
@@ -89,7 +89,9 @@ const chooseAnyDate = async (buttonId: string, inputName: string) => {
 	});
 
 	await vi.waitFor(() => {
-		const hiddenInput = document.querySelector(`input[name="${inputName}"]`) as HTMLInputElement | null;
+		const hiddenInput = document.querySelector(
+			`input[name="${inputName}"]`
+		) as HTMLInputElement | null;
 		expect(hiddenInput?.value ?? '').toMatch(/^\d{4}-\d{2}-\d{2}$/);
 	});
 };
@@ -116,12 +118,12 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		mocks.getCurrentPathWithSearch.mockReturnValue('/admin/schedules/slots/new');
 		mocks.readWindowScopedRouteContext.mockReturnValue({
 			orgSlug: 'org-1',
-			classroomSlug: 'room-1'
+			storeSlug: 'room-1'
 		});
 		mocks.getAdminSlotsPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			canManage: true,
 			services: [...testServices],
@@ -134,9 +136,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '単発Slot作成' }))
 			.toBeInTheDocument();
-		await expect
-			.element(page.getByRole('button', { name: '単発一覧へ戻る' }))
-			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '単発一覧へ戻る' })).toBeInTheDocument();
 		const createSection = Array.from(document.querySelectorAll('section')).find((section) =>
 			section.querySelector('h2')?.textContent?.includes('単発Slot作成')
 		);
@@ -203,9 +203,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		await vi.waitFor(() => {
 			expect(document.body.textContent ?? '').toContain('終了日時は開始日時より後にしてください。');
 		});
-		await expect
-			.element(page.getByRole('button', { name: '単発スロットを作成' }))
-			.toBeDisabled();
+		await expect.element(page.getByRole('button', { name: '単発スロットを作成' })).toBeDisabled();
 	});
 
 	it('should auto-calculate end time from selected service duration', async () => {

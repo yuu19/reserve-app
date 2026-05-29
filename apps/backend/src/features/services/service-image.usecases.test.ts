@@ -42,16 +42,16 @@ const createContext = (overrides: Partial<BookingRouteContext> = {}): BookingRou
       userId: 'user-1',
       activeOrganizationId: 'organization-1',
     })),
-    resolveRequestedClassroomContext: vi.fn(async () => ({
+    resolveRequestedStoreContext: vi.fn(async () => ({
       organizationId: 'organization-1',
       organizationSlug: 'organization',
       organizationName: 'Organization',
-      classroomId: 'classroom-1',
-      classroomSlug: 'classroom',
-      classroomName: 'Classroom',
+      storeId: 'store-1',
+      storeSlug: 'store',
+      storeName: 'Store',
     })),
-    resolveRequestedClassroomAccess: vi.fn(),
-    canManageClassroomScope: vi.fn(async () => true),
+    resolveRequestedStoreAccess: vi.fn(),
+    canManageStoreScope: vi.fn(async () => true),
     canManageBookingsScope: vi.fn(),
     canManageParticipantsScope: vi.fn(),
     canReadServicesScope: vi.fn(),
@@ -95,14 +95,14 @@ describe('service image usecases', () => {
         uploadBySignedUrl: vi.fn(),
         get: vi.fn(),
       },
-      canManageClassroomScope: vi.fn(async () => false),
+      canManageStoreScope: vi.fn(async () => false),
     });
 
     const result = await createServiceImageUploadUrl(
       ctx,
       {
         organizationId: 'organization-1',
-        classroomId: 'classroom-1',
+        storeId: 'store-1',
         contentType: 'image/webp',
         size: 128,
       },

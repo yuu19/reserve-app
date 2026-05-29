@@ -15,7 +15,7 @@ type JsonRecord = Record<string, unknown>;
 const publicEventDetailQuerySchema = z.object({
 	slotId: z.string().trim().min(1),
 	orgSlug: z.string().trim().min(1).optional(),
-	classroomSlug: z.string().trim().min(1).optional()
+	storeSlug: z.string().trim().min(1).optional()
 });
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -57,28 +57,28 @@ const createApiUrl = (path: string): string => {
 
 type PublicEventsContextInput = {
 	orgSlug?: string;
-	classroomSlug?: string;
+	storeSlug?: string;
 };
 
 const publicEventsQuerySchema = z
 	.object({
 		orgSlug: z.string().trim().min(1).optional(),
-		classroomSlug: z.string().trim().min(1).optional()
+		storeSlug: z.string().trim().min(1).optional()
 	})
 	.optional();
 
 const resolvePublicEventsContext = (input?: PublicEventsContextInput) => {
 	const scopedOrgSlug = input?.orgSlug?.trim();
-	const scopedClassroomSlug = input?.classroomSlug?.trim();
+	const scopedStoreSlug = input?.storeSlug?.trim();
 	const orgSlug = scopedOrgSlug || env.PUBLIC_EVENTS_ORG_SLUG || 'public-events';
-	const classroomSlug = scopedClassroomSlug || env.PUBLIC_EVENTS_CLASSROOM_SLUG || orgSlug;
-	return { orgSlug, classroomSlug };
+	const storeSlug = scopedStoreSlug || env.PUBLIC_EVENTS_STORE_SLUG || orgSlug;
+	return { orgSlug, storeSlug };
 };
 
 const publicEventsPath = (context: PublicEventsContextInput, suffix = ''): string => {
-	const { orgSlug, classroomSlug } = resolvePublicEventsContext(context);
-	return `/api/v1/public/orgs/${encodeURIComponent(orgSlug)}/classrooms/${encodeURIComponent(
-		classroomSlug
+	const { orgSlug, storeSlug } = resolvePublicEventsContext(context);
+	return `/api/v1/public/orgs/${encodeURIComponent(orgSlug)}/stores/${encodeURIComponent(
+		storeSlug
 	)}/events${suffix}`;
 };
 
@@ -86,8 +86,8 @@ const isPublicEvent = (value: unknown): value is PublicEventListItemPayload =>
 	isRecord(value) &&
 	typeof value.organizationId === 'string' &&
 	typeof value.organizationSlug === 'string' &&
-	typeof value.classroomId === 'string' &&
-	typeof value.classroomSlug === 'string' &&
+	typeof value.storeId === 'string' &&
+	typeof value.storeSlug === 'string' &&
 	typeof value.serviceId === 'string' &&
 	typeof value.serviceName === 'string' &&
 	typeof value.slotId === 'string' &&
@@ -116,7 +116,8 @@ const isPublicTicketType = (value: unknown): value is PublicTicketTypePayload =>
 	Array.isArray(value.serviceIds) &&
 	value.serviceIds.every((serviceId) => typeof serviceId === 'string') &&
 	Array.isArray(value.serviceNames) &&
-	value.serviceNames.every((serviceName) => typeof serviceName === 'string');
+	value.serviceNames.every((serviceName) => typeof serviceName === 'string') &&
+	typeof value.href === 'string';
 
 const asPublicTicketTypes = (value: unknown): PublicTicketTypePayload[] =>
 	Array.isArray(value) ? value.filter(isPublicTicketType) : [];
@@ -164,10 +165,10 @@ export const getPublicEvents = query(
 
 export const getPublicEventDetail = query(
 	publicEventDetailQuerySchema,
-	async ({ slotId, orgSlug, classroomSlug }): Promise<PublicEventDetailPayload> => {
+	async ({ slotId, orgSlug, storeSlug }): Promise<PublicEventDetailPayload> => {
 		const event = getRequestEvent();
 		const response = await event.fetch(
-			createApiUrl(publicEventsPath({ orgSlug, classroomSlug }, `/${encodeURIComponent(slotId)}`)),
+			createApiUrl(publicEventsPath({ orgSlug, storeSlug }, `/${encodeURIComponent(slotId)}`)),
 			{
 				method: 'GET'
 			}

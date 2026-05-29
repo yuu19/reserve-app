@@ -36,7 +36,7 @@ describe('ai-chat state', () => {
 		state.input = '予約枠を作るには？';
 		await state.send({
 			organizationId: 'org-a',
-			classroomId: 'class-a',
+			storeId: 'class-a',
 			currentPage: '/admin/dashboard'
 		});
 
@@ -44,7 +44,7 @@ describe('ai-chat state', () => {
 			message: '予約枠を作るには？',
 			conversationId: undefined,
 			organizationId: 'org-a',
-			classroomId: 'class-a',
+			storeId: 'class-a',
 			currentPage: '/admin/dashboard'
 		});
 		expect(state.conversationId).toBe('conv-a');

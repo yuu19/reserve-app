@@ -24,7 +24,7 @@
 
 - [x] T005 Add D1 migration for `ai_knowledge_document`, `ai_knowledge_chunk`, `ai_knowledge_index_run`, `ai_conversation`, `ai_message`, `ai_feedback`, and `ai_usage_counter` in `apps/backend/drizzle/0018_ai_chatbot.sql`.
 - [x] T006 Add Drizzle schema definitions and relations for AI knowledge, conversation, message, feedback, index run, and usage counter tables in `apps/backend/src/infra/db/schema.ts`.
-- [x] T007 [P] Add unit tests for visibility role mapping, organization/classroom scoping, and internal source handling in `apps/backend/src/features/ai/source-visibility.test.ts`.
+- [x] T007 [P] Add unit tests for visibility role mapping, organization/store scoping, and internal source handling in `apps/backend/src/features/ai/source-visibility.test.ts`.
 - [x] T008 [P] Implement allowed visibility calculation and metadata/D1 visibility predicates in `apps/backend/src/features/ai/source-visibility.ts`.
 - [x] T009 [P] Add unit tests for per-user hourly and per-organization daily usage limits in `apps/backend/src/features/ai/rate-limit.test.ts`.
 - [x] T010 [P] Implement D1-backed usage counting and rate-limit decisions in `apps/backend/src/features/ai/rate-limit.ts`.
@@ -72,22 +72,22 @@
 
 ## Phase 4: User Story 2 - 権限に応じた安全な回答 (Priority: P1)
 
-**Goal**: Answers and sources respect role, organization, classroom, billing, and internal-document boundaries.
+**Goal**: Answers and sources respect role, organization, store, billing, and internal-document boundaries.
 
 **Independent Test**: The same billing/internal-spec question returns owner-only details to an owner, but returns a safe owner-contact instruction to a participant and never leaks internal-only source snippets or paths.
 
 ### Tests for User Story 2
 
 - [x] T032 [P] [US2] Extend visibility tests for owner/admin/manager/staff/participant roles, owner-only billing, and internal specs in `apps/backend/src/features/ai/source-visibility.test.ts`.
-- [x] T033 [P] [US2] Add backend integration tests for cross-organization denial, classroom scoping, participant billing redaction, and internal source filtering in `apps/backend/src/app.test.ts`.
+- [x] T033 [P] [US2] Add backend integration tests for cross-organization denial, store scoping, participant billing redaction, and internal source filtering in `apps/backend/src/app.test.ts`.
 - [x] T034 [P] [US2] Add UI tests for hiding restricted source paths and showing safe owner-contact guidance in `apps/web/src/lib/components/ai/AiSourceList.svelte.spec.ts`.
 
 ### Implementation for User Story 2
 
-- [x] T035 [US2] Implement session, active organization, classroom, participant, and member role resolution in `apps/backend/src/features/ai/context-resolver.ts`.
-- [x] T036 [US2] Enforce Vectorize metadata filters and D1 post-filtering for visibility, organization, and classroom scope in `apps/backend/src/features/ai/retriever.ts`.
+- [x] T035 [US2] Implement session, active organization, store, participant, and member role resolution in `apps/backend/src/features/ai/context-resolver.ts`.
+- [x] T036 [US2] Enforce Vectorize metadata filters and D1 post-filtering for visibility, organization, and store scope in `apps/backend/src/features/ai/retriever.ts`.
 - [x] T037 [US2] Implement owner-only billing detail guards and participant-safe billing summaries in `apps/backend/src/features/ai/business-facts.ts`.
-- [x] T038 [US2] Enforce conversation ownership, requested organization/classroom scope checks, and safe source serialization in `apps/backend/src/routes/ai-routes.ts`.
+- [x] T038 [US2] Enforce conversation ownership, requested organization/store scope checks, and safe source serialization in `apps/backend/src/routes/ai-routes.ts`.
 - [x] T039 [US2] Render restricted-source fallbacks and suppress unsafe internal paths in `apps/web/src/lib/components/ai/AiSourceList.svelte`.
 
 **Checkpoint**: Role and tenant boundaries are enforced in retrieval, business facts, API response serialization, and UI rendering.

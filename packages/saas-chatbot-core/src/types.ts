@@ -44,7 +44,7 @@ export type AiGenerationStatus =
 export type AiLocale = 'ja' | 'en';
 
 /** chatbot の subject scope。 */
-export type ChatSubjectType = 'organization' | 'classroom' | 'public_site' | 'user' | 'admin';
+export type ChatSubjectType = 'organization' | 'store' | 'public_site' | 'user' | 'admin';
 
 /** chatbot core の境界に渡す実行時の文脈。 */
 export type ChatRuntimeContext = {
@@ -54,8 +54,8 @@ export type ChatRuntimeContext = {
   subjectId: string;
   /** 操作している user ID。匿名や system 起点では `null`。 */
   actorUserId?: string | null;
-  /** classroom 文脈がある場合の classroom ID。 */
-  classroomId?: string | null;
+  /** store 文脈がある場合の store ID。 */
+  storeId?: string | null;
   /** web chat、admin tool など呼び出し元 channel。 */
   channel: string;
   /** UI または browser locale。 */

@@ -3,7 +3,7 @@
 ## Scope
 
 This plan hardens the existing organization billing implementation. It does not create a new billing provider, a new
-top-level package, classroom-scoped subscriptions, refund/credit-note lifecycle, or in-app payment/tax detail storage.
+top-level package, store-scoped subscriptions, refund/credit-note lifecycle, or in-app payment/tax detail storage.
 
 ## Prerequisites
 

@@ -165,7 +165,7 @@ export const upsertKnowledgeDocument = async ({
 
   const checksum = hashText(document.content);
   const documentId = hashText(
-    `${document.sourceKind}:${document.sourcePath}:${document.organizationId ?? ''}:${document.classroomId ?? ''}`,
+    `${document.sourceKind}:${document.sourcePath}:${document.organizationId ?? ''}:${document.storeId ?? ''}`,
   );
   const chunks = chunkKnowledgeContent({ content: document.content });
 
@@ -180,7 +180,7 @@ export const upsertKnowledgeDocument = async ({
       visibility: document.visibility ?? 'authenticated',
       internalOnly: document.internalOnly ?? false,
       organizationId: document.organizationId ?? null,
-      classroomId: document.classroomId ?? null,
+      storeId: document.storeId ?? null,
       feature: document.feature ?? null,
       checksum,
       indexStatus: 'pending',
@@ -197,7 +197,7 @@ export const upsertKnowledgeDocument = async ({
         visibility: document.visibility ?? 'authenticated',
         internalOnly: document.internalOnly ?? false,
         organizationId: document.organizationId ?? null,
-        classroomId: document.classroomId ?? null,
+        storeId: document.storeId ?? null,
         feature: document.feature ?? null,
         checksum,
         indexStatus: 'pending',
@@ -230,7 +230,7 @@ export const upsertKnowledgeDocument = async ({
         visibility: document.visibility ?? 'authenticated',
         internalOnly: document.internalOnly ?? false,
         organizationId: document.organizationId ?? null,
-        classroomId: document.classroomId ?? null,
+        storeId: document.storeId ?? null,
         feature: document.feature ?? null,
         tagsJson: document.tags ? JSON.stringify(document.tags) : null,
         indexedAt: now,
@@ -248,7 +248,7 @@ export const upsertKnowledgeDocument = async ({
           visibility: document.visibility ?? 'authenticated',
           internalOnly: document.internalOnly ?? false,
           organizationId: document.organizationId ?? null,
-          classroomId: document.classroomId ?? null,
+          storeId: document.storeId ?? null,
           feature: document.feature ?? null,
           tagsJson: document.tags ? JSON.stringify(document.tags) : null,
           indexedAt: now,
@@ -266,7 +266,7 @@ export const upsertKnowledgeDocument = async ({
           visibility: document.visibility ?? 'authenticated',
           internalOnly: document.internalOnly ?? false,
           organizationId: document.organizationId ?? '',
-          classroomId: document.classroomId ?? '',
+          storeId: document.storeId ?? '',
           feature: document.feature ?? 'general',
         },
       },

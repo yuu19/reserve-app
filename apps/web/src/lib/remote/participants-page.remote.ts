@@ -21,7 +21,7 @@ type ParticipantsPageData = {
 	organizationId: string | null;
 	canManage: boolean;
 	canManageParticipants: boolean;
-	canManageClassroom: boolean;
+	canManageStore: boolean;
 	premiumRestriction: ReturnType<typeof readOrganizationPremiumRestriction>;
 	participants: ParticipantPayload[];
 	sentInvitations: ParticipantInvitationPayload[];
@@ -112,14 +112,14 @@ const createLoadError = (messages: Array<string | null>): string | null =>
 
 const participantsPageQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
-	classroomSlug: z.string().trim().min(1)
+	storeSlug: z.string().trim().min(1)
 });
 
 export const getParticipantsPageData = query(
 	participantsPageQuerySchema,
-	async ({ orgSlug, classroomSlug }): Promise<ParticipantsPageData> => {
+	async ({ orgSlug, storeSlug }): Promise<ParticipantsPageData> => {
 		const getApi = createSafeApiGetter(createApiGetter());
-		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+		const activeContext: ScopedApiContext = { orgSlug, storeSlug };
 		const scopedAccess = await resolveScopedAccessContext(getApi, activeContext);
 		if (!scopedAccess) {
 			return {
@@ -127,7 +127,7 @@ export const getParticipantsPageData = query(
 				organizationId: null,
 				canManage: false,
 				canManageParticipants: false,
-				canManageClassroom: false,
+				canManageStore: false,
 				premiumRestriction: null,
 				participants: [],
 				sentInvitations: [],
@@ -138,7 +138,7 @@ export const getParticipantsPageData = query(
 
 		const scopedQuery = {
 			organizationId: scopedAccess.organizationId,
-			classroomId: scopedAccess.classroomId
+			storeId: scopedAccess.storeId
 		};
 
 		const [participantsResult, sentInvitationsResult, receivedInvitationsResult] =
@@ -150,7 +150,7 @@ export const getParticipantsPageData = query(
 
 		const debugResults = [
 			['participants', participantsResult],
-			['classroom invitations', sentInvitationsResult],
+			['store invitations', sentInvitationsResult],
 			['user invitations', receivedInvitationsResult]
 		] as const;
 		for (const [label, result] of debugResults) {
@@ -162,7 +162,7 @@ export const getParticipantsPageData = query(
 				status: result.response.status,
 				detail: toErrorMessage(result.payload, '参加者ページ依存データの取得に失敗しました。'),
 				orgSlug,
-				classroomSlug
+				storeSlug
 			});
 		}
 
@@ -174,9 +174,9 @@ export const getParticipantsPageData = query(
 				activeContext,
 				organizationId: scopedAccess.organizationId,
 				canManage:
-					scopedAccess.effective.canManageParticipants || scopedAccess.effective.canManageClassroom,
+					scopedAccess.effective.canManageParticipants || scopedAccess.effective.canManageStore,
 				canManageParticipants: scopedAccess.effective.canManageParticipants,
-				canManageClassroom: scopedAccess.effective.canManageClassroom,
+				canManageStore: scopedAccess.effective.canManageStore,
 				premiumRestriction,
 				participants: [],
 				sentInvitations: [],
@@ -207,9 +207,9 @@ export const getParticipantsPageData = query(
 			activeContext,
 			organizationId: scopedAccess.organizationId,
 			canManage:
-				scopedAccess.effective.canManageParticipants || scopedAccess.effective.canManageClassroom,
+				scopedAccess.effective.canManageParticipants || scopedAccess.effective.canManageStore,
 			canManageParticipants: scopedAccess.effective.canManageParticipants,
-			canManageClassroom: scopedAccess.effective.canManageClassroom,
+			canManageStore: scopedAccess.effective.canManageStore,
 			premiumRestriction: null,
 			participants: asParticipants(participantsResult.payload),
 			sentInvitations: asParticipantInvitations(sentInvitationsResult.payload),

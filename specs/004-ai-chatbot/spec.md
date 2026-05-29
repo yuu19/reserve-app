@@ -36,7 +36,7 @@
 
 ### User Story 2 - 権限に応じた安全な回答 (Priority: P1)
 
-owner、admin、manager、staff、participant は、自分の organization と classroom に対して許可された範囲の情報だけを使った回答を受け取る。課金や請求書など owner-only の情報は、owner 以外には詳細を返さず、owner に確認する案内を出す。
+owner、admin、manager、staff、participant は、自分の organization と store に対して許可された範囲の情報だけを使った回答を受け取る。課金や請求書など owner-only の情報は、owner 以外には詳細を返さず、owner に確認する案内を出す。
 
 **Why this priority**: AI回答が権限外の業務情報や課金情報を漏らすと、既存の認可境界を破壊し、機能全体を提供できなくなるため。
 
@@ -53,15 +53,15 @@ owner、admin、manager、staff、participant は、自分の organization と c
 
 ### User Story 3 - 業務文脈を踏まえた案内 (Priority: P2)
 
-owner、manager、staff は、現在の画面、所属 classroom、利用可能な権限、予約・参加者・チケット・課金の現在状態を踏まえた案内を受けられる。回答は一般的なヘルプだけでなく、利用者の状況で次に確認すべき項目を示す。
+owner、manager、staff は、現在の画面、所属 store、利用可能な権限、予約・参加者・チケット・課金の現在状態を踏まえた案内を受けられる。回答は一般的なヘルプだけでなく、利用者の状況で次に確認すべき項目を示す。
 
 **Why this priority**: reserve-app の問い合わせは設定状態や権限によって答えが変わるため、一般的なFAQだけでは解決に至らないケースが多いため。
 
-**Independent Test**: 予約設定、招待、チケット残数、Premium 状態が異なる organization/classroom を用意し、同じ質問でも状況に応じた案内に変わることを確認できる。
+**Independent Test**: 予約設定、招待、チケット残数、Premium 状態が異なる organization/store を用意し、同じ質問でも状況に応じた案内に変わることを確認できる。
 
 **Acceptance Scenarios**:
 
-1. **Given** 承認制予約が有効な classroom, **When** manager が「即時予約と承認制予約の違いは？」と質問する, **Then** 一般的な違いに加えて現在の classroom の設定確認を促す
+1. **Given** 承認制予約が有効な store, **When** manager が「即時予約と承認制予約の違いは？」と質問する, **Then** 一般的な違いに加えて現在の store の設定確認を促す
 2. **Given** チケット残数がある参加者が予約できない, **When** staff が理由を質問する, **Then** 予約条件、チケット条件、参加者状態の確認ポイントを示す
 3. **Given** Premium が有効にならない organization, **When** owner が質問する, **Then** 契約状態、支払い方法、利用権限の確認ポイントと owner が取れる導線を示す
 4. **Given** 招待が失敗している, **When** manager が質問する, **Then** 招待権限、メール状態、参加者登録状態の確認ポイントを示す
@@ -101,12 +101,12 @@ internal operator は、AIチャットが参照するドキュメント、仕様
 ### Edge Cases
 
 - 質問が空、長すぎる、連続投稿される、または複数の意図を含む
-- 利用者の session が期限切れ、または organization/classroom の所属が変更済み
+- 利用者の session が期限切れ、または organization/store の所属が変更済み
 - 現在のページ情報が古い、欠落している、または権限判断に使えない
 - 検索できる根拠がない、根拠が古い、または根拠同士が矛盾している
 - 利用者がプロンプト注入、秘密情報の開示、権限外の情報取得、操作実行を指示する
 - 請求書、領収書、支払い方法、契約状態など owner-only の情報を non-owner が質問する
-- organization または classroom をまたいだ会話継続が発生する
+- organization または store をまたいだ会話継続が発生する
 - AI応答生成、知識検索、業務文脈取得の一部が一時的に利用できない
 - 個人情報、支払い詳細、外部サービスの生データ、内部監査情報が回答候補に含まれる
 - 参照元が削除、移動、または公開範囲変更され、過去の会話に残っている
@@ -116,14 +116,14 @@ internal operator は、AIチャットが参照するドキュメント、仕様
 ### Functional Requirements
 
 - **FR-001**: System MUST provide AI chat only to authenticated users and MUST require a valid user context before answering.
-- **FR-002**: System MUST resolve the user's active organization, classroom, and role from trusted account state before retrieving or presenting contextual information.
+- **FR-002**: System MUST resolve the user's active organization, store, and role from trusted account state before retrieving or presenting contextual information.
 - **FR-003**: Users MUST be able to send a question of up to 4,000 characters with optional current page context and continue an existing conversation when permitted.
-- **FR-004**: System MUST keep AI conversations scoped to the user, organization, and classroom context in which they were created.
+- **FR-004**: System MUST keep AI conversations scoped to the user, organization, and store context in which they were created.
 - **FR-005**: System MUST return an answer, source references, suggested next actions, a confidence indicator, and a human-support-needed indicator for every successful chat response.
 - **FR-006**: System MUST NOT execute reservations, billing changes, participant changes, ticket changes, or other business operations from chat in V1.
 - **FR-007**: System MUST base answers on approved knowledge sources and permitted business facts rather than unsupported model-only guesses.
 - **FR-008**: System MUST support knowledge sources for product documentation, role-permitted internal specifications, fixed FAQ content, and safe business summaries.
-- **FR-009**: Each knowledge source MUST have a title, source kind, locale, visibility level, optional organization/classroom scope, and freshness status.
+- **FR-009**: Each knowledge source MUST have a title, source kind, locale, visibility level, optional organization/store scope, and freshness status.
 - **FR-010**: System MUST show source references used for an answer when doing so is allowed for the user's role and scope.
 - **FR-011**: System MUST state that it cannot confirm an answer when no reliable permitted source or business fact supports the response.
 - **FR-012**: System MUST enforce visibility levels for public, authenticated, participant, staff, manager, admin, and owner information.
@@ -141,17 +141,17 @@ internal operator は、AIチャットが参照するドキュメント、仕様
 - **FR-024**: Internal operators MUST be able to identify stale, failed, or missing knowledge updates before release or routine operation depends on them.
 - **FR-025**: System MUST avoid duplicate knowledge entries causing duplicate source citations for the same content.
 - **FR-026**: System MUST limit AI chat use to 20 messages per user per hour and 200 messages per organization per day, and provide a clear retry message when either limit is reached.
-- **FR-027**: System MUST preserve existing organization/classroom authorization behavior and MUST NOT introduce a separate AI-specific authority model.
+- **FR-027**: System MUST preserve existing organization/store authorization behavior and MUST NOT introduce a separate AI-specific authority model.
 - **FR-028**: System MUST keep AI answer wording consistent with existing product vocabulary for booking, participant, invitation, ticket, billing, entitlement, and role concepts.
 
 ### Key Entities
 
-- **AI Conversation**: A scoped dialogue between a user and the assistant, associated with the organization/classroom context used for the conversation and subject to the 180-day content retention policy.
+- **AI Conversation**: A scoped dialogue between a user and the assistant, associated with the organization/store context used for the conversation and subject to the 180-day content retention policy.
 - **AI Message**: A user or assistant message, including content, role, creation time, and safe quality-review context, with content deleted or anonymized after the retention period.
 - **Knowledge Document**: A source of approved information such as documentation, role-permitted specification, FAQ, or safe business summary.
 - **Knowledge Chunk**: A searchable portion of a knowledge document with title, source, locale, visibility, scope, and freshness metadata.
 - **Source Visibility**: The access level that determines which roles and scopes may use or view a knowledge item.
-- **User Context**: The trusted combination of user identity, organization, classroom, role, capabilities, and current page hint used to shape safe answers.
+- **User Context**: The trusted combination of user identity, organization, store, role, capabilities, and current page hint used to shape safe answers.
 - **Business Fact Summary**: A role-safe answer-time summary of current booking, invitation, ticket, participant, or billing state that may affect the answer.
 - **Source Reference**: The user-visible citation or reference to information used in an answer, limited by the user's access rights.
 - **Suggested Action**: A safe next step such as opening a page, contacting an owner, or contacting support.
@@ -160,9 +160,9 @@ internal operator は、AIチャットが参照するドキュメント、仕様
 
 ### Constitution Alignment _(mandatory)_
 
-- **I. Existing Architecture**: This feature extends the existing organization/classroom-scoped product and must not replace current app boundaries, authentication, authorization, billing ownership, or deployment paths.
+- **I. Existing Architecture**: This feature extends the existing organization/store-scoped product and must not replace current app boundaries, authentication, authorization, billing ownership, or deployment paths.
 - **II. Type Safety と API Boundary**: User input, session-derived context, role values, AI responses, source references, feedback, and business fact summaries must be validated and normalized before they affect answers or stored records.
-- **III. Authorization と Scope**: Authorization remains based on organization/classroom scope and effective capabilities. Display role labels, current page hints, or AI-generated text must not become authorization sources.
+- **III. Authorization と Scope**: Authorization remains based on organization/store scope and effective capabilities. Display role labels, current page hints, or AI-generated text must not become authorization sources.
 - **IV. Risk-Based Verification**: Role filtering, source visibility, prompt-injection resistance, low-confidence fallbacks, conversation scoping, feedback persistence, and domain-specific answers require regression coverage.
 - **V. Data, Billing, Deployment Safety**: Conversation and feedback records must be auditable and privacy-safe. Billing facts must continue to treat organization billing as the source of truth and owner-only billing details must remain protected.
 - **VI. UI と Design System**: The chat UI, answer states, confidence, source list, feedback controls, disabled states, and fallback states must follow DESIGN.md and communicate status with text and structure, not color alone.
@@ -180,7 +180,7 @@ internal operator は、AIチャットが参照するドキュメント、仕様
 - **SC-007**: Users can submit helpful/unhelpful feedback for an assistant answer in 2 interactions or fewer.
 - **SC-008**: 100% of low-confidence, conflicting-source, or insufficient-source scenarios produce a non-assertive answer and a human-support or owner-contact path.
 - **SC-009**: Knowledge updates for approved documentation and FAQ sources are reflected in AI answers or flagged as failed within 1 business day.
-- **SC-010**: 100% of covered cross-organization and cross-classroom conversation tests keep conversation history, sources, and business context within the permitted scope.
+- **SC-010**: 100% of covered cross-organization and cross-store conversation tests keep conversation history, sources, and business context within the permitted scope.
 - **SC-011**: No covered AI response exposes secrets, full payment method details, raw external payloads, private audit data, or unnecessary personal data.
 - **SC-012**: Internal operators can identify the top unhelpful-answer themes from feedback records for a release period without reading data outside their authorized scope.
 - **SC-013**: 100% of retained AI conversation content older than 180 days is deleted or anonymized, while aggregate feedback remains available for 1 year in covered retention checks.
@@ -192,7 +192,7 @@ internal operator は、AIチャットが参照するドキュメント、仕様
 - V1 targets authenticated web users; mobile chat entry points are out of scope unless planning explicitly adds them.
 - V1 provides guidance only and does not perform booking, billing, participant, ticket, invitation, or support-ticket creation actions.
 - Japanese is the default language for reserve-app support content.
-- Existing organization, classroom, role, billing, booking, invitation, participant, and ticket vocabulary remains the source of truth.
+- Existing organization, store, role, billing, booking, invitation, participant, and ticket vocabulary remains the source of truth.
 - Public, authenticated, participant, staff, manager, admin, and owner visibility levels are sufficient for V1 source access control.
 - Approved knowledge sources for V1 are product documentation, role-permitted specifications, fixed FAQ content, and safe summaries of existing business data.
 - Owner-only billing rules continue to apply to invoices, receipts, payment methods, and detailed billing actions.

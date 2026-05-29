@@ -114,9 +114,9 @@ describe('/settings/+page.svelte', () => {
 			organizationId: 'org-1',
 			organizationSlug: 'hoge',
 			organizationName: 'yusuke',
-			classroomId: 'room-1',
-			classroomSlug: 'room-one',
-			classroomName: 'Room One',
+			storeId: 'room-1',
+			storeSlug: 'room-one',
+			storeName: 'Room One',
 			siteName: 'Room One',
 			description: '',
 			address: '',
@@ -212,12 +212,12 @@ describe('/settings/+page.svelte', () => {
 		await vi.waitFor(() => {
 			expect(mocks.loadPublicSiteSettings).toHaveBeenCalledWith({
 				orgSlug: 'hoge',
-				classroomSlug: 'room-one'
+				storeSlug: 'room-one'
 			});
 			expect(mocks.updatePublicSiteSettings).toHaveBeenCalledWith(
 				{
 					orgSlug: 'hoge',
-					classroomSlug: 'room-one'
+					storeSlug: 'room-one'
 				},
 				expect.objectContaining({
 					siteName: 'Tokyo Studio',

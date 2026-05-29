@@ -12,12 +12,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/features/auth-session.svelte', () => ({
-		loadSession: mocks.loadSession,
-		redirectToLoginWithNext: mocks.redirectToLoginWithNext,
-		getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
+	loadSession: mocks.loadSession,
+	redirectToLoginWithNext: mocks.redirectToLoginWithNext,
+	getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
 }));
 
-vi.mock('$lib/features/invitations-classroom.svelte', () => ({
+vi.mock('$lib/features/invitations-store.svelte', () => ({
 	loadReceivedOperatorInvitations: mocks.loadReceivedOperatorInvitations,
 	actOperatorInvitation: mocks.actOperatorInvitation
 }));
@@ -85,14 +85,14 @@ describe('/participant/admin-invitations/+page.svelte', () => {
 			received: [
 				{
 					id: 'invite-1',
-					subjectKind: 'classroom_operator',
+					subjectKind: 'store_operator',
 					role: 'staff',
 					organizationId: 'org-1',
 					organizationSlug: 'org-one',
 					organizationName: 'Org One',
-					classroomId: 'class-1',
-					classroomSlug: 'room-a',
-					classroomName: 'Room A',
+					storeId: 'class-1',
+					storeSlug: 'room-a',
+					storeName: 'Room A',
 					email: 'user@example.com',
 					participantName: null,
 					status: 'pending',
@@ -124,7 +124,9 @@ describe('/participant/admin-invitations/+page.svelte', () => {
 		await page.getByRole('button', { name: '承諾' }).click();
 
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '運営招待の承諾には Premiumプランが必要です' }))
+			.element(
+				page.getByRole('heading', { level: 2, name: '運営招待の承諾には Premiumプランが必要です' })
+			)
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('button', { name: '契約画面を開く' }))

@@ -19,7 +19,7 @@
 - ログイン: `/admin/login`
 - ダッシュボード: `/admin/dashboard`
 - 組織設定: `/admin/settings`
-- 教室管理: `/admin/classrooms`
+- 店舗管理: `/admin/stores`
 - 予約運用: `/admin/bookings`
 - サービス管理: `/admin/services`, `/admin/services/new`
 - 単発枠管理: `/admin/schedules/slots`
@@ -87,7 +87,7 @@ apps/docs/src/routes/manuals/
 ├── admin/
 │   ├── getting-started/
 │   │   └── +page.md
-│   ├── organization-and-classroom/
+│   ├── organization-and-store/
 │   │   └── +page.md
 │   ├── services/
 │   │   └── +page.md
@@ -132,22 +132,22 @@ apps/docs/static/manuals/
 
 | ページ                              | 目的                                               | 主な実装導線                              |
 | ----------------------------------- | -------------------------------------------------- | ----------------------------------------- |
-| `/manuals/common/glossary`          | 組織、教室、参加者、管理者、回数券などの用語整理   | 全体                                      |
+| `/manuals/common/glossary`          | 組織、店舗、参加者、管理者、回数券などの用語整理   | 全体                                      |
 | `/manuals/common/account-and-login` | 管理者ログインと参加者ログインの違い、入口の選び方 | `/`, `/admin/login`, `/participant/login` |
 
 ### 管理者向け
 
-| ページ                                      | 目的                                                             | 主な実装導線                                            |
-| ------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
-| `/manuals/admin/getting-started`            | 初回セットアップから管理画面に入るまで                           | `/admin/onboarding`, `/admin/login`, `/admin/dashboard` |
-| `/manuals/admin/organization-and-classroom` | 組織切替、組織作成、教室作成・編集                               | `/admin/settings`, `/admin/classrooms`                  |
-| `/manuals/admin/services`                   | サービス作成、編集、停止・再開                                   | `/admin/services`, `/admin/services/new`                |
-| `/manuals/admin/one-time-slots`             | 単発枠の作成、一覧確認、停止                                     | `/admin/schedules/slots`                                |
-| `/manuals/admin/recurring-schedules`        | 定期スケジュール作成、更新、例外登録、枠再生成                   | `/admin/schedules/recurring`                            |
-| `/manuals/admin/booking-operations`         | 予約承認、却下、運営キャンセル、No-show                          | `/admin/bookings`                                       |
-| `/manuals/admin/participants-and-tickets`   | 参加者一覧、参加者招待、回数券種別作成、回数券付与、購入申請承認 | `/admin/participants`                                   |
-| `/manuals/admin/admin-invitations`          | 管理者招待の送信、再送、取消                                     | `/admin/invitations`                                    |
-| `/manuals/admin/contracts-and-premium`      | Free / Premium の違い、トライアル、支払い方法、契約確認          | `/admin/contracts`                                      |
+| ページ                                    | 目的                                                             | 主な実装導線                                            |
+| ----------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
+| `/manuals/admin/getting-started`          | 初回セットアップから管理画面に入るまで                           | `/admin/onboarding`, `/admin/login`, `/admin/dashboard` |
+| `/manuals/admin/organization-and-store`   | 組織切替、組織作成、店舗作成・編集                               | `/admin/settings`, `/admin/stores`                      |
+| `/manuals/admin/services`                 | サービス作成、編集、停止・再開                                   | `/admin/services`, `/admin/services/new`                |
+| `/manuals/admin/one-time-slots`           | 単発枠の作成、一覧確認、停止                                     | `/admin/schedules/slots`                                |
+| `/manuals/admin/recurring-schedules`      | 定期スケジュール作成、更新、例外登録、枠再生成                   | `/admin/schedules/recurring`                            |
+| `/manuals/admin/booking-operations`       | 予約承認、却下、運営キャンセル、No-show                          | `/admin/bookings`                                       |
+| `/manuals/admin/participants-and-tickets` | 参加者一覧、参加者招待、回数券種別作成、回数券付与、購入申請承認 | `/admin/participants`                                   |
+| `/manuals/admin/admin-invitations`        | 管理者招待の送信、再送、取消                                     | `/admin/invitations`                                    |
+| `/manuals/admin/contracts-and-premium`    | Free / Premium の違い、トライアル、支払い方法、契約確認          | `/admin/contracts`                                      |
 
 ### 参加者向け
 
@@ -184,7 +184,7 @@ apps/docs/static/manuals/
 
 権限や契約条件に依存しやすく、利用者が限定されるページです。
 
-1. `/manuals/admin/organization-and-classroom`
+1. `/manuals/admin/organization-and-store`
 2. `/manuals/admin/admin-invitations`
 3. `/manuals/admin/contracts-and-premium`
 4. `/manuals/common/glossary`

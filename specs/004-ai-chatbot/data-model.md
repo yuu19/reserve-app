@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI Chatbot V1 adds an AI support slice without changing existing organization/classroom ownership models.
+AI Chatbot V1 adds an AI support slice without changing existing organization/store ownership models.
 D1 remains the source of truth for knowledge content, metadata, conversations, feedback, rate limits, and retention.
 Vectorize stores only searchable vectors and metadata keyed by `ai_knowledge_chunk.id`.
 
@@ -12,16 +12,16 @@ The shared contract lives in `packages/saas-chatbot-core`. It separates reusable
 tables and routes.
 
 - `ChatRuntimeContext` describes the runtime subject and actor context. ReserveApp uses `subjectType = organization`,
-  `subjectId = organizationId`, `channel = web`, and an optional `classroomId`.
+  `subjectId = organizationId`, `channel = web`, and an optional `storeId`.
 - `ConversationScope` is the conversation-store boundary used by the current ReserveApp adapter. It contains
-  `userId`, `organizationId`, and nullable `classroomId`.
-- `AiChatRequest` accepts optional `organizationId`, `classroomId`, and `currentPage`. These values are hints for
+  `userId`, `organizationId`, and nullable `storeId`.
+- `AiChatRequest` accepts optional `organizationId`, `storeId`, and `currentPage`. These values are hints for
   scope resolution and relevance. They are not authorization proof.
 - `AiChatResponse` includes the generated answer, role-safe sources, suggested actions, confidence,
   `needsHumanSupport`, and remaining rate-limit counts.
 
 The persisted D1 tables keep reusable subject columns where they are needed for future SaaS reuse. ReserveApp adapters
-map those columns back to the current organization/classroom model.
+map those columns back to the current organization/store model.
 
 ## New Entity: `ai_knowledge_document`
 
@@ -37,7 +37,7 @@ map those columns back to the current organization/classroom model.
 - `visibility`: `public`, `authenticated`, `participant`, `staff`, `manager`, `admin`, `owner`.
 - `internal_only`: boolean; true for internal specs/operator-only sources.
 - `organization_id`: optional tenant scope for organization-specific summaries.
-- `classroom_id`: optional classroom scope for classroom-specific summaries.
+- `store_id`: optional store scope for store-specific summaries.
 - `feature`: optional domain tag: `booking`, `billing`, `ticket`, `invitation`, `service`, `participant`, `general`.
 - `checksum`: content checksum used to detect reindex need.
 - `index_status`: `pending`, `indexed`, `failed`, `stale`, `deleted`.
@@ -50,7 +50,7 @@ map those columns back to the current organization/classroom model.
 - `source_kind = specs` requires `internal_only = true` unless explicitly approved in a future spec update.
 - `internal_only = true` sources are never returned to organization users.
 - Deleted or stale documents cannot be used for answer grounding until reindexed.
-- `organization_id` and `classroom_id` must match resolved user scope before a scoped source can be used.
+- `organization_id` and `store_id` must match resolved user scope before a scoped source can be used.
 
 ## New Entity: `ai_knowledge_chunk`
 
@@ -64,7 +64,7 @@ map those columns back to the current organization/classroom model.
 - `content`: chunk text stored in D1.
 - `content_hash`: chunk-level hash for duplicate detection.
 - `title`, `source_kind`, `source_path`, `locale`, `visibility`, `internal_only`.
-- `organization_id`, `classroom_id`, `feature`, `tags_json`.
+- `organization_id`, `store_id`, `feature`, `tags_json`.
 - `indexed_at`: timestamp used to validate Vectorize freshness.
 - `vector_status`: `pending`, `upserted`, `failed`, `deleted`.
 
@@ -98,7 +98,7 @@ map those columns back to the current organization/classroom model.
 
 ## New Entity: `ai_conversation`
 
-**Purpose**: Scoped chat thread for a user in an organization/classroom context.
+**Purpose**: Scoped chat thread for a user in an organization/store context.
 
 **Fields**:
 
@@ -106,7 +106,7 @@ map those columns back to the current organization/classroom model.
 - `actor_user_id`: authenticated user id that started or continues the chat.
 - `subject_type`: reusable subject discriminator. ReserveApp uses `organization`.
 - `subject_id`: reusable subject id. ReserveApp stores the resolved `organizationId`.
-- `classroom_id`: nullable ReserveApp-specific classroom scope.
+- `store_id`: nullable ReserveApp-specific store scope.
 - `channel`: chat surface such as `web`.
 - `status`: `active`, `closed`, or `anonymized`.
 - `title`: optional short title.
@@ -117,9 +117,9 @@ map those columns back to the current organization/classroom model.
 
 **Validation rules**:
 
-- A conversation can continue only for the same actor and permitted subject/classroom scope.
+- A conversation can continue only for the same actor and permitted subject/store scope.
 - ReserveApp chat requests set `subject_type = organization` and `subject_id = organizationId`.
-- Cross-organization or cross-classroom continuation is rejected or starts a new conversation.
+- Cross-organization or cross-store continuation is rejected or starts a new conversation.
 - Conversation content is deleted or anonymized after 180 days.
 
 ## New Entity: `ai_message`
@@ -165,7 +165,7 @@ map those columns back to the current organization/classroom model.
 - `id`: event id.
 - `subject_type`, `subject_id`: reusable tenant/subject scope. ReserveApp uses `organization` and `organizationId`.
 - `actor_user_id`: requesting user id, nullable only after user deletion.
-- `classroom_id`: nullable ReserveApp classroom scope.
+- `store_id`: nullable ReserveApp store scope.
 - `conversation_id`: related conversation, nullable after retention deletion.
 - `message_id`: related assistant message, nullable after retention deletion.
 - `provider`, `model`: provider and model selected for generation.
@@ -227,11 +227,11 @@ map those columns back to the current organization/classroom model.
 
 ## Derived Entity: `BusinessFactSummary`
 
-**Purpose**: Answer-time, role-safe context for current organization/classroom state.
+**Purpose**: Answer-time, role-safe context for current organization/store state.
 
 **Fields**:
 
-- `organization_id`, `classroom_id`, `user_id`.
+- `organization_id`, `store_id`, `user_id`.
 - `capabilities`: relevant effective capabilities such as `canManageBookings`, `canManageParticipants`, `canViewBilling`, `canManageBilling`.
 - `booking_summary`: service/slot/booking policy facts needed for the question.
 - `invitation_summary`: invitation capability and current invite state facts.
@@ -285,7 +285,7 @@ submitted -> aggregate_retained -> expired
 ## Migration Position
 
 Add one D1 migration for AI tables and indexes. The migration is additive and must not rewrite existing organization,
-classroom, booking, ticket, invitation, billing, or auth rows. Vectorize index creation is an infrastructure step, not
+store, booking, ticket, invitation, billing, or auth rows. Vectorize index creation is an infrastructure step, not
 a D1 migration, and must be recorded in quickstart/release evidence with the verified embedding shape.
 
 Phase 5 rebuilds the unreleased AI migration shape in `apps/backend/drizzle/0018_ai_chatbot.sql` and folds the previous

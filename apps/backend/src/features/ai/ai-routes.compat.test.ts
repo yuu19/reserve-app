@@ -28,14 +28,14 @@ describe('AI routes compatibility', () => {
         message: '  予約枠を作るには？  ',
         conversationId: 'conversation-a',
         organizationId: 'org-a',
-        classroomId: 'class-a',
+        storeId: 'class-a',
         currentPage: '/admin/bookings',
       }),
     ).toMatchObject({
       message: '予約枠を作るには？',
       conversationId: 'conversation-a',
       organizationId: 'org-a',
-      classroomId: 'class-a',
+      storeId: 'class-a',
       currentPage: '/admin/bookings',
     });
     expect(() => aiChatRequestSchema.parse({ message: '' })).toThrow();

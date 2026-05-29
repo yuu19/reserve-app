@@ -14,7 +14,11 @@ type JsonRecord = Record<string, unknown>;
 
 const publicSiteQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
-	classroomSlug: z.string().trim().min(1)
+	storeSlug: z.string().trim().min(1)
+});
+
+const publicTicketTypeQuerySchema = publicSiteQuerySchema.extend({
+	ticketTypeId: z.string().trim().min(1)
 });
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -54,25 +58,30 @@ const createApiUrl = (path: string): string => {
 	return new URL(path, backendUrl).toString();
 };
 
-const publicSitePath = ({
+const publicSitePath = ({ orgSlug, storeSlug }: { orgSlug: string; storeSlug: string }): string =>
+	`/api/v1/public/orgs/${encodeURIComponent(orgSlug)}/stores/${encodeURIComponent(storeSlug)}/site`;
+
+const publicTicketTypePath = ({
 	orgSlug,
-	classroomSlug
+	storeSlug,
+	ticketTypeId
 }: {
 	orgSlug: string;
-	classroomSlug: string;
+	storeSlug: string;
+	ticketTypeId: string;
 }): string =>
-	`/api/v1/public/orgs/${encodeURIComponent(orgSlug)}/classrooms/${encodeURIComponent(
-		classroomSlug
-	)}/site`;
+	`/api/v1/public/orgs/${encodeURIComponent(orgSlug)}/stores/${encodeURIComponent(
+		storeSlug
+	)}/ticket-types/${encodeURIComponent(ticketTypeId)}`;
 
 const isPublicSiteProfile = (value: unknown): value is PublicSiteProfilePayload =>
 	isRecord(value) &&
 	typeof value.organizationId === 'string' &&
 	typeof value.organizationSlug === 'string' &&
 	typeof value.organizationName === 'string' &&
-	typeof value.classroomId === 'string' &&
-	typeof value.classroomSlug === 'string' &&
-	typeof value.classroomName === 'string' &&
+	typeof value.storeId === 'string' &&
+	typeof value.storeSlug === 'string' &&
+	typeof value.storeName === 'string' &&
 	typeof value.siteName === 'string';
 
 const isPublicTicketType = (value: unknown): value is PublicTicketTypePayload =>
@@ -87,7 +96,8 @@ const isPublicTicketType = (value: unknown): value is PublicTicketTypePayload =>
 	Array.isArray(value.serviceIds) &&
 	value.serviceIds.every((serviceId) => typeof serviceId === 'string') &&
 	Array.isArray(value.serviceNames) &&
-	value.serviceNames.every((serviceName) => typeof serviceName === 'string');
+	value.serviceNames.every((serviceName) => typeof serviceName === 'string') &&
+	typeof value.href === 'string';
 
 const isPublicBookingPage = (value: unknown): value is PublicBookingPagePayload =>
 	isRecord(value) &&
@@ -122,9 +132,9 @@ const asPublicSitePage = (value: unknown): PublicSitePagePayload | null => {
 
 export const getPublicSitePage = query(
 	publicSiteQuerySchema,
-	async ({ orgSlug, classroomSlug }): Promise<PublicSitePagePayload> => {
+	async ({ orgSlug, storeSlug }): Promise<PublicSitePagePayload> => {
 		const event = getRequestEvent();
-		const response = await event.fetch(createApiUrl(publicSitePath({ orgSlug, classroomSlug })), {
+		const response = await event.fetch(createApiUrl(publicSitePath({ orgSlug, storeSlug })), {
 			method: 'GET'
 		});
 		const payload = await parseResponseBody(response);
@@ -136,5 +146,26 @@ export const getPublicSitePage = query(
 			throw new Error('予約サイトの形式が不正です。');
 		}
 		return publicSitePage;
+	}
+);
+
+export const getPublicTicketType = query(
+	publicTicketTypeQuerySchema,
+	async ({ orgSlug, storeSlug, ticketTypeId }): Promise<PublicTicketTypePayload> => {
+		const event = getRequestEvent();
+		const response = await event.fetch(
+			createApiUrl(publicTicketTypePath({ orgSlug, storeSlug, ticketTypeId })),
+			{
+				method: 'GET'
+			}
+		);
+		const payload = await parseResponseBody(response);
+		if (!response.ok) {
+			throw new Error(toErrorMessage(payload, '回数券詳細の取得に失敗しました。'));
+		}
+		if (!isPublicTicketType(payload)) {
+			throw new Error('回数券詳細の形式が不正です。');
+		}
+		return payload;
 	}
 );

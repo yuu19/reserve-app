@@ -82,7 +82,7 @@ describe('booking usecases', () => {
     repositoryMocks.findSlotForBookingCreate.mockResolvedValue({
       id: 'slot-1',
       organizationId: 'organization-1',
-      classroomId: 'classroom-1',
+      storeId: 'store-1',
       serviceId: 'service-1',
       status: SLOT_STATUS.OPEN,
       bookingOpenAt: new Date(Date.now() - 60_000),
@@ -163,7 +163,7 @@ describe('booking usecases', () => {
     repositoryMocks.findBookingForParticipantCancel.mockResolvedValue({
       id: 'booking-1',
       organizationId: 'organization-1',
-      classroomId: 'classroom-1',
+      storeId: 'store-1',
       participantId: 'participant-1',
       status: BOOKING_STATUS.CONFIRMED,
       participantsCount: 2,
@@ -203,7 +203,7 @@ describe('booking usecases', () => {
     expect(repositoryMocks.restoreTicketPackForBookingCancel).toHaveBeenCalledWith({
       database: ctx.database,
       organizationId: 'organization-1',
-      classroomId: 'classroom-1',
+      storeId: 'store-1',
       ticketPackId: 'ticket-pack-1',
       bookingId: 'booking-1',
       participantsCount: 2,
@@ -229,7 +229,7 @@ describe('booking usecases', () => {
     repositoryMocks.findBookingScope.mockResolvedValue({
       id: 'booking-1',
       organizationId: 'organization-1',
-      classroomId: 'classroom-1',
+      storeId: 'store-1',
       slotId: 'slot-1',
       serviceId: 'service-1',
       participantId: 'participant-1',

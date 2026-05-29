@@ -10,7 +10,7 @@ import type {
 import type { AuthInstance, AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import {
   getSessionIdentity,
-  type OrganizationClassroomAccess,
+  type OrganizationStoreAccess,
 } from '../../domain/booking/authorization.js';
 import { canAccessInternalBillingInspection } from '../../domain/billing/internal-operator-access.js';
 import { createDrizzleAiKnowledgeRetriever } from '../../infra/ai-knowledge/drizzle-ai-knowledge-retriever.js';
@@ -32,12 +32,12 @@ export type InternalOperatorAccessResult = { status: 200 | 401 | 403 };
 export type ResolveAiRouteRequestContextInput = {
   headers: Headers;
   organizationId?: string | null;
-  classroomId?: string | null;
+  storeId?: string | null;
   currentPage?: string | null;
 };
 
 export type AiChatBreadcrumbInput = {
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   generated: GeneratedAiAnswer;
   retrievalErrorSummary?: string | null;
   durationMs: number;
@@ -51,11 +51,9 @@ export type AiRouteContext = {
   conversationStore: ConversationStore;
   observabilityStore: ReturnType<typeof createDrizzleAiObservabilityStore>;
   retrieveKnowledge(
-    input: RetrieveKnowledgeInput<OrganizationClassroomAccess>,
+    input: RetrieveKnowledgeInput<OrganizationStoreAccess>,
   ): Promise<RetrievedKnowledgeChunk[]>;
-  resolveBusinessFacts(input: {
-    access: OrganizationClassroomAccess;
-  }): Promise<BusinessFactSummary>;
+  resolveBusinessFacts(input: { access: OrganizationStoreAccess }): Promise<BusinessFactSummary>;
   generateAnswer(
     input: Omit<Parameters<typeof generateAnswer>[0], 'env'>,
   ): ReturnType<typeof generateAnswer>;
@@ -66,7 +64,7 @@ export type AiRouteContext = {
   }): Promise<AiUsageLimitResult>;
   sanitizeSourceReference(input: {
     source: AiGeneratedSourceReference;
-    access: OrganizationClassroomAccess;
+    access: OrganizationStoreAccess;
     internalOperator?: boolean;
   }): AiSourceReference | null;
   ensureInternalOperator(input: { headers: Headers }): Promise<InternalOperatorAccessResult>;
@@ -119,7 +117,7 @@ export const createAiRouteContext = ({
         env,
         headers: input.headers,
         organizationId: input.organizationId,
-        classroomId: input.classroomId,
+        storeId: input.storeId,
         currentPage: input.currentPage,
       });
     },
@@ -183,7 +181,7 @@ export const createAiRouteContext = ({
         level: 'info',
         data: {
           organizationId: access.organizationId,
-          classroomId: access.classroomId,
+          storeId: access.storeId,
           confidence: generated.confidence,
           needsHumanSupport: generated.needsHumanSupport,
           provider: generated.provider,

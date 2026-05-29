@@ -8,7 +8,7 @@ import {
   type AiSourceVisibility,
   type SourceVisibilityPolicy,
 } from '@repo/saas-chatbot-core';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 
 export { AI_SOURCE_KINDS, AI_SOURCE_VISIBILITIES };
 export type {
@@ -20,7 +20,7 @@ export type {
 };
 
 export type AiAccessContext = {
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   internalOperator?: boolean;
 };
 
@@ -34,7 +34,7 @@ export const normalizeAiSourceVisibility = (
 
 /** 現在の access facts から読み取れる最上位の AI source visibility role を解決する。 */
 export const resolveAiPrimaryRole = (
-  access: OrganizationClassroomAccess,
+  access: OrganizationStoreAccess,
 ): AiSourceVisibility | 'authenticated' => {
   if (access.facts.orgRole === 'owner') {
     return 'owner';
@@ -42,10 +42,10 @@ export const resolveAiPrimaryRole = (
   if (access.facts.orgRole === 'admin') {
     return 'admin';
   }
-  if (access.facts.classroomStaffRole === 'manager') {
+  if (access.facts.storeStaffRole === 'manager') {
     return 'manager';
   }
-  if (access.facts.classroomStaffRole === 'staff') {
+  if (access.facts.storeStaffRole === 'staff') {
     return 'staff';
   }
   if (access.facts.hasParticipantRecord) {
@@ -54,9 +54,9 @@ export const resolveAiPrimaryRole = (
   return 'authenticated';
 };
 
-/** 単一の組織・教室 context でユーザーが読める source visibility を列挙する。 */
+/** 単一の組織・店舗 context でユーザーが読める source visibility を列挙する。 */
 export const resolveAllowedVisibilities = (
-  access: OrganizationClassroomAccess,
+  access: OrganizationStoreAccess,
 ): AiSourceVisibility[] => {
   const base: AiSourceVisibility[] = ['public', 'authenticated'];
   const role = resolveAiPrimaryRole(access);
@@ -88,7 +88,7 @@ export const canUseInternalKnowledge = ({
   return access.facts.orgRole === 'owner' || access.facts.orgRole === 'admin';
 };
 
-/** source row に visibility、internal-only、locale、組織、教室の各 check を適用する。 */
+/** source row に visibility、internal-only、locale、組織、店舗の各 check を適用する。 */
 export const isSourceScopeAllowed = ({
   source,
   access,
@@ -97,7 +97,7 @@ export const isSourceScopeAllowed = ({
   locale = 'ja',
 }: {
   source: AiSourceScope;
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   allowedVisibilities?: AiSourceVisibility[];
   internalOperator?: boolean;
   locale?: string;
@@ -119,7 +119,7 @@ export const isSourceScopeAllowed = ({
     return false;
   }
 
-  if (source.classroomId && source.classroomId !== access.classroomId) {
+  if (source.storeId && source.storeId !== access.storeId) {
     return false;
   }
 
@@ -132,7 +132,7 @@ export const sanitizeSourceReference = ({
   internalOperator = false,
 }: {
   source: AiGeneratedSourceReference;
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
   internalOperator?: boolean;
 }): AiSourceReference | null => {
   if (
@@ -141,7 +141,7 @@ export const sanitizeSourceReference = ({
         visibility: source.visibility ?? 'authenticated',
         internalOnly: source.internalOnly ?? false,
         organizationId: null,
-        classroomId: null,
+        storeId: null,
       },
       access,
       internalOperator,
@@ -162,7 +162,7 @@ export const sanitizeSourceReference = ({
   };
 };
 
-export type ReserveAppSourceVisibilityPolicy = SourceVisibilityPolicy<OrganizationClassroomAccess>;
+export type ReserveAppSourceVisibilityPolicy = SourceVisibilityPolicy<OrganizationStoreAccess>;
 
 export const reserveAppSourceVisibilityPolicy: ReserveAppSourceVisibilityPolicy = {
   resolveAllowedVisibilities,

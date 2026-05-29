@@ -6,7 +6,7 @@ import type { ReserveAppBillingPaymentIssueState } from './reserve-app-payment-p
 
 export const RESERVE_APP_ENTITLEMENTS = {
   ORGANIZATION_PREMIUM: 'organization.premium',
-  CLASSROOM_MULTIPLE: 'classroom.multiple',
+  STORE_MULTIPLE: 'store.multiple',
   STAFF_INVITE: 'staff.invite',
   BOOKING_APPROVAL: 'booking.approval',
   TICKET_ENABLED: 'ticket.enabled',
@@ -43,7 +43,7 @@ export type ReserveAppBillingProjectionInput = {
 
 const premiumEntitlementKeys = [
   RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM,
-  RESERVE_APP_ENTITLEMENTS.CLASSROOM_MULTIPLE,
+  RESERVE_APP_ENTITLEMENTS.STORE_MULTIPLE,
   RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
   RESERVE_APP_ENTITLEMENTS.BOOKING_APPROVAL,
   RESERVE_APP_ENTITLEMENTS.TICKET_ENABLED,

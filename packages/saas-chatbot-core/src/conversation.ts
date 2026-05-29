@@ -7,8 +7,8 @@ export type ConversationScope = {
   userId: string;
   /** conversation が紐づく organization ID。 */
   organizationId: string;
-  /** classroom 文脈がある場合の classroom ID。 */
-  classroomId: string | null;
+  /** store 文脈がある場合の store ID。 */
+  storeId: string | null;
 };
 
 /** assistant message を保存した直後に後続処理へ返す最小情報。 */

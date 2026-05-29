@@ -50,7 +50,7 @@ describe('AiChatWidget.svelte', () => {
 		render(AiChatWidget, {
 			enabled: true,
 			organizationId: 'org-a',
-			classroomId: 'class-a',
+			storeId: 'class-a',
 			currentPage: '/admin/dashboard'
 		});
 
@@ -67,7 +67,7 @@ describe('AiChatWidget.svelte', () => {
 			message: '予約枠を作るには？',
 			conversationId: undefined,
 			organizationId: 'org-a',
-			classroomId: 'class-a',
+			storeId: 'class-a',
 			currentPage: '/admin/dashboard'
 		});
 	});
@@ -110,7 +110,7 @@ describe('AiChatWidget.svelte', () => {
 		await expect.element(page.getByText('回答しました。')).toBeInTheDocument();
 	});
 
-	it('clears the stale conversation id when the active organization or classroom changes', async () => {
+	it('clears the stale conversation id when the active organization or store changes', async () => {
 		mocks.askAi
 			.mockResolvedValueOnce({
 				conversationId: 'conv-a',
@@ -141,7 +141,7 @@ describe('AiChatWidget.svelte', () => {
 		const rendered = render(AiChatWidget, {
 			enabled: true,
 			organizationId: 'org-a',
-			classroomId: 'class-a',
+			storeId: 'class-a',
 			currentPage: '/admin/dashboard'
 		});
 
@@ -153,7 +153,7 @@ describe('AiChatWidget.svelte', () => {
 		await rendered.rerender({
 			enabled: true,
 			organizationId: 'org-b',
-			classroomId: 'class-b',
+			storeId: 'class-b',
 			currentPage: '/admin/dashboard'
 		});
 		await page.getByRole('textbox', { name: 'AIサポートへの質問' }).fill('切替後の質問');
@@ -164,7 +164,7 @@ describe('AiChatWidget.svelte', () => {
 			message: '切替後の質問',
 			conversationId: undefined,
 			organizationId: 'org-b',
-			classroomId: 'class-b',
+			storeId: 'class-b',
 			currentPage: '/admin/dashboard'
 		});
 	});

@@ -8,15 +8,15 @@ const mocks = vi.hoisted(() => ({
 	getCurrentPathWithSearch: vi.fn(() => '/org-one/room-a/admin/invitations'),
 	loadOrganizations: vi.fn(),
 	loadOrganizationBilling: vi.fn(),
-	loadClassroomInvitations: vi.fn(),
-	createClassroomInvitation: vi.fn(),
+	loadStoreInvitations: vi.fn(),
+	createStoreInvitation: vi.fn(),
 	actOperatorInvitation: vi.fn()
 }));
 
 vi.mock('$lib/features/auth-session.svelte', () => ({
-		loadSession: mocks.loadSession,
-		redirectToLoginWithNext: mocks.redirectToLoginWithNext,
-		getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
+	loadSession: mocks.loadSession,
+	redirectToLoginWithNext: mocks.redirectToLoginWithNext,
+	getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
 }));
 
 vi.mock('$lib/features/organization-context.svelte', () => ({
@@ -27,13 +27,13 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 vi.mock('$lib/features/scoped-routing', () => ({
 	readWindowScopedRouteContext: () => ({
 		orgSlug: 'org-one',
-		classroomSlug: 'room-a'
+		storeSlug: 'room-a'
 	})
 }));
 
-vi.mock('$lib/features/invitations-classroom.svelte', () => ({
-	loadClassroomInvitations: mocks.loadClassroomInvitations,
-	createClassroomInvitation: mocks.createClassroomInvitation,
+vi.mock('$lib/features/invitations-store.svelte', () => ({
+	loadStoreInvitations: mocks.loadStoreInvitations,
+	createStoreInvitation: mocks.createStoreInvitation,
 	actOperatorInvitation: mocks.actOperatorInvitation
 }));
 
@@ -44,17 +44,17 @@ vi.mock('svelte-sonner', () => ({
 	}
 }));
 
-const { default: ClassroomInvitationsPage } = await import('./+page.svelte');
+const { default: StoreInvitationsPage } = await import('./+page.svelte');
 
-describe('/[orgSlug]/[classroomSlug]/admin/invitations/+page.svelte', () => {
+describe('/[orgSlug]/[storeSlug]/admin/invitations/+page.svelte', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.loadOrganizations.mockReset();
 		mocks.loadOrganizationBilling.mockReset();
-		mocks.loadClassroomInvitations.mockReset();
-		mocks.createClassroomInvitation.mockReset();
+		mocks.loadStoreInvitations.mockReset();
+		mocks.createStoreInvitation.mockReset();
 		mocks.actOperatorInvitation.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
@@ -64,7 +64,7 @@ describe('/[orgSlug]/[classroomSlug]/admin/invitations/+page.svelte', () => {
 		mocks.getCurrentPathWithSearch.mockReturnValue('/org-one/room-a/admin/invitations');
 		mocks.loadOrganizations.mockResolvedValue({
 			activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
-			activeClassroom: { id: 'class-1', name: 'Room A', slug: 'room-a' }
+			activeStore: { id: 'class-1', name: 'Room A', slug: 'room-a' }
 		});
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
@@ -81,15 +81,15 @@ describe('/[orgSlug]/[classroomSlug]/admin/invitations/+page.svelte', () => {
 				canManageBilling: false
 			}
 		});
-		mocks.loadClassroomInvitations.mockResolvedValue({
+		mocks.loadStoreInvitations.mockResolvedValue({
 			organizationId: 'org-1',
 			operatorInvitations: [],
 			participantInvitations: [],
-			canManageClassroom: true,
+			canManageStore: true,
 			canManageParticipants: true,
 			premiumRestriction: null
 		});
-		mocks.createClassroomInvitation.mockResolvedValue({
+		mocks.createStoreInvitation.mockResolvedValue({
 			ok: true,
 			message: 'ok'
 		});
@@ -99,25 +99,25 @@ describe('/[orgSlug]/[classroomSlug]/admin/invitations/+page.svelte', () => {
 		});
 	});
 
-	it('should render classroom invitations heading', async () => {
-		render(ClassroomInvitationsPage);
+	it('should render store invitations heading', async () => {
+		render(StoreInvitationsPage);
 		await expect
-			.element(page.getByRole('heading', { level: 1, name: '教室招待' }))
+			.element(page.getByRole('heading', { level: 1, name: '店舗招待' }))
 			.toBeInTheDocument();
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '送信済み教室運営招待' }))
+			.element(page.getByRole('heading', { level: 2, name: '送信済み店舗運営招待' }))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('heading', { level: 2, name: '送信済み参加者招待' }))
 			.toBeInTheDocument();
 	});
 
-	it('shows premium restriction guidance when classroom invitation management is premium-gated', async () => {
-		mocks.loadClassroomInvitations.mockResolvedValue({
+	it('shows premium restriction guidance when store invitation management is premium-gated', async () => {
+		mocks.loadStoreInvitations.mockResolvedValue({
 			organizationId: 'org-1',
 			operatorInvitations: [],
 			participantInvitations: [],
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageParticipants: false,
 			premiumRestriction: {
 				message: 'Organization premium plan is required for this feature.',
@@ -130,10 +130,15 @@ describe('/[orgSlug]/[classroomSlug]/admin/invitations/+page.svelte', () => {
 			}
 		});
 
-		render(ClassroomInvitationsPage);
+		render(StoreInvitationsPage);
 
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '教室招待と参加者招待管理には Premiumプランが必要です' }))
+			.element(
+				page.getByRole('heading', {
+					level: 2,
+					name: '店舗招待と参加者招待管理には Premiumプランが必要です'
+				})
+			)
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByText(/契約変更と支払い設定は organization owner のみです/))

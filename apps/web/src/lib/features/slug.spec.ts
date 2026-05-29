@@ -13,15 +13,15 @@ describe('slug helpers', () => {
 	});
 
 	it('falls back when the name cannot become an ascii slug', () => {
-		expect(createSlugCandidate('渋谷校', 'classroom')).toMatch(/^classroom-[a-z0-9]+$/);
+		expect(createSlugCandidate('渋谷校', 'store')).toMatch(/^store-[a-z0-9]+$/);
 	});
 
 	it('creates a unique candidate against existing slugs', () => {
-		const fallbackSlug = createSlugCandidate('渋谷校', 'classroom');
+		const fallbackSlug = createSlugCandidate('渋谷校', 'store');
 		expect(
 			createUniqueSlugCandidate({
 				value: '渋谷校',
-				fallback: 'classroom',
+				fallback: 'store',
 				existingSlugs: [fallbackSlug, `${fallbackSlug}-2`]
 			})
 		).toBe(`${fallbackSlug}-3`);

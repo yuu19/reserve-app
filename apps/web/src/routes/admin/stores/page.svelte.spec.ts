@@ -1,19 +1,19 @@
 import { page } from 'vitest/browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import ClassroomsPage from './+page.svelte';
+import StoresPage from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(),
 	loadSession: vi.fn(),
 	loadPortalAccess: vi.fn(),
 	redirectToLoginWithNext: vi.fn(),
-	getCurrentPathWithSearch: vi.fn(() => '/admin/classrooms'),
+	getCurrentPathWithSearch: vi.fn(() => '/admin/stores'),
 	resolvePortalHomePath: vi.fn(() => '/participant/home'),
 	loadOrganizations: vi.fn(),
-	listClassroomsByOrgSlug: vi.fn(),
-	createClassroom: vi.fn(),
-	updateClassroom: vi.fn(),
+	listStoresByOrgSlug: vi.fn(),
+	createStore: vi.fn(),
+	updateStore: vi.fn(),
 	loadOrganizationBilling: vi.fn()
 }));
 
@@ -43,13 +43,13 @@ vi.mock('$lib/features/auth-session.svelte', async () => {
 
 vi.mock('$lib/features/organization-context.svelte', () => ({
 	loadOrganizations: mocks.loadOrganizations,
-	listClassroomsByOrgSlug: mocks.listClassroomsByOrgSlug,
-	createClassroom: mocks.createClassroom,
-	updateClassroom: mocks.updateClassroom,
+	listStoresByOrgSlug: mocks.listStoresByOrgSlug,
+	createStore: mocks.createStore,
+	updateStore: mocks.updateStore,
 	loadOrganizationBilling: mocks.loadOrganizationBilling
 }));
 
-describe('/admin/classrooms/+page.svelte', () => {
+describe('/admin/stores/+page.svelte', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
@@ -58,9 +58,9 @@ describe('/admin/classrooms/+page.svelte', () => {
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.resolvePortalHomePath.mockReset();
 		mocks.loadOrganizations.mockReset();
-		mocks.listClassroomsByOrgSlug.mockReset();
-		mocks.createClassroom.mockReset();
-		mocks.updateClassroom.mockReset();
+		mocks.listStoresByOrgSlug.mockReset();
+		mocks.createStore.mockReset();
+		mocks.updateStore.mockReset();
 		mocks.loadOrganizationBilling.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
@@ -72,15 +72,15 @@ describe('/admin/classrooms/+page.svelte', () => {
 		});
 		mocks.loadOrganizations.mockResolvedValue({
 			activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
-			activeClassroom: null
+			activeStore: null
 		});
-		mocks.listClassroomsByOrgSlug.mockResolvedValue([]);
-		mocks.createClassroom.mockResolvedValue({
+		mocks.listStoresByOrgSlug.mockResolvedValue([]);
+		mocks.createStore.mockResolvedValue({
 			ok: true,
 			status: 200,
-			message: '教室を作成しました。',
+			message: '店舗を作成しました。',
 			premiumRestriction: null,
-			classroom: {
+			store: {
 				id: 'room-1',
 				slug: 'room-1',
 				name: 'Room 1',
@@ -88,7 +88,7 @@ describe('/admin/classrooms/+page.svelte', () => {
 				facts: {},
 				sources: {},
 				canManage: true,
-				canManageClassroom: true,
+				canManageStore: true,
 				canManageBookings: true,
 				canManageParticipants: true,
 				canUseParticipantBooking: true
@@ -96,8 +96,8 @@ describe('/admin/classrooms/+page.svelte', () => {
 		});
 	});
 
-	it('shows premium restriction guidance after classroom creation is denied by premium gating', async () => {
-		mocks.createClassroom.mockResolvedValue({
+	it('shows premium restriction guidance after store creation is denied by premium gating', async () => {
+		mocks.createStore.mockResolvedValue({
 			ok: false,
 			status: 403,
 			message: 'この機能は組織のPremiumプランで利用できます。',
@@ -110,7 +110,7 @@ describe('/admin/classrooms/+page.svelte', () => {
 				planState: 'free',
 				trialEndsAt: null
 			},
-			classroom: null
+			store: null
 		});
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
@@ -128,23 +128,23 @@ describe('/admin/classrooms/+page.svelte', () => {
 			}
 		});
 
-		render(ClassroomsPage);
+		render(StoresPage);
 
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '教室を作成' }))
+			.element(page.getByRole('heading', { level: 2, name: '店舗を作成' }))
 			.toBeInTheDocument();
-		await page.getByLabelText('教室名').fill('Premium Room');
-		await page.getByRole('button', { name: '教室を作成' }).click();
+		await page.getByLabelText('店舗名').fill('Premium Room');
+		await page.getByRole('button', { name: '店舗を作成' }).click();
 
 		await vi.waitFor(() => {
-			expect(mocks.createClassroom).toHaveBeenCalledWith('org-one', {
+			expect(mocks.createStore).toHaveBeenCalledWith('org-one', {
 				name: 'Premium Room',
 				slug: 'premium-room'
 			});
 		});
 		await expect
 			.element(
-				page.getByRole('heading', { level: 2, name: '複数教室管理には Premiumプランが必要です' })
+				page.getByRole('heading', { level: 2, name: '複数店舗管理には Premiumプランが必要です' })
 			)
 			.toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '契約画面を開く' })).toBeInTheDocument();

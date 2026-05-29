@@ -13,7 +13,7 @@
 	let {
 		enabled = false,
 		organizationId = null,
-		classroomId = null,
+		storeId = null,
 		currentPage = null
 	}: Props = $props();
 
@@ -22,7 +22,7 @@
 	let lastScopeKey: string | null = null;
 
 	$effect(() => {
-		const scopeKey = enabled ? `${organizationId ?? ''}:${classroomId ?? ''}` : 'inactive';
+		const scopeKey = enabled ? `${organizationId ?? ''}:${storeId ?? ''}` : 'inactive';
 		if (lastScopeKey !== null && scopeKey !== lastScopeKey) {
 			chat.resetConversation();
 			if (!enabled) {
@@ -55,7 +55,7 @@
 	const submit = async () => {
 		await chat.send({
 			organizationId,
-			classroomId,
+			storeId,
 			currentPage
 		});
 		await tick();

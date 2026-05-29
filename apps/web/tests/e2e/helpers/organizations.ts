@@ -8,8 +8,8 @@ export type TestOrganization = {
 	id: string;
 	name: string;
 	slug: string;
-	classroomId: string;
-	classroomSlug: string;
+	storeId: string;
+	storeSlug: string;
 };
 
 export type TestService = {
@@ -45,12 +45,12 @@ export const createOrganization = async ({
 		id: id as string,
 		name,
 		slug,
-		classroomId: id as string,
-		classroomSlug: slug
+		storeId: id as string,
+		storeSlug: slug
 	};
 };
 
-export const updateClassroom = async ({
+export const updateStore = async ({
 	request,
 	organization,
 	name,
@@ -64,7 +64,7 @@ export const updateClassroom = async ({
 	const response = await request.patch(
 		`${backendUrl}/api/v1/auth/orgs/${encodeURIComponent(
 			organization.slug
-		)}/classrooms/${encodeURIComponent(organization.classroomSlug)}`,
+		)}/stores/${encodeURIComponent(organization.storeSlug)}`,
 		{
 			data: {
 				name,
@@ -72,13 +72,13 @@ export const updateClassroom = async ({
 			}
 		}
 	);
-	const payload = await expectOkJson(response, `update classroom ${organization.classroomSlug}`);
-	const id = typeof payload.id === 'string' ? payload.id : organization.classroomId;
+	const payload = await expectOkJson(response, `update store ${organization.storeSlug}`);
+	const id = typeof payload.id === 'string' ? payload.id : organization.storeId;
 	const nextSlug = typeof payload.slug === 'string' ? payload.slug : slug;
 	return {
 		...organization,
-		classroomId: id,
-		classroomSlug: nextSlug
+		storeId: id,
+		storeSlug: nextSlug
 	};
 };
 
@@ -87,15 +87,15 @@ export const createOwnerOrganization = async ({
 	context,
 	token,
 	slug = token,
-	classroomSlug,
-	classroomName
+	storeSlug,
+	storeName
 }: {
 	request: APIRequestContext;
 	context?: BrowserContext;
 	token: string;
 	slug?: string;
-	classroomSlug?: string;
-	classroomName?: string;
+	storeSlug?: string;
+	storeName?: string;
 }) => {
 	const owner = createAccount(token, 'owner');
 	await signUpAccount({ request, account: owner });
@@ -105,14 +105,14 @@ export const createOwnerOrganization = async ({
 		slug
 	});
 	if (
-		(classroomSlug && classroomSlug !== organization.classroomSlug) ||
-		(classroomName && classroomName !== organization.name)
+		(storeSlug && storeSlug !== organization.storeSlug) ||
+		(storeName && storeName !== organization.name)
 	) {
-		organization = await updateClassroom({
+		organization = await updateStore({
 			request,
 			organization,
-			name: classroomName ?? `E2E ${token}`,
-			slug: classroomSlug ?? organization.classroomSlug
+			name: storeName ?? `E2E ${token}`,
+			slug: storeSlug ?? organization.storeSlug
 		});
 	}
 	if (context) {
@@ -135,7 +135,7 @@ export const createService = async ({
 	const response = await request.post(`${backendUrl}/api/v1/auth/organizations/services`, {
 		data: {
 			organizationId: organization.id,
-			classroomId: organization.classroomId,
+			storeId: organization.storeId,
 			name,
 			description: `${name} description`,
 			kind: 'single',
@@ -186,7 +186,7 @@ export const createSlot = async ({
 	const response = await request.post(`${backendUrl}/api/v1/auth/organizations/slots`, {
 		data: {
 			organizationId: organization.id,
-			classroomId: organization.classroomId,
+			storeId: organization.storeId,
 			serviceId: service.id,
 			startAt,
 			endAt,

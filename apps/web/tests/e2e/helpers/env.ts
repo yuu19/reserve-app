@@ -24,9 +24,9 @@ export const publicEventsOrgSlug =
 	process.env.PUBLIC_EVENTS_ORG_SLUG?.trim() ||
 	generatedEnv.PUBLIC_EVENTS_ORG_SLUG?.trim() ||
 	'public-events';
-export const publicEventsClassroomSlug =
-	process.env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() ||
-	generatedEnv.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() ||
+export const publicEventsStoreSlug =
+	process.env.PUBLIC_EVENTS_STORE_SLUG?.trim() ||
+	generatedEnv.PUBLIC_EVENTS_STORE_SLUG?.trim() ||
 	publicEventsOrgSlug;
 
 const sanitizeToken = (value: string): string =>

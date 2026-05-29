@@ -4,9 +4,7 @@ import { render } from 'vitest-browser-svelte';
 import EventsPage from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
-	goto: vi.fn(),
-	loadPublicEvents: vi.fn(),
-	loadSession: vi.fn()
+	loadPublicEvents: vi.fn()
 }));
 
 const pageState = vi.hoisted(() => ({
@@ -17,10 +15,6 @@ vi.mock('$app/state', () => ({
 	page: pageState
 }));
 
-vi.mock('$app/navigation', () => ({
-	goto: mocks.goto
-}));
-
 vi.mock('$app/paths', () => ({
 	resolve: (value: string) => value
 }));
@@ -29,24 +23,18 @@ vi.mock('$lib/features/events.svelte', () => ({
 	loadPublicEvents: mocks.loadPublicEvents
 }));
 
-vi.mock('$lib/features/auth-session.svelte', () => ({
-	loadSession: mocks.loadSession
-}));
-
 describe('/events/+page.svelte', () => {
 	beforeEach(() => {
 		pageState.params = {};
-		mocks.goto.mockReset();
 		mocks.loadPublicEvents.mockReset();
-		mocks.loadSession.mockReset();
 
 		mocks.loadPublicEvents.mockResolvedValue({
 			events: [
 				{
 					organizationId: 'org-1',
 					organizationSlug: 'org-one',
-					classroomId: 'room-1',
-					classroomSlug: 'room-one',
+					storeId: 'room-1',
+					storeSlug: 'room-one',
 					serviceId: 'service-1',
 					serviceName: '公開ヨガ',
 					serviceDescription: '公開イベント説明',
@@ -76,13 +64,10 @@ describe('/events/+page.svelte', () => {
 					expiresInDays: 90,
 					serviceScope: 'all',
 					serviceIds: [],
-					serviceNames: []
+					serviceNames: [],
+					href: '/org-one/room-one/tickets/ticket-all'
 				}
 			]
-		});
-		mocks.loadSession.mockResolvedValue({
-			session: null,
-			status: 401
 		});
 	});
 
@@ -98,7 +83,7 @@ describe('/events/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('renders purchasable ticket types with participant login CTA', async () => {
+	it('renders purchasable ticket types as detail links', async () => {
 		render(EventsPage);
 
 		await expect
@@ -106,26 +91,33 @@ describe('/events/+page.svelte', () => {
 			.toBeInTheDocument();
 		await expect.element(page.getByText('公開回数券')).toBeInTheDocument();
 		await expect.element(page.getByText('対象サービス: すべてのサービス')).toBeInTheDocument();
-		const loginCta = page.getByRole('link', { name: 'ログインして購入申請' }).first();
+		const ticketLink = page.getByRole('link', { name: /公開回数券/ }).first();
 		await expect
-			.element(loginCta)
-			.toHaveAttribute('href', '/participant/login?next=%2Fparticipant%2Fbookings');
+			.element(ticketLink)
+			.toHaveAttribute('href', '/org-one/room-one/tickets/ticket-all');
 	});
 
 	it('loads scoped public events from route params', async () => {
-		pageState.params = { orgSlug: 'org2', classroomSlug: 'world' };
+		pageState.params = { orgSlug: 'org2', storeSlug: 'world' };
 		render(EventsPage);
 
 		await vi.waitFor(() => {
 			expect(mocks.loadPublicEvents).toHaveBeenCalledWith({
 				orgSlug: 'org2',
-				classroomSlug: 'world'
+				storeSlug: 'world'
 			});
 		});
-		const loginCta = page.getByRole('link', { name: 'ログインして購入申請' }).first();
+		const ticketLink = page.getByRole('link', { name: /公開回数券/ }).first();
 		await expect
-			.element(loginCta)
-			.toHaveAttribute('href', '/participant/login?next=%2Forg2%2Fworld%2Fparticipant%2Fbookings');
+			.element(ticketLink)
+			.toHaveAttribute('href', '/org-one/room-one/tickets/ticket-all');
+	});
+
+	it('renders event cards as detail links', async () => {
+		render(EventsPage);
+
+		const eventLink = page.getByRole('link', { name: /公開ヨガ/ }).first();
+		await expect.element(eventLink).toHaveAttribute('href', '/org-one/room-one/events/slot-1');
 	});
 
 	it('renders empty ticket message when no ticket type is purchasable', async () => {

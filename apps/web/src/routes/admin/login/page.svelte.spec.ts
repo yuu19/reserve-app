@@ -71,7 +71,7 @@ describe('/admin/login/+page.svelte', () => {
 			hasAdminPortalAccess: false,
 			hasParticipantAccess: false,
 			canManage: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageBookings: false,
 			canManageParticipants: false,
 			canUseParticipantBooking: false,
@@ -86,9 +86,7 @@ describe('/admin/login/+page.svelte', () => {
 
 		render(AdminLoginPage);
 
-		await expect
-			.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null)
-			.toBe('/admin/onboarding');
+		await expect.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null).toBe('/admin/onboarding');
 	});
 
 	it('prefers participant home when the user only has participant access', async () => {
@@ -101,7 +99,7 @@ describe('/admin/login/+page.svelte', () => {
 			hasAdminPortalAccess: false,
 			hasParticipantAccess: true,
 			canManage: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageBookings: false,
 			canManageParticipants: false,
 			canUseParticipantBooking: true,
@@ -116,8 +114,6 @@ describe('/admin/login/+page.svelte', () => {
 
 		render(AdminLoginPage);
 
-		await expect
-			.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null)
-			.toBe('/participant/home');
+		await expect.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null).toBe('/participant/home');
 	});
 });

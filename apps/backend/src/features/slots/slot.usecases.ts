@@ -1,6 +1,6 @@
 import { resolveOrganizationId } from '../../domain/booking/authorization.js';
 import { DEFAULT_TIMEZONE, SLOT_STATUS } from '../../domain/booking/constants.js';
-import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
+import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import { parseIsoDateOrNull } from '../../shared/date.js';
 import { serializeSlot } from '../../shared/serializers.js';
 import {
@@ -67,7 +67,7 @@ const resolveSlotBookingWindow = ({
 };
 
 /**
- * service 所属と classroom 管理権限を確認し、予約受付窓を解決して slot を作成します。
+ * service 所属と store 管理権限を確認し、予約受付窓を解決して slot を作成します。
  */
 export const createSlot = async (
   ctx: BookingRouteContext,
@@ -95,13 +95,13 @@ export const createSlot = async (
     return forbidden();
   }
 
-  if (body.classroomId && body.classroomId !== service.classroomId) {
+  if (body.storeId && body.storeId !== service.storeId) {
     return forbidden();
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId,
-    classroomId: service.classroomId,
+    storeId: service.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -119,7 +119,7 @@ export const createSlot = async (
     database: ctx.database,
     slotId,
     organizationId,
-    classroomId: service.classroomId,
+    storeId: service.storeId,
     serviceId: service.id,
     startAt,
     endAt,
@@ -158,13 +158,13 @@ export const updateExistingSlot = async (
     return notFound('Slot not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, slot.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, slot.storeId)) {
     return forbidden();
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId: slot.organizationId,
-    classroomId: slot.classroomId,
+    storeId: slot.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -185,7 +185,7 @@ export const updateExistingSlot = async (
   if (
     !service ||
     service.organizationId !== slot.organizationId ||
-    service.classroomId !== slot.classroomId
+    service.storeId !== slot.storeId
   ) {
     return notFound('Service not found.');
   }
@@ -232,7 +232,7 @@ export const listStaffSlots = async (
 
   const hasAccess = await ctx.canManageBookingsScope({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -248,7 +248,7 @@ export const listStaffSlots = async (
   const rows = await listSlots({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     serviceId: query.serviceId,
     status: query.status,
     from,
@@ -259,7 +259,7 @@ export const listStaffSlots = async (
 };
 
 /**
- * participant が所属する classroom のうち、現在予約可能な slot だけを返します。
+ * participant が所属する store のうち、現在予約可能な slot だけを返します。
  */
 export const listParticipantAvailableSlots = async (
   ctx: BookingRouteContext,
@@ -276,10 +276,10 @@ export const listParticipantAvailableSlots = async (
     return validationError('organizationId is required.');
   }
 
-  if (query.classroomId) {
-    const scoped = await ctx.resolveRequestedClassroomAccess({
+  if (query.storeId) {
+    const scoped = await ctx.resolveRequestedStoreAccess({
       organizationId,
-      classroomId: query.classroomId,
+      storeId: query.storeId,
       userId: identity.userId,
     });
     if (!scoped || !scoped.access.effective.canUseParticipantBooking) {
@@ -289,14 +289,14 @@ export const listParticipantAvailableSlots = async (
 
   const participantRecords = await ctx.listParticipantRecordsForUser({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (participantRecords.length === 0) {
     return forbidden();
   }
-  const accessibleClassroomIds = Array.from(
-    new Set(participantRecords.map((participant) => participant.classroomId)),
+  const accessibleStoreIds = Array.from(
+    new Set(participantRecords.map((participant) => participant.storeId)),
   );
 
   const from = parseIsoDateOrNull(query.from);
@@ -308,9 +308,9 @@ export const listParticipantAvailableSlots = async (
   const rows = await listAvailableSlots({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     serviceId: query.serviceId,
-    accessibleClassroomIds,
+    accessibleStoreIds,
     from,
     to,
     now: new Date(),
@@ -337,13 +337,13 @@ export const cancelExistingSlot = async (
     return notFound('Slot not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, slot.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, slot.storeId)) {
     return forbidden();
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId: slot.organizationId,
-    classroomId: slot.classroomId,
+    storeId: slot.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {

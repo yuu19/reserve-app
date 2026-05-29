@@ -12,7 +12,7 @@ knowledge 本文・metadata・会話・feedback・usage counter の正本、AI G
 observability、cache、rate-limit 補助、fallback の入口として扱う。
 
 V1 は案内専用で、予約、課金、参加者、チケット、招待などの業務操作を実行しない。backend は
-Better Auth session、organization/classroom scope、effective capability、owner-only billing rule を
+Better Auth session、organization/store scope、effective capability、owner-only billing rule を
 解決してから、許可された knowledge と answer-time business facts だけを LLM に渡す。Web は
 DESIGN.md に沿った chat widget と source/feedback UI を追加する。Mobile chat entry point は対象外。
 
@@ -54,7 +54,7 @@ _GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 - **II. Type Safety と API Boundary**: PASS。chat request、AI response、embedding result、Vectorize metadata、
   source references、feedback、business facts は Zod/domain union/type guard で正規化する。AI/Vectorize provider response は
   `unknown` から parse し、`any` で隠さない。
-- **III. Authorization と Scope**: PASS。organization/classroom scope と effective capability を正本にし、
+- **III. Authorization と Scope**: PASS。organization/store scope と effective capability を正本にし、
   display role や currentPage を判定に使わない。owner-only billing rule と internal-operator-only review を維持する。
 - **IV. Risk-Based Verification**: PASS。backend route/integration、source visibility、prompt-injection guard、
   cross-scope conversation、usage limit、retention、web widget state は regression coverage の対象にする。
@@ -189,7 +189,7 @@ See [research.md](./research.md). All planning decisions are resolved.
   and keep Cloudflare Workers/Hono/SvelteKit/D1 boundaries.
 - **II. Type Safety と API Boundary**: PASS。contracts and data model define explicit request/response unions, visibility values,
   AI output parsing, and provider response normalization points.
-- **III. Authorization と Scope**: PASS。contracts require organization/classroom context resolution, role-safe source filtering,
+- **III. Authorization と Scope**: PASS。contracts require organization/store context resolution, role-safe source filtering,
   owner-only billing details, internal-operator-only review, and cross-scope conversation rejection.
 - **IV. Risk-Based Verification**: PASS。quickstart defines backend integration, pure AI guard tests, web component/server tests,
   retention/rate-limit checks, and Cloudflare AI/Vectorize smoke evidence.

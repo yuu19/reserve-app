@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 import {
   buildAiSystemPrompt,
   buildAnswerPrompt,
@@ -7,28 +7,28 @@ import {
   shouldSkipAiGatewayCache,
 } from './prompt.js';
 
-const access: OrganizationClassroomAccess = {
+const access: OrganizationStoreAccess = {
   organizationId: 'org-a',
   organizationSlug: 'org-a',
   organizationName: 'Org A',
-  classroomId: 'class-a',
-  classroomSlug: 'class-a',
-  classroomName: 'Class A',
+  storeId: 'class-a',
+  storeSlug: 'class-a',
+  storeName: 'Class A',
   facts: {
     orgRole: 'owner',
-    classroomStaffRole: null,
+    storeStaffRole: null,
     hasParticipantRecord: false,
   },
   effective: {
     canManageOrganization: true,
-    canManageClassroom: true,
+    canManageStore: true,
     canManageBookings: true,
     canManageParticipants: true,
     canUseParticipantBooking: false,
   },
   sources: {
     canManageOrganization: 'org_role',
-    canManageClassroom: 'org_role',
+    canManageStore: 'org_role',
     canManageBookings: 'org_role',
     canManageParticipants: 'org_role',
     canUseParticipantBooking: null,

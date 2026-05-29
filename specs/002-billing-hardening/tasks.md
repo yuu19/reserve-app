@@ -38,7 +38,7 @@
 - [x] T016 Update organization context billing helpers to consume common action envelopes in apps/web/src/lib/features/organization-context.svelte.ts
 - [x] T017 [P] Add backend billing fixture helpers for hardening scenarios in apps/backend/src/app.test.ts
 - [x] T018 [P] Add web billing fixture builders for hardening UI states in apps/web/src/routes/contracts/page.svelte.spec.ts
-- [x] T019 Add migration/backfill compatibility regression coverage for existing billing rows, including a negative regression that billing lifecycle remains organization-scoped and no classroom-scoped subscription ownership is created, in apps/backend/src/app.test.ts
+- [x] T019 Add migration/backfill compatibility regression coverage for existing billing rows, including a negative regression that billing lifecycle remains organization-scoped and no store-scoped subscription ownership is created, in apps/backend/src/app.test.ts
 
 **Checkpoint**: Schema, contracts, shared response shape, and fixtures are ready.
 

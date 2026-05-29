@@ -1,7 +1,7 @@
 import { findParticipantByUserAndOrganization } from '../../domain/booking/authorization.js';
 import { writeBookingAuditLog } from '../../domain/booking/audit.js';
 import { BOOKING_STATUS, SLOT_STATUS } from '../../domain/booking/constants.js';
-import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
+import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import { serializeBooking } from '../../shared/serializers.js';
 import {
   conflict,
@@ -51,14 +51,14 @@ export const createBooking = async (
     return notFound('Slot not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, slot.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, slot.storeId)) {
     return forbidden();
   }
 
   const participant = await findParticipantByUserAndOrganization({
     database: ctx.database,
     organizationId: slot.organizationId,
-    classroomId: body.classroomId ?? slot.classroomId,
+    storeId: body.storeId ?? slot.storeId,
     userId: identity.userId,
   });
   if (!participant) {
@@ -87,7 +87,7 @@ export const createBooking = async (
         database: ctx.database,
         bookingId,
         organizationId: slot.organizationId,
-        classroomId: slot.classroomId,
+        storeId: slot.storeId,
         slotId: slot.id,
         serviceId: slot.serviceId,
         participantId: participant.id,
@@ -100,7 +100,7 @@ export const createBooking = async (
         database: ctx.database,
         bookingId,
         organizationId: slot.organizationId,
-        classroomId: slot.classroomId,
+        storeId: slot.storeId,
         actorUserId: identity.userId,
         action: 'booking.application_received',
         metadata: {
@@ -171,7 +171,7 @@ export const createBooking = async (
       const consumed = await consumeTicketPackForParticipant({
         database: ctx.database,
         organizationId: slot.organizationId,
-        classroomId: slot.classroomId,
+        storeId: slot.storeId,
         serviceId: slot.serviceId,
         participantId: participant.id,
         participantsCount,
@@ -186,7 +186,7 @@ export const createBooking = async (
       database: ctx.database,
       bookingId,
       organizationId: slot.organizationId,
-      classroomId: slot.classroomId,
+      storeId: slot.storeId,
       slotId: slot.id,
       serviceId: slot.serviceId,
       participantId: participant.id,
@@ -200,7 +200,7 @@ export const createBooking = async (
       await consumeBookingTicketLedger({
         database: ctx.database,
         organizationId: slot.organizationId,
-        classroomId: slot.classroomId,
+        storeId: slot.storeId,
         ticketPackId: consumedTicketPackId,
         bookingId,
         participantsCount,
@@ -214,7 +214,7 @@ export const createBooking = async (
       database: ctx.database,
       bookingId,
       organizationId: slot.organizationId,
-      classroomId: slot.classroomId,
+      storeId: slot.storeId,
       actorUserId: identity.userId,
       action: 'booking.created',
       metadata: {

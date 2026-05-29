@@ -42,7 +42,7 @@ The widget is hidden or disabled when no authenticated session is available.
 - Empty messages cannot be sent.
 - Messages over 4,000 characters are rejected before sending with accessible error text.
 - Current page path can be sent as context hint, but UI must not present it as proof of permission.
-- When organization or classroom scope changes, chat state must reset the conversation id, messages, input, client error, and rate-limit display.
+- When organization or store scope changes, chat state must reset the conversation id, messages, input, client error, and rate-limit display.
 - In-flight responses from an older conversation scope must be ignored after reset.
 - Failed chat requests must restore the submitted text to the input so the user can retry.
 

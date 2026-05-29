@@ -17,12 +17,12 @@
 		DialogTitle
 	} from '$lib/components/ui/dialog';
 	import {
-		createClassroom,
-		listClassroomsByOrgSlug,
+		createStore,
+		listStoresByOrgSlug,
 		loadOrganizationBilling,
 		loadOrganizations,
-		updateClassroom,
-		type ClassroomContextPayload
+		updateStore,
+		type StoreContextPayload
 	} from '$lib/features/organization-context.svelte';
 	import {
 		getCurrentPathWithSearch,
@@ -45,8 +45,8 @@
 	let loading = $state(true);
 	let busy = $state(false);
 	let activeOrganization = $state<OrganizationPayload | null>(null);
-	let activeClassroom = $state<ClassroomContextPayload | null>(null);
-	let classrooms = $state<ClassroomContextPayload[]>([]);
+	let activeStore = $state<StoreContextPayload | null>(null);
+	let stores = $state<StoreContextPayload[]>([]);
 	let canManageOrganization = $state(false);
 	let billing = $state<OrganizationBillingPayload | null>(null);
 	let premiumRestriction = $state<OrganizationPremiumRestrictionPayload | null>(null);
@@ -54,7 +54,7 @@
 	let createSlugManuallyEdited = $state(false);
 	let editDialogOpen = $state(false);
 	let slugChangeDialogOpen = $state(false);
-	let editTarget = $state<ClassroomContextPayload | null>(null);
+	let editTarget = $state<StoreContextPayload | null>(null);
 	let editForm = $state({ name: '', slug: '' });
 
 	const roleLabelMap = {
@@ -63,15 +63,15 @@
 		participant: 'participant'
 	} as const;
 
-	const resolveClassroomRoleLabel = (classroom: ClassroomContextPayload) => {
-		const primaryRole = classroom.display.primaryRole;
+	const resolveStoreRoleLabel = (store: StoreContextPayload) => {
+		const primaryRole = store.display.primaryRole;
 		if (primaryRole === 'manager' || primaryRole === 'staff' || primaryRole === 'participant') {
 			return roleLabelMap[primaryRole];
 		}
 		return null;
 	};
 
-	const classroomSlugs = () => classrooms.map((classroom) => classroom.slug);
+	const storeSlugs = () => stores.map((store) => store.slug);
 
 	const updateCreateName = (event: Event) => {
 		const name = (event.currentTarget as HTMLInputElement).value;
@@ -79,8 +79,8 @@
 		if (!createSlugManuallyEdited) {
 			createForm.slug = createUniqueSlugCandidate({
 				value: name,
-				fallback: 'classroom',
-				existingSlugs: classroomSlugs()
+				fallback: 'store',
+				existingSlugs: storeSlugs()
 			});
 		}
 	};
@@ -105,29 +105,29 @@
 			return;
 		}
 
-		const [{ activeOrganization: nextOrganization, activeClassroom: nextClassroom }, portalAccess] =
+		const [{ activeOrganization: nextOrganization, activeStore: nextStore }, portalAccess] =
 			await Promise.all([loadOrganizations(), loadPortalAccess()]);
 
 		activeOrganization = nextOrganization;
-		activeClassroom = nextClassroom;
+		activeStore = nextStore;
 		canManageOrganization = portalAccess.hasOrganizationAdminAccess;
 		billing = null;
 		premiumRestriction = null;
 		if (!portalAccess.hasOrganizationAdminAccess) {
-			classrooms = [];
+			stores = [];
 			await goto(resolve(resolvePortalHomePath(portalAccess) ?? '/participant/home'));
 			return;
 		}
 
 		if (!nextOrganization?.slug) {
-			classrooms = [];
+			stores = [];
 			return;
 		}
 
-		classrooms = await listClassroomsByOrgSlug(nextOrganization.slug);
+		stores = await listStoresByOrgSlug(nextOrganization.slug);
 	};
 
-	const submitCreateClassroom = async (event: SubmitEvent) => {
+	const submitCreateStore = async (event: SubmitEvent) => {
 		event.preventDefault();
 		if (!activeOrganization?.slug || !canManageOrganization) {
 			return;
@@ -135,14 +135,14 @@
 
 		busy = true;
 		try {
-			const result = await createClassroom(activeOrganization.slug, {
+			const result = await createStore(activeOrganization.slug, {
 				name: createForm.name,
 				slug: createForm.slug
 					? normalizeSlug(createForm.slug)
 					: createUniqueSlugCandidate({
 							value: createForm.name,
-							fallback: 'classroom',
-							existingSlugs: classroomSlugs()
+							fallback: 'store',
+							existingSlugs: storeSlugs()
 						})
 			});
 			if (!result.ok) {
@@ -164,27 +164,27 @@
 		}
 	};
 
-	const openEditDialog = (classroom: ClassroomContextPayload) => {
-		editTarget = classroom;
+	const openEditDialog = (store: StoreContextPayload) => {
+		editTarget = store;
 		editForm = {
-			name: classroom.name,
-			slug: classroom.slug
+			name: store.name,
+			slug: store.slug
 		};
 		slugChangeDialogOpen = false;
 		editDialogOpen = true;
 	};
 
-	const submitUpdateClassroom = async (event: SubmitEvent) => {
+	const submitUpdateStore = async (event: SubmitEvent) => {
 		event.preventDefault();
-		await submitUpdateClassroomForm(false);
+		await submitUpdateStoreForm(false);
 	};
 
-	const submitUpdateClassroomForm = async (slugChangeConfirmed: boolean) => {
+	const submitUpdateStoreForm = async (slugChangeConfirmed: boolean) => {
 		if (!activeOrganization?.slug || !editTarget || !canManageOrganization) {
 			return;
 		}
 
-		const nextSlug = createSlugCandidate(editForm.slug || editForm.name, 'classroom');
+		const nextSlug = createSlugCandidate(editForm.slug || editForm.name, 'store');
 		editForm.slug = nextSlug;
 		if (nextSlug !== editTarget.slug && !slugChangeConfirmed) {
 			slugChangeDialogOpen = true;
@@ -193,11 +193,11 @@
 
 		busy = true;
 		try {
-			const result = await updateClassroom(activeOrganization.slug, editTarget.slug, {
+			const result = await updateStore(activeOrganization.slug, editTarget.slug, {
 				name: editForm.name,
 				slug: nextSlug
 			});
-			if (!result.ok || !result.classroom) {
+			if (!result.ok || !result.store) {
 				if (result.premiumRestriction) {
 					premiumRestriction = result.premiumRestriction;
 					const billingResult = await loadOrganizationBilling(activeOrganization.id);
@@ -211,11 +211,11 @@
 			editDialogOpen = false;
 			slugChangeDialogOpen = false;
 
-			if (activeClassroom?.slug === editTarget.slug) {
+			if (activeStore?.slug === editTarget.slug) {
 				await goto(
-					resolve('/[orgSlug]/[classroomSlug]/admin/classrooms', {
+					resolve('/[orgSlug]/[storeSlug]/admin/stores', {
 						orgSlug: activeOrganization.slug,
-						classroomSlug: result.classroom.slug
+						storeSlug: result.store.slug
 					}),
 					{ invalidateAll: true }
 				);
@@ -228,27 +228,27 @@
 		}
 	};
 
-	const openClassroom = async (classroomSlug: string) => {
+	const openStore = async (storeSlug: string) => {
 		if (!activeOrganization?.slug) {
 			return;
 		}
 		await goto(
-			resolve('/[orgSlug]/[classroomSlug]/admin/classrooms', {
+			resolve('/[orgSlug]/[storeSlug]/admin/stores', {
 				orgSlug: activeOrganization.slug,
-				classroomSlug
+				storeSlug
 			}),
 			{ invalidateAll: true }
 		);
 	};
 
-	const openClassroomInvitations = async (classroomSlug: string) => {
+	const openStoreInvitations = async (storeSlug: string) => {
 		if (!activeOrganization?.slug) {
 			return;
 		}
 		await goto(
-			resolve('/[orgSlug]/[classroomSlug]/admin/invitations', {
+			resolve('/[orgSlug]/[storeSlug]/admin/invitations', {
 				orgSlug: activeOrganization.slug,
-				classroomSlug
+				storeSlug
 			})
 		);
 	};
@@ -267,15 +267,15 @@
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-foreground">教室管理</h1>
+		<h1 class="text-3xl font-semibold text-foreground">店舗管理</h1>
 		<p class="text-sm text-muted-foreground">
-			教室の作成、名称・URL識別子の更新、教室ごとの管理導線への遷移を行います。
+			店舗の作成、名称・URL識別子の更新、店舗ごとの管理導線への遷移を行います。
 		</p>
 	</header>
 
 	{#if premiumRestriction}
 		<PremiumRestrictionNotice
-			featureLabel="複数教室管理"
+			featureLabel="複数店舗管理"
 			restriction={premiumRestriction}
 			{billing}
 		/>
@@ -284,7 +284,7 @@
 	{#if loading}
 		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardContent class="py-6">
-				<p class="text-sm text-muted-foreground">教室情報を読み込み中…</p>
+				<p class="text-sm text-muted-foreground">店舗情報を読み込み中…</p>
 			</CardContent>
 		</Card>
 	{:else if !activeOrganization}
@@ -297,7 +297,7 @@
 		<section class="grid gap-6 xl:grid-cols-[360px_1fr]">
 			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader class="space-y-2">
-					<h2 class="text-xl font-semibold text-foreground">教室を作成</h2>
+					<h2 class="text-xl font-semibold text-foreground">店舗を作成</h2>
 					<CardDescription>
 						対象組織: <span class="font-medium text-foreground">{activeOrganization.name}</span>
 					</CardDescription>
@@ -305,18 +305,18 @@
 				<CardContent class="space-y-4">
 					{#if !canManageOrganization}
 						<p class="text-sm text-muted-foreground">
-							教室の作成と設定更新は owner / admin のみ実行できます。
+							店舗の作成と設定更新は owner / admin のみ実行できます。
 						</p>
 					{:else}
 						<form
 							class="space-y-4 rounded-lg border border-border/80 bg-card/80 p-4"
-							onsubmit={submitCreateClassroom}
+							onsubmit={submitCreateStore}
 						>
 							<div class="space-y-2">
-								<Label for="classroom-name">教室名</Label>
+								<Label for="store-name">店舗名</Label>
 								<Input
-									id="classroom-name"
-									name="classroom_name"
+									id="store-name"
+									name="store_name"
 									value={createForm.name}
 									oninput={updateCreateName}
 									maxlength={120}
@@ -327,7 +327,7 @@
 							<div class="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
 								URL識別子:
 								<code class="font-mono text-foreground">
-									{createForm.slug || '教室名から自動生成'}
+									{createForm.slug || '店舗名から自動生成'}
 								</code>
 							</div>
 							<details class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
@@ -335,10 +335,10 @@
 									URL識別子を編集
 								</summary>
 								<div class="mt-3 space-y-2">
-									<Label for="classroom-slug">教室のURL識別子</Label>
+									<Label for="store-slug">店舗のURL識別子</Label>
 									<Input
-										id="classroom-slug"
-										name="classroom_slug"
+										id="store-slug"
+										name="store_slug"
 										value={createForm.slug}
 										oninput={updateCreateSlug}
 										pattern={SLUG_PATTERN_ATTRIBUTE}
@@ -350,7 +350,7 @@
 									<p class="text-xs text-muted-foreground">{SLUG_INPUT_HINT}</p>
 								</div>
 							</details>
-							<Button type="submit" disabled={busy}>教室を作成</Button>
+							<Button type="submit" disabled={busy}>店舗を作成</Button>
 						</form>
 					{/if}
 				</CardContent>
@@ -358,51 +358,51 @@
 
 			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader class="space-y-2">
-					<h2 class="text-xl font-semibold text-foreground">教室一覧</h2>
-					<CardDescription>現在アクセス可能な教室と、その管理導線です。</CardDescription>
+					<h2 class="text-xl font-semibold text-foreground">店舗一覧</h2>
+					<CardDescription>現在アクセス可能な店舗と、その管理導線です。</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-3">
-					{#if classrooms.length === 0}
-						<p class="text-sm text-muted-foreground">表示できる教室はまだありません。</p>
+					{#if stores.length === 0}
+						<p class="text-sm text-muted-foreground">表示できる店舗はまだありません。</p>
 					{:else}
 						<div class="space-y-3">
-							{#each classrooms as classroom (classroom.id)}
-								{@const classroomRoleLabel = resolveClassroomRoleLabel(classroom)}
+							{#each stores as store (store.id)}
+								{@const storeRoleLabel = resolveStoreRoleLabel(store)}
 								<div class="rounded-lg border border-border/80 bg-card/80 p-4">
 									<div class="flex flex-wrap items-start justify-between gap-3">
 										<div class="space-y-2">
 											<div class="flex flex-wrap items-center gap-2">
-												<p class="text-base font-semibold text-foreground">{classroom.name}</p>
-												{#if classroom.slug === activeClassroom?.slug}
+												<p class="text-base font-semibold text-foreground">{store.name}</p>
+												{#if store.slug === activeStore?.slug}
 													<Badge variant="default">利用中</Badge>
 												{/if}
-												{#if classroomRoleLabel}
-													<Badge variant="outline">{classroomRoleLabel}</Badge>
+												{#if storeRoleLabel}
+													<Badge variant="outline">{storeRoleLabel}</Badge>
 												{/if}
 											</div>
 											<p class="text-xs text-muted-foreground">
-												URL識別子: {classroom.slug}
+												URL識別子: {store.slug}
 											</p>
 										</div>
 										<div class="flex flex-wrap gap-2">
 											<Button
 												type="button"
 												variant="secondary"
-												onclick={() => openClassroom(classroom.slug)}
+												onclick={() => openStore(store.slug)}
 											>
-												この教室を開く
+												この店舗を開く
 											</Button>
 											<Button
 												type="button"
 												variant="outline"
-												onclick={() => openClassroomInvitations(classroom.slug)}
+												onclick={() => openStoreInvitations(store.slug)}
 											>
 												招待管理
 											</Button>
 											<Button
 												type="button"
 												variant="outline"
-												onclick={() => openEditDialog(classroom)}
+												onclick={() => openEditDialog(store)}
 												disabled={!canManageOrganization}
 											>
 												編集
@@ -420,20 +420,20 @@
 </main>
 
 <Dialog bind:open={editDialogOpen}>
-	<DialogContent aria-describedby="classroom-edit-description" class="sm:max-w-lg">
+	<DialogContent aria-describedby="store-edit-description" class="sm:max-w-lg">
 		<DialogHeader>
-			<DialogTitle>教室を編集</DialogTitle>
-			<DialogDescription id="classroom-edit-description">
-				教室名を更新します。URL識別子を変更すると、この教室のURLも変わります。
+			<DialogTitle>店舗を編集</DialogTitle>
+			<DialogDescription id="store-edit-description">
+				店舗名を更新します。URL識別子を変更すると、この店舗のURLも変わります。
 			</DialogDescription>
 		</DialogHeader>
 		{#if editTarget}
-			<form class="space-y-4" onsubmit={submitUpdateClassroom}>
+			<form class="space-y-4" onsubmit={submitUpdateStore}>
 				<div class="space-y-2">
-					<Label for="edit-classroom-name">教室名</Label>
+					<Label for="edit-store-name">店舗名</Label>
 					<Input
-						id="edit-classroom-name"
-						name="edit_classroom_name"
+						id="edit-store-name"
+						name="edit_store_name"
 						value={editForm.name}
 						oninput={updateEditName}
 						maxlength={120}
@@ -442,10 +442,10 @@
 					/>
 				</div>
 				<div class="space-y-2">
-					<Label for="edit-classroom-slug">教室のURL識別子</Label>
+					<Label for="edit-store-slug">店舗のURL識別子</Label>
 					<Input
-						id="edit-classroom-slug"
-						name="edit_classroom_slug"
+						id="edit-store-slug"
+						name="edit_store_slug"
 						value={editForm.slug}
 						oninput={updateEditSlug}
 						pattern={SLUG_PATTERN_ATTRIBUTE}
@@ -479,10 +479,10 @@
 </Dialog>
 
 <Dialog bind:open={slugChangeDialogOpen}>
-	<DialogContent aria-describedby="classroom-slug-change-description" class="sm:max-w-lg">
+	<DialogContent aria-describedby="store-slug-change-description" class="sm:max-w-lg">
 		<DialogHeader>
 			<DialogTitle>URL識別子を変更しますか</DialogTitle>
-			<DialogDescription id="classroom-slug-change-description">
+			<DialogDescription id="store-slug-change-description">
 				{editTarget?.name} のURLが
 				<code class="font-mono">{editTarget?.slug}</code>
 				から
@@ -502,7 +502,7 @@
 			<Button
 				type="button"
 				variant="destructive"
-				onclick={() => void submitUpdateClassroomForm(true)}
+				onclick={() => void submitUpdateStoreForm(true)}
 				disabled={busy}
 			>
 				URL識別子を変更して保存

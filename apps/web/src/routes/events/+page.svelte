@@ -1,32 +1,26 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { formatJaDateTime } from '$lib/date/format';
-	import { buildLoginRedirectHref } from '$lib/features/auth-portal';
-	import { loadSession } from '$lib/features/auth-session.svelte';
 	import { loadPublicEvents } from '$lib/features/events.svelte';
-	import { buildScopedPath, type ScopedRouteContext } from '$lib/features/scoped-routing';
+	import type { ScopedRouteContext } from '$lib/features/scoped-routing';
 	import type { PublicEventListItemPayload, PublicTicketTypePayload } from '$lib/rpc-client';
 
 	let loading = $state(true);
 	let events = $state<PublicEventListItemPayload[]>([]);
 	let ticketTypes = $state<PublicTicketTypePayload[]>([]);
-	let authenticated = $state(false);
 	let errorMessage = $state<string | null>(null);
 
 	type ResolvablePath = Pathname;
-	const participantBookingsPath = '/participant/bookings';
 
 	const publicEventsContext = $derived.by((): ScopedRouteContext | undefined => {
 		const orgSlug = page.params.orgSlug?.trim();
-		const classroomSlug = page.params.classroomSlug?.trim();
-		return orgSlug && classroomSlug ? { orgSlug, classroomSlug } : undefined;
+		const storeSlug = page.params.storeSlug?.trim();
+		return orgSlug && storeSlug ? { orgSlug, storeSlug } : undefined;
 	});
 
 	const toExceptionMessage = (error: unknown, fallback: string): string => {
@@ -48,38 +42,19 @@
 	const getTicketExpirationLabel = (ticketType: PublicTicketTypePayload): string =>
 		ticketType.expiresInDays ? `${ticketType.expiresInDays}日` : '期限なし';
 
-	const getParticipantBookingsPath = (): string =>
-		publicEventsContext
-			? buildScopedPath(publicEventsContext, participantBookingsPath)
-			: participantBookingsPath;
-
-	const getTicketPurchaseHref = (): string =>
-		authenticated
-			? resolve(getParticipantBookingsPath() as ResolvablePath)
-			: buildLoginRedirectHref(getParticipantBookingsPath());
-
-	const goToEventDetail = async (slotId: string) => {
-		const event = events.find((item) => item.slotId === slotId);
-		const path =
-			event && event.organizationSlug && event.classroomSlug
-				? `/${event.organizationSlug}/${event.classroomSlug}/events/${slotId}`
-				: `/events/${slotId}`;
-		await goto(resolve(path as ResolvablePath));
-	};
+	const getEventDetailHref = (event: PublicEventListItemPayload): string =>
+		event.organizationSlug && event.storeSlug
+			? `/${event.organizationSlug}/${event.storeSlug}/events/${event.slotId}`
+			: `/events/${event.slotId}`;
 
 	onMount(() => {
 		void (async () => {
 			loading = true;
 			errorMessage = null;
 			try {
-				const sessionPromise = loadSession().catch(() => ({ session: null, status: 0 }));
-				const [publicEventsPage, sessionResult] = await Promise.all([
-					loadPublicEvents(publicEventsContext),
-					sessionPromise
-				]);
+				const publicEventsPage = await loadPublicEvents(publicEventsContext);
 				events = publicEventsPage.events;
 				ticketTypes = publicEventsPage.ticketTypes;
-				authenticated = Boolean(sessionResult.session);
 			} catch (error) {
 				errorMessage = toExceptionMessage(error, '公開イベントの取得に失敗しました。');
 			} finally {
@@ -127,26 +102,29 @@
 			{:else}
 				<div class="grid gap-4 md:grid-cols-2">
 					{#each ticketTypes as ticketType (ticketType.id)}
-						<Card class="surface-panel border-border/80 shadow-lg">
-							<CardHeader class="space-y-2">
-								<div class="flex flex-wrap items-center justify-between gap-2">
-									<h3 class="text-lg font-semibold text-foreground">{ticketType.name}</h3>
-									<Badge variant="outline">{getTicketServiceLabel(ticketType)}</Badge>
-								</div>
-								<CardDescription>
-									{ticketType.totalCount}回 / 有効期限 {getTicketExpirationLabel(ticketType)}
-								</CardDescription>
-							</CardHeader>
-							<CardContent class="space-y-3">
-								<div class="space-y-1 text-sm text-muted-foreground">
+						<a
+							class="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+							href={resolve(ticketType.href as ResolvablePath)}
+						>
+							<Card
+								class="surface-panel h-full border-border/80 shadow-lg transition-colors hover:border-primary/60"
+							>
+								<CardHeader class="space-y-2">
+									<div class="flex flex-wrap items-center justify-between gap-2">
+										<h3 class="text-lg font-semibold text-foreground">{ticketType.name}</h3>
+										<Badge variant="outline">{getTicketServiceLabel(ticketType)}</Badge>
+									</div>
+									<CardDescription>
+										{ticketType.totalCount}回 / 有効期限 {getTicketExpirationLabel(ticketType)}
+									</CardDescription>
+								</CardHeader>
+								<CardContent class="space-y-1 text-sm text-muted-foreground">
 									<p>対象サービス: {getTicketServiceLabel(ticketType)}</p>
 									<p>支払方法: 現地決済 / 銀行振込</p>
-								</div>
-								<Button type="button" href={getTicketPurchaseHref()}>
-									{authenticated ? '購入申請へ' : 'ログインして購入申請'}
-								</Button>
-							</CardContent>
-						</Card>
+									<p class="font-medium text-primary">詳細を見る</p>
+								</CardContent>
+							</Card>
+						</a>
 					{/each}
 				</div>
 			{/if}
@@ -164,50 +142,55 @@
 			{:else}
 				<div class="grid gap-4 md:grid-cols-2">
 					{#each events as event (event.slotId)}
-						<Card class="surface-panel border-border/80 shadow-lg">
-							<CardHeader class="space-y-2">
-								{#if event.serviceImageUrl}
-									<div class="overflow-hidden rounded-md border border-border/80 bg-secondary/60">
-										<img
-											src={event.serviceImageUrl}
-											alt={`${event.serviceName} の画像`}
-											class="h-44 w-full object-cover"
-											loading="lazy"
-										/>
+						<a
+							class="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+							href={resolve(getEventDetailHref(event) as ResolvablePath)}
+						>
+							<Card
+								class="surface-panel h-full border-border/80 shadow-lg transition-colors hover:border-primary/60"
+							>
+								<CardHeader class="space-y-2">
+									{#if event.serviceImageUrl}
+										<div class="overflow-hidden rounded-md border border-border/80 bg-secondary/60">
+											<img
+												src={event.serviceImageUrl}
+												alt={`${event.serviceName} の画像`}
+												class="h-44 w-full object-cover"
+												loading="lazy"
+											/>
+										</div>
+									{/if}
+									<div class="flex items-center justify-between gap-2">
+										<h3 class="text-lg font-semibold text-foreground">{event.serviceName}</h3>
+										<Badge variant={event.isBookable ? 'outline' : 'secondary'}>
+											{event.isBookable ? '予約受付中' : '受付外'}
+										</Badge>
 									</div>
-								{/if}
-								<div class="flex items-center justify-between gap-2">
-									<h3 class="text-lg font-semibold text-foreground">{event.serviceName}</h3>
-									<Badge variant={event.isBookable ? 'outline' : 'secondary'}>
-										{event.isBookable ? '予約受付中' : '受付外'}
-									</Badge>
-								</div>
-								<CardDescription>
-									{formatJaDateTime(event.startAt)} - {formatJaDateTime(event.endAt)}
-								</CardDescription>
-							</CardHeader>
-							<CardContent class="space-y-3">
-								<div class="space-y-1 text-sm text-muted-foreground">
-									{#if event.serviceDescription}
-										<p class="whitespace-pre-line text-secondary-foreground">
-											{event.serviceDescription}
+									<CardDescription>
+										{formatJaDateTime(event.startAt)} - {formatJaDateTime(event.endAt)}
+									</CardDescription>
+								</CardHeader>
+								<CardContent class="space-y-3">
+									<div class="space-y-1 text-sm text-muted-foreground">
+										{#if event.serviceDescription}
+											<p class="whitespace-pre-line text-secondary-foreground">
+												{event.serviceDescription}
+											</p>
+										{/if}
+										<p>残枠: {event.remainingCount} / {event.capacity}</p>
+										<p>
+											予約受付: {formatJaDateTime(event.bookingOpenAt)} 〜 {formatJaDateTime(
+												event.bookingCloseAt
+											)}
 										</p>
-									{/if}
-									<p>残枠: {event.remainingCount} / {event.capacity}</p>
-									<p>
-										予約受付: {formatJaDateTime(event.bookingOpenAt)} 〜 {formatJaDateTime(
-											event.bookingCloseAt
-										)}
-									</p>
-									{#if event.locationLabel}
-										<p>場所: {event.locationLabel}</p>
-									{/if}
-								</div>
-								<Button type="button" onclick={() => goToEventDetail(event.slotId)}
-									>イベント詳細へ</Button
-								>
-							</CardContent>
-						</Card>
+										{#if event.locationLabel}
+											<p>場所: {event.locationLabel}</p>
+										{/if}
+									</div>
+									<p class="text-sm font-medium text-primary">イベント詳細へ</p>
+								</CardContent>
+							</Card>
+						</a>
 					{/each}
 				</div>
 			{/if}

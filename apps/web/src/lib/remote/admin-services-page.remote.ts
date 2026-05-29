@@ -1,12 +1,16 @@
 import { query } from '$app/server';
 import type { ScopedApiContext, ServicePayload } from '$lib/rpc-client';
 import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
-import { createApiGetter, resolveScopedAccessContext, type ApiResult } from '$lib/server/scoped-api';
+import {
+	createApiGetter,
+	resolveScopedAccessContext,
+	type ApiResult
+} from '$lib/server/scoped-api';
 import { z } from 'zod';
 
 const adminServicesQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
-	classroomSlug: z.string().trim().min(1),
+	storeSlug: z.string().trim().min(1),
 	from: z.string().trim().min(1),
 	to: z.string().trim().min(1)
 });
@@ -51,9 +55,9 @@ const assertAllowedFailure = (
 
 export const getAdminServicesPageData = query(
 	adminServicesQuerySchema,
-	async ({ orgSlug, classroomSlug }) => {
+	async ({ orgSlug, storeSlug }) => {
 		const getApi = createApiGetter();
-		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+		const activeContext: ScopedApiContext = { orgSlug, storeSlug };
 		const scopedAccess = await resolveScopedAccessContext(getApi, activeContext);
 		if (!scopedAccess) {
 			return {
@@ -66,7 +70,7 @@ export const getAdminServicesPageData = query(
 			};
 		}
 
-		if (!scopedAccess.effective.canManageClassroom) {
+		if (!scopedAccess.effective.canManageStore) {
 			return {
 				activeContext,
 				organizationId: scopedAccess.organizationId,
@@ -79,7 +83,7 @@ export const getAdminServicesPageData = query(
 
 		const scopedQuery = {
 			organizationId: scopedAccess.organizationId,
-			classroomId: scopedAccess.classroomId
+			storeId: scopedAccess.storeId
 		};
 		const [servicesResult, staffServicesResult] = await Promise.all([
 			getApi('/api/v1/auth/organizations/services', scopedQuery),

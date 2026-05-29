@@ -13,7 +13,7 @@ const slotStatusSchema = z.enum([SLOT_STATUS.OPEN, SLOT_STATUS.CANCELED, SLOT_ST
  */
 export const slotCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1),
   startAt: isoDateTimeSchema,
   endAt: isoDateTimeSchema,
@@ -27,7 +27,7 @@ export const slotCreateBodySchema = z.object({
  */
 export const slotUpdateBodySchema = z.object({
   slotId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   startAt: isoDateTimeSchema,
   endAt: isoDateTimeSchema,
   capacity: z.int().min(1).max(500).optional(),
@@ -40,7 +40,7 @@ export const slotUpdateBodySchema = z.object({
  */
 export const slotListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema,
   to: isoDateTimeSchema,
@@ -52,7 +52,7 @@ export const slotListQuerySchema = z.object({
  */
 export const slotAvailableQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema,
   to: isoDateTimeSchema,
@@ -63,7 +63,7 @@ export const slotAvailableQuerySchema = z.object({
  */
 export const slotCancelBodySchema = z.object({
   slotId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 

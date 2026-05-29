@@ -112,7 +112,7 @@ export class AiChatState {
 				message,
 				conversationId: this.conversationId ?? undefined,
 				organizationId: context.organizationId ?? undefined,
-				classroomId: context.classroomId ?? undefined,
+				storeId: context.storeId ?? undefined,
 				currentPage: context.currentPage ?? undefined
 			});
 			if (conversationVersion !== this.#conversationVersion) {

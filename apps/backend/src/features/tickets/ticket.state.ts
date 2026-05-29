@@ -62,7 +62,7 @@ const dateToComparable = (value: Date | null): number => {
 export const consumeTicketPackForParticipant = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   serviceId,
   participantId,
   participantsCount,
@@ -70,7 +70,7 @@ export const consumeTicketPackForParticipant = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string | null;
+  storeId?: string | null;
   serviceId: string;
   participantId: string;
   participantsCount: number;
@@ -89,7 +89,7 @@ export const consumeTicketPackForParticipant = async ({
     .where(
       and(
         eq(dbSchema.ticketPack.organizationId, organizationId),
-        ...(classroomId ? [eq(dbSchema.ticketPack.classroomId, classroomId)] : []),
+        ...(storeId ? [eq(dbSchema.ticketPack.storeId, storeId)] : []),
         eq(dbSchema.ticketPack.participantId, participantId),
         eq(dbSchema.ticketPack.status, TICKET_PACK_STATUS.ACTIVE),
         gte(dbSchema.ticketPack.remainingCount, participantsCount),
@@ -97,13 +97,11 @@ export const consumeTicketPackForParticipant = async ({
     );
 
   const candidate = ticketRows
-    .filter(
-      (row: { expiresAt: Date | null; serviceIdsJson: string | null }) => {
-        const serviceIds = parseTicketServiceIds(row.serviceIdsJson);
-        const matchesService = serviceIds.length === 0 || serviceIds.includes(serviceId);
-        return matchesService && (!row.expiresAt || row.expiresAt.getTime() > now.getTime());
-      },
-    )
+    .filter((row: { expiresAt: Date | null; serviceIdsJson: string | null }) => {
+      const serviceIds = parseTicketServiceIds(row.serviceIdsJson);
+      const matchesService = serviceIds.length === 0 || serviceIds.includes(serviceId);
+      return matchesService && (!row.expiresAt || row.expiresAt.getTime() > now.getTime());
+    })
     .sort(
       (
         left: { expiresAt: Date | null; createdAt: Date },
@@ -208,7 +206,7 @@ export const restoreConsumedTicketPackBalance = async ({
 export const issueTicketPackWithLedger = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   participantId,
   ticketTypeId,
   count,
@@ -220,7 +218,7 @@ export const issueTicketPackWithLedger = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   participantId: string;
   ticketTypeId: string;
   count: number;
@@ -239,7 +237,7 @@ export const issueTicketPackWithLedger = async ({
   await database.insert(dbSchema.ticketPack).values({
     id: ticketPackId,
     organizationId,
-    classroomId,
+    storeId,
     participantId,
     ticketTypeId,
     serviceIdsJson: serviceIds && serviceIds.length > 0 ? JSON.stringify(serviceIds) : null,
@@ -252,7 +250,7 @@ export const issueTicketPackWithLedger = async ({
   await database.insert(dbSchema.ticketLedger).values({
     id: crypto.randomUUID(),
     organizationId,
-    classroomId,
+    storeId,
     ticketPackId,
     bookingId: bookingId ?? null,
     action: TICKET_LEDGER_ACTION.GRANT,
@@ -296,7 +294,7 @@ export const adjustTicketPackWithLedger = async ({
     .select({
       id: dbSchema.ticketPack.id,
       organizationId: dbSchema.ticketPack.organizationId,
-      classroomId: dbSchema.ticketPack.classroomId,
+      storeId: dbSchema.ticketPack.storeId,
       remainingCount: dbSchema.ticketPack.remainingCount,
     })
     .from(dbSchema.ticketPack)
@@ -330,7 +328,7 @@ export const adjustTicketPackWithLedger = async ({
   await database.insert(dbSchema.ticketLedger).values({
     id: crypto.randomUUID(),
     organizationId: current.organizationId,
-    classroomId: current.classroomId,
+    storeId: current.storeId,
     ticketPackId,
     bookingId: null,
     action: TICKET_LEDGER_ACTION.ADJUST,
@@ -367,7 +365,7 @@ export const approveTicketPurchaseWithIssue = async ({
     .select({
       id: dbSchema.ticketPurchase.id,
       organizationId: dbSchema.ticketPurchase.organizationId,
-      classroomId: dbSchema.ticketPurchase.classroomId,
+      storeId: dbSchema.ticketPurchase.storeId,
       participantId: dbSchema.ticketPurchase.participantId,
       ticketTypeId: dbSchema.ticketPurchase.ticketTypeId,
       serviceIdsJson: dbSchema.ticketPurchase.serviceIdsJson,
@@ -416,7 +414,7 @@ export const approveTicketPurchaseWithIssue = async ({
   const issued = await issueTicketPackWithLedger({
     database,
     organizationId: purchase.organizationId,
-    classroomId: purchase.classroomId,
+    storeId: purchase.storeId,
     participantId: purchase.participantId,
     ticketTypeId: purchase.ticketTypeId,
     count: ticketType.totalCount,

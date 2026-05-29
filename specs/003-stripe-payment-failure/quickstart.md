@@ -3,7 +3,7 @@
 ## Scope
 
 This plan implements focused payment failure behavior for the existing organization billing system. It does not add a
-new billing provider, new top-level package, classroom-scoped subscriptions, refund/credit-note lifecycle, in-app
+new billing provider, new top-level package, store-scoped subscriptions, refund/credit-note lifecycle, in-app
 payment method storage, or raw Stripe payload persistence.
 
 ## Prerequisites

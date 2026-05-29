@@ -116,7 +116,7 @@ apps/backend/src/
     route-result.ts
     serializers.ts
     date.ts
-    classroom-policy.ts
+    store-policy.ts
     errors.ts
     env.ts
 ```
@@ -235,7 +235,7 @@ export const registerBookingRoutes = (deps: BookingRouteDeps) => {
 
 `src/booking/constants.ts` は `BOOKING_STATUS`, `SLOT_STATUS`, `TICKET_*` などのドメイン定数を持っています。これは feature 実装より domain shared に近いです。
 
-`src/booking/authorization.ts` は session identity、organization/classroom access、premium gate など横断的な権限ロジックを持っています。
+`src/booking/authorization.ts` は session identity、organization/store access、premium gate など横断的な権限ロジックを持っています。
 現状では DB と認証 runtime に依存するため、純粋な domain というより横断的な application service に近いです。
 この移動は暫定配置とし、後続で `features/access-control` などへ分離する余地があります。
 

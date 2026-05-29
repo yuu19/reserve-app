@@ -63,7 +63,7 @@ const buildSourceRootDocumentPredicate = ({ sourceKind, sourcePathPrefix }) =>
     `source_kind = ${sqlValue(sourceKind)}`,
     buildSourcePathPrefixPredicate({ sourcePathPrefix }),
     'organization_id IS NULL',
-    'classroom_id IS NULL',
+    'store_id IS NULL',
   ].join(' AND ');
 
 const normalizeTags = (tags) => (Array.isArray(tags) ? tags.filter(Boolean) : []);
@@ -79,7 +79,7 @@ const normalizeDocument = (document) => ({
   visibility: document.visibility ?? 'authenticated',
   internalOnly: Boolean(document.internalOnly),
   organizationId: document.organizationId ?? null,
-  classroomId: document.classroomId ?? null,
+  storeId: document.storeId ?? null,
   feature: document.feature ?? null,
   tags: normalizeTags(document.tags),
 });
@@ -91,7 +91,7 @@ export const createKnowledgeIndexingPlan = ({ documents }) => {
       ...document,
       id: hashText(
         `${document.sourceKind}:${document.sourcePath}:${document.organizationId ?? ''}:${
-          document.classroomId ?? ''
+          document.storeId ?? ''
         }`,
       ),
       checksum: hashText(document.content),
@@ -115,7 +115,7 @@ export const createKnowledgeIndexingPlan = ({ documents }) => {
         visibility: document.visibility,
         internalOnly: document.internalOnly,
         organizationId: document.organizationId,
-        classroomId: document.classroomId,
+        storeId: document.storeId,
         feature: document.feature,
         tagsJson: document.tagsJson,
       };
@@ -139,12 +139,12 @@ export const buildPendingSql = ({ documents, chunks, now }) => {
   const statements = [];
   for (const document of documents) {
     statements.push(
-      `INSERT INTO ai_knowledge_document (id, source_kind, source_path, title, locale, visibility, internal_only, organization_id, classroom_id, feature, checksum, index_status, indexed_at, last_error, created_at, updated_at) VALUES (${sqlValue(document.id)}, ${sqlValue(document.sourceKind)}, ${sqlValue(document.sourcePath)}, ${sqlValue(document.title)}, ${sqlValue(document.locale)}, ${sqlValue(document.visibility)}, ${sqlValue(document.internalOnly)}, ${sqlValue(document.organizationId)}, ${sqlValue(document.classroomId)}, ${sqlValue(document.feature)}, ${sqlValue(document.checksum)}, 'pending', NULL, NULL, ${now}, ${now}) ON CONFLICT(id) DO UPDATE SET source_kind = ${sqlValue(document.sourceKind)}, source_path = ${sqlValue(document.sourcePath)}, title = ${sqlValue(document.title)}, locale = ${sqlValue(document.locale)}, visibility = ${sqlValue(document.visibility)}, internal_only = ${sqlValue(document.internalOnly)}, organization_id = ${sqlValue(document.organizationId)}, classroom_id = ${sqlValue(document.classroomId)}, feature = ${sqlValue(document.feature)}, checksum = ${sqlValue(document.checksum)}, index_status = 'pending', indexed_at = NULL, last_error = NULL, updated_at = ${now};`,
+      `INSERT INTO ai_knowledge_document (id, source_kind, source_path, title, locale, visibility, internal_only, organization_id, store_id, feature, checksum, index_status, indexed_at, last_error, created_at, updated_at) VALUES (${sqlValue(document.id)}, ${sqlValue(document.sourceKind)}, ${sqlValue(document.sourcePath)}, ${sqlValue(document.title)}, ${sqlValue(document.locale)}, ${sqlValue(document.visibility)}, ${sqlValue(document.internalOnly)}, ${sqlValue(document.organizationId)}, ${sqlValue(document.storeId)}, ${sqlValue(document.feature)}, ${sqlValue(document.checksum)}, 'pending', NULL, NULL, ${now}, ${now}) ON CONFLICT(id) DO UPDATE SET source_kind = ${sqlValue(document.sourceKind)}, source_path = ${sqlValue(document.sourcePath)}, title = ${sqlValue(document.title)}, locale = ${sqlValue(document.locale)}, visibility = ${sqlValue(document.visibility)}, internal_only = ${sqlValue(document.internalOnly)}, organization_id = ${sqlValue(document.organizationId)}, store_id = ${sqlValue(document.storeId)}, feature = ${sqlValue(document.feature)}, checksum = ${sqlValue(document.checksum)}, index_status = 'pending', indexed_at = NULL, last_error = NULL, updated_at = ${now};`,
     );
   }
   for (const chunk of chunks) {
     statements.push(
-      `INSERT INTO ai_knowledge_chunk (id, document_id, chunk_index, content, content_hash, title, source_kind, source_path, locale, visibility, internal_only, organization_id, classroom_id, feature, tags_json, indexed_at, vector_status) VALUES (${sqlValue(chunk.id)}, ${sqlValue(chunk.documentId)}, ${chunk.chunkIndex}, ${sqlValue(chunk.content)}, ${sqlValue(chunk.contentHash)}, ${sqlValue(chunk.title)}, ${sqlValue(chunk.sourceKind)}, ${sqlValue(chunk.sourcePath)}, ${sqlValue(chunk.locale)}, ${sqlValue(chunk.visibility)}, ${sqlValue(chunk.internalOnly)}, ${sqlValue(chunk.organizationId)}, ${sqlValue(chunk.classroomId)}, ${sqlValue(chunk.feature)}, ${sqlValue(chunk.tagsJson)}, ${now}, 'pending') ON CONFLICT(id) DO UPDATE SET document_id = ${sqlValue(chunk.documentId)}, chunk_index = ${chunk.chunkIndex}, content = ${sqlValue(chunk.content)}, content_hash = ${sqlValue(chunk.contentHash)}, title = ${sqlValue(chunk.title)}, source_kind = ${sqlValue(chunk.sourceKind)}, source_path = ${sqlValue(chunk.sourcePath)}, locale = ${sqlValue(chunk.locale)}, visibility = ${sqlValue(chunk.visibility)}, internal_only = ${sqlValue(chunk.internalOnly)}, organization_id = ${sqlValue(chunk.organizationId)}, classroom_id = ${sqlValue(chunk.classroomId)}, feature = ${sqlValue(chunk.feature)}, tags_json = ${sqlValue(chunk.tagsJson)}, indexed_at = ${now}, vector_status = 'pending';`,
+      `INSERT INTO ai_knowledge_chunk (id, document_id, chunk_index, content, content_hash, title, source_kind, source_path, locale, visibility, internal_only, organization_id, store_id, feature, tags_json, indexed_at, vector_status) VALUES (${sqlValue(chunk.id)}, ${sqlValue(chunk.documentId)}, ${chunk.chunkIndex}, ${sqlValue(chunk.content)}, ${sqlValue(chunk.contentHash)}, ${sqlValue(chunk.title)}, ${sqlValue(chunk.sourceKind)}, ${sqlValue(chunk.sourcePath)}, ${sqlValue(chunk.locale)}, ${sqlValue(chunk.visibility)}, ${sqlValue(chunk.internalOnly)}, ${sqlValue(chunk.organizationId)}, ${sqlValue(chunk.storeId)}, ${sqlValue(chunk.feature)}, ${sqlValue(chunk.tagsJson)}, ${now}, 'pending') ON CONFLICT(id) DO UPDATE SET document_id = ${sqlValue(chunk.documentId)}, chunk_index = ${chunk.chunkIndex}, content = ${sqlValue(chunk.content)}, content_hash = ${sqlValue(chunk.contentHash)}, title = ${sqlValue(chunk.title)}, source_kind = ${sqlValue(chunk.sourceKind)}, source_path = ${sqlValue(chunk.sourcePath)}, locale = ${sqlValue(chunk.locale)}, visibility = ${sqlValue(chunk.visibility)}, internal_only = ${sqlValue(chunk.internalOnly)}, organization_id = ${sqlValue(chunk.organizationId)}, store_id = ${sqlValue(chunk.storeId)}, feature = ${sqlValue(chunk.feature)}, tags_json = ${sqlValue(chunk.tagsJson)}, indexed_at = ${now}, vector_status = 'pending';`,
     );
   }
   return statements;
@@ -184,10 +184,10 @@ export const buildSuccessSql = ({
 
     if (normalizedStaleScope.mode === 'full') {
       statements.push(
-        `UPDATE ai_knowledge_chunk SET vector_status = 'stale', indexed_at = ${now} WHERE document_id IN (SELECT id FROM ai_knowledge_document WHERE source_kind IN (${currentSourceKinds}) AND organization_id IS NULL AND classroom_id IS NULL AND id NOT IN (${currentDocumentIds}));`,
+        `UPDATE ai_knowledge_chunk SET vector_status = 'stale', indexed_at = ${now} WHERE document_id IN (SELECT id FROM ai_knowledge_document WHERE source_kind IN (${currentSourceKinds}) AND organization_id IS NULL AND store_id IS NULL AND id NOT IN (${currentDocumentIds}));`,
       );
       statements.push(
-        `UPDATE ai_knowledge_document SET index_status = 'stale', updated_at = ${now} WHERE source_kind IN (${currentSourceKinds}) AND organization_id IS NULL AND classroom_id IS NULL AND id NOT IN (${currentDocumentIds});`,
+        `UPDATE ai_knowledge_document SET index_status = 'stale', updated_at = ${now} WHERE source_kind IN (${currentSourceKinds}) AND organization_id IS NULL AND store_id IS NULL AND id NOT IN (${currentDocumentIds});`,
       );
     }
   }
@@ -218,7 +218,7 @@ export const buildVectorMetadata = (chunk) => ({
   visibility: chunk.visibility,
   internal_only: chunk.internalOnly,
   organization_id: chunk.organizationId ?? '',
-  classroom_id: chunk.classroomId ?? '',
+  store_id: chunk.storeId ?? '',
   feature: chunk.feature ?? 'general',
   locale: chunk.locale,
   source_kind: chunk.sourceKind,

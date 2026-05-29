@@ -52,19 +52,19 @@ describe('/participant/home/+page.svelte', () => {
 			hasAdminPortalAccess: false,
 			hasParticipantAccess: true,
 			canManage: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageBookings: false,
 			canManageParticipants: false,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: null,
 			activeFacts: {
 				orgRole: null,
-				classroomStaffRole: null,
+				storeStaffRole: null,
 				hasParticipantRecord: true
 			},
 			activeSources: {
 				canManageOrganization: null,
-				canManageClassroom: null,
+				canManageStore: null,
 				canManageBookings: null,
 				canManageParticipants: null,
 				canUseParticipantBooking: 'participant_record'

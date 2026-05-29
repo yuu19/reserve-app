@@ -21,11 +21,11 @@ export type InvitationPayload = {
   organizationId: string;
   organizationSlug: string;
   organizationName: string;
-  classroomId?: string | null;
-  classroomSlug?: string | null;
-  classroomName?: string | null;
+  storeId?: string | null;
+  storeSlug?: string | null;
+  storeName?: string | null;
   email: string;
-  subjectKind: 'org_operator' | 'classroom_operator' | 'participant';
+  subjectKind: 'org_operator' | 'store_operator' | 'participant';
   role: 'admin' | 'member' | 'manager' | 'staff' | 'participant';
   participantName?: string | null;
   status: 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'expired';
@@ -51,7 +51,7 @@ export type ParticipantPayload = {
 export type ParticipantInvitationPayload = InvitationPayload;
 
 export type OrganizationRole = 'admin' | 'member';
-export type ClassroomInvitationRole = 'manager' | 'staff' | 'participant';
+export type StoreInvitationRole = 'manager' | 'staff' | 'participant';
 
 type CreateOrganizationInput = {
   name: string;
@@ -85,9 +85,9 @@ type OrganizationQuery = {
   organizationId?: string;
 };
 
-type ClassroomInvitationContext = {
+type StoreInvitationContext = {
   orgSlug: string;
-  classroomSlug: string;
+  storeSlug: string;
 };
 
 const buildHeaders = (initHeaders?: HeadersInit, hasBody?: boolean) => {
@@ -124,8 +124,8 @@ const encodePathSegment = (value: string) => encodeURIComponent(value);
 const getOrgInvitationPath = (orgSlug: string) =>
   `/api/v1/auth/orgs/${encodePathSegment(orgSlug)}/invitations`;
 
-const getClassroomInvitationPath = (context: ClassroomInvitationContext) =>
-  `/api/v1/auth/orgs/${encodePathSegment(context.orgSlug)}/classrooms/${encodePathSegment(context.classroomSlug)}/invitations`;
+const getStoreInvitationPath = (context: StoreInvitationContext) =>
+  `/api/v1/auth/orgs/${encodePathSegment(context.orgSlug)}/stores/${encodePathSegment(context.storeSlug)}/invitations`;
 
 export const mobileApi = {
   getSession: () => request('/api/v1/auth/session'),
@@ -168,13 +168,16 @@ export const mobileApi = {
     }),
   listParticipants: (organizationId?: string) =>
     request(withQuery('/api/v1/auth/organizations/participants', { organizationId })),
-  listParticipantInvitations: (context: ClassroomInvitationContext) =>
-    request(getClassroomInvitationPath(context)),
+  listParticipantInvitations: (context: StoreInvitationContext) =>
+    request(getStoreInvitationPath(context)),
   listUserParticipantInvitations: () => request('/api/v1/auth/invitations/user'),
-  createParticipantInvitation: (context: ClassroomInvitationContext, json: CreateParticipantInvitationInput) =>
-    request(getClassroomInvitationPath(context), {
+  createParticipantInvitation: (
+    context: StoreInvitationContext,
+    json: CreateParticipantInvitationInput,
+  ) =>
+    request(getStoreInvitationPath(context), {
       method: 'POST',
-      body: JSON.stringify({ ...json, role: 'participant' satisfies ClassroomInvitationRole }),
+      body: JSON.stringify({ ...json, role: 'participant' satisfies StoreInvitationRole }),
     }),
   getParticipantInvitationDetail: (invitationId: string) =>
     request(`/api/v1/auth/invitations/${encodePathSegment(invitationId)}`),

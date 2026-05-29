@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 	getCurrentPathWithSearch: vi.fn(() => '/admin/services/new'),
 	getAdminServicesPageData: vi.fn(),
 	loadOrganizationBilling: vi.fn(),
-	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', classroomSlug: 'room-1' }))
+	readWindowScopedRouteContext: vi.fn(() => ({ orgSlug: 'org-1', storeSlug: 'room-1' }))
 }));
 
 vi.mock('$env/dynamic/public', () => ({
@@ -64,12 +64,12 @@ describe('/admin/services/new/+page.svelte', () => {
 		mocks.getCurrentPathWithSearch.mockReturnValue('/admin/services/new');
 		mocks.readWindowScopedRouteContext.mockReturnValue({
 			orgSlug: 'org-1',
-			classroomSlug: 'room-1'
+			storeSlug: 'room-1'
 		});
 		mocks.getAdminServicesPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
@@ -93,15 +93,9 @@ describe('/admin/services/new/+page.svelte', () => {
 		await expect.element(page.getByLabelText('サービス説明')).toBeInTheDocument();
 		await expect.element(page.getByLabelText('キャンセル期限（分）')).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '単発' })).toBeInTheDocument();
-		await expect
-			.element(page.getByLabelText(/サービス名/))
-			.toHaveAttribute('maxlength', '120');
-		await expect
-			.element(page.getByLabelText('サービス説明'))
-			.toHaveAttribute('maxlength', '500');
-		await expect
-			.element(page.getByRole('button', { name: 'サービスを作成' }))
-			.toBeInTheDocument();
+		await expect.element(page.getByLabelText(/サービス名/)).toHaveAttribute('maxlength', '120');
+		await expect.element(page.getByLabelText('サービス説明')).toHaveAttribute('maxlength', '500');
+		await expect.element(page.getByRole('button', { name: 'サービスを作成' })).toBeInTheDocument();
 		expect(document.body.textContent ?? '').toContain('サービス名を入力してください。');
 		expect(document.body.textContent ?? '').toContain('サービス名*');
 		expect(document.body.textContent ?? '').toContain('所要時間（分）*');
@@ -151,7 +145,7 @@ describe('/admin/services/new/+page.svelte', () => {
 		mocks.getAdminServicesPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
@@ -186,11 +180,11 @@ describe('/admin/services/new/+page.svelte', () => {
 		render(AdminServiceCreatePage);
 
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: 'サービス運用には Premiumプランが必要です' }))
+			.element(
+				page.getByRole('heading', { level: 2, name: 'サービス運用には Premiumプランが必要です' })
+			)
 			.toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '契約画面を開く' })).toBeInTheDocument();
-		await expect
-			.element(page.getByRole('button', { name: 'サービスを作成' }))
-			.toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'サービスを作成' })).toBeDisabled();
 	});
 });

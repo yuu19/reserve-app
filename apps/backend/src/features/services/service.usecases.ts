@@ -1,7 +1,7 @@
 import { resolveOrganizationId } from '../../domain/booking/authorization.js';
 import { DEFAULT_TIMEZONE } from '../../domain/booking/constants.js';
 import { isSupportedTimezone } from '../../domain/booking/recurring.js';
-import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
+import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import { assertSupportedTimezone, toIsoDate } from '../../shared/date.js';
 import {
   forbidden,
@@ -91,7 +91,7 @@ const serializeService = (row: Record<string, unknown> | undefined) => ({
 });
 
 /**
- * classroom 管理権限を確認し、premium が必要な設定を検証して service を作成します。
+ * store 管理権限を確認し、premium が必要な設定を検証して service を作成します。
  */
 export const createService = async (
   ctx: BookingRouteContext,
@@ -108,12 +108,12 @@ export const createService = async (
     return validationError('organizationId is required.');
   }
 
-  const classroomContext = await ctx.resolveRequestedClassroomContext({
+  const storeContext = await ctx.resolveRequestedStoreContext({
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
   });
-  if (!classroomContext) {
-    return notFound('Classroom not found.');
+  if (!storeContext) {
+    return notFound('Store not found.');
   }
 
   const timezone = assertSupportedTimezone(body.timezone);
@@ -121,9 +121,9 @@ export const createService = async (
     return validationError(`Only ${DEFAULT_TIMEZONE} is supported in MVP.`);
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -152,7 +152,7 @@ export const createService = async (
     database: ctx.database,
     createdId,
     organizationId,
-    classroomId: classroomContext.classroomId,
+    storeId: storeContext.storeId,
     name: body.name,
     description: normalizeServiceDescription(body.description) ?? null,
     kind: body.kind,
@@ -192,7 +192,7 @@ export const listManageableServices = async (
 
   const hasAccess = await ctx.canReadServicesScope({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -202,7 +202,7 @@ export const listManageableServices = async (
   const rows = await listServices({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     includeArchived: query.includeArchived,
   });
 
@@ -227,13 +227,13 @@ export const updateExistingService = async (
     return notFound('Service not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, current.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, current.storeId)) {
     return forbidden();
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId: current.organizationId,
-    classroomId: current.classroomId,
+    storeId: current.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -287,7 +287,7 @@ export const updateExistingService = async (
 };
 
 /**
- * classroom 管理権限を確認し、service を inactive として archive します。
+ * store 管理権限を確認し、service を inactive として archive します。
  */
 export const archiveExistingService = async (
   ctx: BookingRouteContext,
@@ -304,13 +304,13 @@ export const archiveExistingService = async (
     return notFound('Service not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, service.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, service.storeId)) {
     return forbidden();
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId: service.organizationId,
-    classroomId: service.classroomId,
+    storeId: service.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {

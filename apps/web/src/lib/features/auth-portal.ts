@@ -53,7 +53,7 @@ export const resolveAuthPortalByPath = (path: string): AuthPortal | null => {
 		return 'participant';
 	}
 
-	if (/^\/[^/]+\/[^/]+\/events(?:\/|$)/u.test(pathname)) {
+	if (/^\/[^/]+\/[^/]+\/(?:events|tickets)(?:\/|$)/u.test(pathname)) {
 		return 'participant';
 	}
 

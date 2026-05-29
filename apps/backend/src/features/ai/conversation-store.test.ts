@@ -59,7 +59,7 @@ describe('AI conversation store', () => {
       scope: {
         userId: 'user-a',
         organizationId: 'org-a',
-        classroomId: 'class-a',
+        storeId: 'class-a',
       },
     });
 
@@ -68,7 +68,7 @@ describe('AI conversation store', () => {
       actorUserId: 'user-a',
       subjectType: 'organization',
       subjectId: 'org-a',
-      classroomId: 'class-a',
+      storeId: 'class-a',
       channel: 'web',
       status: 'active',
       title: '予約枠を作るには？',
@@ -91,7 +91,7 @@ describe('AI conversation store', () => {
         scope: {
           userId: 'user-a',
           organizationId: 'org-a',
-          classroomId: 'class-a',
+          storeId: 'class-a',
         },
       }),
     ).resolves.toBeNull();
@@ -164,7 +164,7 @@ describe('AI conversation store', () => {
       scope: {
         userId: 'user-a',
         organizationId: 'org-a',
-        classroomId: 'class-a',
+        storeId: 'class-a',
       },
       conversationId: 'conversation-a',
       messageId: 'assistant-message-a',
@@ -183,7 +183,7 @@ describe('AI conversation store', () => {
       subjectType: 'organization',
       subjectId: 'org-a',
       actorUserId: 'user-a',
-      classroomId: 'class-a',
+      storeId: 'class-a',
       conversationId: 'conversation-a',
       messageId: 'assistant-message-a',
       provider: 'cloudflare-workers-ai',

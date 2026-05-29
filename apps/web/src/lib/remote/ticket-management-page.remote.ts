@@ -22,7 +22,7 @@ type TicketManagementPageData = {
 	organizationId: string | null;
 	canManage: boolean;
 	canManageParticipants: boolean;
-	canManageClassroom: boolean;
+	canManageStore: boolean;
 	premiumRestriction: ReturnType<typeof readOrganizationPremiumRestriction>;
 	participants: ParticipantPayload[];
 	services: ServicePayload[];
@@ -136,14 +136,14 @@ const createLoadError = (messages: Array<string | null>): string | null =>
 
 const ticketManagementPageQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
-	classroomSlug: z.string().trim().min(1)
+	storeSlug: z.string().trim().min(1)
 });
 
 export const getTicketManagementPageData = query(
 	ticketManagementPageQuerySchema,
-	async ({ orgSlug, classroomSlug }): Promise<TicketManagementPageData> => {
+	async ({ orgSlug, storeSlug }): Promise<TicketManagementPageData> => {
 		const getApi = createSafeApiGetter(createApiGetter());
-		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+		const activeContext: ScopedApiContext = { orgSlug, storeSlug };
 		const scopedAccess = await resolveScopedAccessContext(getApi, activeContext);
 		if (!scopedAccess) {
 			return {
@@ -151,7 +151,7 @@ export const getTicketManagementPageData = query(
 				organizationId: null,
 				canManage: false,
 				canManageParticipants: false,
-				canManageClassroom: false,
+				canManageStore: false,
 				premiumRestriction: null,
 				participants: [],
 				services: [],
@@ -162,15 +162,15 @@ export const getTicketManagementPageData = query(
 		}
 
 		const canManageParticipants = scopedAccess.effective.canManageParticipants;
-		const canManageClassroom = scopedAccess.effective.canManageClassroom;
-		const canManage = canManageParticipants || canManageClassroom;
+		const canManageStore = scopedAccess.effective.canManageStore;
+		const canManage = canManageParticipants || canManageStore;
 		if (!canManage) {
 			return {
 				activeContext,
 				organizationId: scopedAccess.organizationId,
 				canManage: false,
 				canManageParticipants: false,
-				canManageClassroom: false,
+				canManageStore: false,
 				premiumRestriction: null,
 				participants: [],
 				services: [],
@@ -182,13 +182,13 @@ export const getTicketManagementPageData = query(
 
 		const scopedQuery = {
 			organizationId: scopedAccess.organizationId,
-			classroomId: scopedAccess.classroomId
+			storeId: scopedAccess.storeId
 		};
 
 		const [participantsResult, servicesResult, ticketTypesResult, ticketPurchasesResult] =
 			await Promise.all([
 				getApi('/api/v1/auth/organizations/participants', scopedQuery),
-				canManageClassroom
+				canManageStore
 					? getApi('/api/v1/auth/organizations/services', scopedQuery)
 					: createSkippedApiResult(),
 				getApi('/api/v1/auth/organizations/ticket-types', scopedQuery),
@@ -212,7 +212,7 @@ export const getTicketManagementPageData = query(
 				status: result.response.status,
 				detail: toErrorMessage(result.payload, '回数券管理ページ依存データの取得に失敗しました。'),
 				orgSlug,
-				classroomSlug
+				storeSlug
 			});
 		}
 
@@ -227,7 +227,7 @@ export const getTicketManagementPageData = query(
 				organizationId: scopedAccess.organizationId,
 				canManage,
 				canManageParticipants,
-				canManageClassroom,
+				canManageStore,
 				premiumRestriction,
 				participants: [],
 				services: [],
@@ -257,7 +257,7 @@ export const getTicketManagementPageData = query(
 			organizationId: scopedAccess.organizationId,
 			canManage,
 			canManageParticipants,
-			canManageClassroom,
+			canManageStore,
 			premiumRestriction: null,
 			participants: asParticipants(participantsResult.payload),
 			services: asServices(servicesResult.payload),

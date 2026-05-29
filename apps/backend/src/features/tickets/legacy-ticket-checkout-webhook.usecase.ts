@@ -41,7 +41,7 @@ export const handleLegacyTicketCheckoutWebhook = async ({
     .select({
       id: dbSchema.ticketPurchase.id,
       organizationId: dbSchema.ticketPurchase.organizationId,
-      classroomId: dbSchema.ticketPurchase.classroomId,
+      storeId: dbSchema.ticketPurchase.storeId,
       participantId: dbSchema.ticketPurchase.participantId,
       ticketTypeId: dbSchema.ticketPurchase.ticketTypeId,
       serviceIdsJson: dbSchema.ticketPurchase.serviceIdsJson,
@@ -101,7 +101,7 @@ export const handleLegacyTicketCheckoutWebhook = async ({
   await database.insert(dbSchema.ticketPack).values({
     id: ticketPackId,
     organizationId: purchase.organizationId,
-    classroomId: purchase.classroomId,
+    storeId: purchase.storeId,
     participantId: purchase.participantId,
     ticketTypeId: purchase.ticketTypeId,
     serviceIdsJson:
@@ -117,7 +117,7 @@ export const handleLegacyTicketCheckoutWebhook = async ({
   await database.insert(dbSchema.ticketLedger).values({
     id: crypto.randomUUID(),
     organizationId: purchase.organizationId,
-    classroomId: purchase.classroomId,
+    storeId: purchase.storeId,
     ticketPackId,
     bookingId: null,
     action: TICKET_LEDGER_ACTION.GRANT,

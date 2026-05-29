@@ -3,7 +3,7 @@ import type {
 	AccessDisplayPayload,
 	AccessFactsPayload,
 	AccessSourcesPayload,
-	ClassroomPayload,
+	StorePayload,
 	OrganizationBillingPayload,
 	OrganizationBillingActionEnvelope,
 	OrganizationPayload,
@@ -12,7 +12,7 @@ import type {
 import {
 	loadPortalAccess,
 	parseResponseBody,
-	readClassroomsFromAccessTree,
+	readStoresFromAccessTree,
 	readOrganizationsFromAccessTree,
 	toErrorMessage
 } from './auth-session.svelte';
@@ -169,13 +169,13 @@ const readBillingHandoffUrl = (value: unknown): string | null => {
 	return isRecord(value) && typeof value.url === 'string' ? value.url : null;
 };
 
-export type ClassroomContextPayload = {
+export type StoreContextPayload = {
 	id: string;
 	slug: string;
 	name: string;
 	logo?: string | null;
 	canManage: boolean;
-	canManageClassroom: boolean;
+	canManageStore: boolean;
 	canManageBookings: boolean;
 	canManageParticipants: boolean;
 	canUseParticipantBooking: boolean;
@@ -187,13 +187,13 @@ export type ClassroomContextPayload = {
 export type OrganizationContextPayload = {
 	organizations: OrganizationPayload[];
 	activeOrganization: OrganizationPayload | null;
-	classrooms: ClassroomContextPayload[];
-	activeClassroom: ClassroomContextPayload | null;
+	stores: StoreContextPayload[];
+	activeStore: StoreContextPayload | null;
 	activeContext: ScopedApiContext | null;
 	accessTree: AccessTreePayload | null;
 };
 
-const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | null => {
+const asStoreContextPayload = (value: unknown): StoreContextPayload | null => {
 	if (!isRecord(value)) {
 		return null;
 	}
@@ -207,7 +207,7 @@ const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | nu
 	const effective = isRecord(value.effective) ? value.effective : null;
 	if (
 		!effective ||
-		typeof effective.canManageClassroom !== 'boolean' ||
+		typeof effective.canManageStore !== 'boolean' ||
 		typeof effective.canManageBookings !== 'boolean' ||
 		typeof effective.canManageParticipants !== 'boolean' ||
 		typeof effective.canUseParticipantBooking !== 'boolean' ||
@@ -222,8 +222,8 @@ const asClassroomContextPayload = (value: unknown): ClassroomContextPayload | nu
 		slug: value.slug,
 		name: value.name,
 		logo: typeof value.logo === 'string' ? value.logo : null,
-		canManage: effective.canManageClassroom,
-		canManageClassroom: effective.canManageClassroom,
+		canManage: effective.canManageStore,
+		canManageStore: effective.canManageStore,
 		canManageBookings: effective.canManageBookings,
 		canManageParticipants: effective.canManageParticipants,
 		canUseParticipantBooking: effective.canUseParticipantBooking,
@@ -249,21 +249,19 @@ export const loadOrganizations = async (
 		writeLastUsedOrganizationId(activeOrganization.id);
 	}
 
-	const classrooms = portalAccess.activeContext?.orgSlug
-		? readClassroomsFromAccessTree(accessTree, portalAccess.activeContext.orgSlug)
+	const stores = portalAccess.activeContext?.orgSlug
+		? readStoresFromAccessTree(accessTree, portalAccess.activeContext.orgSlug)
 		: [];
-	const activeClassroom =
+	const activeStore =
 		portalAccess.activeContext === null
 			? null
-			: (classrooms.find(
-					(classroom) => classroom.slug === portalAccess.activeContext?.classroomSlug
-				) ?? null);
+			: (stores.find((store) => store.slug === portalAccess.activeContext?.storeSlug) ?? null);
 
 	return {
 		organizations,
 		activeOrganization,
-		classrooms,
-		activeClassroom,
+		stores,
+		activeStore,
 		activeContext: portalAccess.activeContext ?? null,
 		accessTree
 	};
@@ -356,11 +354,11 @@ export const createOrganizationBillingPaymentMethod = async (input: {
 	};
 };
 
-export const createOrganizationWithInitialClassroom = async (input: {
+export const createOrganizationWithInitialStore = async (input: {
 	organizationName: string;
 	organizationSlug: string;
-	classroomName?: string;
-	classroomSlug?: string;
+	storeName?: string;
+	storeSlug?: string;
 	logo?: string;
 }) => {
 	const organizationResult = await createOrganization({
@@ -374,61 +372,61 @@ export const createOrganizationWithInitialClassroom = async (input: {
 			status: organizationResult.status,
 			message: organizationResult.message,
 			organization: null as OrganizationPayload | null,
-			classroom: null as ClassroomContextPayload | null
+			store: null as StoreContextPayload | null
 		};
 	}
 
 	await setActiveOrganization(organizationResult.organization.id);
 
-	const classroomName = input.classroomName?.trim() ?? '';
-	const classroomSlug = input.classroomSlug?.trim() ?? '';
-	if (!classroomName && !classroomSlug) {
-		const classrooms = await listClassroomsByOrgSlug(organizationResult.organization.slug);
-		const defaultClassroom = classrooms[0] ?? null;
+	const storeName = input.storeName?.trim() ?? '';
+	const storeSlug = input.storeSlug?.trim() ?? '';
+	if (!storeName && !storeSlug) {
+		const stores = await listStoresByOrgSlug(organizationResult.organization.slug);
+		const defaultStore = stores[0] ?? null;
 		return {
-			ok: defaultClassroom !== null,
-			status: defaultClassroom ? 200 : 500,
-			message: defaultClassroom
-				? '組織を作成しました。初期教室はあとから設定できます。'
-				: '初期教室の取得に失敗しました。',
+			ok: defaultStore !== null,
+			status: defaultStore ? 200 : 500,
+			message: defaultStore
+				? '組織を作成しました。初期店舗はあとから設定できます。'
+				: '初期店舗の取得に失敗しました。',
 			organization: organizationResult.organization,
-			classroom: defaultClassroom
+			store: defaultStore
 		};
 	}
-	if (!classroomName || !classroomSlug) {
+	if (!storeName || !storeSlug) {
 		return {
 			ok: false,
 			status: 422,
-			message: '初期教室を設定する場合は、教室名と slug の両方を入力してください。',
+			message: '初期店舗を設定する場合は、店舗名と slug の両方を入力してください。',
 			organization: organizationResult.organization,
-			classroom: null as ClassroomContextPayload | null
+			store: null as StoreContextPayload | null
 		};
 	}
 
-	const classroomResult = await updateClassroom(
+	const storeResult = await updateStore(
 		organizationResult.organization.slug,
 		organizationResult.organization.slug,
 		{
-			name: classroomName,
-			slug: classroomSlug
+			name: storeName,
+			slug: storeSlug
 		}
 	);
-	if (!classroomResult.ok || !classroomResult.classroom) {
+	if (!storeResult.ok || !storeResult.store) {
 		return {
 			ok: false,
-			status: classroomResult.status,
-			message: classroomResult.message,
+			status: storeResult.status,
+			message: storeResult.message,
 			organization: organizationResult.organization,
-			classroom: null as ClassroomContextPayload | null
+			store: null as StoreContextPayload | null
 		};
 	}
 
 	return {
 		ok: true,
-		status: classroomResult.status,
-		message: '組織と初期教室を作成しました。',
+		status: storeResult.status,
+		message: '組織と初期店舗を作成しました。',
 		organization: organizationResult.organization,
-		classroom: classroomResult.classroom
+		store: storeResult.store
 	};
 };
 
@@ -467,58 +465,56 @@ export const uploadOrganizationLogo = async (file: File) => {
 	};
 };
 
-export const listClassroomsByOrgSlug = async (
-	orgSlug: string
-): Promise<ClassroomContextPayload[]> => {
-	const response = await authRpc.listClassroomsByOrg(orgSlug);
+export const listStoresByOrgSlug = async (orgSlug: string): Promise<StoreContextPayload[]> => {
+	const response = await authRpc.listStoresByOrg(orgSlug);
 	const payload = await parseResponseBody(response);
 	if (!response.ok || !Array.isArray(payload)) {
 		return [];
 	}
 	return payload
-		.map((entry) => asClassroomContextPayload(entry))
-		.filter((entry): entry is ClassroomContextPayload => entry !== null);
+		.map((entry) => asStoreContextPayload(entry))
+		.filter((entry): entry is StoreContextPayload => entry !== null);
 };
 
-const asCreatedOrUpdatedClassroom = (value: unknown): ClassroomContextPayload | null =>
-	asClassroomContextPayload(value as ClassroomPayload);
+const asCreatedOrUpdatedStore = (value: unknown): StoreContextPayload | null =>
+	asStoreContextPayload(value as StorePayload);
 
-export const createClassroom = async (orgSlug: string, input: { name: string; slug: string }) => {
-	const response = await authRpc.createClassroomByOrg(orgSlug, input);
+export const createStore = async (orgSlug: string, input: { name: string; slug: string }) => {
+	const response = await authRpc.createStoreByOrg(orgSlug, input);
 	const payload = await parseResponseBody(response);
-	const classroom = response.ok ? asCreatedOrUpdatedClassroom(payload) : null;
+	const store = response.ok ? asCreatedOrUpdatedStore(payload) : null;
 	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
 		premiumRestriction,
 		message: response.ok
-			? '教室を作成しました。'
+			? '店舗を作成しました。'
 			: premiumRestriction
 				? 'この機能は組織のPremiumプランで利用できます。'
-				: toErrorMessage(payload, '教室の作成に失敗しました。'),
-		classroom
+				: toErrorMessage(payload, '店舗の作成に失敗しました。'),
+		store
 	};
 };
 
-export const updateClassroom = async (
+export const updateStore = async (
 	orgSlug: string,
-	classroomSlug: string,
+	storeSlug: string,
 	input: { name: string; slug: string }
 ) => {
-	const response = await authRpc.updateClassroomByOrg(orgSlug, classroomSlug, input);
+	const response = await authRpc.updateStoreByOrg(orgSlug, storeSlug, input);
 	const payload = await parseResponseBody(response);
-	const classroom = response.ok ? asCreatedOrUpdatedClassroom(payload) : null;
+	const store = response.ok ? asCreatedOrUpdatedStore(payload) : null;
 	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 	return {
 		ok: response.ok,
 		status: response.status,
 		premiumRestriction,
 		message: response.ok
-			? '教室を更新しました。'
+			? '店舗を更新しました。'
 			: premiumRestriction
 				? 'この機能は組織のPremiumプランで利用できます。'
-				: toErrorMessage(payload, '教室の更新に失敗しました。'),
-		classroom
+				: toErrorMessage(payload, '店舗の更新に失敗しました。'),
+		store
 	};
 };

@@ -11,7 +11,7 @@ export const findServiceForSlot = async (database: AuthRuntimeDatabase, serviceI
     .select({
       id: dbSchema.service.id,
       organizationId: dbSchema.service.organizationId,
-      classroomId: dbSchema.service.classroomId,
+      storeId: dbSchema.service.storeId,
       bookingOpenMinutesBefore: dbSchema.service.bookingOpenMinutesBefore,
       bookingCloseMinutesBefore: dbSchema.service.bookingCloseMinutesBefore,
       capacity: dbSchema.service.capacity,
@@ -30,7 +30,7 @@ export const findSlotForUpdate = async (database: AuthRuntimeDatabase, slotId: s
     .select({
       id: dbSchema.slot.id,
       organizationId: dbSchema.slot.organizationId,
-      classroomId: dbSchema.slot.classroomId,
+      storeId: dbSchema.slot.storeId,
       serviceId: dbSchema.slot.serviceId,
       status: dbSchema.slot.status,
       reservedCount: dbSchema.slot.reservedCount,
@@ -51,7 +51,7 @@ export const findSlotForCancel = async (database: AuthRuntimeDatabase, slotId: s
     .select({
       id: dbSchema.slot.id,
       organizationId: dbSchema.slot.organizationId,
-      classroomId: dbSchema.slot.classroomId,
+      storeId: dbSchema.slot.storeId,
       status: dbSchema.slot.status,
     })
     .from(dbSchema.slot)
@@ -67,7 +67,7 @@ export const insertSlot = async ({
   database,
   slotId,
   organizationId,
-  classroomId,
+  storeId,
   serviceId,
   startAt,
   endAt,
@@ -80,7 +80,7 @@ export const insertSlot = async ({
   database: AuthRuntimeDatabase;
   slotId: string;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   serviceId: string;
   startAt: Date;
   endAt: Date;
@@ -93,7 +93,7 @@ export const insertSlot = async ({
   await database.insert(dbSchema.slot).values({
     id: slotId,
     organizationId,
-    classroomId,
+    storeId,
     serviceId,
     recurringScheduleId: null,
     startAt,
@@ -164,7 +164,7 @@ export const updateSlot = async ({
 export const listSlots = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   serviceId,
   status,
   from,
@@ -172,7 +172,7 @@ export const listSlots = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   serviceId?: string;
   status?: string;
   from: Date;
@@ -183,8 +183,8 @@ export const listSlots = async ({
     gte(dbSchema.slot.startAt, from),
     lte(dbSchema.slot.startAt, to),
   ];
-  if (classroomId) {
-    filters.push(eq(dbSchema.slot.classroomId, classroomId));
+  if (storeId) {
+    filters.push(eq(dbSchema.slot.storeId, storeId));
   }
   if (serviceId) {
     filters.push(eq(dbSchema.slot.serviceId, serviceId));
@@ -206,18 +206,18 @@ export const listSlots = async ({
 export const listAvailableSlots = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   serviceId,
-  accessibleClassroomIds,
+  accessibleStoreIds,
   from,
   to,
   now,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   serviceId?: string;
-  accessibleClassroomIds: string[];
+  accessibleStoreIds: string[];
   from: Date;
   to: Date;
   now: Date;
@@ -232,9 +232,9 @@ export const listAvailableSlots = async ({
     sql`${dbSchema.slot.reservedCount} < ${dbSchema.slot.capacity}`,
   ];
   filters.push(
-    classroomId
-      ? eq(dbSchema.slot.classroomId, classroomId)
-      : inArray(dbSchema.slot.classroomId, accessibleClassroomIds),
+    storeId
+      ? eq(dbSchema.slot.storeId, storeId)
+      : inArray(dbSchema.slot.storeId, accessibleStoreIds),
   );
   if (serviceId) {
     filters.push(eq(dbSchema.slot.serviceId, serviceId));

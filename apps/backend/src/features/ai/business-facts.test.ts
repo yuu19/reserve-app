@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 import { resolveBusinessFacts } from './business-facts.js';
 
 const buildAccess = ({
@@ -13,28 +13,28 @@ const buildAccess = ({
   canManageBookings?: boolean;
   canManageParticipants?: boolean;
   canUseParticipantBooking?: boolean;
-} = {}): OrganizationClassroomAccess => ({
+} = {}): OrganizationStoreAccess => ({
   organizationId: 'org-a',
   organizationSlug: 'org-a',
   organizationName: 'Org A',
-  classroomId: 'class-a',
-  classroomSlug: 'class-a',
-  classroomName: 'Class A',
+  storeId: 'class-a',
+  storeSlug: 'class-a',
+  storeName: 'Class A',
   facts: {
     orgRole,
-    classroomStaffRole: null,
+    storeStaffRole: null,
     hasParticipantRecord: canUseParticipantBooking,
   },
   effective: {
     canManageOrganization: orgRole === 'owner' || orgRole === 'admin',
-    canManageClassroom: orgRole === 'owner' || orgRole === 'admin',
+    canManageStore: orgRole === 'owner' || orgRole === 'admin',
     canManageBookings,
     canManageParticipants,
     canUseParticipantBooking,
   },
   sources: {
     canManageOrganization: orgRole === 'owner' || orgRole === 'admin' ? 'org_role' : null,
-    canManageClassroom: orgRole === 'owner' || orgRole === 'admin' ? 'org_role' : null,
+    canManageStore: orgRole === 'owner' || orgRole === 'admin' ? 'org_role' : null,
     canManageBookings: orgRole === 'owner' || orgRole === 'admin' ? 'org_role' : null,
     canManageParticipants: orgRole === 'owner' || orgRole === 'admin' ? 'org_role' : null,
     canUseParticipantBooking: canUseParticipantBooking ? 'participant_record' : null,
@@ -106,10 +106,10 @@ describe('AI business facts', () => {
     ]);
     expect(facts.lines).toEqual(
       expect.arrayContaining([
-        '対象classroomのサービス数: 2',
-        '対象classroomの参加者数: 3',
-        '対象classroomのチケット種別数: 4',
-        '対象classroomの招待数: 5',
+        '対象storeのサービス数: 2',
+        '対象storeの参加者数: 3',
+        '対象storeのチケット種別数: 4',
+        '対象storeの招待数: 5',
         '課金プラン: premium',
         '契約状態: active',
       ]),

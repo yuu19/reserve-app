@@ -1,35 +1,36 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { formatJaDateTime } from '$lib/date/format';
-	import { buildLoginRedirectHref } from '$lib/features/auth-portal';
 	import { loadPublicEventDetail, reservePublicEvent } from '$lib/features/events.svelte';
 	import {
 		loadSession,
 		redirectToLoginWithNext,
 		getCurrentPathWithSearch
 	} from '$lib/features/auth-session.svelte';
-	import { buildScopedPath, type ScopedRouteContext } from '$lib/features/scoped-routing';
+	import type { ScopedRouteContext } from '$lib/features/scoped-routing';
 	import type { PublicEventDetailPayload, PublicTicketTypePayload } from '$lib/rpc-client';
 	import { toast } from 'svelte-sonner';
+
+	type ResolvablePath = Pathname;
 
 	const slotId = $derived(page.params.slotId ?? '');
 	const publicEventsContext = $derived.by((): ScopedRouteContext | undefined => {
 		const orgSlug = page.params.orgSlug?.trim();
-		const classroomSlug = page.params.classroomSlug?.trim();
-		return orgSlug && classroomSlug ? { orgSlug, classroomSlug } : undefined;
+		const storeSlug = page.params.storeSlug?.trim();
+		return orgSlug && storeSlug ? { orgSlug, storeSlug } : undefined;
 	});
 
 	let loading = $state(true);
 	let busy = $state(false);
-	let authenticated = $state(false);
 	let detail = $state<PublicEventDetailPayload | null>(null);
 	let errorMessage = $state<string | null>(null);
 
-	const participantBookingsPath = '/participant/bookings';
 	const applicableTicketTypes = $derived.by(() => {
 		const currentDetail = detail;
 		if (!currentDetail) {
@@ -59,16 +60,6 @@
 
 	const getTicketExpirationLabel = (ticketType: PublicTicketTypePayload): string =>
 		ticketType.expiresInDays ? `${ticketType.expiresInDays}日` : '期限なし';
-
-	const getParticipantBookingsPath = (): string =>
-		publicEventsContext
-			? buildScopedPath(publicEventsContext, participantBookingsPath)
-			: participantBookingsPath;
-
-	const getTicketPurchaseHref = (): string =>
-		authenticated
-			? getParticipantBookingsPath()
-			: buildLoginRedirectHref(getParticipantBookingsPath());
 
 	const refresh = async () => {
 		if (!slotId) {
@@ -101,7 +92,7 @@
 		try {
 			const result = await reservePublicEvent({
 				organizationId: detail.organizationId,
-				classroomId: detail.classroomId,
+				storeId: detail.storeId,
 				slotId: detail.slotId
 			});
 			if (!result.ok) {
@@ -122,10 +113,7 @@
 		void (async () => {
 			loading = true;
 			try {
-				const sessionPromise = loadSession().catch(() => ({ session: null, status: 0 }));
 				await refresh();
-				const sessionResult = await sessionPromise;
-				authenticated = Boolean(sessionResult.session);
 			} finally {
 				loading = false;
 			}
@@ -208,7 +196,10 @@
 					{:else}
 						<div class="grid gap-3 md:grid-cols-2">
 							{#each applicableTicketTypes as ticketType (ticketType.id)}
-								<div class="rounded-md border border-border/80 bg-background p-4">
+								<a
+									class="block rounded-md border border-border/80 bg-background p-4 transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+									href={resolve(ticketType.href as ResolvablePath)}
+								>
 									<div class="flex flex-wrap items-center justify-between gap-2">
 										<h4 class="font-semibold text-foreground">{ticketType.name}</h4>
 										<Badge variant="outline">{getTicketServiceLabel(ticketType)}</Badge>
@@ -220,10 +211,8 @@
 										<p>対象サービス: {getTicketServiceLabel(ticketType)}</p>
 										<p>支払方法: 現地決済 / 銀行振込</p>
 									</div>
-									<Button class="mt-4" type="button" href={getTicketPurchaseHref()}>
-										{authenticated ? '購入申請へ' : 'ログインして購入申請'}
-									</Button>
-								</div>
+									<p class="mt-3 text-sm font-medium text-primary">詳細を見る</p>
+								</a>
 							{/each}
 						</div>
 					{/if}

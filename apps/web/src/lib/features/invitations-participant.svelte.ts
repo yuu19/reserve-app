@@ -76,7 +76,7 @@ export const createParticipantInvitation = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, status: 422, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, status: 422, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.createParticipantInvitationScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -91,7 +91,7 @@ export const createParticipantInvitation = async (input: {
 				: '参加者招待を送信しました。'
 			: premiumRestriction
 				? 'この機能は組織のPremiumプランで利用できます。'
-			: toErrorMessage(payload, '参加者招待の作成に失敗しました。')
+				: toErrorMessage(payload, '参加者招待の作成に失敗しました。')
 	};
 };
 
@@ -114,6 +114,8 @@ export const actParticipantInvitation = async (
 	return {
 		ok: response.ok,
 		status: response.status,
-		message: response.ok ? messageByType[type] : toErrorMessage(payload, '参加者招待の操作に失敗しました。')
+		message: response.ok
+			? messageByType[type]
+			: toErrorMessage(payload, '参加者招待の操作に失敗しました。')
 	};
 };

@@ -3,9 +3,9 @@
 **Feature Branch**: `001-organization-billing`  
 **Created**: 2026-04-27  
 **Status**: Draft  
-**Input**: User description: "_bmad-output以下を参照してspeckit用のspecを作成"
+**Input**: User description: "\_bmad-output以下を参照してspeckit用のspecを作成"
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Owner Billing Workspace and Trial Entry (Priority: P1)
 
@@ -69,7 +69,7 @@ entitlement、notification history、audit trail が期待通りになること�
 ### User Story 3 - Premium Capability Access Across the Organization (Priority: P2)
 
 owner、admin、manager、staff は、organization の premium eligibility に応じて、
-複数 classroom、staff invitation、role management、recurring schedule、approval-based
+複数 store、staff invitation、role management、recurring schedule、approval-based
 booking、ticket/recurring payment、CSV/export、analytics、audit-oriented view などの
 premium capability を一貫して利用または制限される。
 
@@ -89,8 +89,8 @@ operational capability が正しく解放・制限されることで成立する
    capability だけが使える
 3. **Given** organization の plan state が trial/paid から free に変わる, **When** premium
    capability が再評価される, **Then** data は保持されるが premium-only action は制限される
-4. **Given** classroom が複数ある organization, **When** premium eligibility が有効になる,
-   **Then** entitlement は classroom 単位ではなく organization 配下へ一貫して適用される
+4. **Given** store が複数ある organization, **When** premium eligibility が有効になる,
+   **Then** entitlement は store 単位ではなく organization 配下へ一貫して適用される
 
 ---
 
@@ -147,7 +147,7 @@ communication、invoice/receipt の追加が organization-scoped billing model �
 ### Edge Cases
 
 - owner が既に trial 中、paid、または過去に trial 済みの organization で再度 trial を開始しようとする
-- organization に active classroom や staff が複数存在する状態で plan state が変わる
+- organization に active store や staff が複数存在する状態で plan state が変わる
 - payment method 登録が途中で中断される、または登録済みかどうかの反映が遅れる
 - Stripe event が重複、順不同、遅延、または一時失敗後に再送される
 - Stripe 側は active/trialing だが application 側が free/trial/paid と異なる
@@ -157,7 +157,7 @@ communication、invoice/receipt の追加が organization-scoped billing model �
 - non-owner に billing controls が露出する UI regression
 - 色だけでは state を判別できない、または loading/error state が曖昧になる UI
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -176,7 +176,7 @@ communication、invoice/receipt の追加が organization-scoped billing model �
 - **FR-007**: System MUST prevent overlapping or conflicting premium trials for the same
   organization.
 - **FR-008**: System MUST maintain premium entitlement at organization scope and apply it
-  consistently across all classrooms belonging to the organization.
+  consistently across all stores belonging to the organization.
 - **FR-009**: System MUST allow premium-enabled operational capabilities only when the
   organization has active premium eligibility.
 - **FR-010**: System MUST preserve organization data and existing operational setup when
@@ -216,7 +216,7 @@ communication、invoice/receipt の追加が organization-scoped billing model �
   state, trial timing, payment method status, reminder delivery status, and mismatch signals.
 - **FR-028**: System MUST allow authorized internal operators to review billing investigation
   timeline data sufficient to classify support issues.
-- **FR-029**: System MUST gate multiple classroom/site management behind premium eligibility.
+- **FR-029**: System MUST gate multiple store/site management behind premium eligibility.
 - **FR-030**: System MUST gate staff invitation and role management behind premium eligibility.
 - **FR-031**: System MUST gate recurring schedule operations behind premium eligibility.
 - **FR-032**: System MUST gate approval-based booking flows behind premium eligibility.
@@ -233,9 +233,9 @@ communication、invoice/receipt の追加が organization-scoped billing model �
 - **FR-037**: System MUST preserve the organization-scoped billing model for future billing
   history, plan change, multi-tier paid plan, expanded communication, and invoice/receipt
   capability by keeping extensible plan codes, provider references, communication history, and
-  billing document references out of classroom-scoped ownership.
+  billing document references out of store-scoped ownership.
 
-### Key Entities *(include if feature involves data)*
+### Key Entities _(include if feature involves data)_
 
 - **Organization Billing**: organization 単位の billing aggregate。product plan state、
   premium eligibility、trial timing、payment method registration status、provider-derived
@@ -251,16 +251,16 @@ communication、invoice/receipt の追加が organization-scoped billing model �
   mismatch detection、internal inspection に関する監査可能な履歴。
 - **Internal Operator Access**: internal billing inspection を利用できる operator の権限。
   end-user role とは分離して管理される。
-- **Premium Capability**: multiple classroom、staff invitation、role management、
+- **Premium Capability**: multiple store、staff invitation、role management、
   recurring schedule、approval booking、ticket/payment、CSV/export、analytics など、
   premium eligibility によって利用可否が変わる業務能力。current implementation で
   確認対象に含める surface は backend の authenticated routes と booking authorization、
   web の contracts/home premium restriction messaging、admin contracts、admin participants、
   admin schedules、admin bookings、participant invitation/bookings flows とする。
 
-### Constitution Alignment *(mandatory)*
+### Constitution Alignment _(mandatory)_
 
-- **既存 brownfield baseline**: 既存の organization/classroom model、contracts/billing
+- **既存 brownfield baseline**: 既存の organization/store model、contracts/billing
   workspace、billing lifecycle intake、email communication、operational observability、
   data migration flow を維持する。新しい starter や別アプリホストは導入しない。
 - **認可と scope**: subscription と entitlement の正本は organization。billing action は
@@ -275,7 +275,7 @@ communication、invoice/receipt の追加が organization-scoped billing model �
 - **design system 義務**: billing/status UI は DESIGN.md を優先し、状態、action、結果を色だけに
   依存せず表示する。loading、error、read-only、owner-only state は明確に区別する。
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 
@@ -308,8 +308,8 @@ communication、invoice/receipt の追加が organization-scoped billing model �
 - MVP の plan state は `free`、`premium_trial`、`premium_paid` の 3 種類とし、複数 paid tier は
   future expansion とする。
 - Billing authority は owner-only を hard rule とし、admin は契約操作不可とする。
-- Subscription ownership は classroom ではなく organization に固定する。
+- Subscription ownership は store ではなく organization に固定する。
 - Support/internal inspection は authorized internal operator に限定する。
 - Mobile client は MVP billing management の主要導線ではなく、premium entitlement の影響がある場合は
   manual smoke coverage を残す。
-- Existing organization/classroom migration status、design system、project guidance を実装時の正本として扱う。
+- Existing organization/store migration status、design system、project guidance を実装時の正本として扱う。

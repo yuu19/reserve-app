@@ -22,7 +22,7 @@
 	let loading = $state(true);
 	let busy = $state(false);
 	let activeOrganizationId = $state<string | null>(null);
-	let canManageClassroom = $state(false);
+	let canManageStore = $state(false);
 	let billing = $state<OrganizationBillingPayload | null>(null);
 	let premiumRestriction = $state<OrganizationPremiumRestrictionPayload | null>(null);
 	let services = $state<ServicePayload[]>([]);
@@ -58,7 +58,7 @@
 	};
 	const resetTicketTypeCreateViewState = () => {
 		activeOrganizationId = null;
-		canManageClassroom = false;
+		canManageStore = false;
 		billing = null;
 		premiumRestriction = null;
 		services = [];
@@ -91,7 +91,7 @@
 				return;
 			}
 			activeOrganizationId = data.organizationId;
-			canManageClassroom = data.canManageClassroom;
+			canManageStore = data.canManageStore;
 			premiumRestriction = data.premiumRestriction ?? null;
 			services = data.services;
 			if (data.premiumRestriction && data.organizationId) {
@@ -108,7 +108,7 @@
 
 	const submitCreateTicketType = async (event: SubmitEvent) => {
 		event.preventDefault();
-		if (!activeOrganizationId || !canManageClassroom || premiumRestriction) return;
+		if (!activeOrganizationId || !canManageStore || premiumRestriction) return;
 
 		const totalCount = parsePositiveInteger(ticketTypeForm.totalCount);
 		if (!totalCount) {
@@ -208,9 +208,9 @@
 						<p class="text-sm text-muted-foreground">
 							回数券管理は Premium 利用開始後に利用できます。
 						</p>
-					{:else if !canManageClassroom}
+					{:else if !canManageStore}
 						<p class="text-sm text-muted-foreground">
-							回数券種別の作成には教室管理権限が必要です。
+							回数券種別の作成には店舗管理権限が必要です。
 						</p>
 					{:else}
 						<form class="grid gap-4 md:grid-cols-2" onsubmit={submitCreateTicketType}>

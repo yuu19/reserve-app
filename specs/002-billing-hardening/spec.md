@@ -25,7 +25,7 @@
 - Q: Cancellation entitlement behavior? → A: `canceled` stops Premium immediately; scheduled period-end cancellation on `active` or `trialing` keeps Premium until current period end, then stops.
 - Q: Provider webhook signature failure handling? → A: unsigned, mismatched, or expired-signature webhooks are not processed, do not change billing state, and create only sanitized security/audit signals.
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - 支払い状態に応じた Premium 利用制御 (Priority: P1)
 
@@ -141,7 +141,7 @@ owner は、有料契約前に請求先名、連絡先、必要な税務・請�
 - 請求先情報が不足した状態で有料契約を開始し、provider-hosted flow で補完が必要になる
 - non-owner に支払い方法・請求書・契約操作が露出する UI regression
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -177,14 +177,14 @@ owner は、有料契約前に請求先名、連絡先、必要な税務・請�
 - **FR-030**: System MUST stop Premium eligibility when a provider price is unknown, while preserving organization data and provider references.
 - **FR-031**: System MUST require provider prices to map to known product tiers before enabling any Premium capability.
 - **FR-032**: System MUST provide support-visible diagnostics for unknown price, missing billing profile, unavailable provider lookup, and stale subscription state.
-- **FR-033**: System MUST keep all billing lifecycle changes organization-scoped and must not create classroom-scoped subscription ownership.
+- **FR-033**: System MUST keep all billing lifecycle changes organization-scoped and must not create store-scoped subscription ownership.
 - **FR-034**: System MUST preserve existing organization billing history and trial usage data when applying this feature to existing organizations.
 - **FR-035**: System MUST NOT block paid checkout or Premium eligibility solely because billing profile readiness is incomplete or unavailable; it MUST surface owner guidance and support-visible signals instead.
 - **FR-036**: System MUST persist provider webhook event ids without automatic expiry for this feature and MUST treat duplicate provider event ids as no-op state changes while retaining receipt history.
 - **FR-037**: System MUST stop Premium eligibility immediately for `canceled` subscriptions and MUST keep Premium eligibility until current period end for `active` or `trialing` subscriptions scheduled to cancel at period end unless another blocking condition applies.
 - **FR-038**: System MUST reject unsigned, mismatched-signature, and expired-signature provider webhooks before applying billing state changes or duplicate event handling, and MUST record only sanitized security/audit signals for those attempts.
 
-### Key Entities *(include if feature involves data)*
+### Key Entities _(include if feature involves data)_
 
 - **Billing Eligibility Decision**: Derived result that determines Premium access for an organization, including state, reason, grace status, scheduled cancellation status, current period end, next owner action, and whether Premium capabilities are enabled.
 - **Billing Operation Attempt**: Owner-initiated action record for trial start, paid checkout, payment method setup, or portal handoff; includes purpose, organization, state, retryability, 30-minute handoff reuse expiry, and provider references where available.
@@ -198,7 +198,7 @@ owner は、有料契約前に請求先名、連絡先、必要な税務・請�
 - **Billing Profile Readiness**: Organization-level readiness state indicating whether provider-hosted billing contact and tax-relevant collection is complete, incomplete, unavailable, or not required. This readiness state is diagnostic and guidance-oriented; it does not independently gate paid checkout or Premium eligibility.
 - **Paid Tier Catalog Entry**: Approved mapping between provider price, product tier, capabilities, and diagnostic behavior when the price is unknown.
 
-### Constitution Alignment *(mandatory)*
+### Constitution Alignment _(mandatory)_
 
 - **I. Existing Architecture**: This feature extends the existing organization-scoped billing model and keeps provider-hosted payment flows. It must not replace the monorepo, authentication, routing, data access, or deployment structure. Existing free/trial/paid behavior must remain compatible while new hardening states are introduced.
 - **II. Type Safety と API Boundary**: Billing state, provider status, provider event ids, price ids, invoice events, operation attempts, and document references must be normalized at API boundaries. Unknown provider values must be represented explicitly instead of being treated as trusted product state.
@@ -207,7 +207,7 @@ owner は、有料契約前に請求先名、連絡先、必要な税務・請�
 - **V. Data, Billing, Deployment Safety**: Existing billing rows, trial usage, provider identifiers, webhook event receipts, audit history, notification history, and reconciliation signals must remain compatible. New lifecycle and recovery behavior must be idempotent, auditable, retryable where appropriate, and documented in deployment notes.
 - **VI. UI と Design System**: Contract and billing UI must follow DESIGN.md, use text and structure rather than color alone, and distinguish unavailable, checking, failed, successful, read-only, and action-required states.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 
@@ -233,7 +233,7 @@ owner は、有料契約前に請求先名、連絡先、必要な税務・請�
 ## Assumptions
 
 - Stripe remains the only billing provider for this feature.
-- The Premium subscription remains organization-scoped; classroom-scoped billing is out of scope.
+- The Premium subscription remains organization-scoped; store-scoped billing is out of scope.
 - Payment documents are displayed through provider-hosted references; the application does not generate tax invoices itself in this feature.
 - Refund and credit-note lifecycle handling is out of scope for v1 and should be specified separately if needed.
 - Billing profile requirements cover readiness and owner-visible provider-hosted collection rules; jurisdiction-specific legal text and tax calculation policy may be handled by provider settings unless a later requirement expands scope.

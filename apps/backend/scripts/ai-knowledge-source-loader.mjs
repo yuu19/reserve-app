@@ -257,7 +257,7 @@ export const loadMarkdownKnowledgeDocument = async ({ repoRoot, filePath, root }
     visibility: root.visibility,
     internalOnly: Boolean(root.internalOnly),
     organizationId: null,
-    classroomId: null,
+    storeId: null,
     feature: frontmatter.feature || null,
     tags: parseTags(frontmatter.tags),
   };

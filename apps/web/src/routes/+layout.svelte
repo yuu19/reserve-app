@@ -21,10 +21,10 @@
 		type AuthPortal
 	} from '$lib/features/auth-portal';
 	import {
-		listClassroomsByOrgSlug,
+		listStoresByOrgSlug,
 		loadOrganizations,
 		setActiveOrganization,
-		type ClassroomContextPayload
+		type StoreContextPayload
 	} from '$lib/features/organization-context.svelte';
 	import {
 		authRpc,
@@ -82,15 +82,15 @@
 	let desktopSidebarCollapsed = $state(false);
 	let session = $state<AuthSessionPayload>(null);
 	let organizations = $state<OrganizationPayload[]>([]);
-	let classrooms = $state<ClassroomContextPayload[]>([]);
+	let stores = $state<StoreContextPayload[]>([]);
 	let activeOrganization = $state<OrganizationPayload | null>(null);
-	let activeClassroom = $state<ClassroomContextPayload | null>(null);
+	let activeStore = $state<StoreContextPayload | null>(null);
 	let portalAccess = $state<PortalAccess>({
 		hasOrganizationAdminAccess: false,
 		hasAdminPortalAccess: false,
 		hasParticipantAccess: false,
 		canManage: false,
-		canManageClassroom: false,
+		canManageStore: false,
 		canManageBookings: false,
 		canManageParticipants: false,
 		canUseParticipantBooking: false,
@@ -103,7 +103,7 @@
 	});
 	let activePortal = $state<AuthPortal | null>(readLastAuthPortal());
 	let switchingOrganization = $state(false);
-	let switchingClassroom = $state(false);
+	let switchingStore = $state(false);
 	let refreshSessionStatePromise: Promise<void> | null = null;
 	let queuedRefreshContext: ScopedApiContext | null = null;
 	let fallbackRefreshPath = '';
@@ -124,7 +124,7 @@
 		href:
 			| '/admin/dashboard'
 			| '/admin/bookings'
-			| '/admin/classrooms'
+			| '/admin/stores'
 			| '/admin/services'
 			| '/admin/schedules/slots'
 			| '/admin/schedules/recurring'
@@ -166,7 +166,7 @@
 			items: [
 				{ href: '/admin/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
 				{ href: '/admin/bookings', label: '予約運用', icon: CalendarDays },
-				{ href: '/admin/classrooms', label: '教室管理', icon: Building2 },
+				{ href: '/admin/stores', label: '店舗管理', icon: Building2 },
 				{ href: '/admin/services', label: 'サービス一覧', icon: CalendarDays },
 				{ href: '/admin/schedules/slots', label: '単発一覧', icon: CalendarDays },
 				{ href: '/admin/schedules/recurring', label: '定期一覧', icon: CalendarDays },
@@ -197,7 +197,7 @@
 	);
 	const aiChatContext: AiChatContext = $derived({
 		organizationId: activeOrganization?.id ?? null,
-		classroomId: activeClassroom?.id ?? null,
+		storeId: activeStore?.id ?? null,
 		currentPage: pathname
 	});
 	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
@@ -210,7 +210,7 @@
 	const canAccessAdminRoute = (href: NavItem['href'] | SectionTab['href']) => {
 		switch (href) {
 			case '/admin/dashboard':
-			case '/admin/classrooms':
+			case '/admin/stores':
 			case '/admin/invitations':
 			case '/admin/settings':
 			case '/admin/contracts':
@@ -220,14 +220,14 @@
 			case '/admin/services':
 			case '/admin/schedules/slots':
 			case '/admin/schedules/recurring':
-				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageClassroom;
+				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageStore;
 			case '/admin/participants':
 				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageParticipants;
 			case '/admin/tickets':
 				return (
 					portalAccess.hasOrganizationAdminAccess ||
 					portalAccess.canManageParticipants ||
-					portalAccess.canManageClassroom
+					portalAccess.canManageStore
 				);
 			default:
 				return false;
@@ -245,7 +245,7 @@
 				.filter((item) => canAccessAdminRoute(item.href))
 				.map((item) =>
 					item.href === '/admin/invitations' && getCurrentScopedContext()
-						? { ...item, label: '教室招待' }
+						? { ...item, label: '店舗招待' }
 						: item
 				);
 			return adminItems.length > 0 ? [{ ...navSectionsByPortal.admin, items: adminItems }] : [];
@@ -476,15 +476,15 @@
 				isLoggedIn = !!loaded.session;
 				if (!loaded.session) {
 					organizations = [];
-					classrooms = [];
+					stores = [];
 					activeOrganization = null;
-					activeClassroom = null;
+					activeStore = null;
 					portalAccess = {
 						hasOrganizationAdminAccess: false,
 						hasAdminPortalAccess: false,
 						hasParticipantAccess: false,
 						canManage: false,
-						canManageClassroom: false,
+						canManageStore: false,
 						canManageBookings: false,
 						canManageParticipants: false,
 						canUseParticipantBooking: false,
@@ -500,9 +500,9 @@
 				const [
 					{
 						organizations: nextOrganizations,
-						classrooms: nextClassrooms,
+						stores: nextStores,
 						activeOrganization: nextActiveOrganization,
-						activeClassroom: nextActiveClassroom
+						activeStore: nextActiveStore
 					},
 					nextPortalAccess
 				] = await Promise.all([
@@ -510,9 +510,9 @@
 					loadPortalAccess(preferredContext)
 				]);
 				organizations = nextOrganizations;
-				classrooms = nextClassrooms;
+				stores = nextStores;
 				activeOrganization = nextActiveOrganization;
-				activeClassroom = nextActiveClassroom;
+				activeStore = nextActiveStore;
 				portalAccess = nextPortalAccess;
 				if (
 					!activePortal ||
@@ -539,28 +539,26 @@
 			nextQueuedContext &&
 			!(
 				getActiveStateScopedContext()?.orgSlug === nextQueuedContext.orgSlug &&
-				getActiveStateScopedContext()?.classroomSlug === nextQueuedContext.classroomSlug
+				getActiveStateScopedContext()?.storeSlug === nextQueuedContext.storeSlug
 			)
 		) {
 			await refreshSessionState(nextQueuedContext);
 		}
 	};
 
-	const pickPreferredClassroom = (
-		candidates: ClassroomContextPayload[]
-	): ClassroomContextPayload | null =>
-		candidates.find((classroom) => classroom.canManageClassroom) ??
-		candidates.find((classroom) => classroom.canManageBookings) ??
-		candidates.find((classroom) => classroom.canManageParticipants) ??
-		candidates.find((classroom) => classroom.canUseParticipantBooking) ??
+	const pickPreferredStore = (candidates: StoreContextPayload[]): StoreContextPayload | null =>
+		candidates.find((store) => store.canManageStore) ??
+		candidates.find((store) => store.canManageBookings) ??
+		candidates.find((store) => store.canManageParticipants) ??
+		candidates.find((store) => store.canUseParticipantBooking) ??
 		candidates[0] ??
 		null;
 
 	const getActiveStateScopedContext = (): ScopedApiContext | null =>
-		activeOrganization && activeClassroom
+		activeOrganization && activeStore
 			? {
 					orgSlug: activeOrganization.slug,
-					classroomSlug: activeClassroom.slug
+					storeSlug: activeStore.slug
 				}
 			: null;
 
@@ -568,7 +566,7 @@
 		getScopedContextFromUrlPath(portalAccess.accessTree, rawPathname) ??
 		getActiveStateScopedContext();
 
-	const resolveScopedNavigationTarget = (context: { orgSlug: string; classroomSlug: string }) => {
+	const resolveScopedNavigationTarget = (context: { orgSlug: string; storeSlug: string }) => {
 		const portal =
 			activePortal === 'admin' || activePortal === 'participant' ? activePortal : 'participant';
 		if (typeof window === 'undefined') {
@@ -589,7 +587,7 @@
 	};
 
 	const submitSetActiveOrganizationFromHeader = async (organizationId: string | null) => {
-		if (switchingOrganization || switchingClassroom) {
+		if (switchingOrganization || switchingStore) {
 			return;
 		}
 
@@ -618,10 +616,10 @@
 				return;
 			}
 
-			const nextClassrooms = await listClassroomsByOrgSlug(nextOrganization.slug);
-			const nextClassroom = pickPreferredClassroom(nextClassrooms);
-			if (!nextClassroom) {
-				toast.error('切り替え先の教室が見つかりません。');
+			const nextStores = await listStoresByOrgSlug(nextOrganization.slug);
+			const nextStore = pickPreferredStore(nextStores);
+			if (!nextStore) {
+				toast.error('切り替え先の店舗が見つかりません。');
 				await refreshSessionState();
 				return;
 			}
@@ -630,7 +628,7 @@
 				resolve(
 					resolveScopedNavigationTarget({
 						orgSlug: nextOrganization.slug,
-						classroomSlug: nextClassroom.slug
+						storeSlug: nextStore.slug
 					}) as ResolvablePath
 				),
 				{ invalidateAll: true }
@@ -642,29 +640,29 @@
 		}
 	};
 
-	const submitSetActiveClassroomFromHeader = async (classroomSlug: string) => {
-		if (switchingOrganization || switchingClassroom || !activeOrganization) {
+	const submitSetActiveStoreFromHeader = async (storeSlug: string) => {
+		if (switchingOrganization || switchingStore || !activeOrganization) {
 			return;
 		}
-		if (classroomSlug === activeClassroom?.slug) {
+		if (storeSlug === activeStore?.slug) {
 			return;
 		}
 
-		switchingClassroom = true;
+		switchingStore = true;
 		try {
 			await goto(
 				resolve(
 					resolveScopedNavigationTarget({
 						orgSlug: activeOrganization.slug,
-						classroomSlug
+						storeSlug
 					}) as ResolvablePath
 				),
 				{ invalidateAll: true }
 			);
 		} catch {
-			toast.error('教室の切り替えに失敗しました。');
+			toast.error('店舗の切り替えに失敗しました。');
 		} finally {
-			switchingClassroom = false;
+			switchingStore = false;
 		}
 	};
 
@@ -697,9 +695,9 @@
 			isLoggedIn = false;
 			session = null;
 			organizations = [];
-			classrooms = [];
+			stores = [];
 			activeOrganization = null;
-			activeClassroom = null;
+			activeStore = null;
 			mobileMenuOpen = false;
 			await goto(resolve('/'));
 		} catch {
@@ -794,12 +792,12 @@
 			!pathContext ||
 			(activeStateContext &&
 				activeStateContext.orgSlug === pathContext.orgSlug &&
-				activeStateContext.classroomSlug === pathContext.classroomSlug)
+				activeStateContext.storeSlug === pathContext.storeSlug)
 		) {
 			syncingPathContext = '';
 			return;
 		}
-		const syncKey = `${pathContext.orgSlug}/${pathContext.classroomSlug}`;
+		const syncKey = `${pathContext.orgSlug}/${pathContext.storeSlug}`;
 		if (syncingPathContext === syncKey) {
 			return;
 		}
@@ -1085,13 +1083,13 @@
 				<div class="flex min-w-0 items-center gap-2">
 					<ContextSwitcher
 						{organizations}
-						{classrooms}
+						{stores}
 						{activeOrganization}
-						{activeClassroom}
+						{activeStore}
 						loading={loadingSession}
-						busy={switchingOrganization || switchingClassroom}
+						busy={switchingOrganization || switchingStore}
 						onSelectOrganization={submitSetActiveOrganizationFromHeader}
-						onSelectClassroom={submitSetActiveClassroomFromHeader}
+						onSelectStore={submitSetActiveStoreFromHeader}
 					/>
 				</div>
 			</header>
@@ -1125,14 +1123,14 @@
 				<div class="flex min-w-0 items-center justify-end gap-2">
 					<ContextSwitcher
 						{organizations}
-						{classrooms}
+						{stores}
 						{activeOrganization}
-						{activeClassroom}
+						{activeStore}
 						loading={loadingSession}
-						busy={switchingOrganization || switchingClassroom}
+						busy={switchingOrganization || switchingStore}
 						compact={true}
 						onSelectOrganization={submitSetActiveOrganizationFromHeader}
-						onSelectClassroom={submitSetActiveClassroomFromHeader}
+						onSelectStore={submitSetActiveStoreFromHeader}
 					/>
 				</div>
 			</header>
@@ -1279,7 +1277,7 @@
 	<AiChatWidget
 		enabled={aiChatWidgetEnabled}
 		organizationId={aiChatContext.organizationId}
-		classroomId={aiChatContext.classroomId}
+		storeId={aiChatContext.storeId}
 		currentPage={aiChatContext.currentPage}
 	/>
 {:else}

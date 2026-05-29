@@ -13,7 +13,7 @@ const bookingPolicySchema = z.enum(['instant', 'approval']);
  */
 export const serviceCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema,
@@ -49,7 +49,7 @@ export const serviceCreateBodySchema = z.object({
  */
 export const serviceListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   includeArchived: boolStringSchema,
 });
 
@@ -58,7 +58,7 @@ export const serviceListQuerySchema = z.object({
  */
 export const serviceUpdateBodySchema = z.object({
   serviceId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema.optional(),
@@ -95,7 +95,7 @@ export const serviceUpdateBodySchema = z.object({
  */
 export const serviceImageUploadUrlBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   fileName: z.string().trim().min(1).max(255).optional(),
   contentType: z.string().trim().min(1).max(120),
   size: z.int().min(1),
@@ -125,7 +125,7 @@ export const serviceImageKeyParamSchema = z.object({
  */
 export const serviceArchiveBodySchema = z.object({
   serviceId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 /**

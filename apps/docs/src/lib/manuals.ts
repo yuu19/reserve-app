@@ -56,8 +56,8 @@ export const manualCategories: ManualCategory[] = [
 	{
 		id: 'admin',
 		title: '管理者向け',
-		description: '教室やサービスの運用を始める管理者向けガイドです。',
-		plannedTopics: ['サービス作成', '予約運用', '教室管理'],
+		description: '店舗やサービスの運用を始める管理者向けガイドです。',
+		plannedTopics: ['サービス作成', '予約運用', '店舗管理'],
 		items: [
 			{
 				href: '/manuals/admin/getting-started',

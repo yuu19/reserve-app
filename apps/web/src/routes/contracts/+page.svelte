@@ -46,13 +46,13 @@
 	const paymentMethodSyncMaxAttempts = 10;
 
 	const freePlanFeatures = [
-		'1組織・1教室での基本運用',
+		'1組織・1店舗での基本運用',
 		'単発予約枠の公開と受付',
 		'基本的な参加者管理'
 	];
 
 	const premiumPlanFeatures = [
-		'複数教室・複数拠点の管理',
+		'複数店舗・複数拠点の管理',
 		'スタッフ招待と権限管理',
 		'定期スケジュール運用',
 		'承認制予約フロー',
@@ -91,7 +91,7 @@
 			case 'premium_paid':
 				return 'Premium機能を利用中です。契約変更と支払い設定は owner のみが実行し、他ロールは状態確認のみ行えます。';
 			default:
-				return '無料プランで基本運用を続けながら、Premiumトライアルで複数教室管理やスタッフ権限などの拡張機能を7日間確認できます。';
+				return '無料プランで基本運用を続けながら、Premiumトライアルで複数店舗管理やスタッフ権限などの拡張機能を7日間確認できます。';
 		}
 	});
 	const paidTierLabel = $derived.by(() => {
@@ -245,9 +245,9 @@
 		return 'organization owner は現在の契約状態を確認し、必要に応じて Stripe Customer Portal でプラン変更を開始できます。';
 	});
 	const ownerAuthorityNote =
-		'契約変更と支払い設定は organization owner のみです。教室や参加者の運用権限とは分かれて管理されます。';
+		'契約変更と支払い設定は organization owner のみです。店舗や参加者の運用権限とは分かれて管理されます。';
 	const readOnlyAuthorityNote =
-		'あなたの role では契約状態の閲覧のみ可能です。教室や参加者の運用権限があっても、billing authority は付与されません。';
+		'あなたの role では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、billing authority は付与されません。';
 	const readOnlyHistoryNote =
 		'契約履歴の詳細は organization owner のみ確認できます。必要な場合は owner に確認を依頼してください。';
 	const accessibleLifecycleSummary = $derived.by(() => {
@@ -735,7 +735,7 @@
 				{:else if billing.planState === 'free'}
 					<div class="space-y-3">
 						<p class="text-sm text-muted-foreground">
-							7日間のPremiumトライアルでは、複数教室管理、スタッフ権限、定期スケジュールなどのPremium機能をまとめて確認できます。
+							7日間のPremiumトライアルでは、複数店舗管理、スタッフ権限、定期スケジュールなどのPremium機能をまとめて確認できます。
 						</p>
 						<ul id="trial-entry-description" class="space-y-2 text-sm text-muted-foreground">
 							<li>

@@ -11,7 +11,7 @@
 	import { emitAuthSessionUpdated } from '$lib/features/auth-lifecycle';
 	import { writeLastAuthPortal } from '$lib/features/auth-portal-preference';
 	import {
-		createOrganizationWithInitialClassroom,
+		createOrganizationWithInitialStore,
 		uploadOrganizationLogo
 	} from '$lib/features/organization-context.svelte';
 	import {
@@ -37,11 +37,11 @@
 	let form = $state({
 		organizationName: '',
 		organizationSlug: '',
-		classroomName: '',
-		classroomSlug: ''
+		storeName: '',
+		storeSlug: ''
 	});
 	let organizationSlugManuallyEdited = $state(false);
-	let classroomSlugManuallyEdited = $state(false);
+	let storeSlugManuallyEdited = $state(false);
 	let organizationLogoFiles = $state<FileList | undefined>(undefined);
 
 	const selectedOrganizationLogoFile = $derived(organizationLogoFiles?.item(0) ?? null);
@@ -59,17 +59,17 @@
 		form.organizationSlug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
 	};
 
-	const updateClassroomName = (event: Event) => {
+	const updateStoreName = (event: Event) => {
 		const name = (event.currentTarget as HTMLInputElement).value;
-		form.classroomName = name;
-		if (!classroomSlugManuallyEdited) {
-			form.classroomSlug = name.trim() ? createSlugCandidate(name, 'classroom') : '';
+		form.storeName = name;
+		if (!storeSlugManuallyEdited) {
+			form.storeSlug = name.trim() ? createSlugCandidate(name, 'store') : '';
 		}
 	};
 
-	const updateClassroomSlug = (event: Event) => {
-		classroomSlugManuallyEdited = true;
-		form.classroomSlug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
+	const updateStoreSlug = (event: Event) => {
+		storeSlugManuallyEdited = true;
+		form.storeSlug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
 	};
 
 	const refresh = async () => {
@@ -113,19 +113,19 @@
 				logo = uploaded.logoUrl;
 			}
 
-			const result = await createOrganizationWithInitialClassroom({
+			const result = await createOrganizationWithInitialStore({
 				organizationName: form.organizationName,
 				organizationSlug: createSlugCandidate(
 					form.organizationSlug || form.organizationName,
 					'organization'
 				),
-				classroomName: form.classroomName,
-				classroomSlug: form.classroomName.trim()
-					? createSlugCandidate(form.classroomSlug || form.classroomName, 'classroom')
+				storeName: form.storeName,
+				storeSlug: form.storeName.trim()
+					? createSlugCandidate(form.storeSlug || form.storeName, 'store')
 					: '',
 				logo
 			});
-			if (!result.ok || !result.organization || !result.classroom) {
+			if (!result.ok || !result.organization || !result.store) {
 				toast.error(result.message);
 				return;
 			}
@@ -135,13 +135,10 @@
 			toast.success(result.message);
 
 			await goto(
-				resolve(
-					'/[orgSlug]/[classroomSlug]/admin/dashboard',
-					{
-						orgSlug: result.organization.slug,
-						classroomSlug: result.classroom.slug
-					}
-				),
+				resolve('/[orgSlug]/[storeSlug]/admin/dashboard', {
+					orgSlug: result.organization.slug,
+					storeSlug: result.store.slug
+				}),
 				{ invalidateAll: true }
 			);
 		} finally {
@@ -164,9 +161,9 @@
 <main class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
 		<Badge variant="outline">初回設定</Badge>
-		<h1 class="text-3xl font-semibold text-foreground">最初の組織と教室を作成</h1>
+		<h1 class="text-3xl font-semibold text-foreground">最初の組織と店舗を作成</h1>
 		<p class="text-sm text-muted-foreground">
-			管理画面を使い始めるために、まず組織を作成します。初期教室の設定は任意ですが、最初に決めておく運用を強く推奨します。
+			管理画面を使い始めるために、まず組織を作成します。初期店舗の設定は任意ですが、最初に決めておく運用を強く推奨します。
 		</p>
 	</header>
 
@@ -174,7 +171,7 @@
 		<CardHeader class="space-y-2">
 			<h2 class="text-xl font-semibold text-foreground">初期セットアップ</h2>
 			<CardDescription>
-				組織作成は必須です。URL識別子は名前から自動で用意します。初期教室名を空欄にすると、組織名ベースの初期教室をあとから変更できます。
+				組織作成は必須です。URL識別子は名前から自動で用意します。初期店舗名を空欄にすると、組織名ベースの初期店舗をあとから変更できます。
 			</CardDescription>
 		</CardHeader>
 		<CardContent>
@@ -221,33 +218,33 @@
 
 					<div class="grid gap-4 md:grid-cols-2">
 						<div class="space-y-2">
-							<Label for="onboarding-classroom-name">初期教室名</Label>
+							<Label for="onboarding-store-name">初期店舗名</Label>
 							<Input
-								id="onboarding-classroom-name"
-								name="onboarding_classroom_name"
+								id="onboarding-store-name"
+								name="onboarding_store_name"
 								type="text"
-								value={form.classroomName}
-								oninput={updateClassroomName}
+								value={form.storeName}
+								oninput={updateStoreName}
 								disabled={busy}
 							/>
 						</div>
 						<div class="space-y-2">
 							<details class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
 								<summary class="cursor-pointer text-sm font-medium text-foreground">
-									初期教室のURL識別子を編集
+									初期店舗のURL識別子を編集
 								</summary>
 								<div class="mt-3 space-y-2">
-									<Label for="onboarding-classroom-slug">初期教室のURL識別子</Label>
+									<Label for="onboarding-store-slug">初期店舗のURL識別子</Label>
 									<Input
-										id="onboarding-classroom-slug"
-										name="onboarding_classroom_slug"
+										id="onboarding-store-slug"
+										name="onboarding_store_slug"
 										type="text"
-										value={form.classroomSlug}
-										oninput={updateClassroomSlug}
+										value={form.storeSlug}
+										oninput={updateStoreSlug}
 										pattern={SLUG_PATTERN_ATTRIBUTE}
 										title={SLUG_INPUT_HINT}
 										autocomplete="off"
-										disabled={busy || !form.classroomName.trim()}
+										disabled={busy || !form.storeName.trim()}
 									/>
 									<p class="text-xs text-muted-foreground">{SLUG_INPUT_HINT}</p>
 								</div>
@@ -256,7 +253,7 @@
 					</div>
 					<p class="text-xs text-muted-foreground">
 						推奨:
-						初回教室もここで設定してください。未入力の場合は組織名ベースの初期教室が自動作成されます。
+						初回店舗もここで設定してください。未入力の場合は組織名ベースの初期店舗が自動作成されます。
 					</p>
 
 					<div class="space-y-2">
@@ -275,7 +272,7 @@
 						{/if}
 					</div>
 
-					<Button type="submit" disabled={busy}>組織と教室を作成</Button>
+					<Button type="submit" disabled={busy}>組織と店舗を作成</Button>
 				</form>
 			{/if}
 		</CardContent>

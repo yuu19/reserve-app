@@ -158,7 +158,7 @@ export type OrganizationBillingActionEnvelope = {
 	} | null;
 };
 
-export type ClassroomPayload = {
+export type StorePayload = {
 	id: string;
 	slug: string;
 	name: string;
@@ -170,7 +170,7 @@ export type ClassroomPayload = {
 	[key: string]: unknown;
 };
 
-export type InvitationSubjectKind = 'org_operator' | 'classroom_operator' | 'participant';
+export type InvitationSubjectKind = 'org_operator' | 'store_operator' | 'participant';
 export type InvitationStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'expired';
 
 export type InvitationPayload = {
@@ -178,12 +178,12 @@ export type InvitationPayload = {
 	organizationId: string;
 	organizationSlug: string;
 	organizationName: string;
-	classroomId?: string | null;
-	classroomSlug?: string | null;
-	classroomName?: string | null;
+	storeId?: string | null;
+	storeSlug?: string | null;
+	storeName?: string | null;
 	email: string;
 	subjectKind: InvitationSubjectKind;
-	role: OrganizationInvitationRole | ClassroomInvitationRole;
+	role: OrganizationInvitationRole | StoreInvitationRole;
 	participantName?: string | null;
 	status: InvitationStatus;
 	expiresAt: string | null;
@@ -311,7 +311,7 @@ export type TicketTypePayload = {
 export type TicketPackPayload = {
 	id: string;
 	organizationId: string;
-	classroomId: string;
+	storeId: string;
 	participantId: string;
 	ticketTypeId: string;
 	serviceScope?: 'all' | 'specific';
@@ -359,8 +359,8 @@ export type TicketPurchasePayload = {
 export type PublicEventListItemPayload = {
 	organizationId: string;
 	organizationSlug: string;
-	classroomId: string;
-	classroomSlug: string;
+	storeId: string;
+	storeSlug: string;
 	serviceId: string;
 	serviceName: string;
 	serviceDescription?: string | null;
@@ -391,6 +391,7 @@ export type PublicTicketTypePayload = {
 	serviceScope: 'all' | 'specific';
 	serviceIds: string[];
 	serviceNames: string[];
+	href: string;
 	[key: string]: unknown;
 };
 
@@ -407,9 +408,9 @@ export type PublicSiteProfilePayload = {
 	organizationId: string;
 	organizationSlug: string;
 	organizationName: string;
-	classroomId: string;
-	classroomSlug: string;
-	classroomName: string;
+	storeId: string;
+	storeSlug: string;
+	storeName: string;
 	siteName: string;
 	description?: string | null;
 	address?: string | null;
@@ -445,39 +446,39 @@ export type PublicSitePagePayload = {
 
 export type OrganizationMembershipRole = 'owner' | 'admin' | 'member';
 export type OrganizationInvitationRole = 'admin' | 'member';
-export type ClassroomInvitationRole = 'manager' | 'staff' | 'participant';
-export type ClassroomStaffRole = 'manager' | 'staff';
-export type ClassroomRole = 'manager' | 'staff' | 'participant';
+export type StoreInvitationRole = 'manager' | 'staff' | 'participant';
+export type StoreStaffRole = 'manager' | 'staff';
+export type StoreRole = 'manager' | 'staff' | 'participant';
 export type AccessDisplayRole = 'owner' | 'admin' | 'manager' | 'staff' | 'participant';
-export type AccessSource = 'org_role' | 'classroom_member' | 'participant_record';
+export type AccessSource = 'org_role' | 'store_member' | 'participant_record';
 export type ScopedApiContext = {
 	orgSlug: string;
-	classroomSlug: string;
+	storeSlug: string;
 };
 export type AccessFactsPayload = {
 	orgRole: OrganizationMembershipRole | null;
-	classroomStaffRole: ClassroomStaffRole | null;
+	storeStaffRole: StoreStaffRole | null;
 	hasParticipantRecord: boolean;
 };
 export type AccessEffectivePayload = {
 	canManageOrganization: boolean;
-	canManageClassroom: boolean;
+	canManageStore: boolean;
 	canManageBookings: boolean;
 	canManageParticipants: boolean;
 	canUseParticipantBooking: boolean;
 };
 export type AccessSourcesPayload = {
 	canManageOrganization: 'org_role' | null;
-	canManageClassroom: 'org_role' | 'classroom_member' | null;
-	canManageBookings: 'org_role' | 'classroom_member' | null;
-	canManageParticipants: 'org_role' | 'classroom_member' | null;
+	canManageStore: 'org_role' | 'store_member' | null;
+	canManageBookings: 'org_role' | 'store_member' | null;
+	canManageParticipants: 'org_role' | 'store_member' | null;
 	canUseParticipantBooking: 'participant_record' | null;
 };
 export type AccessDisplayPayload = {
 	primaryRole: AccessDisplayRole | null;
 	badges: AccessDisplayRole[];
 };
-export type AccessTreeClassroomPayload = {
+export type AccessTreeStorePayload = {
 	id: string;
 	slug: string;
 	name: string;
@@ -497,7 +498,7 @@ export type AccessTreeOrganizationPayload = {
 		logo?: string | null;
 		[key: string]: unknown;
 	};
-	classrooms: AccessTreeClassroomPayload[];
+	stores: AccessTreeStorePayload[];
 	[key: string]: unknown;
 };
 
@@ -558,12 +559,12 @@ type CreateOrganizationBillingTrialInput = {
 	organizationId?: string;
 };
 
-type CreateClassroomInput = {
+type CreateStoreInput = {
 	name: string;
 	slug: string;
 };
 
-type UpdateClassroomInput = {
+type UpdateStoreInput = {
 	name: string;
 	slug: string;
 };
@@ -593,21 +594,21 @@ type CreateParticipantInvitationInput = {
 	resend?: boolean;
 };
 
-type CreateClassroomInvitationInput = {
+type CreateStoreInvitationInput = {
 	email: string;
-	role: ClassroomInvitationRole;
+	role: StoreInvitationRole;
 	participantName?: string;
 	resend?: boolean;
 };
 
 type SelfEnrollParticipantInput = {
 	organizationId: string;
-	classroomId?: string;
+	storeId?: string;
 };
 
 type CreateServiceInput = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	name: string;
 	description?: string | null;
 	imageUrl?: string | null;
@@ -646,7 +647,7 @@ type ArchiveServiceInput = {
 
 type CreateServiceImageUploadUrlInput = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	fileName?: string;
 	contentType: string;
 	size: number;
@@ -654,13 +655,13 @@ type CreateServiceImageUploadUrlInput = {
 
 type ListServicesQuery = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	includeArchived?: boolean;
 };
 
 type CreateSlotInput = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	serviceId: string;
 	startAt: string;
 	endAt: string;
@@ -671,7 +672,7 @@ type CreateSlotInput = {
 
 type UpdateSlotInput = {
 	slotId: string;
-	classroomId?: string;
+	storeId?: string;
 	startAt: string;
 	endAt: string;
 	capacity?: number;
@@ -681,7 +682,7 @@ type UpdateSlotInput = {
 
 type ListSlotsQuery = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	serviceId?: string;
 	from: string;
 	to: string;
@@ -690,13 +691,13 @@ type ListSlotsQuery = {
 
 type CancelSlotInput = {
 	slotId: string;
-	classroomId?: string;
+	storeId?: string;
 	reason?: string;
 };
 
 type CreateRecurringScheduleInput = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	serviceId: string;
 	timezone?: string;
 	frequency: 'weekly' | 'monthly';
@@ -712,7 +713,7 @@ type CreateRecurringScheduleInput = {
 
 type UpdateRecurringScheduleInput = {
 	recurringScheduleId: string;
-	classroomId?: string;
+	storeId?: string;
 	timezone?: string;
 	frequency?: 'weekly' | 'monthly';
 	interval?: number;
@@ -728,14 +729,14 @@ type UpdateRecurringScheduleInput = {
 
 type ListRecurringSchedulesQuery = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	serviceId?: string;
 	isActive?: boolean;
 };
 
 type UpsertRecurringExceptionInput = {
 	recurringScheduleId: string;
-	classroomId?: string;
+	storeId?: string;
 	date: string;
 	action: 'skip' | 'override';
 	overrideStartTimeLocal?: string;
@@ -745,31 +746,31 @@ type UpsertRecurringExceptionInput = {
 
 type GenerateRecurringSlotsInput = {
 	recurringScheduleId: string;
-	classroomId?: string;
+	storeId?: string;
 	from?: string;
 	to?: string;
 };
 
 type CreateBookingInput = {
 	slotId: string;
-	classroomId?: string;
+	storeId?: string;
 	participantsCount?: number;
 };
 
 type BookingActionInput = {
 	bookingId: string;
-	classroomId?: string;
+	storeId?: string;
 	reason?: string;
 };
 
 type BookingNoShowInput = {
 	bookingId: string;
-	classroomId?: string;
+	storeId?: string;
 };
 
 type ListBookingsQuery = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	serviceId?: string;
 	from?: string;
 	to?: string;
@@ -785,7 +786,7 @@ type ListBookingsQuery = {
 
 type CreateTicketTypeInput = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	name: string;
 	serviceScope?: 'all' | 'specific';
 	serviceIds?: string[];
@@ -798,7 +799,7 @@ type CreateTicketTypeInput = {
 
 type UpdateTicketTypeInput = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	ticketTypeId: string;
 	name?: string;
 	serviceScope?: 'all' | 'specific';
@@ -811,13 +812,13 @@ type UpdateTicketTypeInput = {
 
 type ListTicketTypesQuery = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	isActive?: boolean;
 };
 
 type GrantTicketPackInput = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	participantId: string;
 	ticketTypeId: string;
 	count?: number;
@@ -826,13 +827,13 @@ type GrantTicketPackInput = {
 
 type ListTicketPacksQuery = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	participantId: string;
 };
 
 type AdjustTicketPackInput = {
 	ticketPackId: string;
-	classroomId?: string;
+	storeId?: string;
 	remainingCount?: number;
 	expiresAt?: string | null;
 	reason: string;
@@ -840,14 +841,14 @@ type AdjustTicketPackInput = {
 
 type CreateTicketPurchaseInput = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	ticketTypeId: string;
 	paymentMethod: TicketPurchaseMethod;
 };
 
 type ListTicketPurchasesQuery = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	participantId?: string;
 	paymentMethod?: TicketPurchaseMethod;
 	status?: TicketPurchaseStatus;
@@ -855,24 +856,24 @@ type ListTicketPurchasesQuery = {
 
 type ListMyTicketPurchasesQuery = {
 	organizationId?: string;
-	classroomId?: string;
+	storeId?: string;
 	status?: TicketPurchaseStatus;
 };
 
 type TicketPurchaseApproveInput = {
 	purchaseId: string;
-	classroomId?: string;
+	storeId?: string;
 };
 
 type TicketPurchaseRejectInput = {
 	purchaseId: string;
-	classroomId?: string;
+	storeId?: string;
 	reason?: string;
 };
 
 type TicketPurchaseCancelInput = {
 	purchaseId: string;
-	classroomId?: string;
+	storeId?: string;
 };
 
 type OrganizationQuery = {
@@ -1088,8 +1089,8 @@ const buildApiUrl = (path: string, query?: Record<string, QueryValue>): URL => {
 const buildScopedAuthPath = (
 	context: ScopedApiContext,
 	suffix: string
-): `/api/v1/auth/orgs/${string}/classrooms/${string}${string}` =>
-	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms/${encodeURIComponent(context.classroomSlug)}${suffix}`;
+): `/api/v1/auth/orgs/${string}/stores/${string}${string}` =>
+	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/stores/${encodeURIComponent(context.storeSlug)}${suffix}`;
 
 const buildOrgAuthPath = (orgSlug: string, suffix = ''): `/api/v1/auth/orgs/${string}${string}` =>
 	`/api/v1/auth/orgs/${encodeURIComponent(orgSlug)}${suffix}`;
@@ -1124,20 +1125,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isAccessEffectivePayload = (value: unknown): value is AccessEffectivePayload =>
 	isRecord(value) &&
 	typeof value.canManageOrganization === 'boolean' &&
-	typeof value.canManageClassroom === 'boolean' &&
+	typeof value.canManageStore === 'boolean' &&
 	typeof value.canManageBookings === 'boolean' &&
 	typeof value.canManageParticipants === 'boolean' &&
 	typeof value.canUseParticipantBooking === 'boolean';
 
 type ScopedIdentifiers = {
 	organizationId: string;
-	classroomId: string;
+	storeId: string;
 };
 
 const scopedIdentifiersCache = new Map<string, Promise<ScopedIdentifiers | null>>();
 
 const scopedIdentifiersCacheKey = (context: ScopedApiContext) =>
-	`${context.orgSlug}::${context.classroomSlug}`;
+	`${context.orgSlug}::${context.storeSlug}`;
 
 const parseJsonResponse = async (response: Response): Promise<unknown> => {
 	const contentType = response.headers.get('content-type') ?? '';
@@ -1174,7 +1175,7 @@ const resolveScopedIdentifiers = async (
 
 	const pending = (async () => {
 		// access-tree で slug から id を解決できる場合は追加 API を避ける。
-		// 旧 payload や部分的な権限だけの user では classrooms endpoint に fallback する。
+		// 旧 payload や部分的な権限だけの user では stores endpoint に fallback する。
 		const response = await authFetch('/api/v1/auth/orgs/access-tree');
 		const payload = await parseJsonResponse(response);
 		if (!response.ok || !isRecord(payload) || !Array.isArray(payload.orgs)) {
@@ -1184,22 +1185,18 @@ const resolveScopedIdentifiers = async (
 		let organizationId: string | null = null;
 
 		for (const orgEntry of payload.orgs) {
-			if (!isRecord(orgEntry) || !isRecord(orgEntry.org) || !Array.isArray(orgEntry.classrooms)) {
+			if (!isRecord(orgEntry) || !isRecord(orgEntry.org) || !Array.isArray(orgEntry.stores)) {
 				continue;
 			}
 			if (orgEntry.org.slug !== context.orgSlug || typeof orgEntry.org.id !== 'string') {
 				continue;
 			}
 			organizationId = orgEntry.org.id;
-			for (const classroom of orgEntry.classrooms) {
-				if (
-					isRecord(classroom) &&
-					classroom.slug === context.classroomSlug &&
-					typeof classroom.id === 'string'
-				) {
+			for (const store of orgEntry.stores) {
+				if (isRecord(store) && store.slug === context.storeSlug && typeof store.id === 'string') {
 					return {
 						organizationId: orgEntry.org.id,
-						classroomId: classroom.id
+						storeId: store.id
 					};
 				}
 			}
@@ -1209,24 +1206,24 @@ const resolveScopedIdentifiers = async (
 			return null;
 		}
 
-		const classroomsResponse = await authFetch(
-			`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms`
+		const storesResponse = await authFetch(
+			`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/stores`
 		);
-		const classroomsPayload = await parseJsonResponse(classroomsResponse);
-		if (!classroomsResponse.ok || !Array.isArray(classroomsPayload)) {
+		const storesPayload = await parseJsonResponse(storesResponse);
+		if (!storesResponse.ok || !Array.isArray(storesPayload)) {
 			return null;
 		}
 
-		for (const classroom of classroomsPayload) {
+		for (const store of storesPayload) {
 			if (
-				isRecord(classroom) &&
-				classroom.slug === context.classroomSlug &&
-				typeof classroom.id === 'string' &&
-				isAccessEffectivePayload(classroom.effective)
+				isRecord(store) &&
+				store.slug === context.storeSlug &&
+				typeof store.id === 'string' &&
+				isAccessEffectivePayload(store.effective)
 			) {
 				return {
 					organizationId,
-					classroomId: classroom.id
+					storeId: store.id
 				};
 			}
 		}
@@ -1249,7 +1246,7 @@ const withScopedQuery = async <TQuery extends Record<string, QueryValue>>(
 ) => {
 	const identifiers = await resolveScopedIdentifiers(context);
 	if (!identifiers) {
-		return createScopedResolutionErrorResponse('組織または教室コンテキストの解決に失敗しました。');
+		return createScopedResolutionErrorResponse('組織または店舗コンテキストの解決に失敗しました。');
 	}
 	return request({
 		...(query ?? ({} as TQuery)),
@@ -1264,7 +1261,7 @@ const withScopedJson = async <TJson extends Record<string, unknown>>(
 ) => {
 	const identifiers = await resolveScopedIdentifiers(context);
 	if (!identifiers) {
-		return createScopedResolutionErrorResponse('組織または教室コンテキストの解決に失敗しました。');
+		return createScopedResolutionErrorResponse('組織または店舗コンテキストの解決に失敗しました。');
 	}
 	return request({
 		...json,
@@ -1329,11 +1326,11 @@ export const authRpc = {
 	signOut: () => rpcClient.api.v1.auth['sign-out'].$post(),
 	listOrganizations: () => authFetch('/api/v1/auth/organizations'),
 	getAccessTree: () => authFetch('/api/v1/auth/orgs/access-tree'),
-	listClassroomsByOrg: (orgSlug: string) => authFetch(buildOrgAuthPath(orgSlug, '/classrooms')),
-	createClassroomByOrg: (orgSlug: string, json: CreateClassroomInput) =>
-		authFetch(buildOrgAuthPath(orgSlug, '/classrooms'), { json }),
-	updateClassroomByOrg: (orgSlug: string, classroomSlug: string, json: UpdateClassroomInput) =>
-		authFetch(buildOrgAuthPath(orgSlug, `/classrooms/${encodeURIComponent(classroomSlug)}`), {
+	listStoresByOrg: (orgSlug: string) => authFetch(buildOrgAuthPath(orgSlug, '/stores')),
+	createStoreByOrg: (orgSlug: string, json: CreateStoreInput) =>
+		authFetch(buildOrgAuthPath(orgSlug, '/stores'), { json }),
+	updateStoreByOrg: (orgSlug: string, storeSlug: string, json: UpdateStoreInput) =>
+		authFetch(buildOrgAuthPath(orgSlug, `/stores/${encodeURIComponent(storeSlug)}`), {
 			method: 'PATCH',
 			json
 		}),
@@ -1470,7 +1467,7 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations['ticket-purchases'].cancel.$post({ json }),
 	listInvitationsScoped: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/invitations')),
-	createInvitationScoped: (context: ScopedApiContext, json: CreateClassroomInvitationInput) =>
+	createInvitationScoped: (context: ScopedApiContext, json: CreateStoreInvitationInput) =>
 		authFetch(buildScopedAuthPath(context, '/invitations'), { json }),
 	listParticipantsScoped: (context: ScopedApiContext) =>
 		withScopedQuery(context, undefined, (query) =>

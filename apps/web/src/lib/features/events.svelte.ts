@@ -8,7 +8,7 @@ type JsonRecord = Record<string, unknown>;
 
 type PublicEventsContext = {
 	orgSlug?: string;
-	classroomSlug?: string;
+	storeSlug?: string;
 };
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -42,14 +42,14 @@ export const loadPublicEventDetail = async (
 
 export const ensureParticipantSelfEnrollment = async ({
 	organizationId,
-	classroomId
+	storeId
 }: {
 	organizationId: string;
-	classroomId?: string | null;
+	storeId?: string | null;
 }) => {
 	const response = await authRpc.selfEnrollParticipant({
 		organizationId,
-		classroomId: classroomId ?? undefined
+		storeId: storeId ?? undefined
 	});
 	const payload = await parseResponseBody(response);
 	if (!response.ok) {
@@ -70,14 +70,14 @@ export const ensureParticipantSelfEnrollment = async ({
 
 export const reservePublicEvent = async ({
 	organizationId,
-	classroomId,
+	storeId,
 	slotId
 }: {
 	organizationId: string;
-	classroomId?: string | null;
+	storeId?: string | null;
 	slotId: string;
 }) => {
-	const enrollmentResult = await ensureParticipantSelfEnrollment({ organizationId, classroomId });
+	const enrollmentResult = await ensureParticipantSelfEnrollment({ organizationId, storeId });
 	if (!enrollmentResult.ok) {
 		return {
 			ok: false,

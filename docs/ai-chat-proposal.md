@@ -27,7 +27,7 @@ POST /api/v1/ai/chat
 
 apps/backend / Cloudflare Worker
   ├─ Better Auth session確認
-  ├─ organization / classroom / role 解決
+  ├─ organization / store / role 解決
   ├─ 質問をembedding化
   ├─ Vectorize検索
   ├─ D1からchunk本文・権限・DB文脈を取得
@@ -101,7 +101,7 @@ D1
 - locale
 - visibility
 - organizationId
-- classroomId
+- storeId
 - checksum
 - indexedAt
 - 会話ログ
@@ -115,15 +115,15 @@ Vectorize
   - locale
   - visibility
   - organizationId
-  - classroomId
+  - storeId
   - tags
 ```
 
 ## DBテーブル案
 
 現行実装では `apps/backend/src/infra/db/schema.ts` に Drizzle schema を追加しています。
-既存 schema には `organization`, `member`, `classroom`, `classroom_member`, `participant`, `service`, `booking` と課金 v2 系の table があるため、AI 用 table は既存ドメイン DB を補助する形です。
-会話 scope は reusable な `subject_type` / `subject_id` を持ち、ReserveApp では `organization` / `organizationId` と `classroom_id` を組み合わせて扱います。
+既存 schema には `organization`, `member`, `store`, `store_member`, `participant`, `service`, `booking` と課金 v2 系の table があるため、AI 用 table は既存ドメイン DB を補助する形です。
+会話 scope は reusable な `subject_type` / `subject_id` を持ち、ReserveApp では `organization` / `organizationId` と `store_id` を組み合わせて扱います。
 
 ```ts id="ffzcv1"
 export const aiKnowledgeDocument = sqliteTable('ai_knowledge_document', {
@@ -149,7 +149,7 @@ export const aiKnowledgeChunk = sqliteTable('ai_knowledge_chunk', {
   locale: text('locale').default('ja').notNull(),
   visibility: text('visibility').default('authenticated').notNull(),
   organizationId: text('organization_id'),
-  classroomId: text('classroom_id'),
+  storeId: text('store_id'),
   tagsJson: text('tags_json'),
   indexedAt: integer('indexed_at', { mode: 'timestamp_ms' }).notNull(),
 });
@@ -157,7 +157,7 @@ export const aiKnowledgeChunk = sqliteTable('ai_knowledge_chunk', {
 export const aiConversation = sqliteTable('ai_conversation', {
   id: text('id').primaryKey(),
   organizationId: text('organization_id'),
-  classroomId: text('classroom_id'),
+  storeId: text('store_id'),
   userId: text('user_id').notNull(),
   title: text('title'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -301,7 +301,7 @@ type AiVectorMetadata = {
   locale: 'ja' | 'en';
   visibility: 'public' | 'authenticated' | 'participant' | 'staff' | 'manager' | 'admin' | 'owner';
   organizationId?: string;
-  classroomId?: string;
+  storeId?: string;
   feature?: 'booking' | 'billing' | 'ticket' | 'invitation' | 'service';
 };
 ```
@@ -342,7 +342,7 @@ const allowedVisibilities = ['public', 'authenticated', 'participant'];
 ```txt id="prvzeh"
 1. session取得
 2. activeOrganizationId解決
-3. member / classroomMember / participant からrole判定
+3. member / storeMember / participant からrole判定
 4. currentPageとmessageからintent分類
 5. messageをembedding化
 6. Vectorize検索
@@ -371,7 +371,7 @@ const aiChatRoute = createRoute({
             message: z.string().min(1).max(4000),
             conversationId: z.string().optional(),
             organizationId: z.string().optional(),
-            classroomId: z.string().optional(),
+            storeId: z.string().optional(),
             currentPage: z.string().optional(),
           }),
         },
@@ -437,14 +437,14 @@ export async function retrieveKnowledge({
   message,
   allowedVisibilities,
   organizationId,
-  classroomId,
+  storeId,
 }: {
   env: Env;
   database: Database;
   message: string;
   allowedVisibilities: string[];
   organizationId?: string;
-  classroomId?: string;
+  storeId?: string;
 }) {
   const embeddingResult = await env.AI.run('@cf/baai/bge-m3', {
     text: message,
@@ -488,7 +488,7 @@ System:
 User context:
 - userId
 - organizationId
-- classroomId
+- storeId
 - role
 - currentPage
 - billing visibility
@@ -543,7 +543,7 @@ V1ではこの設定で十分です。
 - docs chunk
 - service設定
 - slot設定
-- classroom role
+- store role
 - canManageBookings
 ```
 
@@ -632,7 +632,7 @@ Metadata filter:
 - locale
 - visibility
 - organizationId
-- classroomId
+- storeId
 - feature
 
 Source of truth:

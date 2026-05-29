@@ -4,19 +4,14 @@ import { render } from 'vitest-browser-svelte';
 import PublicSiteTopPage from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
-	goto: vi.fn(),
 	loadPublicSitePage: vi.fn()
 }));
 
 const pageState = vi.hoisted(() => ({
 	params: {
 		orgSlug: 'org-one',
-		classroomSlug: 'room-one'
+		storeSlug: 'room-one'
 	}
-}));
-
-vi.mock('$app/navigation', () => ({
-	goto: mocks.goto
 }));
 
 vi.mock('$app/paths', () => ({
@@ -31,22 +26,21 @@ vi.mock('$lib/features/public-site.svelte', () => ({
 	loadPublicSitePage: mocks.loadPublicSitePage
 }));
 
-describe('/[orgSlug]/[classroomSlug]/+page.svelte', () => {
+describe('/[orgSlug]/[storeSlug]/+page.svelte', () => {
 	beforeEach(() => {
 		pageState.params = {
 			orgSlug: 'org-one',
-			classroomSlug: 'room-one'
+			storeSlug: 'room-one'
 		};
-		mocks.goto.mockReset();
 		mocks.loadPublicSitePage.mockReset();
 		mocks.loadPublicSitePage.mockResolvedValue({
 			site: {
 				organizationId: 'org-1',
 				organizationSlug: 'org-one',
 				organizationName: 'Org One',
-				classroomId: 'room-1',
-				classroomSlug: 'room-one',
-				classroomName: 'Room One',
+				storeId: 'room-1',
+				storeSlug: 'room-one',
+				storeName: 'Room One',
 				siteName: 'Tokyo Studio',
 				description: '公開サイトの説明',
 				address: '東京都千代田区1-1-1',
@@ -80,7 +74,8 @@ describe('/[orgSlug]/[classroomSlug]/+page.svelte', () => {
 					expiresInDays: 90,
 					serviceScope: 'specific',
 					serviceIds: ['service-1'],
-					serviceNames: ['公開ヨガ']
+					serviceNames: ['公開ヨガ'],
+					href: '/org-one/room-one/tickets/ticket-1'
 				}
 			]
 		});
@@ -106,15 +101,18 @@ describe('/[orgSlug]/[classroomSlug]/+page.svelte', () => {
 
 		expect(mocks.loadPublicSitePage).toHaveBeenCalledWith({
 			orgSlug: 'org-one',
-			classroomSlug: 'room-one'
+			storeSlug: 'room-one'
 		});
 	});
 
-	it('opens a booking page from the top page', async () => {
+	it('renders booking and ticket cards as detail links', async () => {
 		render(PublicSiteTopPage);
 
-		await page.getByRole('button', { name: '予約ページへ', exact: true }).click();
-
-		expect(mocks.goto).toHaveBeenCalledWith('/org-one/room-one/events/slot-1');
+		await expect
+			.element(page.getByRole('link', { name: /公開ヨガ/ }).first())
+			.toHaveAttribute('href', '/org-one/room-one/events/slot-1');
+		await expect
+			.element(page.getByRole('link', { name: /ヨガ回数券/ }).first())
+			.toHaveAttribute('href', '/org-one/room-one/tickets/ticket-1');
 	});
 });

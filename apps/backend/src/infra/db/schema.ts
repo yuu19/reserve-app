@@ -125,8 +125,8 @@ export {
   billingTables,
 } from '@repo/saas-billing-drizzle/schema';
 
-export const classroom = sqliteTable(
-  'classroom',
+export const store = sqliteTable(
+  'store',
   {
     id: text('id').primaryKey(),
     organizationId: text('organization_id')
@@ -143,8 +143,8 @@ export const classroom = sqliteTable(
       .notNull(),
   },
   (table) => [
-    index('classroom_organization_created_idx').on(table.organizationId, table.createdAt),
-    uniqueIndex('classroom_organization_slug_uidx').on(table.organizationId, table.slug),
+    index('store_organization_created_idx').on(table.organizationId, table.createdAt),
+    uniqueIndex('store_organization_slug_uidx').on(table.organizationId, table.slug),
   ],
 );
 
@@ -155,9 +155,9 @@ export const publicSiteSetting = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     siteName: text('site_name'),
     description: text('description'),
     address: text('address'),
@@ -173,18 +173,18 @@ export const publicSiteSetting = sqliteTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex('public_site_setting_classroom_uidx').on(table.organizationId, table.classroomId),
+    uniqueIndex('public_site_setting_store_uidx').on(table.organizationId, table.storeId),
     index('public_site_setting_organization_idx').on(table.organizationId),
   ],
 );
 
-export const classroomMember = sqliteTable(
-  'classroom_member',
+export const storeMember = sqliteTable(
+  'store_member',
   {
     id: text('id').primaryKey(),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -192,9 +192,9 @@ export const classroomMember = sqliteTable(
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (table) => [
-    index('classroom_member_classroom_idx').on(table.classroomId),
-    index('classroom_member_user_idx').on(table.userId),
-    uniqueIndex('classroom_member_classroom_user_uidx').on(table.classroomId, table.userId),
+    index('store_member_store_idx').on(table.storeId),
+    index('store_member_user_idx').on(table.userId),
+    uniqueIndex('store_member_store_user_uidx').on(table.storeId, table.userId),
   ],
 );
 
@@ -224,9 +224,9 @@ export const participant = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -242,14 +242,14 @@ export const participant = sqliteTable(
   },
   (table) => [
     index('participant_organization_created_idx').on(table.organizationId, table.createdAt),
-    uniqueIndex('participant_organization_classroom_user_uidx').on(
+    uniqueIndex('participant_organization_store_user_uidx').on(
       table.organizationId,
-      table.classroomId,
+      table.storeId,
       table.userId,
     ),
-    uniqueIndex('participant_organization_classroom_email_uidx').on(
+    uniqueIndex('participant_organization_store_email_uidx').on(
       table.organizationId,
-      table.classroomId,
+      table.storeId,
       table.email,
     ),
   ],
@@ -263,7 +263,7 @@ export const invitation = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id').references(() => classroom.id, { onDelete: 'set null' }),
+    storeId: text('store_id').references(() => store.id, { onDelete: 'set null' }),
     email: text('email').notNull(),
     role: text('role').notNull(),
     principalKind: text('principal_kind').notNull(),
@@ -276,12 +276,9 @@ export const invitation = sqliteTable(
     acceptedMemberId: text('accepted_member_id').references(() => member.id, {
       onDelete: 'set null',
     }),
-    acceptedClassroomMemberId: text('accepted_classroom_member_id').references(
-      () => classroomMember.id,
-      {
-        onDelete: 'set null',
-      },
-    ),
+    acceptedStoreMemberId: text('accepted_store_member_id').references(() => storeMember.id, {
+      onDelete: 'set null',
+    }),
     acceptedParticipantId: text('accepted_participant_id').references(() => participant.id, {
       onDelete: 'set null',
     }),
@@ -300,9 +297,9 @@ export const invitation = sqliteTable(
   (table) => [
     index('invitation_organizationId_idx').on(table.organizationId),
     index('invitation_subject_kind_status_idx').on(table.subjectKind, table.status),
-    index('invitation_organization_classroom_status_idx').on(
+    index('invitation_organization_store_status_idx').on(
       table.organizationId,
-      table.classroomId,
+      table.storeId,
       table.status,
     ),
     index('invitation_organization_subject_role_status_idx').on(
@@ -315,7 +312,7 @@ export const invitation = sqliteTable(
   ],
 );
 
-export const classroomInvitation = invitation;
+export const storeInvitation = invitation;
 export const participantInvitation = invitation;
 
 export const invitationAuditLog = sqliteTable(
@@ -328,7 +325,7 @@ export const invitationAuditLog = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id').references(() => classroom.id, { onDelete: 'set null' }),
+    storeId: text('store_id').references(() => store.id, { onDelete: 'set null' }),
     actorUserId: text('actor_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -351,7 +348,7 @@ export const invitationAuditLog = sqliteTable(
   ],
 );
 
-export const classroomInvitationAuditLog = invitationAuditLog;
+export const storeInvitationAuditLog = invitationAuditLog;
 export const participantInvitationAuditLog = invitationAuditLog;
 
 export const service = sqliteTable(
@@ -361,9 +358,9 @@ export const service = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
     imageUrl: text('image_url'),
@@ -398,9 +395,9 @@ export const recurringSchedule = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     serviceId: text('service_id')
       .notNull()
       .references(() => service.id, { onDelete: 'cascade' }),
@@ -443,9 +440,9 @@ export const recurringScheduleException = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     date: text('date').notNull(),
     action: text('action').notNull(),
     overrideStartTimeLocal: text('override_start_time_local'),
@@ -475,9 +472,9 @@ export const slot = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     serviceId: text('service_id')
       .notNull()
       .references(() => service.id, { onDelete: 'cascade' }),
@@ -527,9 +524,9 @@ export const booking = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     slotId: text('slot_id')
       .notNull()
       .references(() => slot.id, { onDelete: 'cascade' }),
@@ -579,9 +576,9 @@ export const ticketType = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     serviceIdsJson: text('service_ids_json'),
     totalCount: integer('total_count').notNull(),
@@ -607,9 +604,9 @@ export const ticketPack = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     participantId: text('participant_id')
       .notNull()
       .references(() => participant.id, { onDelete: 'cascade' }),
@@ -646,9 +643,9 @@ export const ticketPurchase = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     participantId: text('participant_id')
       .notNull()
       .references(() => participant.id, { onDelete: 'cascade' }),
@@ -699,9 +696,9 @@ export const ticketLedger = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     ticketPackId: text('ticket_pack_id')
       .notNull()
       .references(() => ticketPack.id, { onDelete: 'cascade' }),
@@ -733,9 +730,9 @@ export const bookingAuditLog = sqliteTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    classroomId: text('classroom_id')
+    storeId: text('store_id')
       .notNull()
-      .references(() => classroom.id, { onDelete: 'cascade' }),
+      .references(() => store.id, { onDelete: 'cascade' }),
     actorUserId: text('actor_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -766,7 +763,7 @@ export const aiKnowledgeDocument = sqliteTable(
     organizationId: text('organization_id').references(() => organization.id, {
       onDelete: 'cascade',
     }),
-    classroomId: text('classroom_id').references(() => classroom.id, {
+    storeId: text('store_id').references(() => store.id, {
       onDelete: 'cascade',
     }),
     feature: text('feature'),
@@ -787,14 +784,14 @@ export const aiKnowledgeDocument = sqliteTable(
     index('ai_knowledge_document_status_idx').on(table.indexStatus, table.indexedAt),
     index('ai_knowledge_document_scope_idx').on(
       table.organizationId,
-      table.classroomId,
+      table.storeId,
       table.visibility,
     ),
     uniqueIndex('ai_knowledge_document_source_uidx').on(
       table.sourceKind,
       table.sourcePath,
       table.organizationId,
-      table.classroomId,
+      table.storeId,
     ),
   ],
 );
@@ -818,7 +815,7 @@ export const aiKnowledgeChunk = sqliteTable(
     organizationId: text('organization_id').references(() => organization.id, {
       onDelete: 'cascade',
     }),
-    classroomId: text('classroom_id').references(() => classroom.id, {
+    storeId: text('store_id').references(() => store.id, {
       onDelete: 'cascade',
     }),
     feature: text('feature'),
@@ -834,7 +831,7 @@ export const aiKnowledgeChunk = sqliteTable(
       table.locale,
       table.visibility,
       table.organizationId,
-      table.classroomId,
+      table.storeId,
     ),
     index('ai_knowledge_chunk_vector_status_idx').on(table.vectorStatus, table.indexedAt),
     uniqueIndex('ai_knowledge_chunk_document_hash_uidx').on(table.documentId, table.contentHash),
@@ -878,7 +875,7 @@ export const aiConversation = sqliteTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     subjectType: text('subject_type').notNull(),
     subjectId: text('subject_id').notNull(),
-    classroomId: text('classroom_id').references(() => classroom.id, {
+    storeId: text('store_id').references(() => store.id, {
       onDelete: 'cascade',
     }),
     channel: text('channel').default('web').notNull(),
@@ -902,7 +899,7 @@ export const aiConversation = sqliteTable(
       table.actorUserId,
       table.subjectType,
       table.subjectId,
-      table.classroomId,
+      table.storeId,
       table.updatedAt,
     ),
     index('ai_conversation_subject_status_last_message_idx').on(
@@ -957,7 +954,7 @@ export const aiUsageEvent = sqliteTable(
     subjectType: text('subject_type').notNull(),
     subjectId: text('subject_id').notNull(),
     actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
-    classroomId: text('classroom_id').references(() => classroom.id, {
+    storeId: text('store_id').references(() => store.id, {
       onDelete: 'set null',
     }),
     conversationId: text('conversation_id').references(() => aiConversation.id, {
@@ -1049,7 +1046,7 @@ export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
   members: many(member),
-  classroomMembers: many(classroomMember),
+  storeMembers: many(storeMember),
   participants: many(participant),
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
@@ -1086,9 +1083,9 @@ export const aiKnowledgeDocumentRelations = relations(aiKnowledgeDocument, ({ on
     fields: [aiKnowledgeDocument.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [aiKnowledgeDocument.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [aiKnowledgeDocument.storeId],
+    references: [store.id],
   }),
   chunks: many(aiKnowledgeChunk),
 }));
@@ -1102,9 +1099,9 @@ export const aiKnowledgeChunkRelations = relations(aiKnowledgeChunk, ({ one }) =
     fields: [aiKnowledgeChunk.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [aiKnowledgeChunk.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [aiKnowledgeChunk.storeId],
+    references: [store.id],
   }),
 }));
 
@@ -1113,9 +1110,9 @@ export const aiConversationRelations = relations(aiConversation, ({ one, many })
     fields: [aiConversation.actorUserId],
     references: [user.id],
   }),
-  classroom: one(classroom, {
-    fields: [aiConversation.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [aiConversation.storeId],
+    references: [store.id],
   }),
   messages: many(aiMessage),
   usageEvents: many(aiUsageEvent),
@@ -1135,9 +1132,9 @@ export const aiUsageEventRelations = relations(aiUsageEvent, ({ one }) => ({
     fields: [aiUsageEvent.actorUserId],
     references: [user.id],
   }),
-  classroom: one(classroom, {
-    fields: [aiUsageEvent.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [aiUsageEvent.storeId],
+    references: [store.id],
   }),
   conversation: one(aiConversation, {
     fields: [aiUsageEvent.conversationId],
@@ -1162,7 +1159,7 @@ export const aiFeedbackRelations = relations(aiFeedback, ({ one }) => ({
 
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
-  classrooms: many(classroom),
+  stores: many(store),
   participants: many(participant),
   services: many(service),
   recurringSchedules: many(recurringSchedule),
@@ -1180,12 +1177,12 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   aiKnowledgeChunks: many(aiKnowledgeChunk),
 }));
 
-export const classroomRelations = relations(classroom, ({ one, many }) => ({
+export const storeRelations = relations(store, ({ one, many }) => ({
   organization: one(organization, {
-    fields: [classroom.organizationId],
+    fields: [store.organizationId],
     references: [organization.id],
   }),
-  members: many(classroomMember),
+  members: many(storeMember),
   participants: many(participant),
   services: many(service),
   recurringSchedules: many(recurringSchedule),
@@ -1216,13 +1213,13 @@ export const memberRelations = relations(member, ({ one }) => ({
   }),
 }));
 
-export const classroomMemberRelations = relations(classroomMember, ({ one }) => ({
-  classroom: one(classroom, {
-    fields: [classroomMember.classroomId],
-    references: [classroom.id],
+export const storeMemberRelations = relations(storeMember, ({ one }) => ({
+  store: one(store, {
+    fields: [storeMember.storeId],
+    references: [store.id],
   }),
   user: one(user, {
-    fields: [classroomMember.userId],
+    fields: [storeMember.userId],
     references: [user.id],
   }),
 }));
@@ -1232,9 +1229,9 @@ export const participantRelations = relations(participant, ({ one, many }) => ({
     fields: [participant.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [participant.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [participant.storeId],
+    references: [store.id],
   }),
   user: one(user, {
     fields: [participant.userId],
@@ -1250,9 +1247,9 @@ export const serviceRelations = relations(service, ({ one, many }) => ({
     fields: [service.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [service.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [service.storeId],
+    references: [store.id],
   }),
   recurringSchedules: many(recurringSchedule),
   slots: many(slot),
@@ -1264,9 +1261,9 @@ export const recurringScheduleRelations = relations(recurringSchedule, ({ one, m
     fields: [recurringSchedule.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [recurringSchedule.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [recurringSchedule.storeId],
+    references: [store.id],
   }),
   service: one(service, {
     fields: [recurringSchedule.serviceId],
@@ -1283,9 +1280,9 @@ export const recurringScheduleExceptionRelations = relations(
       fields: [recurringScheduleException.organizationId],
       references: [organization.id],
     }),
-    classroom: one(classroom, {
-      fields: [recurringScheduleException.classroomId],
-      references: [classroom.id],
+    store: one(store, {
+      fields: [recurringScheduleException.storeId],
+      references: [store.id],
     }),
     recurringSchedule: one(recurringSchedule, {
       fields: [recurringScheduleException.recurringScheduleId],
@@ -1299,9 +1296,9 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
     fields: [slot.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [slot.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [slot.storeId],
+    references: [store.id],
   }),
   service: one(service, {
     fields: [slot.serviceId],
@@ -1319,9 +1316,9 @@ export const bookingRelations = relations(booking, ({ one, many }) => ({
     fields: [booking.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [booking.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [booking.storeId],
+    references: [store.id],
   }),
   slot: one(slot, {
     fields: [booking.slotId],
@@ -1352,9 +1349,9 @@ export const ticketTypeRelations = relations(ticketType, ({ one, many }) => ({
     fields: [ticketType.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [ticketType.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [ticketType.storeId],
+    references: [store.id],
   }),
   ticketPacks: many(ticketPack),
   ticketPurchases: many(ticketPurchase),
@@ -1365,9 +1362,9 @@ export const ticketPackRelations = relations(ticketPack, ({ one, many }) => ({
     fields: [ticketPack.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [ticketPack.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [ticketPack.storeId],
+    references: [store.id],
   }),
   participant: one(participant, {
     fields: [ticketPack.participantId],
@@ -1386,9 +1383,9 @@ export const ticketPurchaseRelations = relations(ticketPurchase, ({ one }) => ({
     fields: [ticketPurchase.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [ticketPurchase.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [ticketPurchase.storeId],
+    references: [store.id],
   }),
   participant: one(participant, {
     fields: [ticketPurchase.participantId],
@@ -1419,9 +1416,9 @@ export const ticketLedgerRelations = relations(ticketLedger, ({ one }) => ({
     fields: [ticketLedger.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [ticketLedger.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [ticketLedger.storeId],
+    references: [store.id],
   }),
   ticketPack: one(ticketPack, {
     fields: [ticketLedger.ticketPackId],
@@ -1442,9 +1439,9 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
     fields: [invitation.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [invitation.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [invitation.storeId],
+    references: [store.id],
   }),
   invitedByUser: one(user, {
     fields: [invitation.invitedByUserId],
@@ -1458,9 +1455,9 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
     fields: [invitation.acceptedMemberId],
     references: [member.id],
   }),
-  acceptedClassroomMember: one(classroomMember, {
-    fields: [invitation.acceptedClassroomMemberId],
-    references: [classroomMember.id],
+  acceptedStoreMember: one(storeMember, {
+    fields: [invitation.acceptedStoreMemberId],
+    references: [storeMember.id],
   }),
   acceptedParticipant: one(participant, {
     fields: [invitation.acceptedParticipantId],
@@ -1477,9 +1474,9 @@ export const invitationAuditLogRelations = relations(invitationAuditLog, ({ one 
     fields: [invitationAuditLog.organizationId],
     references: [organization.id],
   }),
-  classroom: one(classroom, {
-    fields: [invitationAuditLog.classroomId],
-    references: [classroom.id],
+  store: one(store, {
+    fields: [invitationAuditLog.storeId],
+    references: [store.id],
   }),
   actor: one(user, {
     fields: [invitationAuditLog.actorUserId],

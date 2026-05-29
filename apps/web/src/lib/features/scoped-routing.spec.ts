@@ -12,23 +12,24 @@ describe('scoped-routing', () => {
 			'/admin/schedules/slots'
 		);
 		expect(getRoutePathFromUrlPath('/org-a/room-b/events/slot-1')).toBe('/events/slot-1');
+		expect(getRoutePathFromUrlPath('/org-a/room-b/tickets/ticket-1')).toBe('/tickets/ticket-1');
 		expect(getRoutePathFromUrlPath('/admin/login')).toBe('/admin/login');
 	});
 
 	it('replaces legacy portal path with scoped context', () => {
 		expect(
-			replacePortalPathWithScopedContext('/admin/classrooms?tab=list', {
+			replacePortalPathWithScopedContext('/admin/stores?tab=list', {
 				orgSlug: 'org-a',
-				classroomSlug: 'room-b'
+				storeSlug: 'room-b'
 			})
-		).toBe('/org-a/room-b/admin/classrooms?tab=list');
+		).toBe('/org-a/room-b/admin/stores?tab=list');
 	});
 
 	it('replaces existing scoped context while preserving subpath and query', () => {
 		expect(
 			replacePortalPathWithScopedContext('/org-a/room-a/admin/schedules/slots?month=2026-03', {
 				orgSlug: 'org-a',
-				classroomSlug: 'room-b'
+				storeSlug: 'room-b'
 			})
 		).toBe('/org-a/room-b/admin/schedules/slots?month=2026-03');
 	});
@@ -37,7 +38,7 @@ describe('scoped-routing', () => {
 		expect(
 			replacePortalPathWithScopedContext('/org-a/room-b/admin/dashboard', {
 				orgSlug: 'org-a',
-				classroomSlug: 'room-b'
+				storeSlug: 'room-b'
 			})
 		).toBe('/org-a/room-b/admin/dashboard');
 	});
@@ -46,15 +47,31 @@ describe('scoped-routing', () => {
 		const scopedPath = buildScopedPath(
 			{
 				orgSlug: 'org-a',
-				classroomSlug: 'room-b'
+				storeSlug: 'room-b'
 			},
 			'/participant/bookings'
 		);
 
 		expect(scopedPath).toBe('/org-a/room-b/participant/bookings');
 		expect(splitScopedPath(scopedPath)).toEqual({
-			context: { orgSlug: 'org-a', classroomSlug: 'room-b' },
+			context: { orgSlug: 'org-a', storeSlug: 'room-b' },
 			remainderPath: '/participant/bookings'
+		});
+	});
+
+	it('builds scoped public ticket paths and splits them back into context and remainder', () => {
+		const scopedPath = buildScopedPath(
+			{
+				orgSlug: 'org-a',
+				storeSlug: 'room-b'
+			},
+			'/tickets/ticket-1'
+		);
+
+		expect(scopedPath).toBe('/org-a/room-b/tickets/ticket-1');
+		expect(splitScopedPath(scopedPath)).toEqual({
+			context: { orgSlug: 'org-a', storeSlug: 'room-b' },
+			remainderPath: '/tickets/ticket-1'
 		});
 	});
 });

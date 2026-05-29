@@ -164,8 +164,7 @@
 					<Button
 						type="button"
 						variant="outline"
-						onclick={() => goto(resolve(toResolvablePath('/admin/classrooms')))}
-						>教室管理へ移動</Button
+						onclick={() => goto(resolve(toResolvablePath('/admin/stores')))}>店舗管理へ移動</Button
 					>
 					<Button
 						type="button"

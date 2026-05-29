@@ -65,12 +65,12 @@ describe('/participants/+page.svelte', () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
 			canManageParticipants: true,
-			canManageClassroom: true,
+			canManageStore: true,
 			premiumRestriction: null,
 			participants: [],
 			sentInvitations: [],
@@ -113,7 +113,7 @@ describe('/participants/+page.svelte', () => {
 			organizationId: null,
 			canManage: false,
 			canManageParticipants: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			premiumRestriction: null,
 			participants: [],
 			sentInvitations: [],
@@ -132,12 +132,12 @@ describe('/participants/+page.svelte', () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
 			canManageParticipants: true,
-			canManageClassroom: false,
+			canManageStore: false,
 			premiumRestriction: null,
 			participants: [
 				{
@@ -166,12 +166,12 @@ describe('/participants/+page.svelte', () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
 			canManageParticipants: true,
-			canManageClassroom: true,
+			canManageStore: true,
 			premiumRestriction: {
 				message: 'Organization premium plan is required for this feature.',
 				code: 'organization_premium_required',

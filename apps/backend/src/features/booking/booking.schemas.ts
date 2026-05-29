@@ -20,7 +20,7 @@ const bookingStatusSchema = z.enum([
  */
 export const bookingCreateBodySchema = z.object({
   slotId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   participantsCount: z.int().min(1).max(20).optional(),
 });
 
@@ -29,7 +29,7 @@ export const bookingCreateBodySchema = z.object({
  */
 export const bookingMineQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
   status: bookingStatusSchema.optional(),
@@ -40,7 +40,7 @@ export const bookingMineQuerySchema = z.object({
  */
 export const bookingListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
@@ -53,7 +53,7 @@ export const bookingListQuerySchema = z.object({
  */
 export const bookingActionBodySchema = z.object({
   bookingId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
@@ -62,7 +62,7 @@ export const bookingActionBodySchema = z.object({
  */
 export const bookingNoShowBodySchema = z.object({
   bookingId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 /**
@@ -70,7 +70,7 @@ export const bookingNoShowBodySchema = z.object({
  */
 export const bookingApproveBodySchema = z.object({
   bookingId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 /**

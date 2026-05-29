@@ -32,7 +32,7 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 }));
 
 vi.mock('$lib/features/organization-context.svelte', () => ({
-	createOrganizationWithInitialClassroom: vi.fn(),
+	createOrganizationWithInitialStore: vi.fn(),
 	uploadOrganizationLogo: vi.fn()
 }));
 
@@ -52,7 +52,7 @@ describe('/admin/onboarding/+page.svelte', () => {
 			hasAdminPortalAccess: false,
 			hasParticipantAccess: false,
 			canManage: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageBookings: false,
 			canManageParticipants: false,
 			canUseParticipantBooking: false,
@@ -69,7 +69,7 @@ describe('/admin/onboarding/+page.svelte', () => {
 	it('renders onboarding heading for users without portal access', async () => {
 		render(AdminOnboardingPage);
 		await expect
-			.element(page.getByRole('heading', { level: 1, name: '最初の組織と教室を作成' }))
+			.element(page.getByRole('heading', { level: 1, name: '最初の組織と店舗を作成' }))
 			.toBeInTheDocument();
 	});
 
@@ -79,7 +79,7 @@ describe('/admin/onboarding/+page.svelte', () => {
 			hasAdminPortalAccess: false,
 			hasParticipantAccess: true,
 			canManage: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageBookings: false,
 			canManageParticipants: false,
 			canUseParticipantBooking: true,

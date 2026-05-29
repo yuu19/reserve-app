@@ -22,10 +22,10 @@ Sentry 連携用 public 変数:
 - `PUBLIC_SENTRY_ENVIRONMENT` (default: `production`)
 - `PUBLIC_SENTRY_RELEASE`
 
-## Org + Classroom スコープ（2026-03）
+## Org + Store スコープ（2026-03）
 
-- 認可判定は `org + classroom` コンテキストを利用します。
-- 公開イベントは `/api/v1/public/orgs/:orgSlug/classrooms/:classroomSlug/events*` を利用します。
+- 認可判定は `org + store` コンテキストを利用します。
+- 公開イベントは `/api/v1/public/orgs/:orgSlug/stores/:storeSlug/events*` を利用します。
 - 一部画面/API は旧 organization スコープとの互換経路を段階的に縮退中です。
 - Mobile は今回移行の対象外です。
 

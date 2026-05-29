@@ -11,14 +11,14 @@ type PublicEventDetail = {
 export const expectPublicEventCapacity = async ({
 	request,
 	orgSlug,
-	classroomSlug,
+	storeSlug,
 	slotId,
 	remainingCount,
 	capacity
 }: {
 	request: APIRequestContext;
 	orgSlug: string;
-	classroomSlug: string;
+	storeSlug: string;
 	slotId: string;
 	remainingCount: number;
 	capacity: number;
@@ -26,7 +26,7 @@ export const expectPublicEventCapacity = async ({
 	const response = await request.get(
 		`${backendUrl}/api/v1/public/orgs/${encodeURIComponent(
 			orgSlug
-		)}/classrooms/${encodeURIComponent(classroomSlug)}/events/${encodeURIComponent(slotId)}`
+		)}/stores/${encodeURIComponent(storeSlug)}/events/${encodeURIComponent(slotId)}`
 	);
 	const payload = await expectOkJson<PublicEventDetail>(response, `read public event ${slotId}`);
 	expect(payload).toMatchObject({ remainingCount, capacity });

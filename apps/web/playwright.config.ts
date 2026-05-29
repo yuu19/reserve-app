@@ -10,16 +10,15 @@ const backendEnvFile = path.join(os.tmpdir(), 'reserve-app-backend-e2e.vars');
 const webE2eEnvFile = path.join(os.tmpdir(), 'reserve-app-web-e2e-env.json');
 const publicEventsOrgSlug =
 	process.env.PUBLIC_EVENTS_ORG_SLUG?.trim() || `public-events-e2e-${process.pid}`;
-const publicEventsClassroomSlug =
-	process.env.PUBLIC_EVENTS_CLASSROOM_SLUG?.trim() || publicEventsOrgSlug;
+const publicEventsStoreSlug = process.env.PUBLIC_EVENTS_STORE_SLUG?.trim() || publicEventsOrgSlug;
 process.env.PUBLIC_EVENTS_ORG_SLUG = publicEventsOrgSlug;
-process.env.PUBLIC_EVENTS_CLASSROOM_SLUG = publicEventsClassroomSlug;
+process.env.PUBLIC_EVENTS_STORE_SLUG = publicEventsStoreSlug;
 fs.writeFileSync(
 	webE2eEnvFile,
 	JSON.stringify(
 		{
 			PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
-			PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug
+			PUBLIC_EVENTS_STORE_SLUG: publicEventsStoreSlug
 		},
 		null,
 		2
@@ -45,16 +44,14 @@ const writeBackendEnvFile = () => {
 	const values: Record<string, string> = {
 		BETTER_AUTH_URL: 'http://localhost:3000',
 		BETTER_AUTH_SECRET:
-			process.env.BETTER_AUTH_SECRET?.trim() ||
-			'reserve-app-e2e-secret-at-least-32-characters',
+			process.env.BETTER_AUTH_SECRET?.trim() || 'reserve-app-e2e-secret-at-least-32-characters',
 		BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173,mobile://',
 		BETTER_AUTH_COOKIE_DOMAIN: '',
 		WEB_BASE_URL: 'http://localhost:5173',
 		INVITATION_ACCEPT_URL_BASE: 'http://localhost:5173/invitations/accept',
-		PARTICIPANT_INVITATION_ACCEPT_URL_BASE:
-			'http://localhost:5173/participants/invitations/accept',
+		PARTICIPANT_INVITATION_ACCEPT_URL_BASE: 'http://localhost:5173/participants/invitations/accept',
 		PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
-		PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug,
+		PUBLIC_EVENTS_STORE_SLUG: publicEventsStoreSlug,
 		RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL?.trim() || 'onboarding@resend.dev',
 		E2E_TESTING_ENABLED: 'true',
 		E2E_TEST_SECRET: e2eTestSecret,
@@ -125,7 +122,7 @@ export default defineConfig({
 						...process.env,
 						PUBLIC_BACKEND_URL: 'http://localhost:3000',
 						PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
-						PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug
+						PUBLIC_EVENTS_STORE_SLUG: publicEventsStoreSlug
 					},
 					url: 'http://localhost:5173',
 					reuseExistingServer: !process.env.CI,
@@ -140,7 +137,7 @@ export default defineConfig({
 						...process.env,
 						E2E_BACKEND_ENV_FILE: backendEnvFile,
 						PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
-						PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug
+						PUBLIC_EVENTS_STORE_SLUG: publicEventsStoreSlug
 					},
 					url: 'http://localhost:3000/api/health',
 					reuseExistingServer: !process.env.CI,
@@ -153,7 +150,7 @@ export default defineConfig({
 						...process.env,
 						PUBLIC_BACKEND_URL: 'http://localhost:3000',
 						PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
-						PUBLIC_EVENTS_CLASSROOM_SLUG: publicEventsClassroomSlug
+						PUBLIC_EVENTS_STORE_SLUG: publicEventsStoreSlug
 					},
 					url: 'http://localhost:5173',
 					reuseExistingServer: !process.env.CI,

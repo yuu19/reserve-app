@@ -18,7 +18,7 @@ export const aiChatRequestSchema = z.object({
   message: z.string().trim().min(1).max(4000),
   conversationId: z.string().optional(),
   organizationId: z.string().optional(),
-  classroomId: z.string().optional(),
+  storeId: z.string().optional(),
   currentPage: z.string().max(2048).optional(),
 });
 

@@ -11,7 +11,7 @@
 
 技術方針は brownfield patch とする。既存 `organization_billing`、Stripe webhook receipt、
 invoice/payment event、notification、audit/signal tables を使い、新しい provider、top-level package、
-payment detail storage、classroom-scoped billing は導入しない。Stripe Billing と provider-hosted payment
+payment detail storage、store-scoped billing は導入しない。Stripe Billing と provider-hosted payment
 management を継続し、raw payload やカード詳細は保存しない。
 
 ## Technical Context

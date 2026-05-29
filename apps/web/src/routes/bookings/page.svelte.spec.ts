@@ -51,19 +51,19 @@ describe('/bookings/+page.svelte', () => {
 			hasAdminPortalAccess: true,
 			hasParticipantAccess: true,
 			canManage: true,
-			canManageClassroom: true,
+			canManageStore: true,
 			canManageBookings: true,
 			canManageParticipants: true,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: 'admin',
 			activeFacts: {
 				orgRole: 'admin',
-				classroomStaffRole: 'manager',
+				storeStaffRole: 'manager',
 				hasParticipantRecord: true
 			},
 			activeSources: {
 				canManageOrganization: 'org_role',
-				canManageClassroom: 'org_role',
+				canManageStore: 'org_role',
 				canManageBookings: 'org_role',
 				canManageParticipants: 'org_role',
 				canUseParticipantBooking: 'participant_record'
@@ -114,21 +114,21 @@ describe('/bookings/+page.svelte', () => {
 			hasAdminPortalAccess: true,
 			hasParticipantAccess: false,
 			canManage: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageBookings: true,
 			canManageParticipants: true,
 			canUseParticipantBooking: false,
 			activeOrganizationRole: null,
 			activeFacts: {
 				orgRole: null,
-				classroomStaffRole: 'staff',
+				storeStaffRole: 'staff',
 				hasParticipantRecord: false
 			},
 			activeSources: {
 				canManageOrganization: null,
-				canManageClassroom: null,
-				canManageBookings: 'classroom_member',
-				canManageParticipants: 'classroom_member',
+				canManageStore: null,
+				canManageBookings: 'store_member',
+				canManageParticipants: 'store_member',
 				canUseParticipantBooking: null
 			},
 			activeDisplay: {
@@ -153,19 +153,19 @@ describe('/bookings/+page.svelte', () => {
 			hasAdminPortalAccess: false,
 			hasParticipantAccess: true,
 			canManage: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageBookings: false,
 			canManageParticipants: false,
 			canUseParticipantBooking: true,
 			activeOrganizationRole: null,
 			activeFacts: {
 				orgRole: null,
-				classroomStaffRole: null,
+				storeStaffRole: null,
 				hasParticipantRecord: true
 			},
 			activeSources: {
 				canManageOrganization: null,
-				canManageClassroom: null,
+				canManageStore: null,
 				canManageBookings: null,
 				canManageParticipants: null,
 				canUseParticipantBooking: 'participant_record'

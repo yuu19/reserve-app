@@ -16,12 +16,12 @@ export class PublicEventsPage extends BasePage {
 	async openEventDetails({
 		serviceName,
 		orgSlug,
-		classroomSlug,
+		storeSlug,
 		slotId
 	}: {
 		serviceName: string;
 		orgSlug: string;
-		classroomSlug: string;
+		storeSlug: string;
 		slotId: string;
 	}) {
 		const eventCard = this.page
@@ -30,7 +30,7 @@ export class PublicEventsPage extends BasePage {
 			.first();
 		await expect(eventCard).toBeVisible({ timeout: 15_000 });
 		await eventCard.getByRole('button', { name: 'イベント詳細へ' }).click();
-		await expect(this.page).toHaveURL(new RegExp(`/${orgSlug}/${classroomSlug}/events/${slotId}`));
+		await expect(this.page).toHaveURL(new RegExp(`/${orgSlug}/${storeSlug}/events/${slotId}`));
 	}
 
 	async reserveAsParticipant() {
@@ -54,14 +54,14 @@ export class ScopedAdminPages extends BasePage {
 
 	async expectServiceVisible({
 		orgSlug,
-		classroomSlug,
+		storeSlug,
 		serviceName
 	}: {
 		orgSlug: string;
-		classroomSlug: string;
+		storeSlug: string;
 		serviceName: string;
 	}) {
-		await this.goto(`/${orgSlug}/${classroomSlug}/admin/services`);
+		await this.goto(`/${orgSlug}/${storeSlug}/admin/services`);
 		await expect(this.page.getByRole('heading', { name: 'サービス一覧' })).toBeVisible();
 		await expect(
 			this.page.getByRole('row', { name: new RegExp(escapeRegex(serviceName)) })
@@ -70,16 +70,16 @@ export class ScopedAdminPages extends BasePage {
 
 	async expectSlotVisible({
 		orgSlug,
-		classroomSlug,
+		storeSlug,
 		serviceName,
 		locationLabel
 	}: {
 		orgSlug: string;
-		classroomSlug: string;
+		storeSlug: string;
 		serviceName: string;
 		locationLabel: string;
 	}) {
-		await this.goto(`/${orgSlug}/${classroomSlug}/admin/schedules/slots`);
+		await this.goto(`/${orgSlug}/${storeSlug}/admin/schedules/slots`);
 		await expect(this.page.getByRole('heading', { name: '単発Slot一覧' })).toBeVisible();
 		const slotRow = this.page.getByRole('row', { name: new RegExp(escapeRegex(serviceName)) });
 		await expect(slotRow).toBeVisible({ timeout: 15_000 });

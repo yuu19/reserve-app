@@ -1,6 +1,6 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
-import { resolveOrganizationClassroomContext } from '../domain/booking/authorization.js';
+import { resolveOrganizationStoreContext } from '../domain/booking/authorization.js';
 import { SLOT_STATUS } from '../domain/booking/constants.js';
 import { type AuthRuntimeDatabase, type AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../infra/db/schema.js';
@@ -18,13 +18,14 @@ const publicTicketTypeSchema = z.object({
   serviceScope: z.enum(['all', 'specific']),
   serviceIds: z.array(z.string()),
   serviceNames: z.array(z.string()),
+  href: z.string(),
 });
 
 const publicEventSchema = z.object({
   organizationId: z.string(),
   organizationSlug: z.string(),
-  classroomId: z.string(),
-  classroomSlug: z.string(),
+  storeId: z.string(),
+  storeSlug: z.string(),
   serviceId: z.string(),
   serviceName: z.string(),
   serviceDescription: z.string().nullable().optional(),
@@ -59,9 +60,9 @@ const publicSiteProfileSchema = z.object({
   organizationId: z.string(),
   organizationSlug: z.string(),
   organizationName: z.string(),
-  classroomId: z.string(),
-  classroomSlug: z.string(),
-  classroomName: z.string(),
+  storeId: z.string(),
+  storeSlug: z.string(),
+  storeName: z.string(),
   siteName: z.string(),
   description: z.string().nullable(),
   address: z.string().nullable(),
@@ -95,12 +96,12 @@ const publicSitePageSchema = z.object({
 
 const publicEventRouteParamsSchema = z.object({
   orgSlug: z.string().min(1),
-  classroomSlug: z.string().min(1),
+  storeSlug: z.string().min(1),
 });
 
 const getPublicSiteRoute = createRoute({
   method: 'get',
-  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/site',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/site',
   tags: ['Public Site'],
   summary: 'Get public reservation site top page',
   request: {
@@ -116,14 +117,14 @@ const getPublicSiteRoute = createRoute({
       },
     },
     404: {
-      description: 'Public organization or classroom not found',
+      description: 'Public organization or store not found',
     },
   },
 });
 
 const listPublicEventsRoute = createRoute({
   method: 'get',
-  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/events',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/events',
   tags: ['Public Events'],
   summary: 'List public events',
   request: {
@@ -139,7 +140,7 @@ const listPublicEventsRoute = createRoute({
       },
     },
     404: {
-      description: 'Public organization or classroom not found',
+      description: 'Public organization or store not found',
     },
   },
 });
@@ -150,7 +151,7 @@ const publicEventDetailParamsSchema = publicEventRouteParamsSchema.extend({
 
 const getPublicEventDetailRoute = createRoute({
   method: 'get',
-  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/events/{slotId}',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/events/{slotId}',
   tags: ['Public Events'],
   summary: 'Get a public event detail by slot id',
   request: {
@@ -171,6 +172,33 @@ const getPublicEventDetailRoute = createRoute({
   },
 });
 
+const publicTicketTypeDetailParamsSchema = publicEventRouteParamsSchema.extend({
+  ticketTypeId: z.string().min(1),
+});
+
+const getPublicTicketTypeDetailRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/ticket-types/{ticketTypeId}',
+  tags: ['Public Tickets'],
+  summary: 'Get a public ticket type detail by id',
+  request: {
+    params: publicTicketTypeDetailParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Public ticket type detail',
+      content: {
+        'application/json': {
+          schema: publicTicketTypeSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Public ticket type not found',
+    },
+  },
+});
+
 const toIsoDate = (value: Date): string => value.toISOString();
 
 type PublicTicketType = {
@@ -181,6 +209,7 @@ type PublicTicketType = {
   serviceScope: TicketServiceScope;
   serviceIds: string[];
   serviceNames: string[];
+  href: string;
 };
 
 type PublicTicketTypeRow = {
@@ -220,7 +249,7 @@ type PublicContext = {
     name: string;
     logo: string | null;
   };
-  classroom: {
+  store: {
     id: string;
     slug: string;
     name: string;
@@ -253,8 +282,8 @@ const isBookableSlot = ({
 const formatPublicEvent = (
   row: PublicEventQueryRow & {
     organizationSlug: string;
-    classroomId: string;
-    classroomSlug: string;
+    storeId: string;
+    storeSlug: string;
   },
   now: Date,
 ) => {
@@ -262,8 +291,8 @@ const formatPublicEvent = (
   return {
     organizationId: row.organizationId,
     organizationSlug: row.organizationSlug,
-    classroomId: row.classroomId,
-    classroomSlug: row.classroomSlug,
+    storeId: row.storeId,
+    storeSlug: row.storeSlug,
     serviceId: row.serviceId,
     serviceName: row.serviceName,
     serviceDescription: row.serviceDescription,
@@ -330,7 +359,7 @@ const listPublicEventRows = async ({
     .where(
       and(
         eq(dbSchema.slot.organizationId, publicContext.organization.id),
-        eq(dbSchema.slot.classroomId, publicContext.classroom.id),
+        eq(dbSchema.slot.storeId, publicContext.store.id),
         eq(dbSchema.service.isActive, true),
         gte(dbSchema.slot.startAt, now),
       ),
@@ -348,7 +377,7 @@ const formatPublicReservationPage = (
   title: event.serviceName,
   description: event.serviceDescription,
   imageUrl: event.serviceImageUrl,
-  href: `/${publicContext.organization.slug}/${publicContext.classroom.slug}/events/${event.slotId}`,
+  href: `/${publicContext.organization.slug}/${publicContext.store.slug}/events/${event.slotId}`,
   serviceId: event.serviceId,
   slotId: event.slotId,
   startAt: event.startAt,
@@ -358,6 +387,19 @@ const formatPublicReservationPage = (
   isBookable: event.isBookable,
   locationLabel: event.locationLabel,
 });
+
+const buildPublicTicketTypeHref = ({
+  orgSlug,
+  storeSlug,
+  ticketTypeId,
+}: {
+  orgSlug: string;
+  storeSlug: string;
+  ticketTypeId: string;
+}): string =>
+  `/${encodeURIComponent(orgSlug)}/${encodeURIComponent(storeSlug)}/tickets/${encodeURIComponent(
+    ticketTypeId,
+  )}`;
 
 const readPublicSiteProfile = async ({
   database,
@@ -379,7 +421,7 @@ const readPublicSiteProfile = async ({
     .where(
       and(
         eq(dbSchema.publicSiteSetting.organizationId, publicContext.organization.id),
-        eq(dbSchema.publicSiteSetting.classroomId, publicContext.classroom.id),
+        eq(dbSchema.publicSiteSetting.storeId, publicContext.store.id),
       ),
     )
     .limit(1);
@@ -389,11 +431,11 @@ const readPublicSiteProfile = async ({
     organizationId: publicContext.organization.id,
     organizationSlug: publicContext.organization.slug,
     organizationName: publicContext.organization.name,
-    classroomId: publicContext.classroom.id,
-    classroomSlug: publicContext.classroom.slug,
-    classroomName: publicContext.classroom.name,
+    storeId: publicContext.store.id,
+    storeSlug: publicContext.store.slug,
+    storeName: publicContext.store.name,
     siteName:
-      setting?.siteName?.trim() || publicContext.classroom.name || publicContext.organization.name,
+      setting?.siteName?.trim() || publicContext.store.name || publicContext.organization.name,
     description: setting?.description ?? null,
     address: setting?.address ?? null,
     phone: setting?.phone ?? null,
@@ -402,34 +444,21 @@ const readPublicSiteProfile = async ({
   };
 };
 
-const listPublicTicketTypes = async ({
+const formatPublicTicketTypes = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
+  orgSlug,
+  storeSlug,
+  rows,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
+  orgSlug: string;
+  storeSlug: string;
+  rows: PublicTicketTypeRow[];
 }): Promise<PublicTicketType[]> => {
-  const rows = (await database
-    .select({
-      id: dbSchema.ticketType.id,
-      name: dbSchema.ticketType.name,
-      serviceIdsJson: dbSchema.ticketType.serviceIdsJson,
-      totalCount: dbSchema.ticketType.totalCount,
-      expiresInDays: dbSchema.ticketType.expiresInDays,
-    })
-    .from(dbSchema.ticketType)
-    .where(
-      and(
-        eq(dbSchema.ticketType.organizationId, organizationId),
-        eq(dbSchema.ticketType.classroomId, classroomId),
-        eq(dbSchema.ticketType.isActive, true),
-        eq(dbSchema.ticketType.isForSale, true),
-      ),
-    )
-    .orderBy(desc(dbSchema.ticketType.createdAt))) as PublicTicketTypeRow[];
-
   const serviceIds = Array.from(
     new Set(rows.flatMap((row) => parseTicketServiceIds(row.serviceIdsJson))),
   );
@@ -444,7 +473,7 @@ const listPublicTicketTypes = async ({
           .where(
             and(
               eq(dbSchema.service.organizationId, organizationId),
-              eq(dbSchema.service.classroomId, classroomId),
+              eq(dbSchema.service.storeId, storeId),
               inArray(dbSchema.service.id, serviceIds),
             ),
           )) as Array<{ id: string; name: string }>)
@@ -463,18 +492,99 @@ const listPublicTicketTypes = async ({
       serviceNames: ticketServiceIds
         .map((serviceId) => serviceNameById.get(serviceId))
         .filter((serviceName): serviceName is string => typeof serviceName === 'string'),
+      href: buildPublicTicketTypeHref({
+        orgSlug,
+        storeSlug,
+        ticketTypeId: row.id,
+      }),
     };
   });
 };
 
-const resolvePublicOrganizationClassroom = async ({
+const listPublicTicketTypes = async ({
+  database,
+  publicContext,
+}: {
+  database: AuthRuntimeDatabase;
+  publicContext: PublicContext;
+}): Promise<PublicTicketType[]> => {
+  const rows = (await database
+    .select({
+      id: dbSchema.ticketType.id,
+      name: dbSchema.ticketType.name,
+      serviceIdsJson: dbSchema.ticketType.serviceIdsJson,
+      totalCount: dbSchema.ticketType.totalCount,
+      expiresInDays: dbSchema.ticketType.expiresInDays,
+    })
+    .from(dbSchema.ticketType)
+    .where(
+      and(
+        eq(dbSchema.ticketType.organizationId, publicContext.organization.id),
+        eq(dbSchema.ticketType.storeId, publicContext.store.id),
+        eq(dbSchema.ticketType.isActive, true),
+        eq(dbSchema.ticketType.isForSale, true),
+      ),
+    )
+    .orderBy(desc(dbSchema.ticketType.createdAt))) as PublicTicketTypeRow[];
+
+  return formatPublicTicketTypes({
+    database,
+    organizationId: publicContext.organization.id,
+    storeId: publicContext.store.id,
+    orgSlug: publicContext.organization.slug,
+    storeSlug: publicContext.store.slug,
+    rows,
+  });
+};
+
+const getPublicTicketType = async ({
+  database,
+  publicContext,
+  ticketTypeId,
+}: {
+  database: AuthRuntimeDatabase;
+  publicContext: PublicContext;
+  ticketTypeId: string;
+}): Promise<PublicTicketType | null> => {
+  const rows = (await database
+    .select({
+      id: dbSchema.ticketType.id,
+      name: dbSchema.ticketType.name,
+      serviceIdsJson: dbSchema.ticketType.serviceIdsJson,
+      totalCount: dbSchema.ticketType.totalCount,
+      expiresInDays: dbSchema.ticketType.expiresInDays,
+    })
+    .from(dbSchema.ticketType)
+    .where(
+      and(
+        eq(dbSchema.ticketType.id, ticketTypeId),
+        eq(dbSchema.ticketType.organizationId, publicContext.organization.id),
+        eq(dbSchema.ticketType.storeId, publicContext.store.id),
+        eq(dbSchema.ticketType.isActive, true),
+        eq(dbSchema.ticketType.isForSale, true),
+      ),
+    )
+    .limit(1)) as PublicTicketTypeRow[];
+
+  const [ticketType] = await formatPublicTicketTypes({
+    database,
+    organizationId: publicContext.organization.id,
+    storeId: publicContext.store.id,
+    orgSlug: publicContext.organization.slug,
+    storeSlug: publicContext.store.slug,
+    rows,
+  });
+  return ticketType ?? null;
+};
+
+const resolvePublicOrganizationStore = async ({
   database,
   orgSlug,
-  classroomSlug,
+  storeSlug,
 }: {
   database: AuthRuntimeDatabase;
   orgSlug: string;
-  classroomSlug: string;
+  storeSlug: string;
 }) => {
   const rows = await database
     .select({
@@ -494,23 +604,23 @@ const resolvePublicOrganizationClassroom = async ({
         message: 'Public events organization was not found.',
       },
       organization: null,
-      classroom: null,
+      store: null,
     };
   }
 
-  const context = await resolveOrganizationClassroomContext({
+  const context = await resolveOrganizationStoreContext({
     database,
     organizationSlug: orgSlug,
-    classroomSlug,
+    storeSlug,
   });
   if (!context) {
     return {
       error: {
         status: 404 as const,
-        message: 'Public events classroom was not found.',
+        message: 'Public events store was not found.',
       },
       organization: null,
-      classroom: null,
+      store: null,
     };
   }
 
@@ -522,10 +632,10 @@ const resolvePublicOrganizationClassroom = async ({
       name: context.organizationName,
       logo: organization.logo,
     },
-    classroom: {
-      id: context.classroomId,
-      slug: context.classroomSlug,
-      name: context.classroomName,
+    store: {
+      id: context.storeId,
+      slug: context.storeSlug,
+      name: context.storeName,
     },
   };
 };
@@ -539,11 +649,11 @@ export const createPublicRoutes = ({
   const publicRoutes = new OpenAPIHono();
 
   publicRoutes.openapi(getPublicSiteRoute, async (c) => {
-    const { orgSlug, classroomSlug } = c.req.valid('param');
-    const publicContext = await resolvePublicOrganizationClassroom({
+    const { orgSlug, storeSlug } = c.req.valid('param');
+    const publicContext = await resolvePublicOrganizationStore({
       database,
       orgSlug,
-      classroomSlug,
+      storeSlug,
     });
     if (publicContext.error) {
       return c.json({ message: publicContext.error.message }, publicContext.error.status);
@@ -560,8 +670,7 @@ export const createPublicRoutes = ({
       }),
       listPublicTicketTypes({
         database,
-        organizationId: publicContext.organization.id,
-        classroomId: publicContext.classroom.id,
+        publicContext,
       }),
     ]);
     const events = rows.map((row) =>
@@ -569,8 +678,8 @@ export const createPublicRoutes = ({
         {
           ...row,
           organizationSlug: publicContext.organization.slug,
-          classroomId: publicContext.classroom.id,
-          classroomSlug: publicContext.classroom.slug,
+          storeId: publicContext.store.id,
+          storeSlug: publicContext.store.slug,
         },
         now,
       ),
@@ -587,11 +696,11 @@ export const createPublicRoutes = ({
   });
 
   publicRoutes.openapi(listPublicEventsRoute, async (c) => {
-    const { orgSlug, classroomSlug } = c.req.valid('param');
-    const publicContext = await resolvePublicOrganizationClassroom({
+    const { orgSlug, storeSlug } = c.req.valid('param');
+    const publicContext = await resolvePublicOrganizationStore({
       database,
       orgSlug,
-      classroomSlug,
+      storeSlug,
     });
     if (publicContext.error) {
       return c.json({ message: publicContext.error.message }, publicContext.error.status);
@@ -607,8 +716,7 @@ export const createPublicRoutes = ({
       }),
       listPublicTicketTypes({
         database,
-        organizationId: publicContext.organization.id,
-        classroomId: publicContext.classroom.id,
+        publicContext,
       }),
     ]);
 
@@ -619,8 +727,8 @@ export const createPublicRoutes = ({
             {
               ...row,
               organizationSlug: publicContext.organization.slug,
-              classroomId: publicContext.classroom.id,
-              classroomSlug: publicContext.classroom.slug,
+              storeId: publicContext.store.id,
+              storeSlug: publicContext.store.slug,
             },
             now,
           ),
@@ -632,11 +740,11 @@ export const createPublicRoutes = ({
   });
 
   publicRoutes.openapi(getPublicEventDetailRoute, async (c) => {
-    const { slotId, orgSlug, classroomSlug } = c.req.valid('param');
-    const publicContext = await resolvePublicOrganizationClassroom({
+    const { slotId, orgSlug, storeSlug } = c.req.valid('param');
+    const publicContext = await resolvePublicOrganizationStore({
       database,
       orgSlug,
-      classroomSlug,
+      storeSlug,
     });
     if (publicContext.error) {
       return c.json({ message: publicContext.error.message }, publicContext.error.status);
@@ -668,7 +776,7 @@ export const createPublicRoutes = ({
       .where(
         and(
           eq(dbSchema.slot.organizationId, publicContext.organization.id),
-          eq(dbSchema.slot.classroomId, publicContext.classroom.id),
+          eq(dbSchema.slot.storeId, publicContext.store.id),
           eq(dbSchema.slot.id, slotId),
           eq(dbSchema.service.isActive, true),
         ),
@@ -681,8 +789,7 @@ export const createPublicRoutes = ({
 
     const ticketTypes = await listPublicTicketTypes({
       database,
-      organizationId: publicContext.organization.id,
-      classroomId: publicContext.classroom.id,
+      publicContext,
     });
 
     return c.json(
@@ -691,8 +798,8 @@ export const createPublicRoutes = ({
           {
             ...row,
             organizationSlug: publicContext.organization.slug,
-            classroomId: publicContext.classroom.id,
-            classroomSlug: publicContext.classroom.slug,
+            storeId: publicContext.store.id,
+            storeSlug: publicContext.store.slug,
           },
           new Date(),
         ),
@@ -700,6 +807,29 @@ export const createPublicRoutes = ({
       },
       200,
     );
+  });
+
+  publicRoutes.openapi(getPublicTicketTypeDetailRoute, async (c) => {
+    const { ticketTypeId, orgSlug, storeSlug } = c.req.valid('param');
+    const publicContext = await resolvePublicOrganizationStore({
+      database,
+      orgSlug,
+      storeSlug,
+    });
+    if (publicContext.error) {
+      return c.json({ message: publicContext.error.message }, publicContext.error.status);
+    }
+
+    const ticketType = await getPublicTicketType({
+      database,
+      publicContext,
+      ticketTypeId,
+    });
+    if (!ticketType) {
+      return c.json({ message: 'Public ticket type not found.' }, 404);
+    }
+
+    return c.json(ticketType, 200);
   });
 
   return publicRoutes;

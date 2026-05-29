@@ -244,7 +244,7 @@ export const createTicketType = async (input: {
 		return {
 			ok: false,
 			status: 422,
-			message: 'URL に組織/教室コンテキストがありません。'
+			message: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.createTicketTypeScoped(context, {
@@ -291,7 +291,7 @@ export const updateTicketType = async (input: {
 		return {
 			ok: false,
 			status: 422,
-			message: 'URL に組織/教室コンテキストがありません。'
+			message: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.updateTicketTypeScoped(context, {
@@ -335,7 +335,7 @@ export const grantTicketPack = async (input: {
 		return {
 			ok: false,
 			status: 422,
-			message: 'URL に組織/教室コンテキストがありません。'
+			message: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.grantTicketPackScoped(context, {
@@ -364,7 +364,7 @@ export const loadTicketPacks = async (input: { participantId: string }) => {
 			packs: [] as TicketPackPayload[],
 			ok: false,
 			status: 422,
-			error: 'URL に組織/教室コンテキストがありません。'
+			error: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.listTicketPacksScoped(context, {
@@ -392,7 +392,7 @@ export const adjustTicketPack = async (input: {
 		return {
 			ok: false,
 			status: 422,
-			message: 'URL に組織/教室コンテキストがありません。'
+			message: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.adjustTicketPackScoped(context, {
@@ -473,7 +473,7 @@ export const createTicketPurchase = async (input: {
 			status: 422,
 			purchase: null,
 			checkoutUrl: null,
-			message: 'URL に組織/教室コンテキストがありません。'
+			message: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.createTicketPurchaseScoped(context, {
@@ -539,7 +539,7 @@ export const loadTicketPurchases = async (input: {
 			purchases: [] as TicketPurchasePayload[],
 			ok: false,
 			status: 422,
-			error: 'URL に組織/教室コンテキストがありません。'
+			error: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.listTicketPurchasesScoped(context, input);
@@ -560,7 +560,7 @@ export const approveTicketPurchase = async (purchaseId: string) => {
 		return {
 			ok: false,
 			status: 422,
-			message: 'URL に組織/教室コンテキストがありません。'
+			message: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.approveTicketPurchaseScoped(context, { purchaseId });
@@ -583,7 +583,7 @@ export const rejectTicketPurchase = async (purchaseId: string, reason?: string) 
 		return {
 			ok: false,
 			status: 422,
-			message: 'URL に組織/教室コンテキストがありません。'
+			message: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.rejectTicketPurchaseScoped(context, {
@@ -608,7 +608,7 @@ export const cancelTicketPurchase = async (purchaseId: string) => {
 		return {
 			ok: false,
 			status: 422,
-			message: 'URL に組織/教室コンテキストがありません。'
+			message: 'URL に組織/店舗コンテキストがありません。'
 		};
 	}
 	const response = await authRpc.cancelTicketPurchaseScoped(context, { purchaseId });

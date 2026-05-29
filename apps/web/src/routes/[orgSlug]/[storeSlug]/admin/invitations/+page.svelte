@@ -9,9 +9,9 @@
 	import * as Select from '$lib/components/ui/select';
 	import {
 		actOperatorInvitation,
-		createClassroomInvitation,
-		loadClassroomInvitations
-	} from '$lib/features/invitations-classroom.svelte';
+		createStoreInvitation,
+		loadStoreInvitations
+	} from '$lib/features/invitations-store.svelte';
 	import {
 		getCurrentPathWithSearch,
 		loadSession,
@@ -42,8 +42,8 @@
 	let busy = $state(false);
 	let activeOrganizationId = $state<string | null>(null);
 	let organizationName = $state<string | null>(null);
-	let classroomName = $state<string | null>(null);
-	let canManageClassroom = $state(false);
+	let storeName = $state<string | null>(null);
+	let canManageStore = $state(false);
 	let canManageParticipants = $state(false);
 	let billing = $state<OrganizationBillingPayload | null>(null);
 	let premiumRestriction = $state<OrganizationPremiumRestrictionPayload | null>(null);
@@ -75,8 +75,8 @@
 		if (!context) {
 			activeOrganizationId = null;
 			organizationName = null;
-			classroomName = null;
-			canManageClassroom = false;
+			storeName = null;
+			canManageStore = false;
 			canManageParticipants = false;
 			billing = null;
 			premiumRestriction = null;
@@ -85,13 +85,13 @@
 			return;
 		}
 
-		const [{ activeOrganization, activeClassroom }, invitationData] = await Promise.all([
+		const [{ activeOrganization, activeStore }, invitationData] = await Promise.all([
 			loadOrganizations(context),
-			loadClassroomInvitations()
+			loadStoreInvitations()
 		]);
 		activeOrganizationId = activeOrganization?.id ?? null;
 		organizationName = activeOrganization?.name ?? context.orgSlug;
-		classroomName = activeClassroom?.name ?? context.classroomSlug;
+		storeName = activeStore?.name ?? context.storeSlug;
 		premiumRestriction = invitationData.premiumRestriction ?? null;
 		if (invitationData.premiumRestriction && invitationData.organizationId) {
 			const billingResult = await loadOrganizationBilling(invitationData.organizationId);
@@ -99,7 +99,7 @@
 		} else {
 			billing = null;
 		}
-		canManageClassroom = invitationData.canManageClassroom;
+		canManageStore = invitationData.canManageStore;
 		canManageParticipants = invitationData.canManageParticipants;
 		operatorInvitations = invitationData.operatorInvitations;
 		participantInvitations = invitationData.participantInvitations;
@@ -107,10 +107,10 @@
 
 	const submitOperatorInvitation = async (event: SubmitEvent) => {
 		event.preventDefault();
-		if (!canManageClassroom) return;
+		if (!canManageStore) return;
 		busy = true;
 		try {
-			const result = await createClassroomInvitation({
+			const result = await createStoreInvitation({
 				email: operatorInvitationForm.email,
 				role: operatorInvitationForm.role
 			});
@@ -137,7 +137,7 @@
 		if (!canManageParticipants) return;
 		busy = true;
 		try {
-			const result = await createClassroomInvitation({
+			const result = await createStoreInvitation({
 				email: participantInvitationForm.email,
 				role: 'participant',
 				participantName: participantInvitationForm.participantName
@@ -164,13 +164,13 @@
 		const requiresParticipantAccess = invitation.subjectKind === 'participant';
 		if (
 			(requiresParticipantAccess && !canManageParticipants) ||
-			(!requiresParticipantAccess && !canManageClassroom)
+			(!requiresParticipantAccess && !canManageStore)
 		) {
 			return;
 		}
 		busy = true;
 		try {
-			const result = await createClassroomInvitation({
+			const result = await createStoreInvitation({
 				email: invitation.email,
 				role: String(invitation.role),
 				participantName: invitation.participantName ?? undefined,
@@ -229,15 +229,15 @@
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-foreground">教室招待</h1>
+		<h1 class="text-3xl font-semibold text-foreground">店舗招待</h1>
 		<p class="text-sm text-muted-foreground">
-			{organizationName ?? '組織'} / {classroomName ?? '教室'} に対する運営招待と参加者招待を管理します。
+			{organizationName ?? '組織'} / {storeName ?? '店舗'} に対する運営招待と参加者招待を管理します。
 		</p>
 	</header>
 
 	{#if premiumRestriction}
 		<PremiumRestrictionNotice
-			featureLabel="教室招待と参加者招待管理"
+			featureLabel="店舗招待と参加者招待管理"
 			restriction={premiumRestriction}
 			{billing}
 		/>
@@ -246,7 +246,7 @@
 	<section class="grid gap-4 lg:grid-cols-2">
 		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-lg font-semibold text-foreground">教室運営招待</h2>
+				<h2 class="text-lg font-semibold text-foreground">店舗運営招待</h2>
 				<CardDescription>manager / staff の招待送信、再送、取消を行います。</CardDescription>
 			</CardHeader>
 			<CardContent class="grid gap-2 text-sm text-secondary-foreground sm:grid-cols-2">
@@ -285,11 +285,11 @@
 				<p class="text-sm text-muted-foreground">招待データを読み込み中…</p>
 			</CardContent>
 		</Card>
-	{:else if !classroomName}
+	{:else if !storeName}
 		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardContent class="py-6">
 				<p class="text-sm text-muted-foreground">
-					教室コンテキストを識別できませんでした。教室管理画面から開き直してください。
+					店舗コンテキストを識別できませんでした。店舗管理画面から開き直してください。
 				</p>
 			</CardContent>
 		</Card>
@@ -297,20 +297,20 @@
 		<section class="grid gap-6 xl:grid-cols-[1fr_1fr]">
 			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader>
-					<h2 class="text-xl font-semibold">送信済み教室運営招待</h2>
+					<h2 class="text-xl font-semibold">送信済み店舗運営招待</h2>
 					<CardDescription>manager / staff の付与先をここで管理します。</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-3">
-					{#if !canManageClassroom}
+					{#if !canManageStore}
 						<p class="text-sm text-muted-foreground">
-							教室運営招待の作成・再送・取消には教室管理権限が必要です。
+							店舗運営招待の作成・再送・取消には店舗管理権限が必要です。
 						</p>
 					{:else}
 						<form
 							class="space-y-3 rounded-lg border border-border/80 bg-card/80 p-4"
 							onsubmit={submitOperatorInvitation}
 						>
-							<h3 class="text-sm font-semibold">教室運営招待を送信</h3>
+							<h3 class="text-sm font-semibold">店舗運営招待を送信</h3>
 							<div class="space-y-2">
 								<Label for="operator-email">メールアドレス</Label>
 								<Input
@@ -339,7 +339,7 @@
 					{/if}
 
 					{#if operatorInvitations.length === 0}
-						<p class="text-sm text-muted-foreground">送信済み教室運営招待はありません。</p>
+						<p class="text-sm text-muted-foreground">送信済み店舗運営招待はありません。</p>
 					{:else}
 						<div class="space-y-2">
 							{#each operatorInvitations as invitation (invitation.id)}
@@ -360,7 +360,7 @@
 											type="button"
 											variant="outline"
 											onclick={() => submitResend(invitation)}
-											disabled={busy || invitation.status !== 'pending' || !canManageClassroom}
+											disabled={busy || invitation.status !== 'pending' || !canManageStore}
 										>
 											再送
 										</Button>
@@ -368,7 +368,7 @@
 											type="button"
 											variant="destructive"
 											onclick={() => submitAction('cancel', invitation.id)}
-											disabled={busy || invitation.status !== 'pending' || !canManageClassroom}
+											disabled={busy || invitation.status !== 'pending' || !canManageStore}
 										>
 											取り消し
 										</Button>

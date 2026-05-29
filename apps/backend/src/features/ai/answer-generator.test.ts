@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 import { generateAnswer } from './answer-generator.js';
 
 const buildAccess = ({
@@ -10,28 +10,28 @@ const buildAccess = ({
   role?: 'owner' | 'admin' | 'participant';
   canManageBookings?: boolean;
   canUseParticipantBooking?: boolean;
-} = {}): OrganizationClassroomAccess => ({
+} = {}): OrganizationStoreAccess => ({
   organizationId: 'org-a',
   organizationSlug: 'org-a',
   organizationName: 'Org A',
-  classroomId: 'class-a',
-  classroomSlug: 'class-a',
-  classroomName: 'Class A',
+  storeId: 'class-a',
+  storeSlug: 'class-a',
+  storeName: 'Class A',
   facts: {
     orgRole: role === 'participant' ? null : role,
-    classroomStaffRole: null,
+    storeStaffRole: null,
     hasParticipantRecord: role === 'participant',
   },
   effective: {
     canManageOrganization: role === 'owner' || role === 'admin',
-    canManageClassroom: role === 'owner' || role === 'admin',
+    canManageStore: role === 'owner' || role === 'admin',
     canManageBookings,
     canManageParticipants: role === 'owner' || role === 'admin',
     canUseParticipantBooking,
   },
   sources: {
     canManageOrganization: role === 'owner' || role === 'admin' ? 'org_role' : null,
-    canManageClassroom: role === 'owner' || role === 'admin' ? 'org_role' : null,
+    canManageStore: role === 'owner' || role === 'admin' ? 'org_role' : null,
     canManageBookings: role === 'owner' || role === 'admin' ? 'org_role' : null,
     canManageParticipants: role === 'owner' || role === 'admin' ? 'org_role' : null,
     canUseParticipantBooking: role === 'participant' ? 'participant_record' : null,

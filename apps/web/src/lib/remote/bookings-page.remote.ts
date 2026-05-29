@@ -21,7 +21,7 @@ import { z } from 'zod';
 
 const bookingsPageQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
-	classroomSlug: z.string().trim().min(1),
+	storeSlug: z.string().trim().min(1),
 	from: z.string().trim().min(1),
 	to: z.string().trim().min(1),
 	serviceId: z.string().trim().min(1).optional()
@@ -110,7 +110,8 @@ const asServices = (value: unknown): ServicePayload[] =>
 const asRecurring = (value: unknown): RecurringSchedulePayload[] =>
 	Array.isArray(value) ? value.filter(isRecurring) : [];
 
-const asSlots = (value: unknown): SlotPayload[] => (Array.isArray(value) ? value.filter(isSlot) : []);
+const asSlots = (value: unknown): SlotPayload[] =>
+	Array.isArray(value) ? value.filter(isSlot) : [];
 
 const asBookings = (value: unknown): BookingPayload[] =>
 	Array.isArray(value) ? value.filter(isBooking) : [];
@@ -143,16 +144,16 @@ const assertAllowedFailure = (
 
 export const getBookingsPageData = query(
 	bookingsPageQuerySchema,
-	async ({ orgSlug, classroomSlug, from, to, serviceId }): Promise<BookingsPageData> => {
+	async ({ orgSlug, storeSlug, from, to, serviceId }): Promise<BookingsPageData> => {
 		const getApi = createApiGetter();
-		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+		const activeContext: ScopedApiContext = { orgSlug, storeSlug };
 		const scopedIdentifiers = await resolveScopedApiIdentifiers(getApi, activeContext);
 		if (!scopedIdentifiers) {
-			throw new Error('組織または教室コンテキストの解決に失敗しました。');
+			throw new Error('組織または店舗コンテキストの解決に失敗しました。');
 		}
 		const scopedQuery = {
 			organizationId: scopedIdentifiers.organizationId,
-			classroomId: scopedIdentifiers.classroomId
+			storeId: scopedIdentifiers.storeId
 		};
 
 		const [

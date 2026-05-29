@@ -12,7 +12,7 @@ const buildPortalAccess = (overrides: Record<string, unknown> = {}) => ({
 	hasAdminPortalAccess: false,
 	hasParticipantAccess: false,
 	canManage: false,
-	canManageClassroom: false,
+	canManageStore: false,
 	canManageBookings: false,
 	canManageParticipants: false,
 	canUseParticipantBooking: false,
@@ -25,25 +25,25 @@ const buildPortalAccess = (overrides: Record<string, unknown> = {}) => ({
 	...overrides
 });
 
-const buildClassroomEntry = (overrides: Record<string, unknown> = {}) => ({
-	id: 'classroom-1',
+const buildStoreEntry = (overrides: Record<string, unknown> = {}) => ({
+	id: 'store-1',
 	slug: 'room-one',
 	name: 'Room One',
 	facts: {
 		orgRole: null,
-		classroomStaffRole: null,
+		storeStaffRole: null,
 		hasParticipantRecord: false
 	},
 	effective: {
 		canManageOrganization: false,
-		canManageClassroom: false,
+		canManageStore: false,
 		canManageBookings: false,
 		canManageParticipants: false,
 		canUseParticipantBooking: false
 	},
 	sources: {
 		canManageOrganization: null,
-		canManageClassroom: null,
+		canManageStore: null,
 		canManageBookings: null,
 		canManageParticipants: null,
 		canUseParticipantBooking: null
@@ -136,19 +136,19 @@ describe('auth-session.svelte', () => {
 					hasAdminPortalAccess: true,
 					hasParticipantAccess: true,
 					canManage: true,
-					canManageClassroom: true,
+					canManageStore: true,
 					canManageBookings: true,
 					canManageParticipants: true,
 					canUseParticipantBooking: true,
 					activeOrganizationRole: 'admin',
 					activeFacts: {
 						orgRole: 'admin',
-						classroomStaffRole: 'manager',
+						storeStaffRole: 'manager',
 						hasParticipantRecord: true
 					},
 					activeSources: {
 						canManageOrganization: 'org_role',
-						canManageClassroom: 'org_role',
+						canManageStore: 'org_role',
 						canManageBookings: 'org_role',
 						canManageParticipants: 'org_role',
 						canUseParticipantBooking: 'participant_record'
@@ -172,18 +172,18 @@ describe('auth-session.svelte', () => {
 					hasAdminPortalAccess: true,
 					hasParticipantAccess: true,
 					canManage: false,
-					canManageClassroom: false,
+					canManageStore: false,
 					canManageBookings: false,
 					canManageParticipants: false,
 					canUseParticipantBooking: true,
 					activeFacts: {
 						orgRole: null,
-						classroomStaffRole: null,
+						storeStaffRole: null,
 						hasParticipantRecord: true
 					},
 					activeSources: {
 						canManageOrganization: null,
-						canManageClassroom: null,
+						canManageStore: null,
 						canManageBookings: null,
 						canManageParticipants: null,
 						canUseParticipantBooking: 'participant_record'
@@ -207,18 +207,18 @@ describe('auth-session.svelte', () => {
 					hasAdminPortalAccess: false,
 					hasParticipantAccess: true,
 					canManage: false,
-					canManageClassroom: false,
+					canManageStore: false,
 					canManageBookings: false,
 					canManageParticipants: false,
 					canUseParticipantBooking: true,
 					activeFacts: {
 						orgRole: null,
-						classroomStaffRole: null,
+						storeStaffRole: null,
 						hasParticipantRecord: true
 					},
 					activeSources: {
 						canManageOrganization: null,
-						canManageClassroom: null,
+						canManageStore: null,
 						canManageBookings: null,
 						canManageParticipants: null,
 						canUseParticipantBooking: 'participant_record'
@@ -242,20 +242,20 @@ describe('auth-session.svelte', () => {
 					hasAdminPortalAccess: true,
 					hasParticipantAccess: false,
 					canManage: false,
-					canManageClassroom: false,
+					canManageStore: false,
 					canManageBookings: true,
 					canManageParticipants: true,
 					canUseParticipantBooking: false,
 					activeFacts: {
 						orgRole: null,
-						classroomStaffRole: 'staff',
+						storeStaffRole: 'staff',
 						hasParticipantRecord: false
 					},
 					activeSources: {
 						canManageOrganization: null,
-						canManageClassroom: null,
-						canManageBookings: 'classroom_member',
-						canManageParticipants: 'classroom_member',
+						canManageStore: null,
+						canManageBookings: 'store_member',
+						canManageParticipants: 'store_member',
 						canUseParticipantBooking: null
 					},
 					activeDisplay: {
@@ -281,11 +281,11 @@ describe('auth-session.svelte', () => {
 					organizationSlug: 'org-one',
 					organizationName: 'Org One',
 					role: 'admin',
-					classrooms: [
+					stores: [
 						{
-							classroomId: 'classroom-1',
-							classroomSlug: 'room-one',
-							classroomName: 'Room One',
+							storeId: 'store-1',
+							storeSlug: 'room-one',
+							storeName: 'Room One',
 							role: 'manager',
 							canManage: true,
 							canUseParticipantBooking: false
@@ -302,29 +302,29 @@ describe('auth-session.svelte', () => {
 						name: 'Org One',
 						logo: null
 					},
-					classrooms: [
-						buildClassroomEntry({
-							id: 'classroom-1',
+					stores: [
+						buildStoreEntry({
+							id: 'store-1',
 							slug: 'room-one',
 							name: 'Room One',
 							logo: null,
 							facts: {
 								orgRole: 'admin',
-								classroomStaffRole: 'manager',
+								storeStaffRole: 'manager',
 								hasParticipantRecord: false
 							},
 							effective: {
 								canManageOrganization: true,
-								canManageClassroom: true,
+								canManageStore: true,
 								canManageBookings: true,
 								canManageParticipants: true,
 								canUseParticipantBooking: false
 							},
 							sources: {
 								canManageOrganization: 'org_role',
-								canManageClassroom: 'classroom_member',
-								canManageBookings: 'classroom_member',
-								canManageParticipants: 'classroom_member',
+								canManageStore: 'store_member',
+								canManageBookings: 'store_member',
+								canManageParticipants: 'store_member',
 								canUseParticipantBooking: null
 							},
 							display: {
@@ -346,11 +346,11 @@ describe('auth-session.svelte', () => {
 					organizationSlug: 'org-one',
 					organizationName: 'Org One',
 					role: 'member',
-					classrooms: [
+					stores: [
 						{
-							classroomId: 'classroom-1',
-							classroomSlug: 'room-one',
-							classroomName: 'Room One',
+							storeId: 'store-1',
+							storeSlug: 'room-one',
+							storeName: 'Room One',
 							role: 'staff',
 							canManage: true,
 							canUseParticipantBooking: false
@@ -367,29 +367,29 @@ describe('auth-session.svelte', () => {
 						name: 'Org One',
 						logo: null
 					},
-					classrooms: [
-						buildClassroomEntry({
-							id: 'classroom-1',
+					stores: [
+						buildStoreEntry({
+							id: 'store-1',
 							slug: 'room-one',
 							name: 'Room One',
 							logo: null,
 							facts: {
 								orgRole: 'member',
-								classroomStaffRole: 'staff',
+								storeStaffRole: 'staff',
 								hasParticipantRecord: false
 							},
 							effective: {
 								canManageOrganization: false,
-								canManageClassroom: false,
+								canManageStore: false,
 								canManageBookings: true,
 								canManageParticipants: true,
 								canUseParticipantBooking: false
 							},
 							sources: {
 								canManageOrganization: null,
-								canManageClassroom: null,
-								canManageBookings: 'classroom_member',
-								canManageParticipants: 'classroom_member',
+								canManageStore: null,
+								canManageBookings: 'store_member',
+								canManageParticipants: 'store_member',
 								canUseParticipantBooking: null
 							},
 							display: {
@@ -412,26 +412,26 @@ describe('auth-session.svelte', () => {
 						slug: 'org-one',
 						name: 'Org One'
 					},
-					classrooms: [
-						buildClassroomEntry({
-							id: 'classroom-1',
+					stores: [
+						buildStoreEntry({
+							id: 'store-1',
 							slug: 'room-one',
 							name: 'Room One',
 							facts: {
 								orgRole: 'owner',
-								classroomStaffRole: 'manager',
+								storeStaffRole: 'manager',
 								hasParticipantRecord: false
 							},
 							effective: {
 								canManageOrganization: true,
-								canManageClassroom: true,
+								canManageStore: true,
 								canManageBookings: true,
 								canManageParticipants: true,
 								canUseParticipantBooking: false
 							},
 							sources: {
 								canManageOrganization: 'org_role',
-								canManageClassroom: 'org_role',
+								canManageStore: 'org_role',
 								canManageBookings: 'org_role',
 								canManageParticipants: 'org_role',
 								canUseParticipantBooking: null
@@ -458,26 +458,26 @@ describe('auth-session.svelte', () => {
 						slug: 'org-one',
 						name: 'Org One'
 					},
-					classrooms: [
-						buildClassroomEntry({
-							id: 'classroom-1',
+					stores: [
+						buildStoreEntry({
+							id: 'store-1',
 							slug: 'room-a',
 							name: 'Room A',
 							facts: {
 								orgRole: 'owner',
-								classroomStaffRole: 'manager',
+								storeStaffRole: 'manager',
 								hasParticipantRecord: true
 							},
 							effective: {
 								canManageOrganization: true,
-								canManageClassroom: true,
+								canManageStore: true,
 								canManageBookings: true,
 								canManageParticipants: true,
 								canUseParticipantBooking: true
 							},
 							sources: {
 								canManageOrganization: 'org_role',
-								canManageClassroom: 'org_role',
+								canManageStore: 'org_role',
 								canManageBookings: 'org_role',
 								canManageParticipants: 'org_role',
 								canUseParticipantBooking: 'participant_record'
@@ -487,25 +487,25 @@ describe('auth-session.svelte', () => {
 								badges: ['owner', 'manager', 'participant']
 							}
 						}),
-						buildClassroomEntry({
-							id: 'classroom-2',
+						buildStoreEntry({
+							id: 'store-2',
 							slug: 'room-b',
 							name: 'Room B',
 							facts: {
 								orgRole: 'owner',
-								classroomStaffRole: 'manager',
+								storeStaffRole: 'manager',
 								hasParticipantRecord: true
 							},
 							effective: {
 								canManageOrganization: true,
-								canManageClassroom: true,
+								canManageStore: true,
 								canManageBookings: true,
 								canManageParticipants: true,
 								canUseParticipantBooking: true
 							},
 							sources: {
 								canManageOrganization: 'org_role',
-								canManageClassroom: 'org_role',
+								canManageStore: 'org_role',
 								canManageBookings: 'org_role',
 								canManageParticipants: 'org_role',
 								canUseParticipantBooking: 'participant_record'
@@ -524,7 +524,7 @@ describe('auth-session.svelte', () => {
 			getScopedContextFromUrlPath(accessTree, '/org-one/room-b/admin/schedules/slots?month=2026-03')
 		).toEqual({
 			orgSlug: 'org-one',
-			classroomSlug: 'room-b'
+			storeSlug: 'room-b'
 		});
 	});
 
@@ -537,26 +537,26 @@ describe('auth-session.svelte', () => {
 						slug: 'org-one',
 						name: 'Org One'
 					},
-					classrooms: [
-						buildClassroomEntry({
-							id: 'classroom-1',
+					stores: [
+						buildStoreEntry({
+							id: 'store-1',
 							slug: 'room-a',
 							name: 'Room A',
 							facts: {
 								orgRole: 'owner',
-								classroomStaffRole: 'manager',
+								storeStaffRole: 'manager',
 								hasParticipantRecord: true
 							},
 							effective: {
 								canManageOrganization: true,
-								canManageClassroom: true,
+								canManageStore: true,
 								canManageBookings: true,
 								canManageParticipants: true,
 								canUseParticipantBooking: true
 							},
 							sources: {
 								canManageOrganization: 'org_role',
-								canManageClassroom: 'org_role',
+								canManageStore: 'org_role',
 								canManageBookings: 'org_role',
 								canManageParticipants: 'org_role',
 								canUseParticipantBooking: 'participant_record'

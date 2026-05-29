@@ -1,5 +1,5 @@
 ---
-description: "Task list for organization-scoped billing implementation"
+description: 'Task list for organization-scoped billing implementation'
 ---
 
 # Tasks: Organization Billing
@@ -24,12 +24,12 @@ testing of each story.
 
 **Purpose**: Confirm the existing brownfield billing baseline and generated planning artifacts.
 
-- [X] T001 Verify active feature pointer references `specs/001-organization-billing` in `.specify/feature.json`
-- [X] T002 [P] Review feature requirements and user-story scope in `specs/001-organization-billing/spec.md`
-- [X] T003 [P] Review implementation constraints and source layout in `specs/001-organization-billing/plan.md`
-- [X] T004 [P] Review data entities and state transitions in `specs/001-organization-billing/data-model.md`
-- [X] T005 [P] Review API and UI contracts in `specs/001-organization-billing/contracts/billing-api.openapi.yaml`
-- [X] T006 [P] Review UI behavior contract in `specs/001-organization-billing/contracts/billing-ui-contract.md`
+- [x] T001 Verify active feature pointer references `specs/001-organization-billing` in `.specify/feature.json`
+- [x] T002 [P] Review feature requirements and user-story scope in `specs/001-organization-billing/spec.md`
+- [x] T003 [P] Review implementation constraints and source layout in `specs/001-organization-billing/plan.md`
+- [x] T004 [P] Review data entities and state transitions in `specs/001-organization-billing/data-model.md`
+- [x] T005 [P] Review API and UI contracts in `specs/001-organization-billing/contracts/billing-api.openapi.yaml`
+- [x] T006 [P] Review UI behavior contract in `specs/001-organization-billing/contracts/billing-ui-contract.md`
 
 ---
 
@@ -39,18 +39,18 @@ testing of each story.
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [X] T007 Verify `organization_billing` preserves one row per organization and supports plan/trial/provider fields in `apps/backend/src/db/schema.ts`
-- [X] T008 Verify organization billing base migration preserves existing organizations in `apps/backend/drizzle/0012_organization_billing.sql`
-- [X] T009 [P] Verify webhook event persistence and idempotency tables in `apps/backend/drizzle/0013_stripe_webhook_sync.sql`
-- [X] T010 [P] Verify notification history table supports trial reminder delivery states in `apps/backend/drizzle/0014_organization_billing_notifications.sql`
-- [X] T011 [P] Verify billing audit and reconciliation signal tables are append-only in `apps/backend/drizzle/0015_billing_audit_and_signals.sql`
-- [X] T012 Implement shared plan-state and provider-status normalization helpers in `apps/backend/src/billing/organization-billing.ts`
-- [X] T013 Implement Stripe webhook authenticity verification plus provider event idempotency and duplicate classification in `apps/backend/src/billing/stripe-webhook-sync.ts`
-- [X] T014 Implement shared audit and reconciliation signal writers in `apps/backend/src/billing/organization-billing-observability.ts`
-- [X] T015 Implement internal operator allowlist parsing and denial behavior in `apps/backend/src/billing/internal-operator-access.ts`
-- [X] T016 [P] Update web billing payload type guards for plan/trial/provider fields in `apps/web/src/lib/rpc-client.ts`
-- [X] T017 [P] Add backend integration fixtures for owner/admin/staff/internal-operator billing cases in `apps/backend/src/app.test.ts`
-- [X] T018 [P] Add web fixture builders for owner/non-owner billing page states in `apps/web/src/routes/contracts/page.svelte.spec.ts`
+- [x] T007 Verify `organization_billing` preserves one row per organization and supports plan/trial/provider fields in `apps/backend/src/db/schema.ts`
+- [x] T008 Verify organization billing base migration preserves existing organizations in `apps/backend/drizzle/0012_organization_billing.sql`
+- [x] T009 [P] Verify webhook event persistence and idempotency tables in `apps/backend/drizzle/0013_stripe_webhook_sync.sql`
+- [x] T010 [P] Verify notification history table supports trial reminder delivery states in `apps/backend/drizzle/0014_organization_billing_notifications.sql`
+- [x] T011 [P] Verify billing audit and reconciliation signal tables are append-only in `apps/backend/drizzle/0015_billing_audit_and_signals.sql`
+- [x] T012 Implement shared plan-state and provider-status normalization helpers in `apps/backend/src/billing/organization-billing.ts`
+- [x] T013 Implement Stripe webhook authenticity verification plus provider event idempotency and duplicate classification in `apps/backend/src/billing/stripe-webhook-sync.ts`
+- [x] T014 Implement shared audit and reconciliation signal writers in `apps/backend/src/billing/organization-billing-observability.ts`
+- [x] T015 Implement internal operator allowlist parsing and denial behavior in `apps/backend/src/billing/internal-operator-access.ts`
+- [x] T016 [P] Update web billing payload type guards for plan/trial/provider fields in `apps/web/src/lib/rpc-client.ts`
+- [x] T017 [P] Add backend integration fixtures for owner/admin/staff/internal-operator billing cases in `apps/backend/src/app.test.ts`
+- [x] T018 [P] Add web fixture builders for owner/non-owner billing page states in `apps/web/src/routes/contracts/page.svelte.spec.ts`
 
 **Checkpoint**: Foundation ready; user story implementation can proceed.
 
@@ -64,21 +64,21 @@ testing of each story.
 
 ### Tests for User Story 1
 
-- [X] T019 [P] [US1] Add backend test for owner billing summary and role-specific permissions in `apps/backend/src/app.test.ts`
-- [X] T020 [P] [US1] Add backend test denying admin/staff/participant trial start in `apps/backend/src/app.test.ts`
-- [X] T021 [P] [US1] Add backend test preventing overlapping or repeated trial creation in `apps/backend/src/app.test.ts`
-- [X] T022 [P] [US1] Add web browser test for free owner trial entry and non-owner read-only state in `apps/web/src/routes/contracts/page.svelte.spec.ts`
+- [x] T019 [P] [US1] Add backend test for owner billing summary and role-specific permissions in `apps/backend/src/app.test.ts`
+- [x] T020 [P] [US1] Add backend test denying admin/staff/participant trial start in `apps/backend/src/app.test.ts`
+- [x] T021 [P] [US1] Add backend test preventing overlapping or repeated trial creation in `apps/backend/src/app.test.ts`
+- [x] T022 [P] [US1] Add web browser test for free owner trial entry and non-owner read-only state in `apps/web/src/routes/contracts/page.svelte.spec.ts`
 
 ### Implementation for User Story 1
 
-- [X] T023 [US1] Implement owner-visible billing summary response fields in `apps/backend/src/routes/auth-routes.ts`
-- [X] T024 [US1] Implement owner-only trial start route behavior in `apps/backend/src/routes/auth-routes.ts`
-- [X] T025 [US1] Implement trial creation and no-overlap policy in `apps/backend/src/billing/organization-billing-policy.ts`
-- [X] T026 [US1] Emit trial-start audit entry from billing service in `apps/backend/src/billing/organization-billing-observability.ts`
-- [X] T027 [US1] Expose trial start client method and response type in `apps/web/src/lib/rpc-client.ts`
-- [X] T028 [US1] Load billing summary into active organization context in `apps/web/src/lib/features/organization-context.svelte.ts`
-- [X] T029 [US1] Render free/premium comparison, trial end state, and owner-only trial action in `apps/web/src/routes/contracts/+page.svelte`
-- [X] T030 [US1] Document owner trial entry behavior and required environment assumptions in `apps/backend/README.md`
+- [x] T023 [US1] Implement owner-visible billing summary response fields in `apps/backend/src/routes/auth-routes.ts`
+- [x] T024 [US1] Implement owner-only trial start route behavior in `apps/backend/src/routes/auth-routes.ts`
+- [x] T025 [US1] Implement trial creation and no-overlap policy in `apps/backend/src/billing/organization-billing-policy.ts`
+- [x] T026 [US1] Emit trial-start audit entry from billing service in `apps/backend/src/billing/organization-billing-observability.ts`
+- [x] T027 [US1] Expose trial start client method and response type in `apps/web/src/lib/rpc-client.ts`
+- [x] T028 [US1] Load billing summary into active organization context in `apps/web/src/lib/features/organization-context.svelte.ts`
+- [x] T029 [US1] Render free/premium comparison, trial end state, and owner-only trial action in `apps/web/src/routes/contracts/+page.svelte`
+- [x] T030 [US1] Document owner trial entry behavior and required environment assumptions in `apps/backend/README.md`
 
 **Checkpoint**: US1 is independently functional and testable.
 
@@ -92,24 +92,24 @@ testing of each story.
 
 ### Tests for User Story 2
 
-- [X] T031 [P] [US2] Add backend test for payment method registration handoff and status reflection in `apps/backend/src/app.test.ts`
-- [X] T032 [P] [US2] Add backend test for trial completion converting to premium paid when payment conditions are met in `apps/backend/src/app.test.ts`
-- [X] T033 [P] [US2] Add backend test for trial completion falling back to free while preserving setup in `apps/backend/src/app.test.ts`
-- [X] T034 [P] [US2] Add backend test for invalid Stripe webhook signature rejection and duplicate provider lifecycle event idempotency in `apps/backend/src/app.test.ts`
-- [X] T035 [P] [US2] Add backend test for out-of-order provider event reconciliation in `apps/backend/src/app.test.ts`
-- [X] T036 [P] [US2] Add backend test for trial-will-end reminder delivery history and retry states in `apps/backend/src/app.test.ts`
-- [X] T037 [P] [US2] Add web test for payment method status and paid-continuation guidance in `apps/web/src/routes/contracts/page.svelte.spec.ts`
+- [x] T031 [P] [US2] Add backend test for payment method registration handoff and status reflection in `apps/backend/src/app.test.ts`
+- [x] T032 [P] [US2] Add backend test for trial completion converting to premium paid when payment conditions are met in `apps/backend/src/app.test.ts`
+- [x] T033 [P] [US2] Add backend test for trial completion falling back to free while preserving setup in `apps/backend/src/app.test.ts`
+- [x] T034 [P] [US2] Add backend test for invalid Stripe webhook signature rejection and duplicate provider lifecycle event idempotency in `apps/backend/src/app.test.ts`
+- [x] T035 [P] [US2] Add backend test for out-of-order provider event reconciliation in `apps/backend/src/app.test.ts`
+- [x] T036 [P] [US2] Add backend test for trial-will-end reminder delivery history and retry states in `apps/backend/src/app.test.ts`
+- [x] T037 [P] [US2] Add web test for payment method status and paid-continuation guidance in `apps/web/src/routes/contracts/page.svelte.spec.ts`
 
 ### Implementation for User Story 2
 
-- [X] T038 [US2] Implement payment method registration handoff route in `apps/backend/src/routes/auth-routes.ts`
-- [X] T039 [US2] Implement provider checkout and portal session creation rules in `apps/backend/src/payment/stripe.ts`
-- [X] T040 [US2] Implement trial completion transition policy in `apps/backend/src/billing/organization-billing-policy.ts`
-- [X] T041 [US2] Implement subscription lifecycle event normalization only after Stripe webhook signature verification succeeds in `apps/backend/src/billing/stripe-webhook-sync.ts`
-- [X] T042 [US2] Implement webhook-driven billing state synchronization in `apps/backend/src/billing/organization-billing.ts`
-- [X] T043 [US2] Implement trial reminder notification recording and delivery state handling in `apps/backend/src/billing/organization-billing-notifications.ts`
-- [X] T044 [US2] Emit audit entries and reconciliation signals for lifecycle/reminder outcomes in `apps/backend/src/billing/organization-billing-observability.ts`
-- [X] T045 [US2] Render payment method handoff, continuation guidance, reminder context, and loading/error states in `apps/web/src/routes/contracts/+page.svelte`
+- [x] T038 [US2] Implement payment method registration handoff route in `apps/backend/src/routes/auth-routes.ts`
+- [x] T039 [US2] Implement provider checkout and portal session creation rules in `apps/backend/src/payment/stripe.ts`
+- [x] T040 [US2] Implement trial completion transition policy in `apps/backend/src/billing/organization-billing-policy.ts`
+- [x] T041 [US2] Implement subscription lifecycle event normalization only after Stripe webhook signature verification succeeds in `apps/backend/src/billing/stripe-webhook-sync.ts`
+- [x] T042 [US2] Implement webhook-driven billing state synchronization in `apps/backend/src/billing/organization-billing.ts`
+- [x] T043 [US2] Implement trial reminder notification recording and delivery state handling in `apps/backend/src/billing/organization-billing-notifications.ts`
+- [x] T044 [US2] Emit audit entries and reconciliation signals for lifecycle/reminder outcomes in `apps/backend/src/billing/organization-billing-observability.ts`
+- [x] T045 [US2] Render payment method handoff, continuation guidance, reminder context, and loading/error states in `apps/web/src/routes/contracts/+page.svelte`
 
 **Checkpoint**: US2 is independently functional and testable.
 
@@ -123,21 +123,21 @@ testing of each story.
 
 ### Tests for User Story 3
 
-- [X] T046 [P] [US3] Add unit tests for premium entitlement reasons and edge cases in `apps/backend/src/billing/organization-billing-policy.test.ts`
-- [X] T047 [P] [US3] Add backend integration test for multiple-classroom premium gating in `apps/backend/src/app.test.ts`
-- [X] T048 [P] [US3] Add backend integration test for staff invitation and role-management premium gating in `apps/backend/src/app.test.ts`
-- [X] T049 [P] [US3] Add backend integration test for recurring schedule and approval booking premium gating in `apps/backend/src/app.test.ts`
-- [X] T050 [P] [US3] Add backend integration test for ticket/payment plus each existing advanced capability premium gate: advanced contract management, participant invitations, CSV export, analytics, audit-oriented views, and priority support in `apps/backend/src/app.test.ts`
-- [X] T051 [P] [US3] Add web test for role-safe premium restriction messaging in `apps/web/src/routes/page.svelte.spec.ts`
+- [x] T046 [P] [US3] Add unit tests for premium entitlement reasons and edge cases in `apps/backend/src/billing/organization-billing-policy.test.ts`
+- [x] T047 [P] [US3] Add backend integration test for multiple-store premium gating in `apps/backend/src/app.test.ts`
+- [x] T048 [P] [US3] Add backend integration test for staff invitation and role-management premium gating in `apps/backend/src/app.test.ts`
+- [x] T049 [P] [US3] Add backend integration test for recurring schedule and approval booking premium gating in `apps/backend/src/app.test.ts`
+- [x] T050 [P] [US3] Add backend integration test for ticket/payment plus each existing advanced capability premium gate: advanced contract management, participant invitations, CSV export, analytics, audit-oriented views, and priority support in `apps/backend/src/app.test.ts`
+- [x] T051 [P] [US3] Add web test for role-safe premium restriction messaging in `apps/web/src/routes/page.svelte.spec.ts`
 
 ### Implementation for User Story 3
 
-- [X] T052 [US3] Implement organization-scoped premium entitlement policy in `apps/backend/src/billing/organization-billing-policy.ts`
-- [X] T053 [US3] Enforce premium eligibility in backend operational authorization boundaries in `apps/backend/src/booking/authorization.ts`
-- [X] T054 [US3] Apply premium gating to relevant authenticated and booking routes, including every existing route for advanced contract management, participant invitations, CSV export, analytics, audit-oriented views, and priority support in `apps/backend/src/routes/auth-routes.ts` and `apps/backend/src/routes/booking-routes.ts`
-- [X] T055 [US3] Expose premium restriction payloads for UI consumers in `apps/web/src/lib/features/premium-restrictions.ts`
-- [X] T056 [US3] Integrate premium restriction state into organization context in `apps/web/src/lib/features/organization-context.svelte.ts`
-- [X] T057 [US3] Render premium-gated messaging without non-owner billing controls in `apps/web/src/routes/+page.svelte`
+- [x] T052 [US3] Implement organization-scoped premium entitlement policy in `apps/backend/src/billing/organization-billing-policy.ts`
+- [x] T053 [US3] Enforce premium eligibility in backend operational authorization boundaries in `apps/backend/src/booking/authorization.ts`
+- [x] T054 [US3] Apply premium gating to relevant authenticated and booking routes, including every existing route for advanced contract management, participant invitations, CSV export, analytics, audit-oriented views, and priority support in `apps/backend/src/routes/auth-routes.ts` and `apps/backend/src/routes/booking-routes.ts`
+- [x] T055 [US3] Expose premium restriction payloads for UI consumers in `apps/web/src/lib/features/premium-restrictions.ts`
+- [x] T056 [US3] Integrate premium restriction state into organization context in `apps/web/src/lib/features/organization-context.svelte.ts`
+- [x] T057 [US3] Render premium-gated messaging without non-owner billing controls in `apps/web/src/routes/+page.svelte`
 
 **Checkpoint**: US3 is independently functional and testable.
 
@@ -151,19 +151,19 @@ testing of each story.
 
 ### Tests for User Story 4
 
-- [X] T058 [P] [US4] Add backend test for internal operator access allow/deny behavior in `apps/backend/src/app.test.ts`
-- [X] T059 [P] [US4] Add backend test for billing inspection summary response in `apps/backend/src/app.test.ts`
-- [X] T060 [P] [US4] Add backend test for reminder notification audit inspection in `apps/backend/src/app.test.ts`
-- [X] T061 [P] [US4] Add backend test for provider/application mismatch diagnosis in `apps/backend/src/app.test.ts`
-- [X] T062 [P] [US4] Add backend test for correlated investigation timeline response in `apps/backend/src/app.test.ts`
+- [x] T058 [P] [US4] Add backend test for internal operator access allow/deny behavior in `apps/backend/src/app.test.ts`
+- [x] T059 [P] [US4] Add backend test for billing inspection summary response in `apps/backend/src/app.test.ts`
+- [x] T060 [P] [US4] Add backend test for reminder notification audit inspection in `apps/backend/src/app.test.ts`
+- [x] T061 [P] [US4] Add backend test for provider/application mismatch diagnosis in `apps/backend/src/app.test.ts`
+- [x] T062 [P] [US4] Add backend test for correlated investigation timeline response in `apps/backend/src/app.test.ts`
 
 ### Implementation for User Story 4
 
-- [X] T063 [US4] Implement internal billing inspection read model in `apps/backend/src/billing/internal-billing-inspection.ts`
-- [X] T064 [US4] Add internal billing inspection route and OpenAPI registration in `apps/backend/src/routes/auth-routes.ts`
-- [X] T065 [US4] Include notification history and latest delivery status in inspection output from `apps/backend/src/billing/organization-billing-notifications.ts`
-- [X] T066 [US4] Include audit trail and reconciliation signals in inspection output from `apps/backend/src/billing/organization-billing-observability.ts`
-- [X] T067 [US4] Document internal operator configuration and support triage usage in `apps/backend/README.md`
+- [x] T063 [US4] Implement internal billing inspection read model in `apps/backend/src/billing/internal-billing-inspection.ts`
+- [x] T064 [US4] Add internal billing inspection route and OpenAPI registration in `apps/backend/src/routes/auth-routes.ts`
+- [x] T065 [US4] Include notification history and latest delivery status in inspection output from `apps/backend/src/billing/organization-billing-notifications.ts`
+- [x] T066 [US4] Include audit trail and reconciliation signals in inspection output from `apps/backend/src/billing/organization-billing-observability.ts`
+- [x] T067 [US4] Document internal operator configuration and support triage usage in `apps/backend/README.md`
 
 **Checkpoint**: US4 is independently functional and testable.
 
@@ -177,17 +177,17 @@ testing of each story.
 
 ### Tests for User Story 5
 
-- [X] T068 [P] [US5] Add backend test for owner billing history read model shape in `apps/backend/src/app.test.ts`
-- [X] T069 [P] [US5] Add backend policy test for future plan-code/tier-safe entitlement behavior, plan-change readiness, communication history references, and invoice/receipt provider references in `apps/backend/src/billing/organization-billing-policy.test.ts`
-- [X] T070 [P] [US5] Add web test for owner billing history entries when present in `apps/web/src/routes/contracts/page.svelte.spec.ts`
+- [x] T068 [P] [US5] Add backend test for owner billing history read model shape in `apps/backend/src/app.test.ts`
+- [x] T069 [P] [US5] Add backend policy test for future plan-code/tier-safe entitlement behavior, plan-change readiness, communication history references, and invoice/receipt provider references in `apps/backend/src/billing/organization-billing-policy.test.ts`
+- [x] T070 [P] [US5] Add web test for owner billing history entries when present in `apps/web/src/routes/contracts/page.svelte.spec.ts`
 
 ### Implementation for User Story 5
 
-- [X] T071 [US5] Implement owner billing history read model with extensible plan-code, provider document reference, and communication history fields in `apps/backend/src/billing/organization-billing-history.ts`
-- [X] T072 [US5] Expose billing history in owner billing summary response in `apps/backend/src/routes/auth-routes.ts`
-- [X] T073 [US5] Add billing history response types and guards in `apps/web/src/lib/rpc-client.ts`
-- [X] T074 [US5] Render owner billing history section without adding plan-change controls in `apps/web/src/routes/contracts/+page.svelte`
-- [X] T075 [US5] Document post-MVP expansion boundaries for plan changes, multiple paid tiers, communication channels, and invoice/receipt handling in `specs/001-organization-billing/quickstart.md`
+- [x] T071 [US5] Implement owner billing history read model with extensible plan-code, provider document reference, and communication history fields in `apps/backend/src/billing/organization-billing-history.ts`
+- [x] T072 [US5] Expose billing history in owner billing summary response in `apps/backend/src/routes/auth-routes.ts`
+- [x] T073 [US5] Add billing history response types and guards in `apps/web/src/lib/rpc-client.ts`
+- [x] T074 [US5] Render owner billing history section without adding plan-change controls in `apps/web/src/routes/contracts/+page.svelte`
+- [x] T075 [US5] Document post-MVP expansion boundaries for plan changes, multiple paid tiers, communication channels, and invoice/receipt handling in `specs/001-organization-billing/quickstart.md`
 
 **Checkpoint**: US5 readiness is independently reviewable.
 
@@ -197,19 +197,19 @@ testing of each story.
 
 **Purpose**: Final verification, documentation, and deployment-readiness checks across all stories.
 
-- [X] T076 [P] Update billing API contract with final response fields in `specs/001-organization-billing/contracts/billing-api.openapi.yaml`
-- [X] T077 [P] Update UI contract with final owner/non-owner/internal inspection states in `specs/001-organization-billing/contracts/billing-ui-contract.md`
-- [X] T078 [P] Update project deployment notes for billing env vars and migration order in `docs/README.md`
-- [X] T079 Verify backend integration suite for billing scenarios in `apps/backend/src/app.test.ts`
-- [X] T080 Verify web server/browser coverage for contracts page and premium restrictions in `apps/web/src/routes/contracts/page.svelte.spec.ts`
-- [X] T081 Verify package-level checks remain aligned with root scripts in `package.json`
-- [X] T082 Record mobile manual smoke coverage for each completed entitlement-impacting story in `specs/001-organization-billing/quickstart.md`
-- [X] T083 Verify billing status page displays primary state within the 3-second success criterion under normal local/test conditions in `apps/web/src/routes/contracts/page.svelte.spec.ts`
-- [X] T084 Verify Stripe event entitlement reflection timing evidence, including the 1-minute target or documented local/test limitation, in `apps/backend/src/app.test.ts`
-- [X] T085 Add backend regression coverage for owner role removal or demotion after billing state exists in `apps/backend/src/app.test.ts`
-- [X] T086 Add access guard coverage for active organization unselected or no-membership billing access in `apps/backend/src/app.test.ts` and `apps/web/src/routes/contracts/page.svelte.spec.ts`
-- [X] T087 Run `pnpm typecheck`, `pnpm lint`, and `pnpm format:check`, or document any non-feature blocker in `specs/001-organization-billing/quickstart.md`
-- [X] T088 Review final task completion evidence and unresolved risks in `specs/001-organization-billing/tasks.md`
+- [x] T076 [P] Update billing API contract with final response fields in `specs/001-organization-billing/contracts/billing-api.openapi.yaml`
+- [x] T077 [P] Update UI contract with final owner/non-owner/internal inspection states in `specs/001-organization-billing/contracts/billing-ui-contract.md`
+- [x] T078 [P] Update project deployment notes for billing env vars and migration order in `docs/README.md`
+- [x] T079 Verify backend integration suite for billing scenarios in `apps/backend/src/app.test.ts`
+- [x] T080 Verify web server/browser coverage for contracts page and premium restrictions in `apps/web/src/routes/contracts/page.svelte.spec.ts`
+- [x] T081 Verify package-level checks remain aligned with root scripts in `package.json`
+- [x] T082 Record mobile manual smoke coverage for each completed entitlement-impacting story in `specs/001-organization-billing/quickstart.md`
+- [x] T083 Verify billing status page displays primary state within the 3-second success criterion under normal local/test conditions in `apps/web/src/routes/contracts/page.svelte.spec.ts`
+- [x] T084 Verify Stripe event entitlement reflection timing evidence, including the 1-minute target or documented local/test limitation, in `apps/backend/src/app.test.ts`
+- [x] T085 Add backend regression coverage for owner role removal or demotion after billing state exists in `apps/backend/src/app.test.ts`
+- [x] T086 Add access guard coverage for active organization unselected or no-membership billing access in `apps/backend/src/app.test.ts` and `apps/web/src/routes/contracts/page.svelte.spec.ts`
+- [x] T087 Run `pnpm typecheck`, `pnpm lint`, and `pnpm format:check`, or document any non-feature blocker in `specs/001-organization-billing/quickstart.md`
+- [x] T088 Review final task completion evidence and unresolved risks in `specs/001-organization-billing/tasks.md`
 
 ---
 
@@ -218,12 +218,12 @@ testing of each story.
 **Purpose**: Close production billing gaps found after comparing the implementation with the
 organization billing specification and Stripe-hosted subscription behavior.
 
-- [X] T089 [US1] Add persistent trial usage tracking to prevent repeated trials after free fallback in `apps/backend/src/db/schema.ts` and `apps/backend/drizzle/0016_organization_billing_trial_tracking.sql`
-- [X] T090 [US1] Create a Stripe trial subscription during owner trial start when Premium price configuration is available in `apps/backend/src/routes/auth-routes.ts` and `apps/backend/src/payment/stripe.ts`
-- [X] T091 [US2] Process setup-mode Checkout completion by setting Customer and Subscription default payment methods in `apps/backend/src/billing/stripe-webhook-sync.ts`
-- [X] T092 [US2] Complete expired local premium trials from scheduled Worker maintenance in `apps/backend/src/billing/organization-billing-maintenance.ts` and `apps/backend/src/worker.ts`
-- [X] T093 [US2] Add backend regression coverage for Stripe-backed trial creation, setup completion webhook synchronization, scheduled trial completion, and trial reuse denial in `apps/backend/src/app.test.ts`
-- [X] T094 [US5] Update Premium Stripe environment documentation and examples in `apps/backend/.env.example`, `apps/backend/.dev.vars.example`, `apps/backend/README.md`, `docs/README.md`, and `docs/billing.md`
+- [x] T089 [US1] Add persistent trial usage tracking to prevent repeated trials after free fallback in `apps/backend/src/db/schema.ts` and `apps/backend/drizzle/0016_organization_billing_trial_tracking.sql`
+- [x] T090 [US1] Create a Stripe trial subscription during owner trial start when Premium price configuration is available in `apps/backend/src/routes/auth-routes.ts` and `apps/backend/src/payment/stripe.ts`
+- [x] T091 [US2] Process setup-mode Checkout completion by setting Customer and Subscription default payment methods in `apps/backend/src/billing/stripe-webhook-sync.ts`
+- [x] T092 [US2] Complete expired local premium trials from scheduled Worker maintenance in `apps/backend/src/billing/organization-billing-maintenance.ts` and `apps/backend/src/worker.ts`
+- [x] T093 [US2] Add backend regression coverage for Stripe-backed trial creation, setup completion webhook synchronization, scheduled trial completion, and trial reuse denial in `apps/backend/src/app.test.ts`
+- [x] T094 [US5] Update Premium Stripe environment documentation and examples in `apps/backend/.env.example`, `apps/backend/.dev.vars.example`, `apps/backend/README.md`, `docs/README.md`, and `docs/billing.md`
 
 ---
 
@@ -285,7 +285,7 @@ Task: "T037 [US2] Add web test for payment method status and paid-continuation g
 ```bash
 # Launch separate premium-gating test coverage:
 Task: "T046 [US3] Add unit tests for premium entitlement reasons and edge cases in apps/backend/src/billing/organization-billing-policy.test.ts"
-Task: "T047 [US3] Add backend integration test for multiple-classroom premium gating in apps/backend/src/app.test.ts"
+Task: "T047 [US3] Add backend integration test for multiple-store premium gating in apps/backend/src/app.test.ts"
 Task: "T051 [US3] Add web test for role-safe premium restriction messaging in apps/web/src/routes/page.svelte.spec.ts"
 ```
 

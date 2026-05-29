@@ -226,7 +226,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect
 			.element(
 				page.getByText(
-					'7日間のPremiumトライアルでは、複数教室管理、スタッフ権限、定期スケジュールなどのPremium機能をまとめて確認できます。'
+					'7日間のPremiumトライアルでは、複数店舗管理、スタッフ権限、定期スケジュールなどのPremium機能をまとめて確認できます。'
 				)
 			)
 			.toBeInTheDocument();
@@ -459,7 +459,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect
 			.element(
 				page.getByText(
-					'あなたの role では契約状態の閲覧のみ可能です。教室や参加者の運用権限があっても、billing authority は付与されません。'
+					'あなたの role では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、billing authority は付与されません。'
 				)
 			)
 			.toBeInTheDocument();
@@ -871,7 +871,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect
 			.element(
 				page.getByText(
-					'あなたの role では契約状態の閲覧のみ可能です。教室や参加者の運用権限があっても、billing authority は付与されません。'
+					'あなたの role では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、billing authority は付与されません。'
 				)
 			)
 			.toBeInTheDocument();

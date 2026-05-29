@@ -16,7 +16,7 @@ export const findSlotForBookingCreate = async (database: AuthRuntimeDatabase, sl
     .select({
       id: dbSchema.slot.id,
       organizationId: dbSchema.slot.organizationId,
-      classroomId: dbSchema.slot.classroomId,
+      storeId: dbSchema.slot.storeId,
       serviceId: dbSchema.slot.serviceId,
       startAt: dbSchema.slot.startAt,
       status: dbSchema.slot.status,
@@ -55,7 +55,7 @@ export const insertBooking = async ({
   database,
   bookingId,
   organizationId,
-  classroomId,
+  storeId,
   slotId,
   serviceId,
   participantId,
@@ -66,7 +66,7 @@ export const insertBooking = async ({
   database: AuthRuntimeDatabase;
   bookingId: string;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   slotId: string;
   serviceId: string;
   participantId: string;
@@ -77,7 +77,7 @@ export const insertBooking = async ({
   await database.insert(dbSchema.booking).values({
     id: bookingId,
     organizationId,
-    classroomId,
+    storeId,
     slotId,
     serviceId,
     participantId,
@@ -189,7 +189,7 @@ export const releaseSlotCapacity = async ({
 export const consumeBookingTicketLedger = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   ticketPackId,
   bookingId,
   participantsCount,
@@ -199,7 +199,7 @@ export const consumeBookingTicketLedger = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   ticketPackId: string;
   bookingId: string;
   participantsCount: number;
@@ -210,7 +210,7 @@ export const consumeBookingTicketLedger = async ({
   await database.insert(dbSchema.ticketLedger).values({
     id: crypto.randomUUID(),
     organizationId,
-    classroomId,
+    storeId,
     ticketPackId,
     bookingId,
     action: TICKET_LEDGER_ACTION.CONSUME,
@@ -232,7 +232,7 @@ export const findBookingForParticipantCancel = async (
     .select({
       id: dbSchema.booking.id,
       organizationId: dbSchema.booking.organizationId,
-      classroomId: dbSchema.booking.classroomId,
+      storeId: dbSchema.booking.storeId,
       participantId: dbSchema.booking.participantId,
       status: dbSchema.booking.status,
       participantsCount: dbSchema.booking.participantsCount,
@@ -247,14 +247,14 @@ export const findBookingForParticipantCancel = async (
 };
 
 /**
- * staff 操作時に予約の organization/classroom scope と現在状態を取得します。
+ * staff 操作時に予約の organization/store scope と現在状態を取得します。
  */
 export const findBookingScope = async (database: AuthRuntimeDatabase, bookingId: string) => {
   const bookingRows = await database
     .select({
       id: dbSchema.booking.id,
       organizationId: dbSchema.booking.organizationId,
-      classroomId: dbSchema.booking.classroomId,
+      storeId: dbSchema.booking.storeId,
       slotId: dbSchema.booking.slotId,
       serviceId: dbSchema.booking.serviceId,
       participantId: dbSchema.booking.participantId,
@@ -375,7 +375,7 @@ export const releaseConfirmedBookingSlotCapacity = async ({
 export const restoreTicketPackForBookingCancel = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   ticketPackId,
   bookingId,
   participantsCount,
@@ -384,7 +384,7 @@ export const restoreTicketPackForBookingCancel = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   ticketPackId: string;
   bookingId: string;
   participantsCount: number;
@@ -411,7 +411,7 @@ export const restoreTicketPackForBookingCancel = async ({
   await database.insert(dbSchema.ticketLedger).values({
     id: crypto.randomUUID(),
     organizationId,
-    classroomId,
+    storeId,
     ticketPackId,
     bookingId,
     action: TICKET_LEDGER_ACTION.RESTORE,
@@ -507,7 +507,7 @@ export const markConfirmedBookingNoShow = async ({
 export const listBookings = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   serviceId,
   participantId,
   participantIds,
@@ -517,7 +517,7 @@ export const listBookings = async ({
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   serviceId?: string;
   participantId?: string;
   participantIds?: string[];
@@ -529,8 +529,8 @@ export const listBookings = async ({
   if (participantIds) {
     filters.push(inArray(dbSchema.booking.participantId, participantIds));
   }
-  if (classroomId) {
-    filters.push(eq(dbSchema.booking.classroomId, classroomId));
+  if (storeId) {
+    filters.push(eq(dbSchema.booking.storeId, storeId));
   }
   if (serviceId) {
     filters.push(eq(dbSchema.booking.serviceId, serviceId));

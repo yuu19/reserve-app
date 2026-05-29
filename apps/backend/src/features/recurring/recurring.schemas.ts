@@ -21,7 +21,7 @@ const boolStringSchema = z
  */
 export const recurringCreateBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1),
   timezone: z.string().optional(),
   frequency: z.enum(['weekly', 'monthly']),
@@ -44,7 +44,7 @@ export const recurringCreateBodySchema = z.object({
  */
 export const recurringListQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   isActive: boolStringSchema,
 });
@@ -54,7 +54,7 @@ export const recurringListQuerySchema = z.object({
  */
 export const recurringUpdateBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   timezone: z.string().optional(),
   frequency: z.enum(['weekly', 'monthly']).optional(),
   interval: z.int().min(1).max(52).optional(),
@@ -77,7 +77,7 @@ export const recurringUpdateBodySchema = z.object({
  */
 export const recurringExceptionBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   date: dateOnlySchema,
   action: z.enum(['skip', 'override']),
   overrideStartTimeLocal: localTimeSchema.optional(),
@@ -94,7 +94,7 @@ export const recurringExceptionBodySchema = z.object({
  */
 export const recurringGenerateBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
 });

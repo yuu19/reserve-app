@@ -71,7 +71,7 @@ describe('/participant/login/+page.svelte', () => {
 			hasAdminPortalAccess: false,
 			hasParticipantAccess: false,
 			canManage: false,
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageBookings: false,
 			canManageParticipants: false,
 			canUseParticipantBooking: false,
@@ -86,8 +86,6 @@ describe('/participant/login/+page.svelte', () => {
 
 		render(ParticipantLoginPage);
 
-		await expect
-			.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null)
-			.toBe('/events');
+		await expect.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null).toBe('/events');
 	});
 });

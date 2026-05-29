@@ -116,7 +116,7 @@ Stripe からの通知が重複、遅延、順不同、または一時的に欠�
 - **FR-017**: System MUST expose support-visible investigation context for unresolved, unknown, or mismatched payment issue states.
 - **FR-018**: System MUST re-check risky payment states at least hourly and provider-linked billing states at least daily until they are resolved or confirmed current.
 - **FR-019**: System MUST preserve compatibility with existing organizations that have no prior payment issue history.
-- **FR-020**: System MUST keep all Premium billing lifecycle decisions organization-scoped and MUST NOT create classroom-scoped subscription ownership.
+- **FR-020**: System MUST keep all Premium billing lifecycle decisions organization-scoped and MUST NOT create store-scoped subscription ownership.
 - **FR-021**: System MUST use consistent payment issue terms across owner guidance, Premium restriction reasons, billing history, notifications, and internal inspection.
 
 ### Key Entities
@@ -158,7 +158,7 @@ Stripe からの通知が重複、遅延、順不同、または一時的に欠�
 ## Assumptions
 
 - Stripe remains the only provider for Premium billing in this feature.
-- Premium billing remains organization-scoped; classroom-scoped billing is out of scope.
+- Premium billing remains organization-scoped; store-scoped billing is out of scope.
 - The existing 7-day past-due grace policy and 3-day-before-expiry reminder policy remain valid.
 - Owner notification is email-based for this feature; additional notification channels are out of scope.
 - Refunds, credit notes, tax calculation policy, multiple paid plans, and in-app card handling are out of scope.

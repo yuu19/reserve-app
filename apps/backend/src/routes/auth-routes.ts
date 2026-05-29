@@ -2,13 +2,13 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
 import {
   canManageParticipantsByRole,
-  listOrganizationClassroomContexts,
+  listOrganizationStoreContexts,
   readOrganizationEntitlementGate,
-  resolveOrganizationClassroomAccess,
-  resolveOrganizationClassroomContext,
+  resolveOrganizationStoreAccess,
+  resolveOrganizationStoreContext,
 } from '../domain/booking/authorization.js';
 import {
-  resolvePublicEventsClassroomSlug,
+  resolvePublicEventsStoreSlug,
   resolvePublicEventsOrganizationSlug,
   type AuthInstance,
   type AuthRuntimeDatabase,
@@ -129,12 +129,12 @@ const getFullOrganizationQuerySchema = z.object({
 
 const listParticipantsQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 const selfEnrollParticipantBodySchema = z.object({
   organizationId: z.string().min(1),
-  classroomId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 const signUpRoute = createRoute({
@@ -333,9 +333,9 @@ const getFullOrganizationRoute = createRoute({
 });
 
 const organizationMembershipRoleSchema = z.enum(['owner', 'admin', 'member']);
-const classroomStaffRoleSchema = z.enum(['manager', 'staff']);
+const storeStaffRoleSchema = z.enum(['manager', 'staff']);
 const accessDisplayRoleSchema = z.enum(['owner', 'admin', 'manager', 'staff', 'participant']);
-const accessSourceSchema = z.enum(['org_role', 'classroom_member', 'participant_record']);
+const accessSourceSchema = z.enum(['org_role', 'store_member', 'participant_record']);
 const messageResponseSchema = z.object({
   message: z.string().min(1),
 });
@@ -352,13 +352,13 @@ const messageResponse = (description: string) => ({
 
 const accessFactsSchema = z.object({
   orgRole: organizationMembershipRoleSchema.nullable(),
-  classroomStaffRole: classroomStaffRoleSchema.nullable(),
+  storeStaffRole: storeStaffRoleSchema.nullable(),
   hasParticipantRecord: z.boolean(),
 });
 
 const accessEffectiveSchema = z.object({
   canManageOrganization: z.boolean(),
-  canManageClassroom: z.boolean(),
+  canManageStore: z.boolean(),
   canManageBookings: z.boolean(),
   canManageParticipants: z.boolean(),
   canUseParticipantBooking: z.boolean(),
@@ -366,9 +366,9 @@ const accessEffectiveSchema = z.object({
 
 const accessSourcesSchema = z.object({
   canManageOrganization: accessSourceSchema.extract(['org_role']).nullable(),
-  canManageClassroom: accessSourceSchema.extract(['org_role', 'classroom_member']).nullable(),
-  canManageBookings: accessSourceSchema.extract(['org_role', 'classroom_member']).nullable(),
-  canManageParticipants: accessSourceSchema.extract(['org_role', 'classroom_member']).nullable(),
+  canManageStore: accessSourceSchema.extract(['org_role', 'store_member']).nullable(),
+  canManageBookings: accessSourceSchema.extract(['org_role', 'store_member']).nullable(),
+  canManageParticipants: accessSourceSchema.extract(['org_role', 'store_member']).nullable(),
   canUseParticipantBooking: accessSourceSchema.extract(['participant_record']).nullable(),
 });
 
@@ -377,7 +377,7 @@ const accessDisplaySchema = z.object({
   badges: z.array(accessDisplayRoleSchema),
 });
 
-const classroomAccessSchema = z.object({
+const storeAccessSchema = z.object({
   id: z.string().min(1),
   slug: z.string().min(1),
   name: z.string().min(1),
@@ -398,30 +398,30 @@ const accessTreeOrganizationSchema = z.object({
   facts: z.object({
     orgRole: organizationMembershipRoleSchema.nullable(),
   }),
-  classrooms: z.array(classroomAccessSchema),
+  stores: z.array(storeAccessSchema),
 });
 
 const accessTreeResponseSchema = z.object({
   orgs: z.array(accessTreeOrganizationSchema),
 });
 
-const organizationClassroomsRouteParamsSchema = z.object({
+const organizationStoresRouteParamsSchema = z.object({
   orgSlug: z.string().min(1),
 });
 
-const organizationClassroomRouteParamsSchema = z.object({
+const organizationStoreRouteParamsSchema = z.object({
   orgSlug: z.string().min(1),
-  classroomSlug: z.string().min(1),
+  storeSlug: z.string().min(1),
 });
 
-const classroomManagementSchema = classroomAccessSchema;
+const storeManagementSchema = storeAccessSchema;
 
-const createClassroomBodySchema = z.object({
+const createStoreBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
   slug: slugSchema,
 });
 
-const updateClassroomBodySchema = z.object({
+const updateStoreBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
   slug: slugSchema,
 });
@@ -430,9 +430,9 @@ const publicSiteSettingSchema = z.object({
   organizationId: z.string().min(1),
   organizationSlug: z.string().min(1),
   organizationName: z.string().min(1),
-  classroomId: z.string().min(1),
-  classroomSlug: z.string().min(1),
-  classroomName: z.string().min(1),
+  storeId: z.string().min(1),
+  storeSlug: z.string().min(1),
+  storeName: z.string().min(1),
   siteName: z.string().min(1),
   description: z.string().nullable(),
   address: z.string().nullable(),
@@ -454,7 +454,7 @@ const listOrganizationAccessTreeRoute = createRoute({
   method: 'get',
   path: '/orgs/access-tree',
   tags: ['Organization'],
-  summary: 'List organization and classroom access tree for current user',
+  summary: 'List organization and store access tree for current user',
   responses: {
     200: {
       description: 'Organization access tree',
@@ -470,20 +470,20 @@ const listOrganizationAccessTreeRoute = createRoute({
   },
 });
 
-const listOrganizationClassroomsRoute = createRoute({
+const listOrganizationStoresRoute = createRoute({
   method: 'get',
-  path: '/orgs/{orgSlug}/classrooms',
-  tags: ['Classroom'],
-  summary: 'List accessible classrooms in an organization',
+  path: '/orgs/{orgSlug}/stores',
+  tags: ['Store'],
+  summary: 'List accessible stores in an organization',
   request: {
-    params: organizationClassroomsRouteParamsSchema,
+    params: organizationStoresRouteParamsSchema,
   },
   responses: {
     200: {
-      description: 'Accessible classroom list',
+      description: 'Accessible store list',
       content: {
         'application/json': {
-          schema: z.array(classroomManagementSchema),
+          schema: z.array(storeManagementSchema),
         },
       },
     },
@@ -499,28 +499,28 @@ const listOrganizationClassroomsRoute = createRoute({
   },
 });
 
-const createClassroomRoute = createRoute({
+const createStoreRoute = createRoute({
   method: 'post',
-  path: '/orgs/{orgSlug}/classrooms',
-  tags: ['Classroom'],
-  summary: 'Create a classroom in an organization',
+  path: '/orgs/{orgSlug}/stores',
+  tags: ['Store'],
+  summary: 'Create a store in an organization',
   request: {
-    params: organizationClassroomsRouteParamsSchema,
+    params: organizationStoresRouteParamsSchema,
     body: {
       required: true,
       content: {
         'application/json': {
-          schema: createClassroomBodySchema,
+          schema: createStoreBodySchema,
         },
       },
     },
   },
   responses: {
     200: {
-      description: 'Created classroom',
+      description: 'Created store',
       content: {
         'application/json': {
-          schema: classroomManagementSchema,
+          schema: storeManagementSchema,
         },
       },
     },
@@ -534,33 +534,33 @@ const createClassroomRoute = createRoute({
       description: 'Organization not found',
     },
     409: {
-      description: 'Classroom slug already exists',
+      description: 'Store slug already exists',
     },
   },
 });
 
-const updateClassroomRoute = createRoute({
+const updateStoreRoute = createRoute({
   method: 'patch',
-  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}',
-  tags: ['Classroom'],
-  summary: 'Update a classroom in an organization',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}',
+  tags: ['Store'],
+  summary: 'Update a store in an organization',
   request: {
-    params: organizationClassroomRouteParamsSchema,
+    params: organizationStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
         'application/json': {
-          schema: updateClassroomBodySchema,
+          schema: updateStoreBodySchema,
         },
       },
     },
   },
   responses: {
     200: {
-      description: 'Updated classroom',
+      description: 'Updated store',
       content: {
         'application/json': {
-          schema: classroomManagementSchema,
+          schema: storeManagementSchema,
         },
       },
     },
@@ -571,21 +571,21 @@ const updateClassroomRoute = createRoute({
       description: 'Forbidden',
     },
     404: {
-      description: 'Organization or classroom not found',
+      description: 'Organization or store not found',
     },
     409: {
-      description: 'Classroom slug already exists',
+      description: 'Store slug already exists',
     },
   },
 });
 
 const getPublicSiteSettingRoute = createRoute({
   method: 'get',
-  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/public-site',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/public-site',
   tags: ['Public Site'],
-  summary: 'Get public reservation site settings for a classroom',
+  summary: 'Get public reservation site settings for a store',
   request: {
-    params: organizationClassroomRouteParamsSchema,
+    params: organizationStoreRouteParamsSchema,
   },
   responses: {
     200: {
@@ -603,18 +603,18 @@ const getPublicSiteSettingRoute = createRoute({
       description: 'Forbidden',
     },
     404: {
-      description: 'Organization or classroom not found',
+      description: 'Organization or store not found',
     },
   },
 });
 
 const updatePublicSiteSettingRoute = createRoute({
   method: 'patch',
-  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/public-site',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/public-site',
   tags: ['Public Site'],
-  summary: 'Update public reservation site settings for a classroom',
+  summary: 'Update public reservation site settings for a store',
   request: {
-    params: organizationClassroomRouteParamsSchema,
+    params: organizationStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -640,23 +640,23 @@ const updatePublicSiteSettingRoute = createRoute({
       description: 'Forbidden',
     },
     404: {
-      description: 'Organization or classroom not found',
+      description: 'Organization or store not found',
     },
   },
 });
 
 const orgInvitationRoleSchema = z.enum(['admin', 'member']);
-const classroomInvitationRoleSchema = z.enum(['manager', 'staff', 'participant']);
+const storeInvitationRoleSchema = z.enum(['manager', 'staff', 'participant']);
 const unifiedInvitationRoleSchema = z.enum(['admin', 'member', 'manager', 'staff', 'participant']);
-const invitationSubjectKindSchema = z.enum(['org_operator', 'classroom_operator', 'participant']);
+const invitationSubjectKindSchema = z.enum(['org_operator', 'store_operator', 'participant']);
 
 const organizationInvitationRouteParamsSchema = z.object({
   orgSlug: z.string().min(1),
 });
 
-const classroomInvitationRouteParamsSchema = z.object({
+const storeInvitationRouteParamsSchema = z.object({
   orgSlug: z.string().min(1),
-  classroomSlug: z.string().min(1),
+  storeSlug: z.string().min(1),
 });
 
 const invitationIdRouteParamsSchema = z.object({
@@ -669,9 +669,9 @@ const createOrganizationInvitationBodySchema = z.object({
   resend: z.boolean().optional(),
 });
 
-const createClassroomInvitationBodySchema = z.object({
+const createStoreInvitationBodySchema = z.object({
   email: z.email(),
-  role: classroomInvitationRoleSchema,
+  role: storeInvitationRoleSchema,
   participantName: z.string().trim().min(1).max(120).optional(),
   resend: z.boolean().optional(),
 });
@@ -683,9 +683,9 @@ const invitationSchema = z.object({
   organizationId: z.string().min(1),
   organizationSlug: z.string().min(1),
   organizationName: z.string().min(1),
-  classroomId: z.string().min(1).nullable(),
-  classroomSlug: z.string().min(1).nullable(),
-  classroomName: z.string().min(1).nullable(),
+  storeId: z.string().min(1).nullable(),
+  storeSlug: z.string().min(1).nullable(),
+  storeName: z.string().min(1).nullable(),
   email: z.string().email(),
   participantName: z.string().nullable(),
   status: invitationStatusSchema,
@@ -700,7 +700,7 @@ const invitationAcceptResponseSchema = z.object({
   invitation: invitationSchema,
   accepted: z.object({
     memberId: z.string().nullable(),
-    classroomMemberId: z.string().nullable(),
+    storeMemberId: z.string().nullable(),
     participantId: z.string().nullable(),
   }),
 });
@@ -763,18 +763,18 @@ const listOrganizationInvitationsRoute = createRoute({
   },
 });
 
-const createClassroomInvitationRoute = createRoute({
+const createStoreInvitationRoute = createRoute({
   method: 'post',
-  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/invitations',
   tags: ['Invitations'],
-  summary: 'Create or resend classroom invitation',
+  summary: 'Create or resend store invitation',
   request: {
-    params: classroomInvitationRouteParamsSchema,
+    params: storeInvitationRouteParamsSchema,
     body: {
       required: true,
       content: {
         'application/json': {
-          schema: createClassroomInvitationBodySchema,
+          schema: createStoreInvitationBodySchema,
         },
       },
     },
@@ -791,20 +791,20 @@ const createClassroomInvitationRoute = createRoute({
     400: messageResponse('Validation error'),
     401: messageResponse('Unauthorized'),
     403: messageResponse('Forbidden'),
-    404: messageResponse('Organization or classroom not found'),
+    404: messageResponse('Organization or store not found'),
     409: messageResponse('Invitation already exists'),
     429: messageResponse('Invitation resend limit reached'),
     500: messageResponse('Unexpected error'),
   },
 });
 
-const listClassroomInvitationsRoute = createRoute({
+const listStoreInvitationsRoute = createRoute({
   method: 'get',
-  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/invitations',
   tags: ['Invitations'],
-  summary: 'List classroom invitations',
+  summary: 'List store invitations',
   request: {
-    params: classroomInvitationRouteParamsSchema,
+    params: storeInvitationRouteParamsSchema,
   },
   responses: {
     200: {
@@ -817,7 +817,7 @@ const listClassroomInvitationsRoute = createRoute({
     },
     401: messageResponse('Unauthorized'),
     403: messageResponse('Forbidden'),
-    404: messageResponse('Organization or classroom not found'),
+    404: messageResponse('Organization or store not found'),
   },
 });
 
@@ -996,7 +996,7 @@ const selfEnrollParticipantRoute = createRoute({
 });
 
 /**
- * Better Auth を土台に、organization/classroom、billing、invitation、asset upload の authenticated API を構築する。
+ * Better Auth を土台に、organization/store、billing、invitation、asset upload の authenticated API を構築する。
  */
 export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOptions) => {
   const database = options.database;
@@ -1046,9 +1046,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     organizationId: string;
     organizationSlug: string;
     organizationName: string;
-    classroomId: string | null;
-    classroomSlug: string | null;
-    classroomName: string | null;
+    storeId: string | null;
+    storeSlug: string | null;
+    storeName: string | null;
     email: string;
     role: string;
     principalKind: string;
@@ -1060,7 +1060,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     respondedByUserId: string | null;
     respondedAt: unknown;
     acceptedMemberId: string | null;
-    acceptedClassroomMemberId: string | null;
+    acceptedStoreMemberId: string | null;
     acceptedParticipantId: string | null;
   };
 
@@ -1135,17 +1135,17 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       return true;
     }
 
-    const [memberRows, classroomMemberRows, participantRows, pendingInvitationRows] =
-      await Promise.all([
+    const [memberRows, storeMemberRows, participantRows, pendingInvitationRows] = await Promise.all(
+      [
         database
           .select({ id: dbSchema.member.id })
           .from(dbSchema.member)
           .where(eq(dbSchema.member.userId, userId))
           .limit(1),
         database
-          .select({ id: dbSchema.classroomMember.id })
-          .from(dbSchema.classroomMember)
-          .where(eq(dbSchema.classroomMember.userId, userId))
+          .select({ id: dbSchema.storeMember.id })
+          .from(dbSchema.storeMember)
+          .where(eq(dbSchema.storeMember.userId, userId))
           .limit(1),
         database
           .select({ id: dbSchema.participant.id })
@@ -1165,10 +1165,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
               )
               .limit(1)
           : Promise.resolve([] as { id: string }[]),
-      ]);
+      ],
+    );
 
     return (
-      !memberRows[0] && !classroomMemberRows[0] && !participantRows[0] && !pendingInvitationRows[0]
+      !memberRows[0] && !storeMemberRows[0] && !participantRows[0] && !pendingInvitationRows[0]
     );
   };
 
@@ -1209,9 +1210,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     participant: {
       id: string;
       organizationId: string;
-      classroomId?: string;
-      classroomSlug?: string | null;
-      classroomName?: string | null;
+      storeId?: string;
+      storeSlug?: string | null;
+      storeName?: string | null;
       userId: string;
       email: string;
       name: string;
@@ -1226,9 +1227,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return {
       id: participant.id,
       organizationId: participant.organizationId,
-      classroomId: participant.classroomId ?? null,
-      classroomSlug: participant.classroomSlug ?? null,
-      classroomName: participant.classroomName ?? null,
+      storeId: participant.storeId ?? null,
+      storeSlug: participant.storeSlug ?? null,
+      storeName: participant.storeName ?? null,
       userId: participant.userId,
       email: participant.email,
       name: participant.name,
@@ -1238,7 +1239,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   };
 
   const normalizeInvitationSubjectKind = (value: string | null): InvitationSubjectKind | null => {
-    if (value === 'org_operator' || value === 'classroom_operator' || value === 'participant') {
+    if (value === 'org_operator' || value === 'store_operator' || value === 'participant') {
       return value;
     }
 
@@ -1290,9 +1291,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     organizationId: dbSchema.invitation.organizationId,
     organizationSlug: dbSchema.organization.slug,
     organizationName: dbSchema.organization.name,
-    classroomId: dbSchema.invitation.classroomId,
-    classroomSlug: dbSchema.classroom.slug,
-    classroomName: dbSchema.classroom.name,
+    storeId: dbSchema.invitation.storeId,
+    storeSlug: dbSchema.store.slug,
+    storeName: dbSchema.store.name,
     email: dbSchema.invitation.email,
     role: dbSchema.invitation.role,
     principalKind: dbSchema.invitation.principalKind,
@@ -1304,7 +1305,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     respondedByUserId: dbSchema.invitation.respondedByUserId,
     respondedAt: dbSchema.invitation.respondedAt,
     acceptedMemberId: dbSchema.invitation.acceptedMemberId,
-    acceptedClassroomMemberId: dbSchema.invitation.acceptedClassroomMemberId,
+    acceptedStoreMemberId: dbSchema.invitation.acceptedStoreMemberId,
     acceptedParticipantId: dbSchema.invitation.acceptedParticipantId,
   };
 
@@ -1316,7 +1317,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         dbSchema.organization,
         eq(dbSchema.organization.id, dbSchema.invitation.organizationId),
       )
-      .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId));
+      .leftJoin(dbSchema.store, eq(dbSchema.store.id, dbSchema.invitation.storeId));
 
     return (whereClause ? query.where(whereClause) : query).orderBy(
       desc(dbSchema.invitation.createdAt),
@@ -1342,9 +1343,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       organizationId: invitation.organizationId,
       organizationSlug: invitation.organizationSlug,
       organizationName: invitation.organizationName,
-      classroomId: invitation.classroomId,
-      classroomSlug: invitation.classroomSlug,
-      classroomName: invitation.classroomName,
+      storeId: invitation.storeId,
+      storeSlug: invitation.storeSlug,
+      storeName: invitation.storeName,
       email: invitation.email,
       participantName: invitation.participantName ?? null,
       status,
@@ -1363,13 +1364,13 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
   const findPendingInvitationForResend = async ({
     organizationId,
-    classroomId,
+    storeId,
     subjectKind,
     role,
     email,
   }: {
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     subjectKind: InvitationSubjectKind;
     role: UnifiedInvitationRole;
     email: string;
@@ -1381,13 +1382,13 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         dbSchema.organization,
         eq(dbSchema.organization.id, dbSchema.invitation.organizationId),
       )
-      .leftJoin(dbSchema.classroom, eq(dbSchema.classroom.id, dbSchema.invitation.classroomId))
+      .leftJoin(dbSchema.store, eq(dbSchema.store.id, dbSchema.invitation.storeId))
       .where(
         and(
           eq(dbSchema.invitation.organizationId, organizationId),
           eq(dbSchema.invitation.subjectKind, subjectKind),
           eq(dbSchema.invitation.role, role),
-          ...(classroomId ? [eq(dbSchema.invitation.classroomId, classroomId)] : []),
+          ...(storeId ? [eq(dbSchema.invitation.storeId, storeId)] : []),
           eq(dbSchema.invitation.email, email),
           eq(dbSchema.invitation.status, 'pending'),
         ),
@@ -1422,7 +1423,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   const writeInvitationEvent = async ({
     invitationId,
     organizationId,
-    classroomId,
+    storeId,
     actorUserId,
     targetEmail,
     eventType,
@@ -1431,7 +1432,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   }: {
     invitationId: string;
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     actorUserId: string;
     targetEmail: string;
     eventType: InvitationEventType;
@@ -1442,7 +1443,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       id: crypto.randomUUID(),
       invitationId,
       organizationId,
-      classroomId: classroomId ?? null,
+      storeId: storeId ?? null,
       actorUserId,
       targetEmail,
       eventType,
@@ -1470,7 +1471,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     subjectKind,
     role,
     organizationId,
-    classroomId,
+    storeId,
     email,
     participantName,
     invitedByUserId,
@@ -1478,7 +1479,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     subjectKind: InvitationSubjectKind;
     role: UnifiedInvitationRole;
     organizationId: string;
-    classroomId?: string | null;
+    storeId?: string | null;
     email: string;
     participantName?: string | null;
     invitedByUserId: string;
@@ -1489,7 +1490,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       id: invitationId,
       subjectKind,
       organizationId,
-      classroomId: classroomId ?? null,
+      storeId: storeId ?? null,
       email,
       role,
       principalKind: await resolveInvitationPrincipalKind(email),
@@ -1579,7 +1580,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return 'member';
   };
 
-  const mergeClassroomInvitationRole = (
+  const mergeStoreInvitationRole = (
     currentRole: string | null,
     invitedRole: 'manager' | 'staff',
   ): 'manager' | 'staff' => {
@@ -1642,7 +1643,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return memberId;
   };
 
-  const ensureOrganizationMemberForClassroomOperator = async ({
+  const ensureOrganizationMemberForStoreOperator = async ({
     tx,
     invitation,
     userId,
@@ -1680,7 +1681,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return memberId;
   };
 
-  const ensureClassroomMemberFromInvitation = async ({
+  const ensureStoreMemberFromInvitation = async ({
     tx,
     invitation,
     userId,
@@ -1690,47 +1691,47 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     userId: string;
   }) => {
     const invitedRole = normalizeUnifiedInvitationRole(invitation.role);
-    if ((invitedRole !== 'manager' && invitedRole !== 'staff') || !invitation.classroomId) {
-      throw new Error('Classroom invitation role is invalid.');
+    if ((invitedRole !== 'manager' && invitedRole !== 'staff') || !invitation.storeId) {
+      throw new Error('Store invitation role is invalid.');
     }
 
     const rows = await tx
       .select({
-        id: dbSchema.classroomMember.id,
-        role: dbSchema.classroomMember.role,
+        id: dbSchema.storeMember.id,
+        role: dbSchema.storeMember.role,
       })
-      .from(dbSchema.classroomMember)
+      .from(dbSchema.storeMember)
       .where(
         and(
-          eq(dbSchema.classroomMember.classroomId, invitation.classroomId),
-          eq(dbSchema.classroomMember.userId, userId),
+          eq(dbSchema.storeMember.storeId, invitation.storeId),
+          eq(dbSchema.storeMember.userId, userId),
         ),
       )
       .limit(1);
 
     const existing = rows[0] as { id: string; role: string } | undefined;
-    const nextRole = mergeClassroomInvitationRole(existing?.role ?? null, invitedRole);
+    const nextRole = mergeStoreInvitationRole(existing?.role ?? null, invitedRole);
     if (existing) {
       if (nextRole !== existing.role) {
         await tx
-          .update(dbSchema.classroomMember)
+          .update(dbSchema.storeMember)
           .set({
             role: nextRole,
           })
-          .where(eq(dbSchema.classroomMember.id, existing.id));
+          .where(eq(dbSchema.storeMember.id, existing.id));
       }
       return existing.id;
     }
 
-    const classroomMemberId = crypto.randomUUID();
-    await tx.insert(dbSchema.classroomMember).values({
-      id: classroomMemberId,
-      classroomId: invitation.classroomId,
+    const storeMemberId = crypto.randomUUID();
+    await tx.insert(dbSchema.storeMember).values({
+      id: storeMemberId,
+      storeId: invitation.storeId,
       userId,
       role: nextRole,
       createdAt: new Date(),
     });
-    return classroomMemberId;
+    return storeMemberId;
   };
 
   const ensureParticipantFromInvitation = async ({
@@ -1742,7 +1743,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     invitation: InvitationRecord;
     userId: string;
   }) => {
-    if (!invitation.classroomId || !invitation.participantName) {
+    if (!invitation.storeId || !invitation.participantName) {
       throw new Error('Participant invitation is incomplete.');
     }
 
@@ -1754,7 +1755,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       .where(
         and(
           eq(dbSchema.participant.organizationId, invitation.organizationId),
-          eq(dbSchema.participant.classroomId, invitation.classroomId),
+          eq(dbSchema.participant.storeId, invitation.storeId),
           or(
             eq(dbSchema.participant.userId, userId),
             eq(dbSchema.participant.email, invitation.email),
@@ -1772,7 +1773,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     await tx.insert(dbSchema.participant).values({
       id: participantId,
       organizationId: invitation.organizationId,
-      classroomId: invitation.classroomId,
+      storeId: invitation.storeId,
       userId,
       email: invitation.email,
       name: invitation.participantName,
@@ -1802,7 +1803,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     }
 
     let acceptedMemberId: string | null = null;
-    let acceptedClassroomMemberId: string | null = null;
+    let acceptedStoreMemberId: string | null = null;
     let acceptedParticipantId: string | null = null;
 
     const subjectKind = normalizeInvitationSubjectKind(invitation.subjectKind);
@@ -1812,13 +1813,13 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         invitation,
         userId,
       });
-    } else if (subjectKind === 'classroom_operator') {
-      acceptedMemberId = await ensureOrganizationMemberForClassroomOperator({
+    } else if (subjectKind === 'store_operator') {
+      acceptedMemberId = await ensureOrganizationMemberForStoreOperator({
         tx: database,
         invitation,
         userId,
       });
-      acceptedClassroomMemberId = await ensureClassroomMemberFromInvitation({
+      acceptedStoreMemberId = await ensureStoreMemberFromInvitation({
         tx: database,
         invitation,
         userId,
@@ -1840,7 +1841,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         respondedByUserId: userId,
         respondedAt: new Date(),
         acceptedMemberId,
-        acceptedClassroomMemberId,
+        acceptedStoreMemberId,
         acceptedParticipantId,
       })
       .where(
@@ -1868,59 +1869,51 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
     return {
       memberId: acceptedMemberId,
-      classroomMemberId: acceptedClassroomMemberId,
+      storeMemberId: acceptedStoreMemberId,
       participantId: acceptedParticipantId,
     };
   };
 
-  const resolveClassroomContextBySlugs = async ({
+  const resolveStoreContextBySlugs = async ({
     orgSlug,
-    classroomSlug,
+    storeSlug,
   }: {
     orgSlug: string;
-    classroomSlug: string;
+    storeSlug: string;
   }) => {
-    return resolveOrganizationClassroomContext({
+    return resolveOrganizationStoreContext({
       database,
       organizationSlug: orgSlug,
-      classroomSlug,
+      storeSlug,
     });
   };
 
-  const resolveClassroomContextByOrganizationId = async (organizationId: string) => {
-    return resolveOrganizationClassroomContext({
+  const resolveStoreContextByOrganizationId = async (organizationId: string) => {
+    return resolveOrganizationStoreContext({
       database,
       organizationId,
     });
   };
 
-  const resolveClassroomContextByIds = async ({
+  const resolveStoreContextByIds = async ({
     organizationId,
-    classroomId,
+    storeId,
   }: {
     organizationId: string;
-    classroomId: string;
+    storeId: string;
   }) => {
     const rows = await database
       .select({
         organizationId: dbSchema.organization.id,
         organizationSlug: dbSchema.organization.slug,
         organizationName: dbSchema.organization.name,
-        classroomId: dbSchema.classroom.id,
-        classroomSlug: dbSchema.classroom.slug,
-        classroomName: dbSchema.classroom.name,
+        storeId: dbSchema.store.id,
+        storeSlug: dbSchema.store.slug,
+        storeName: dbSchema.store.name,
       })
-      .from(dbSchema.classroom)
-      .innerJoin(
-        dbSchema.organization,
-        eq(dbSchema.organization.id, dbSchema.classroom.organizationId),
-      )
-      .where(
-        and(
-          eq(dbSchema.classroom.organizationId, organizationId),
-          eq(dbSchema.classroom.id, classroomId),
-        ),
-      )
+      .from(dbSchema.store)
+      .innerJoin(dbSchema.organization, eq(dbSchema.organization.id, dbSchema.store.organizationId))
+      .where(and(eq(dbSchema.store.organizationId, organizationId), eq(dbSchema.store.id, storeId)))
       .limit(1);
 
     return rows[0] ?? null;
@@ -1940,18 +1933,18 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return rows[0] ?? null;
   };
 
-  const serializeManagedClassroom = async ({
+  const serializeManagedStore = async ({
     context,
     userId,
   }: {
-    context: Awaited<ReturnType<typeof resolveOrganizationClassroomContext>>;
+    context: Awaited<ReturnType<typeof resolveOrganizationStoreContext>>;
     userId: string;
   }) => {
     if (!context) {
       return null;
     }
 
-    const access = await resolveOrganizationClassroomAccess({
+    const access = await resolveOrganizationStoreAccess({
       database,
       userId,
       context,
@@ -1960,15 +1953,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     if (
       !access.display.primaryRole &&
       !access.effective.canUseParticipantBooking &&
-      !access.effective.canManageClassroom
+      !access.effective.canManageStore
     ) {
       return null;
     }
 
     return {
-      id: context.classroomId,
-      slug: context.classroomSlug,
-      name: context.classroomName,
+      id: context.storeId,
+      slug: context.storeSlug,
+      name: context.storeName,
       logo: null,
       facts: access.facts,
       effective: access.effective,
@@ -1980,7 +1973,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   const serializePublicSiteSetting = async ({
     context,
   }: {
-    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationClassroomContext>>>;
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
   }) => {
     const rows = await database
       .select({
@@ -1995,7 +1988,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       .where(
         and(
           eq(dbSchema.publicSiteSetting.organizationId, context.organizationId),
-          eq(dbSchema.publicSiteSetting.classroomId, context.classroomId),
+          eq(dbSchema.publicSiteSetting.storeId, context.storeId),
         ),
       )
       .limit(1);
@@ -2005,10 +1998,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       organizationId: context.organizationId,
       organizationSlug: context.organizationSlug,
       organizationName: context.organizationName,
-      classroomId: context.classroomId,
-      classroomSlug: context.classroomSlug,
-      classroomName: context.classroomName,
-      siteName: setting?.siteName?.trim() || context.classroomName || context.organizationName,
+      storeId: context.storeId,
+      storeSlug: context.storeSlug,
+      storeName: context.storeName,
+      siteName: setting?.siteName?.trim() || context.storeName || context.organizationName,
       description: setting?.description ?? null,
       address: setting?.address ?? null,
       phone: setting?.phone ?? null,
@@ -2028,7 +2021,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return trimmed.length > 0 ? trimmed : null;
   };
 
-  const listAccessibleClassroomsForOrganization = async ({
+  const listAccessibleStoresForOrganization = async ({
     organizationSlug,
     userId,
   }: {
@@ -2039,11 +2032,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     if (!organization) {
       return {
         organization: null,
-        classrooms: [] as Array<z.infer<typeof classroomManagementSchema>>,
+        stores: [] as Array<z.infer<typeof storeManagementSchema>>,
       };
     }
 
-    const [memberRows, classroomMemberRows, participantRows] = await Promise.all([
+    const [memberRows, storeMemberRows, participantRows] = await Promise.all([
       database
         .select({
           role: dbSchema.member.role,
@@ -2058,22 +2051,19 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .limit(1),
       database
         .select({
-          classroomId: dbSchema.classroomMember.classroomId,
+          storeId: dbSchema.storeMember.storeId,
         })
-        .from(dbSchema.classroomMember)
-        .innerJoin(
-          dbSchema.classroom,
-          eq(dbSchema.classroom.id, dbSchema.classroomMember.classroomId),
-        )
+        .from(dbSchema.storeMember)
+        .innerJoin(dbSchema.store, eq(dbSchema.store.id, dbSchema.storeMember.storeId))
         .where(
           and(
-            eq(dbSchema.classroom.organizationId, organization.id),
-            eq(dbSchema.classroomMember.userId, userId),
+            eq(dbSchema.store.organizationId, organization.id),
+            eq(dbSchema.storeMember.userId, userId),
           ),
         ),
       database
         .select({
-          classroomId: dbSchema.participant.classroomId,
+          storeId: dbSchema.participant.storeId,
         })
         .from(dbSchema.participant)
         .where(
@@ -2089,16 +2079,16 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       organizationRole === 'owner' ||
       organizationRole === 'admin' ||
       organizationRole === 'member' ||
-      classroomMemberRows.length > 0 ||
+      storeMemberRows.length > 0 ||
       participantRows.length > 0;
 
     if (!hasOrganizationAccess) {
-      return { organization, classrooms: [] as Array<z.infer<typeof classroomManagementSchema>> };
+      return { organization, stores: [] as Array<z.infer<typeof storeManagementSchema>> };
     }
 
-    const classroomContexts =
+    const storeContexts =
       organizationRole === 'owner' || organizationRole === 'admin'
-        ? await listOrganizationClassroomContexts({
+        ? await listOrganizationStoreContexts({
             database,
             organizationId: organization.id,
           })
@@ -2106,26 +2096,22 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             await Promise.all(
               Array.from(
                 new Set([
-                  ...classroomMemberRows.map(
-                    (row: (typeof classroomMemberRows)[number]) => row.classroomId,
-                  ),
-                  ...participantRows.map(
-                    (row: (typeof participantRows)[number]) => row.classroomId,
-                  ),
+                  ...storeMemberRows.map((row: (typeof storeMemberRows)[number]) => row.storeId),
+                  ...participantRows.map((row: (typeof participantRows)[number]) => row.storeId),
                 ]),
-              ).map((classroomId) =>
-                resolveClassroomContextByIds({
+              ).map((storeId) =>
+                resolveStoreContextByIds({
                   organizationId: organization.id,
-                  classroomId,
+                  storeId,
                 }),
               ),
             )
           ).filter((context): context is NonNullable<typeof context> => Boolean(context));
 
-    const classrooms = (
+    const stores = (
       await Promise.all(
-        classroomContexts.map((context) =>
-          serializeManagedClassroom({
+        storeContexts.map((context) =>
+          serializeManagedStore({
             context,
             userId,
           }),
@@ -2135,7 +2121,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
       .sort((left, right) => left.name.localeCompare(right.name));
 
-    return { organization, classrooms };
+    return { organization, stores };
   };
 
   const hydrateInvitationRecord = async (invitationId: string) => {
@@ -2189,28 +2175,28 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       });
     }
 
-    if (!invitation.classroomId) {
+    if (!invitation.storeId) {
       return false;
     }
 
-    const classroomContext = await resolveClassroomContextByIds({
+    const storeContext = await resolveStoreContextByIds({
       organizationId: invitation.organizationId,
-      classroomId: invitation.classroomId,
+      storeId: invitation.storeId,
     });
-    if (!classroomContext) {
+    if (!storeContext) {
       return false;
     }
 
-    const access = await resolveOrganizationClassroomAccess({
+    const access = await resolveOrganizationStoreAccess({
       database,
       userId,
-      context: classroomContext,
+      context: storeContext,
     });
     if (subjectKind === 'participant') {
-      return access.effective.canManageParticipants || access.effective.canManageClassroom;
+      return access.effective.canManageParticipants || access.effective.canManageStore;
     }
 
-    return access.effective.canManageClassroom;
+    return access.effective.canManageStore;
   };
 
   authRoutes.use('/session', async (c, next) => {
@@ -2433,7 +2419,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
       if (organizationId) {
         await database
-          .insert(dbSchema.classroom)
+          .insert(dbSchema.store)
           .values({
             id: organizationId,
             organizationId,
@@ -2462,7 +2448,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     env,
   });
 
-  authRoutes.openapi(listOrganizationClassroomsRoute, (c) => {
+  authRoutes.openapi(listOrganizationStoresRoute, (c) => {
     return (async () => {
       const { orgSlug } = c.req.valid('param');
       const identity = await getSessionIdentity(c.req.raw.headers);
@@ -2470,22 +2456,22 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const result = await listAccessibleClassroomsForOrganization({
+      const result = await listAccessibleStoresForOrganization({
         organizationSlug: orgSlug,
         userId: identity.userId,
       });
       if (!result.organization) {
         return c.json({ message: 'Organization not found.' }, 404);
       }
-      if (result.classrooms.length === 0) {
+      if (result.stores.length === 0) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      return c.json(result.classrooms, 200);
+      return c.json(result.stores, 200);
     })();
   });
 
-  authRoutes.openapi(createClassroomRoute, (c) => {
+  authRoutes.openapi(createStoreRoute, (c) => {
     return (async () => {
       const { orgSlug } = c.req.valid('param');
       const body = c.req.valid('json');
@@ -2499,12 +2485,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Organization not found.' }, 404);
       }
 
-      const organizationContext = await resolveClassroomContextByOrganizationId(organization.id);
+      const organizationContext = await resolveStoreContextByOrganizationId(organization.id);
       if (!organizationContext) {
-        return c.json({ message: 'Organization or classroom not found.' }, 404);
+        return c.json({ message: 'Organization or store not found.' }, 404);
       }
 
-      const access = await resolveOrganizationClassroomAccess({
+      const access = await resolveOrganizationStoreAccess({
         database,
         userId: identity.userId,
         context: organizationContext,
@@ -2517,7 +2503,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         database,
         env,
         organizationId: organization.id,
-        key: RESERVE_APP_ENTITLEMENTS.CLASSROOM_MULTIPLE,
+        key: RESERVE_APP_ENTITLEMENTS.STORE_MULTIPLE,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -2526,57 +2512,54 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       const slug = body.slug.trim();
       const name = body.name.trim();
       const duplicateRows = await database
-        .select({ id: dbSchema.classroom.id })
-        .from(dbSchema.classroom)
+        .select({ id: dbSchema.store.id })
+        .from(dbSchema.store)
         .where(
-          and(
-            eq(dbSchema.classroom.organizationId, organization.id),
-            eq(dbSchema.classroom.slug, slug),
-          ),
+          and(eq(dbSchema.store.organizationId, organization.id), eq(dbSchema.store.slug, slug)),
         )
         .limit(1);
       if (duplicateRows[0]) {
-        return c.json({ message: 'Classroom slug already exists.' }, 409);
+        return c.json({ message: 'Store slug already exists.' }, 409);
       }
 
-      const classroomId = crypto.randomUUID();
-      await database.insert(dbSchema.classroom).values({
-        id: classroomId,
+      const storeId = crypto.randomUUID();
+      await database.insert(dbSchema.store).values({
+        id: storeId,
         organizationId: organization.id,
         slug,
         name,
       });
 
-      const classroomContext = await resolveClassroomContextByIds({
+      const storeContext = await resolveStoreContextByIds({
         organizationId: organization.id,
-        classroomId,
+        storeId,
       });
-      const serialized = await serializeManagedClassroom({
-        context: classroomContext,
+      const serialized = await serializeManagedStore({
+        context: storeContext,
         userId: identity.userId,
       });
 
       return c.json(
         serialized ?? {
-          id: classroomId,
+          id: storeId,
           slug,
           name,
           logo: null,
           facts: {
             orgRole: access.facts.orgRole,
-            classroomStaffRole: null,
+            storeStaffRole: null,
             hasParticipantRecord: false,
           },
           effective: {
             canManageOrganization: true,
-            canManageClassroom: true,
+            canManageStore: true,
             canManageBookings: true,
             canManageParticipants: true,
             canUseParticipantBooking: false,
           },
           sources: {
             canManageOrganization: 'org_role',
-            canManageClassroom: 'org_role',
+            canManageStore: 'org_role',
             canManageBookings: 'org_role',
             canManageParticipants: 'org_role',
             canUseParticipantBooking: null,
@@ -2591,24 +2574,24 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     })();
   });
 
-  authRoutes.openapi(updateClassroomRoute, (c) => {
+  authRoutes.openapi(updateStoreRoute, (c) => {
     return (async () => {
-      const { orgSlug, classroomSlug } = c.req.valid('param');
+      const { orgSlug, storeSlug } = c.req.valid('param');
       const body = c.req.valid('json');
       const identity = await getSessionIdentity(c.req.raw.headers);
       if (!identity) {
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
-      if (!classroomContext) {
-        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
       }
 
-      const access = await resolveOrganizationClassroomAccess({
+      const access = await resolveOrganizationStoreAccess({
         database,
         userId: identity.userId,
-        context: classroomContext,
+        context: storeContext,
       });
       if (!access.effective.canManageOrganization) {
         return c.json({ message: 'Forbidden' }, 403);
@@ -2617,38 +2600,38 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       const nextSlug = body.slug.trim();
       const nextName = body.name.trim();
       const duplicateRows = await database
-        .select({ id: dbSchema.classroom.id })
-        .from(dbSchema.classroom)
+        .select({ id: dbSchema.store.id })
+        .from(dbSchema.store)
         .where(
           and(
-            eq(dbSchema.classroom.organizationId, classroomContext.organizationId),
-            eq(dbSchema.classroom.slug, nextSlug),
+            eq(dbSchema.store.organizationId, storeContext.organizationId),
+            eq(dbSchema.store.slug, nextSlug),
           ),
         )
         .limit(1);
-      if (duplicateRows[0] && duplicateRows[0].id !== classroomContext.classroomId) {
-        return c.json({ message: 'Classroom slug already exists.' }, 409);
+      if (duplicateRows[0] && duplicateRows[0].id !== storeContext.storeId) {
+        return c.json({ message: 'Store slug already exists.' }, 409);
       }
 
       await database
-        .update(dbSchema.classroom)
+        .update(dbSchema.store)
         .set({
           slug: nextSlug,
           name: nextName,
           updatedAt: new Date(),
         })
-        .where(eq(dbSchema.classroom.id, classroomContext.classroomId));
+        .where(eq(dbSchema.store.id, storeContext.storeId));
 
-      const updatedContext = await resolveClassroomContextByIds({
-        organizationId: classroomContext.organizationId,
-        classroomId: classroomContext.classroomId,
+      const updatedContext = await resolveStoreContextByIds({
+        organizationId: storeContext.organizationId,
+        storeId: storeContext.storeId,
       });
-      const serialized = await serializeManagedClassroom({
+      const serialized = await serializeManagedStore({
         context: updatedContext,
         userId: identity.userId,
       });
       if (!serialized) {
-        return c.json({ message: 'Classroom not found.' }, 404);
+        return c.json({ message: 'Store not found.' }, 404);
       }
 
       return c.json(serialized, 200);
@@ -2657,50 +2640,50 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
   authRoutes.openapi(getPublicSiteSettingRoute, (c) => {
     return (async () => {
-      const { orgSlug, classroomSlug } = c.req.valid('param');
+      const { orgSlug, storeSlug } = c.req.valid('param');
       const identity = await getSessionIdentity(c.req.raw.headers);
       if (!identity) {
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
-      if (!classroomContext) {
-        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
       }
 
-      const access = await resolveOrganizationClassroomAccess({
+      const access = await resolveOrganizationStoreAccess({
         database,
         userId: identity.userId,
-        context: classroomContext,
+        context: storeContext,
       });
-      if (!access.effective.canManageClassroom) {
+      if (!access.effective.canManageStore) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      return c.json(await serializePublicSiteSetting({ context: classroomContext }), 200);
+      return c.json(await serializePublicSiteSetting({ context: storeContext }), 200);
     })();
   });
 
   authRoutes.openapi(updatePublicSiteSettingRoute, (c) => {
     return (async () => {
-      const { orgSlug, classroomSlug } = c.req.valid('param');
+      const { orgSlug, storeSlug } = c.req.valid('param');
       const body = c.req.valid('json');
       const identity = await getSessionIdentity(c.req.raw.headers);
       if (!identity) {
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
-      if (!classroomContext) {
-        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
       }
 
-      const access = await resolveOrganizationClassroomAccess({
+      const access = await resolveOrganizationStoreAccess({
         database,
         userId: identity.userId,
-        context: classroomContext,
+        context: storeContext,
       });
-      if (!access.effective.canManageClassroom) {
+      if (!access.effective.canManageStore) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
@@ -2716,8 +2699,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .from(dbSchema.publicSiteSetting)
         .where(
           and(
-            eq(dbSchema.publicSiteSetting.organizationId, classroomContext.organizationId),
-            eq(dbSchema.publicSiteSetting.classroomId, classroomContext.classroomId),
+            eq(dbSchema.publicSiteSetting.organizationId, storeContext.organizationId),
+            eq(dbSchema.publicSiteSetting.storeId, storeContext.storeId),
           ),
         )
         .limit(1);
@@ -2736,24 +2719,21 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .insert(dbSchema.publicSiteSetting)
         .values({
           id: crypto.randomUUID(),
-          organizationId: classroomContext.organizationId,
-          classroomId: classroomContext.classroomId,
+          organizationId: storeContext.organizationId,
+          storeId: storeContext.storeId,
           ...nextValues,
           createdAt: now,
           updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: [
-            dbSchema.publicSiteSetting.organizationId,
-            dbSchema.publicSiteSetting.classroomId,
-          ],
+          target: [dbSchema.publicSiteSetting.organizationId, dbSchema.publicSiteSetting.storeId],
           set: {
             ...nextValues,
             updatedAt: now,
           },
         });
 
-      return c.json(await serializePublicSiteSetting({ context: classroomContext }), 200);
+      return c.json(await serializePublicSiteSetting({ context: storeContext }), 200);
     })();
   });
 
@@ -2782,7 +2762,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         database
           .select({
             organizationId: dbSchema.participant.organizationId,
-            classroomId: dbSchema.participant.classroomId,
+            storeId: dbSchema.participant.storeId,
             organizationSlug: dbSchema.organization.slug,
             organizationName: dbSchema.organization.name,
             organizationLogo: dbSchema.organization.logo,
@@ -2795,25 +2775,22 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           .where(eq(dbSchema.participant.userId, identity.userId)),
       ]);
 
-      const classroomMemberRows = await database
+      const storeMemberRows = await database
         .select({
-          organizationId: dbSchema.classroom.organizationId,
+          organizationId: dbSchema.store.organizationId,
           organizationSlug: dbSchema.organization.slug,
           organizationName: dbSchema.organization.name,
           organizationLogo: dbSchema.organization.logo,
-          classroomId: dbSchema.classroom.id,
-          role: dbSchema.classroomMember.role,
+          storeId: dbSchema.store.id,
+          role: dbSchema.storeMember.role,
         })
-        .from(dbSchema.classroomMember)
-        .innerJoin(
-          dbSchema.classroom,
-          eq(dbSchema.classroom.id, dbSchema.classroomMember.classroomId),
-        )
+        .from(dbSchema.storeMember)
+        .innerJoin(dbSchema.store, eq(dbSchema.store.id, dbSchema.storeMember.storeId))
         .innerJoin(
           dbSchema.organization,
-          eq(dbSchema.organization.id, dbSchema.classroom.organizationId),
+          eq(dbSchema.organization.id, dbSchema.store.organizationId),
         )
-        .where(eq(dbSchema.classroomMember.userId, identity.userId));
+        .where(eq(dbSchema.storeMember.userId, identity.userId));
 
       const organizationsById = new Map<
         string,
@@ -2844,7 +2821,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           organizationRole: organizationsById.get(row.organizationId)?.organizationRole ?? null,
         });
       }
-      for (const row of classroomMemberRows) {
+      for (const row of storeMemberRows) {
         organizationsById.set(row.organizationId, {
           organizationId: row.organizationId,
           organizationSlug: row.organizationSlug,
@@ -2856,62 +2833,62 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
       const tree: Array<z.infer<typeof accessTreeOrganizationSchema>> = [];
       for (const row of organizationsById.values()) {
-        const allClassroomContexts =
+        const allStoreContexts =
           row.organizationRole === 'owner' || row.organizationRole === 'admin'
-            ? await listOrganizationClassroomContexts({
+            ? await listOrganizationStoreContexts({
                 database,
                 organizationId: row.organizationId,
               })
             : [];
 
-        const accessibleClassroomIds = new Set<string>();
-        for (const classroomRow of classroomMemberRows) {
-          if (classroomRow.organizationId === row.organizationId) {
-            accessibleClassroomIds.add(classroomRow.classroomId);
+        const accessibleStoreIds = new Set<string>();
+        for (const storeRow of storeMemberRows) {
+          if (storeRow.organizationId === row.organizationId) {
+            accessibleStoreIds.add(storeRow.storeId);
           }
         }
         for (const participantRow of participantRows) {
           if (participantRow.organizationId === row.organizationId) {
-            accessibleClassroomIds.add(participantRow.classroomId);
+            accessibleStoreIds.add(participantRow.storeId);
           }
         }
 
-        const classroomContexts =
-          allClassroomContexts.length > 0
-            ? allClassroomContexts
+        const storeContexts =
+          allStoreContexts.length > 0
+            ? allStoreContexts
             : (
                 await Promise.all(
-                  Array.from(accessibleClassroomIds).map(async (classroomId) =>
-                    resolveOrganizationClassroomContext({
+                  Array.from(accessibleStoreIds).map(async (storeId) =>
+                    resolveOrganizationStoreContext({
                       database,
                       organizationId: row.organizationId,
                     }).then(async (fallbackContext) => {
-                      if (fallbackContext?.classroomId === classroomId) {
+                      if (fallbackContext?.storeId === storeId) {
                         return fallbackContext;
                       }
-                      const classroomRows = await database
+                      const storeRows = await database
                         .select({
-                          id: dbSchema.classroom.id,
-                          slug: dbSchema.classroom.slug,
-                          name: dbSchema.classroom.name,
+                          id: dbSchema.store.id,
+                          slug: dbSchema.store.slug,
+                          name: dbSchema.store.name,
                         })
-                        .from(dbSchema.classroom)
+                        .from(dbSchema.store)
                         .where(
                           and(
-                            eq(dbSchema.classroom.organizationId, row.organizationId),
-                            eq(dbSchema.classroom.id, classroomId),
+                            eq(dbSchema.store.organizationId, row.organizationId),
+                            eq(dbSchema.store.id, storeId),
                           ),
                         )
                         .limit(1);
-                      const classroom = classroomRows[0];
-                      return classroom
+                      const store = storeRows[0];
+                      return store
                         ? {
                             organizationId: row.organizationId,
                             organizationSlug: row.organizationSlug,
                             organizationName: row.organizationName,
-                            classroomId: classroom.id,
-                            classroomSlug: classroom.slug,
-                            classroomName: classroom.name,
+                            storeId: store.id,
+                            storeSlug: store.slug,
+                            storeName: store.name,
                           }
                         : null;
                     }),
@@ -2919,9 +2896,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
                 )
               ).filter((context): context is NonNullable<typeof context> => Boolean(context));
 
-        const classrooms = [];
-        for (const context of classroomContexts) {
-          const access = await resolveOrganizationClassroomAccess({
+        const stores = [];
+        for (const context of storeContexts) {
+          const access = await resolveOrganizationStoreAccess({
             database,
             userId: identity.userId,
             context,
@@ -2929,14 +2906,14 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           if (
             !access.display.primaryRole &&
             !access.effective.canUseParticipantBooking &&
-            !access.effective.canManageClassroom
+            !access.effective.canManageStore
           ) {
             continue;
           }
-          classrooms.push({
-            id: context.classroomId,
-            slug: context.classroomSlug,
-            name: context.classroomName,
+          stores.push({
+            id: context.storeId,
+            slug: context.storeSlug,
+            name: context.storeName,
             logo: null,
             facts: access.facts,
             effective: access.effective,
@@ -2945,11 +2922,11 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           });
         }
 
-        if (classrooms.length === 0) {
+        if (stores.length === 0) {
           continue;
         }
 
-        classrooms.sort((left, right) => left.name.localeCompare(right.name));
+        stores.sort((left, right) => left.name.localeCompare(right.name));
         tree.push({
           org: {
             id: row.organizationId,
@@ -2960,7 +2937,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           facts: {
             orgRole: row.organizationRole,
           },
-          classrooms,
+          stores,
         });
       }
 
@@ -3148,9 +3125,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     })();
   });
 
-  authRoutes.openapi(createClassroomInvitationRoute, (c) => {
+  authRoutes.openapi(createStoreInvitationRoute, (c) => {
     return (async () => {
-      const { orgSlug, classroomSlug } = c.req.valid('param');
+      const { orgSlug, storeSlug } = c.req.valid('param');
       const body = c.req.valid('json');
       const headers = c.req.raw.headers;
       const identity = await getSessionIdentity(headers);
@@ -3158,20 +3135,20 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
-      if (!classroomContext) {
-        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
       }
 
-      const access = await resolveOrganizationClassroomAccess({
+      const access = await resolveOrganizationStoreAccess({
         database,
         userId: identity.userId,
-        context: classroomContext,
+        context: storeContext,
       });
 
       const normalizedEmail = normalizeEmail(body.email);
       const subjectKind: InvitationSubjectKind =
-        body.role === 'participant' ? 'participant' : 'classroom_operator';
+        body.role === 'participant' ? 'participant' : 'store_operator';
 
       if (subjectKind === 'participant') {
         if (!access.effective.canManageParticipants) {
@@ -3183,14 +3160,14 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
             400,
           );
         }
-      } else if (!access.effective.canManageClassroom) {
+      } else if (!access.effective.canManageStore) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
       const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
-        organizationId: classroomContext.organizationId,
+        organizationId: storeContext.organizationId,
         key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
       });
       if (!premiumGate.allowed) {
@@ -3199,8 +3176,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
       const pendingInvitation = await markInvitationExpiredIfNeeded(
         await findPendingInvitationForResend({
-          organizationId: classroomContext.organizationId,
-          classroomId: classroomContext.classroomId,
+          organizationId: storeContext.organizationId,
+          storeId: storeContext.storeId,
           subjectKind,
           role: body.role,
           email: normalizedEmail,
@@ -3228,14 +3205,14 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         await writeInvitationEvent({
           invitationId: pendingInvitation.id,
           organizationId: pendingInvitation.organizationId,
-          classroomId: pendingInvitation.classroomId,
+          storeId: pendingInvitation.storeId,
           actorUserId: identity.userId,
           targetEmail: pendingInvitation.email,
           eventType: 'resent',
           metadata: {
             subjectKind,
             role: body.role,
-            classroomSlug: classroomContext.classroomSlug,
+            storeSlug: storeContext.storeSlug,
           },
           headers,
         });
@@ -3250,8 +3227,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       const createdInvitation = await createInvitationRecord({
         subjectKind,
         role: body.role,
-        organizationId: classroomContext.organizationId,
-        classroomId: classroomContext.classroomId,
+        organizationId: storeContext.organizationId,
+        storeId: storeContext.storeId,
         email: normalizedEmail,
         participantName:
           body.role === 'participant' ? (body.participantName?.trim() ?? null) : null,
@@ -3273,14 +3250,14 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       await writeInvitationEvent({
         invitationId: createdInvitation.id,
         organizationId: createdInvitation.organizationId,
-        classroomId: createdInvitation.classroomId,
+        storeId: createdInvitation.storeId,
         actorUserId: identity.userId,
         targetEmail: createdInvitation.email,
         eventType: 'created',
         metadata: {
           subjectKind,
           role: body.role,
-          classroomSlug: classroomContext.classroomSlug,
+          storeSlug: storeContext.storeSlug,
           participantName:
             body.role === 'participant' ? (body.participantName?.trim() ?? null) : null,
         },
@@ -3291,32 +3268,32 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     })();
   });
 
-  authRoutes.openapi(listClassroomInvitationsRoute, (c) => {
+  authRoutes.openapi(listStoreInvitationsRoute, (c) => {
     return (async () => {
-      const { orgSlug, classroomSlug } = c.req.valid('param');
+      const { orgSlug, storeSlug } = c.req.valid('param');
       const identity = await getSessionIdentity(c.req.raw.headers);
       if (!identity) {
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
-      if (!classroomContext) {
-        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
       }
 
-      const access = await resolveOrganizationClassroomAccess({
+      const access = await resolveOrganizationStoreAccess({
         database,
         userId: identity.userId,
-        context: classroomContext,
+        context: storeContext,
       });
-      if (!access.effective.canManageParticipants && !access.effective.canManageClassroom) {
+      if (!access.effective.canManageParticipants && !access.effective.canManageStore) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
       const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
-        organizationId: classroomContext.organizationId,
+        organizationId: storeContext.organizationId,
         key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
       });
       if (!premiumGate.allowed) {
@@ -3325,16 +3302,16 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
       const invitations = await listSerializedInvitations(
         and(
-          eq(dbSchema.invitation.organizationId, classroomContext.organizationId),
-          eq(dbSchema.invitation.classroomId, classroomContext.classroomId),
+          eq(dbSchema.invitation.organizationId, storeContext.organizationId),
+          eq(dbSchema.invitation.storeId, storeContext.storeId),
         ),
       );
       const filteredInvitations = invitations.filter((invitation) => {
         if (invitation.subjectKind === 'participant') {
-          return access.effective.canManageParticipants || access.effective.canManageClassroom;
+          return access.effective.canManageParticipants || access.effective.canManageStore;
         }
 
-        return access.effective.canManageClassroom;
+        return access.effective.canManageStore;
       });
 
       return c.json(filteredInvitations, 200);
@@ -3408,7 +3385,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
       if (
         invitation.subjectKind === 'org_operator' ||
-        invitation.subjectKind === 'classroom_operator'
+        invitation.subjectKind === 'store_operator'
       ) {
         const premiumGate = await readOrganizationEntitlementGate({
           database,
@@ -3443,7 +3420,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       await writeInvitationEvent({
         invitationId: invitation.id,
         organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
+        storeId: invitation.storeId,
         actorUserId: identity.userId,
         targetEmail: invitation.email,
         eventType: 'accepted',
@@ -3505,7 +3482,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       await writeInvitationEvent({
         invitationId: invitation.id,
         organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
+        storeId: invitation.storeId,
         actorUserId: identity.userId,
         targetEmail: invitation.email,
         eventType: 'rejected',
@@ -3563,7 +3540,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       await writeInvitationEvent({
         invitationId: invitation.id,
         organizationId: invitation.organizationId,
-        classroomId: invitation.classroomId,
+        storeId: invitation.storeId,
         actorUserId: identity.userId,
         targetEmail: invitation.email,
         eventType: 'cancelled',
@@ -3592,21 +3569,21 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'organizationId is required.' }, 400);
       }
 
-      if (query.classroomId) {
-        const classroomContext = await resolveClassroomContextByIds({
+      if (query.storeId) {
+        const storeContext = await resolveStoreContextByIds({
           organizationId,
-          classroomId: query.classroomId,
+          storeId: query.storeId,
         });
-        if (!classroomContext) {
-          return c.json({ message: 'Classroom not found.' }, 404);
+        if (!storeContext) {
+          return c.json({ message: 'Store not found.' }, 404);
         }
 
-        const access = await resolveOrganizationClassroomAccess({
+        const access = await resolveOrganizationStoreAccess({
           database,
           userId: identity.userId,
-          context: classroomContext,
+          context: storeContext,
         });
-        if (!access.effective.canManageParticipants && !access.effective.canManageClassroom) {
+        if (!access.effective.canManageParticipants && !access.effective.canManageStore) {
           return c.json({ message: 'Forbidden' }, 403);
         }
       } else {
@@ -3630,15 +3607,15 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
 
       const filters = [eq(dbSchema.participant.organizationId, organizationId)];
-      if (query.classroomId) {
-        filters.push(eq(dbSchema.participant.classroomId, query.classroomId));
+      if (query.storeId) {
+        filters.push(eq(dbSchema.participant.storeId, query.storeId));
       }
 
       const rows = await database
         .select({
           id: dbSchema.participant.id,
           organizationId: dbSchema.participant.organizationId,
-          classroomId: dbSchema.participant.classroomId,
+          storeId: dbSchema.participant.storeId,
           userId: dbSchema.participant.userId,
           email: dbSchema.participant.email,
           name: dbSchema.participant.name,
@@ -3690,26 +3667,26 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Public events organization was not found.' }, 503);
       }
 
-      const publicClassroomSlug = resolvePublicEventsClassroomSlug(env) ?? publicOrganizationSlug;
-      if (publicClassroomSlug.length === 0) {
-        return c.json({ message: 'PUBLIC_EVENTS_CLASSROOM_SLUG is invalid.' }, 503);
+      const publicStoreSlug = resolvePublicEventsStoreSlug(env) ?? publicOrganizationSlug;
+      if (publicStoreSlug.length === 0) {
+        return c.json({ message: 'PUBLIC_EVENTS_STORE_SLUG is invalid.' }, 503);
       }
 
       if (body.organizationId !== publicOrganization.id) {
         return c.json({ message: 'Forbidden' }, 403);
       }
 
-      const classroomContext = body.classroomId
-        ? await resolveClassroomContextByIds({
+      const storeContext = body.storeId
+        ? await resolveStoreContextByIds({
             organizationId: body.organizationId,
-            classroomId: body.classroomId,
+            storeId: body.storeId,
           })
-        : await resolveClassroomContextBySlugs({
+        : await resolveStoreContextBySlugs({
             orgSlug: publicOrganizationSlug,
-            classroomSlug: publicClassroomSlug,
+            storeSlug: publicStoreSlug,
           });
-      if (!classroomContext) {
-        return c.json({ message: 'Public events classroom was not found.' }, 503);
+      if (!storeContext) {
+        return c.json({ message: 'Public events store was not found.' }, 503);
       }
 
       const currentSession = await auth.api.getSession({ headers });
@@ -3723,7 +3700,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           .select({
             id: dbSchema.participant.id,
             organizationId: dbSchema.participant.organizationId,
-            classroomId: dbSchema.participant.classroomId,
+            storeId: dbSchema.participant.storeId,
             userId: dbSchema.participant.userId,
             email: dbSchema.participant.email,
             name: dbSchema.participant.name,
@@ -3734,7 +3711,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           .where(
             and(
               eq(dbSchema.participant.organizationId, body.organizationId),
-              eq(dbSchema.participant.classroomId, classroomContext.classroomId),
+              eq(dbSchema.participant.storeId, storeContext.storeId),
               or(
                 eq(dbSchema.participant.userId, identity.userId),
                 eq(dbSchema.participant.email, participantEmail),
@@ -3762,7 +3739,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         await database.insert(dbSchema.participant).values({
           id: participantId,
           organizationId: body.organizationId,
-          classroomId: classroomContext.classroomId,
+          storeId: storeContext.storeId,
           userId: identity.userId,
           email: participantEmail,
           name: participantName,
@@ -3789,7 +3766,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .select({
           id: dbSchema.participant.id,
           organizationId: dbSchema.participant.organizationId,
-          classroomId: dbSchema.participant.classroomId,
+          storeId: dbSchema.participant.storeId,
           userId: dbSchema.participant.userId,
           email: dbSchema.participant.email,
           name: dbSchema.participant.name,
@@ -3833,14 +3810,14 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     '/ticket-purchases',
   ] as const;
 
-  authRoutes.on(['GET', 'POST'], '/orgs/:orgSlug/classrooms/:classroomSlug/*', async (c) => {
-    const { orgSlug, classroomSlug } = c.req.param();
-    const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
-    if (!classroomContext) {
-      return c.json({ message: 'Organization or classroom not found.' }, 404);
+  authRoutes.on(['GET', 'POST'], '/orgs/:orgSlug/stores/:storeSlug/*', async (c) => {
+    const { orgSlug, storeSlug } = c.req.param();
+    const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+    if (!storeContext) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
     }
 
-    const scopedPrefix = `/orgs/${orgSlug}/classrooms/${classroomSlug}`;
+    const scopedPrefix = `/orgs/${orgSlug}/stores/${storeSlug}`;
     const prefixIndex = c.req.path.indexOf(scopedPrefix);
     if (prefixIndex < 0) {
       return c.json({ message: 'Not found.' }, 404);
@@ -3856,8 +3833,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
     const targetUrl = new URL(c.req.url);
     targetUrl.pathname = `/organizations${suffix}`;
-    targetUrl.searchParams.set('organizationId', classroomContext.organizationId);
-    targetUrl.searchParams.set('classroomId', classroomContext.classroomId);
+    targetUrl.searchParams.set('organizationId', storeContext.organizationId);
+    targetUrl.searchParams.set('storeId', storeContext.storeId);
 
     const headers = new Headers(c.req.raw.headers);
     headers.delete('content-length');
@@ -3874,12 +3851,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           typeof payload === 'object' && payload !== null
             ? {
                 ...payload,
-                organizationId: classroomContext.organizationId,
-                classroomId: classroomContext.classroomId,
+                organizationId: storeContext.organizationId,
+                storeId: storeContext.storeId,
               }
             : {
-                organizationId: classroomContext.organizationId,
-                classroomId: classroomContext.classroomId,
+                organizationId: storeContext.organizationId,
+                storeId: storeContext.storeId,
               };
         body = JSON.stringify(nextPayload);
         headers.set('content-type', 'application/json');

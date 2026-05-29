@@ -13,7 +13,7 @@ export const findServiceForRecurringSchedule = async (
     .select({
       id: dbSchema.service.id,
       organizationId: dbSchema.service.organizationId,
-      classroomId: dbSchema.service.classroomId,
+      storeId: dbSchema.service.storeId,
     })
     .from(dbSchema.service)
     .where(eq(dbSchema.service.id, serviceId))
@@ -28,7 +28,7 @@ export const insertRecurringSchedule = async ({
   database,
   recurringScheduleId,
   organizationId,
-  classroomId,
+  storeId,
   serviceId,
   timezone,
   frequency,
@@ -44,7 +44,7 @@ export const insertRecurringSchedule = async ({
   database: AuthRuntimeDatabase;
   recurringScheduleId: string;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   serviceId: string;
   timezone: string;
   frequency: string;
@@ -60,7 +60,7 @@ export const insertRecurringSchedule = async ({
   await database.insert(dbSchema.recurringSchedule).values({
     id: recurringScheduleId,
     organizationId,
-    classroomId,
+    storeId,
     serviceId,
     timezone,
     frequency,
@@ -102,7 +102,7 @@ export const findRecurringScheduleScope = async (
     .select({
       id: dbSchema.recurringSchedule.id,
       organizationId: dbSchema.recurringSchedule.organizationId,
-      classroomId: dbSchema.recurringSchedule.classroomId,
+      storeId: dbSchema.recurringSchedule.storeId,
     })
     .from(dbSchema.recurringSchedule)
     .where(eq(dbSchema.recurringSchedule.id, recurringScheduleId))
@@ -111,24 +111,24 @@ export const findRecurringScheduleScope = async (
 };
 
 /**
- * staff 向けに organization/classroom/service/status で recurring schedule を一覧します。
+ * staff 向けに organization/store/service/status で recurring schedule を一覧します。
  */
 export const listRecurringSchedules = async ({
   database,
   organizationId,
-  classroomId,
+  storeId,
   serviceId,
   isActive,
 }: {
   database: AuthRuntimeDatabase;
   organizationId: string;
-  classroomId?: string;
+  storeId?: string;
   serviceId?: string;
   isActive?: boolean;
 }) => {
   const filters = [eq(dbSchema.recurringSchedule.organizationId, organizationId)];
-  if (classroomId) {
-    filters.push(eq(dbSchema.recurringSchedule.classroomId, classroomId));
+  if (storeId) {
+    filters.push(eq(dbSchema.recurringSchedule.storeId, storeId));
   }
   if (serviceId) {
     filters.push(eq(dbSchema.recurringSchedule.serviceId, serviceId));
@@ -227,7 +227,7 @@ export const upsertRecurringException = async ({
   existingExceptionId,
   recurringScheduleId,
   organizationId,
-  classroomId,
+  storeId,
   date,
   action,
   overrideStartTimeLocal,
@@ -238,7 +238,7 @@ export const upsertRecurringException = async ({
   existingExceptionId?: string;
   recurringScheduleId: string;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   date: string;
   action: string;
   overrideStartTimeLocal?: string;
@@ -262,7 +262,7 @@ export const upsertRecurringException = async ({
     id: crypto.randomUUID(),
     recurringScheduleId,
     organizationId,
-    classroomId,
+    storeId,
     date,
     action,
     overrideStartTimeLocal: overrideStartTimeLocal ?? null,

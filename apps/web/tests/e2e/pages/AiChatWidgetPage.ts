@@ -8,7 +8,7 @@ export class AiChatWidgetPage extends BasePage {
 	}
 
 	async gotoDashboard(organization: TestOrganization) {
-		await this.goto(`/${organization.slug}/${organization.classroomSlug}/admin/dashboard`);
+		await this.goto(`/${organization.slug}/${organization.storeSlug}/admin/dashboard`);
 	}
 
 	async ask(message: string) {

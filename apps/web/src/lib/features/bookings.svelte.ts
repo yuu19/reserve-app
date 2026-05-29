@@ -1,8 +1,4 @@
-import {
-	authRpc,
-	type BookingPayload,
-	type ServiceImageUploadUrlPayload
-} from '$lib/rpc-client';
+import { authRpc, type BookingPayload, type ServiceImageUploadUrlPayload } from '$lib/rpc-client';
 import { formatJaMonth, formatJaTime } from '$lib/date/format';
 import { getAdminBookingsOperationsPageData } from '$lib/remote/admin-bookings-operations.remote';
 import { getAdminRecurringPageData } from '$lib/remote/admin-recurring-page.remote';
@@ -209,14 +205,18 @@ export const buildCalendarDays = (monthDate: Date): Date[] => {
 	return days;
 };
 
-export const loadAdminBookingsOperationsData = async (from: string, to: string, serviceId?: string) => {
+export const loadAdminBookingsOperationsData = async (
+	from: string,
+	to: string,
+	serviceId?: string
+) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		throw new Error('URL に組織/教室コンテキストがありません。');
+		throw new Error('URL に組織/店舗コンテキストがありません。');
 	}
 	return getAdminBookingsOperationsPageData({
 		orgSlug: context.orgSlug,
-		classroomSlug: context.classroomSlug,
+		storeSlug: context.storeSlug,
 		from,
 		to,
 		serviceId: serviceId || undefined
@@ -226,11 +226,11 @@ export const loadAdminBookingsOperationsData = async (from: string, to: string, 
 export const loadAdminServicesData = async (from: string, to: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		throw new Error('URL に組織/教室コンテキストがありません。');
+		throw new Error('URL に組織/店舗コンテキストがありません。');
 	}
 	return getAdminServicesPageData({
 		orgSlug: context.orgSlug,
-		classroomSlug: context.classroomSlug,
+		storeSlug: context.storeSlug,
 		from,
 		to
 	});
@@ -239,11 +239,11 @@ export const loadAdminServicesData = async (from: string, to: string) => {
 export const loadAdminSlotsData = async (from: string, to: string, serviceId?: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		throw new Error('URL に組織/教室コンテキストがありません。');
+		throw new Error('URL に組織/店舗コンテキストがありません。');
 	}
 	return getAdminSlotsPageData({
 		orgSlug: context.orgSlug,
-		classroomSlug: context.classroomSlug,
+		storeSlug: context.storeSlug,
 		from,
 		to,
 		serviceId: serviceId || undefined
@@ -253,11 +253,11 @@ export const loadAdminSlotsData = async (from: string, to: string, serviceId?: s
 export const loadAdminRecurringData = async (from: string, to: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		throw new Error('URL に組織/教室コンテキストがありません。');
+		throw new Error('URL に組織/店舗コンテキストがありません。');
 	}
 	return getAdminRecurringPageData({
 		orgSlug: context.orgSlug,
-		classroomSlug: context.classroomSlug,
+		storeSlug: context.storeSlug,
 		from,
 		to
 	});
@@ -266,11 +266,11 @@ export const loadAdminRecurringData = async (from: string, to: string) => {
 export const loadParticipantBookingsData = async (from: string, to: string, serviceId?: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		throw new Error('URL に組織/教室コンテキストがありません。');
+		throw new Error('URL に組織/店舗コンテキストがありません。');
 	}
 	return getParticipantBookingsPageData({
 		orgSlug: context.orgSlug,
-		classroomSlug: context.classroomSlug,
+		storeSlug: context.storeSlug,
 		from,
 		to,
 		serviceId: serviceId || undefined
@@ -291,7 +291,7 @@ export const createService = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.createServiceScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -314,7 +314,7 @@ export const createSlot = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.createSlotScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -336,7 +336,7 @@ export const updateSlotByStaff = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.updateSlotScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -363,7 +363,7 @@ export const createRecurringSchedule = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.createRecurringScheduleScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -390,7 +390,7 @@ export const updateServiceByStaff = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.updateServiceScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -413,7 +413,7 @@ export const uploadServiceImage = async ({
 	if (!context) {
 		return {
 			ok: false,
-			message: 'URL に組織/教室コンテキストがありません。',
+			message: 'URL に組織/店舗コンテキストがありません。',
 			imageUrl: null as string | null
 		};
 	}
@@ -464,7 +464,7 @@ export const uploadServiceImage = async ({
 export const archiveServiceByStaff = async (serviceId: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.archiveServiceScoped(context, { serviceId });
 	const payload = await parseResponseBody(response);
@@ -479,7 +479,7 @@ export const archiveServiceByStaff = async (serviceId: string) => {
 export const resumeServiceByStaff = async (serviceId: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.updateServiceScoped(context, { serviceId, isActive: true });
 	const payload = await parseResponseBody(response);
@@ -495,7 +495,7 @@ export const cancelSlotByStaff = async (slotId: string, reason?: string) => {
 	const normalizedReason = reason?.trim() ? reason.trim() : undefined;
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.cancelSlotScoped(context, { slotId, reason: normalizedReason });
 	const payload = await parseResponseBody(response);
@@ -522,7 +522,7 @@ export const updateRecurringScheduleByStaff = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.updateRecurringScheduleScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -544,7 +544,7 @@ export const upsertRecurringExceptionByStaff = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.upsertRecurringScheduleExceptionScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -567,7 +567,7 @@ export const generateRecurringSlotsByStaff = async (input: {
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.generateRecurringSlotsScoped(context, input);
 	const payload = await parseResponseBody(response);
@@ -582,7 +582,7 @@ export const generateRecurringSlotsByStaff = async (input: {
 export const createBooking = async (slotId: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.createBookingScoped(context, { slotId, participantsCount: 1 });
 	const payload = await parseResponseBody(response);
@@ -600,7 +600,7 @@ export const createBooking = async (slotId: string) => {
 export const cancelBooking = async (bookingId: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.cancelBookingScoped(context, {
 		bookingId,
@@ -619,7 +619,7 @@ export const cancelBookingByStaff = async (bookingId: string, reason?: string) =
 	const normalizedReason = reason?.trim() ? reason.trim() : undefined;
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.cancelBookingByStaffScoped(context, {
 		bookingId,
@@ -637,7 +637,7 @@ export const cancelBookingByStaff = async (bookingId: string, reason?: string) =
 export const markBookingNoShow = async (bookingId: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.markBookingNoShowScoped(context, { bookingId });
 	const payload = await parseResponseBody(response);
@@ -652,7 +652,7 @@ export const markBookingNoShow = async (bookingId: string) => {
 export const approveBooking = async (bookingId: string) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.approveBookingScoped(context, bookingId);
 	const payload = await parseResponseBody(response);
@@ -668,7 +668,7 @@ export const rejectBooking = async (bookingId: string, reason?: string) => {
 	const normalizedReason = reason?.trim() ? reason.trim() : undefined;
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 	const response = await authRpc.rejectBookingScoped(context, {
 		bookingId,

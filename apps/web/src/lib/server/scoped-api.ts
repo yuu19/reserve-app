@@ -17,7 +17,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isAccessEffectivePayload = (value: unknown): value is AccessEffectivePayload =>
 	isRecord(value) &&
 	typeof value.canManageOrganization === 'boolean' &&
-	typeof value.canManageClassroom === 'boolean' &&
+	typeof value.canManageStore === 'boolean' &&
 	typeof value.canManageBookings === 'boolean' &&
 	typeof value.canManageParticipants === 'boolean' &&
 	typeof value.canUseParticipantBooking === 'boolean';
@@ -82,7 +82,7 @@ export const createApiGetter = () => {
 
 export type ScopedApiIdentifiers = {
 	organizationId: string;
-	classroomId: string;
+	storeId: string;
 };
 
 export type ScopedAccessContext = ScopedApiIdentifiers & {
@@ -92,9 +92,9 @@ export type ScopedAccessContext = ScopedApiIdentifiers & {
 
 /** scoped routing 用の slug context から invitation API path を組み立てる。 */
 export const buildScopedInvitationPath = (context: ScopedApiContext) =>
-	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms/${encodeURIComponent(context.classroomSlug)}/invitations`;
+	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/stores/${encodeURIComponent(context.storeSlug)}/invitations`;
 
-/** slug ベースの scoped route から backend API が要求する organizationId/classroomId を解決する。 */
+/** slug ベースの scoped route から backend API が要求する organizationId/storeId を解決する。 */
 export const resolveScopedApiIdentifiers = async (
 	getApi: ReturnType<typeof createApiGetter>,
 	context: ScopedApiContext
@@ -105,12 +105,12 @@ export const resolveScopedApiIdentifiers = async (
 	}
 	return {
 		organizationId: scopedAccess.organizationId,
-		classroomId: scopedAccess.classroomId
+		storeId: scopedAccess.storeId
 	};
 };
 
 /**
- * access-tree を優先して scoped access を解決し、足りない場合だけ classroom list に fallback する。
+ * access-tree を優先して scoped access を解決し、足りない場合だけ store list に fallback する。
  */
 export const resolveScopedAccessContext = async (
 	getApi: ReturnType<typeof createApiGetter>,
@@ -129,25 +129,25 @@ export const resolveScopedAccessContext = async (
 	let organizationId: string | null = null;
 
 	for (const orgEntry of orgs) {
-		if (!isRecord(orgEntry) || !isRecord(orgEntry.org) || !Array.isArray(orgEntry.classrooms)) {
+		if (!isRecord(orgEntry) || !isRecord(orgEntry.org) || !Array.isArray(orgEntry.stores)) {
 			continue;
 		}
 		if (orgEntry.org.slug !== context.orgSlug || typeof orgEntry.org.id !== 'string') {
 			continue;
 		}
 		organizationId = orgEntry.org.id;
-		for (const classroom of orgEntry.classrooms) {
+		for (const store of orgEntry.stores) {
 			if (
-				isRecord(classroom) &&
-				classroom.slug === context.classroomSlug &&
-				typeof classroom.id === 'string' &&
-				isAccessEffectivePayload(classroom.effective)
+				isRecord(store) &&
+				store.slug === context.storeSlug &&
+				typeof store.id === 'string' &&
+				isAccessEffectivePayload(store.effective)
 			) {
 				return {
 					organizationId: orgEntry.org.id,
-					classroomId: classroom.id,
+					storeId: store.id,
 					activeContext: context,
-					effective: classroom.effective
+					effective: store.effective
 				};
 			}
 		}
@@ -157,25 +157,25 @@ export const resolveScopedAccessContext = async (
 		return null;
 	}
 
-	const classroomsResult = await getApi(
-		`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/classrooms`
+	const storesResult = await getApi(
+		`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/stores`
 	);
-	if (!classroomsResult.response.ok || !Array.isArray(classroomsResult.payload)) {
+	if (!storesResult.response.ok || !Array.isArray(storesResult.payload)) {
 		return null;
 	}
 
-	for (const classroom of classroomsResult.payload) {
+	for (const store of storesResult.payload) {
 		if (
-			isRecord(classroom) &&
-			classroom.slug === context.classroomSlug &&
-			typeof classroom.id === 'string' &&
-			isAccessEffectivePayload(classroom.effective)
+			isRecord(store) &&
+			store.slug === context.storeSlug &&
+			typeof store.id === 'string' &&
+			isAccessEffectivePayload(store.effective)
 		) {
 			return {
 				organizationId,
-				classroomId: classroom.id,
+				storeId: store.id,
 				activeContext: context,
-				effective: classroom.effective
+				effective: store.effective
 			};
 		}
 	}

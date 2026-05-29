@@ -40,7 +40,7 @@ const createDocument = (overrides: Record<string, unknown> = {}) => ({
   visibility: 'authenticated',
   internalOnly: false,
   organizationId: null,
-  classroomId: null,
+  storeId: null,
   feature: null,
   tags: [],
   ...overrides,
@@ -342,7 +342,7 @@ describe('AI knowledge indexer', () => {
     const sql = statements.join('\n');
 
     expect(sql).toContain("source_kind IN ('docs')");
-    expect(sql).toContain('organization_id IS NULL AND classroom_id IS NULL');
+    expect(sql).toContain('organization_id IS NULL AND store_id IS NULL');
     expect(sql).toContain("UPDATE ai_knowledge_document SET index_status = 'stale'");
   });
 
@@ -380,7 +380,7 @@ describe('AI knowledge indexer', () => {
           visibility: 'admin',
           internalOnly: true,
           organizationId: 'org-1',
-          classroomId: 'classroom-1',
+          storeId: 'store-1',
           feature: 'billing',
           tags: ['operator', 'billing'],
         }),
@@ -400,7 +400,7 @@ describe('AI knowledge indexer', () => {
     expect(sql).toContain("'docs/operator.md'");
     expect(sql).toContain("'admin'");
     expect(sql).toContain("'org-1'");
-    expect(sql).toContain("'classroom-1'");
+    expect(sql).toContain("'store-1'");
     expect(sql).toContain("'billing'");
     expect(sql).toContain('\'["operator","billing"]\'');
     expect(sql).toContain("source_kind = 'docs'");
@@ -413,7 +413,7 @@ describe('AI knowledge indexer', () => {
       visibility: 'admin',
       internal_only: true,
       organization_id: 'org-1',
-      classroom_id: 'classroom-1',
+      store_id: 'store-1',
       feature: 'billing',
       locale: 'ja',
       source_kind: 'docs',

@@ -182,7 +182,7 @@
 	const submitPublicSiteSettings = async (event: SubmitEvent) => {
 		event.preventDefault();
 		if (!scopedContext) {
-			toast.error('教室別の管理画面から予約サイトトップページを編集してください。');
+			toast.error('店舗別の管理画面から予約サイトトップページを編集してください。');
 			return;
 		}
 
@@ -233,15 +233,13 @@
 			<CardHeader class="space-y-2">
 				<h2 class="text-xl font-semibold text-foreground">組織設定</h2>
 				<CardDescription
-					>組織の新規作成、利用中組織の切り替え、教室管理への移動を行います。</CardDescription
+					>組織の新規作成、利用中組織の切り替え、店舗管理への移動を行います。</CardDescription
 				>
 			</CardHeader>
 			<CardContent class="space-y-5">
 				<div class="flex flex-wrap gap-2 rounded-lg border border-border/80 bg-card/80 p-4">
-					<Button
-						type="button"
-						variant="secondary"
-						onclick={() => goto(resolve('/admin/classrooms'))}>教室管理へ移動</Button
+					<Button type="button" variant="secondary" onclick={() => goto(resolve('/admin/stores'))}
+						>店舗管理へ移動</Button
 					>
 				</div>
 
@@ -385,7 +383,7 @@
 				{#if !scopedContext}
 					<div class="rounded-lg border border-border/80 bg-card/80 p-4">
 						<p class="text-sm text-muted-foreground">
-							教室を選択した管理画面で予約サイトトップページを編集できます。
+							店舗を選択した管理画面で予約サイトトップページを編集できます。
 						</p>
 					</div>
 				{:else}

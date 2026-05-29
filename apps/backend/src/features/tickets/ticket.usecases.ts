@@ -3,7 +3,7 @@ import {
   resolveOrganizationId,
 } from '../../domain/booking/authorization.js';
 import { TICKET_PURCHASE_METHOD, TICKET_PURCHASE_STATUS } from '../../domain/booking/constants.js';
-import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
+import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import { parseIsoDateOrNull } from '../../shared/date.js';
 import {
   parseTicketServiceIds,
@@ -120,7 +120,7 @@ const ensureSpecificServiceIds = ({
 };
 
 /**
- * classroom 管理権限と premium を確認し、必要なら serviceIds 所属も検証して ticket type を作成します。
+ * store 管理権限と premium を確認し、必要なら serviceIds 所属も検証して ticket type を作成します。
  */
 export const createTicketType = async (
   ctx: BookingRouteContext,
@@ -137,17 +137,17 @@ export const createTicketType = async (
     return validationError('organizationId is required.');
   }
 
-  const classroomContext = await ctx.resolveRequestedClassroomContext({
+  const storeContext = await ctx.resolveRequestedStoreContext({
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
   });
-  if (!classroomContext) {
-    return notFound('Classroom not found.');
+  if (!storeContext) {
+    return notFound('Store not found.');
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -172,7 +172,7 @@ export const createTicketType = async (
     const serviceCount = await countServicesByIds({
       database: ctx.database,
       organizationId,
-      classroomId: classroomContext.classroomId,
+      storeId: storeContext.storeId,
       serviceIds: serviceScope.serviceIds,
     });
 
@@ -186,7 +186,7 @@ export const createTicketType = async (
     database: ctx.database,
     ticketTypeId,
     organizationId,
-    classroomId: classroomContext.classroomId,
+    storeId: storeContext.storeId,
     name: body.name,
     serviceIds: serviceScope.serviceIds,
     totalCount: body.totalCount,
@@ -222,13 +222,13 @@ export const updateExistingTicketType = async (
   if (!ticketType || ticketType.organizationId !== organizationId) {
     return notFound('Ticket type not found.');
   }
-  if (isRequestedClassroomMismatch(body.classroomId, ticketType.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, ticketType.storeId)) {
     return forbidden();
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId,
-    classroomId: ticketType.classroomId,
+    storeId: ticketType.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -255,7 +255,7 @@ export const updateExistingTicketType = async (
     const serviceCount = await countServicesByIds({
       database: ctx.database,
       organizationId,
-      classroomId: ticketType.classroomId,
+      storeId: ticketType.storeId,
       serviceIds: serviceScopeUpdate.serviceIds,
     });
 
@@ -302,7 +302,7 @@ export const listManageableTicketTypes = async (
 
   const hasAccess = await ctx.canReadTicketTypesScope({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -312,7 +312,7 @@ export const listManageableTicketTypes = async (
   const rows = await listTicketTypes({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     isActive: query.isActive,
   });
 
@@ -320,7 +320,7 @@ export const listManageableTicketTypes = async (
 };
 
 /**
- * participant が所属 classroom で購入可能な ticket type だけを返します。
+ * participant が所属 store で購入可能な ticket type だけを返します。
  */
 export const listPurchasableTicketTypeOptions = async (
   ctx: BookingRouteContext,
@@ -337,10 +337,10 @@ export const listPurchasableTicketTypeOptions = async (
     return validationError('organizationId is required.');
   }
 
-  if (query.classroomId) {
-    const scoped = await ctx.resolveRequestedClassroomAccess({
+  if (query.storeId) {
+    const scoped = await ctx.resolveRequestedStoreAccess({
       organizationId,
-      classroomId: query.classroomId,
+      storeId: query.storeId,
       userId: identity.userId,
     });
     if (!scoped || !scoped.access.effective.canUseParticipantBooking) {
@@ -350,21 +350,21 @@ export const listPurchasableTicketTypeOptions = async (
 
   const participantRecords = await ctx.listParticipantRecordsForUser({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (participantRecords.length === 0) {
     return forbidden();
   }
-  const accessibleClassroomIds = Array.from(
-    new Set(participantRecords.map((participant) => participant.classroomId)),
+  const accessibleStoreIds = Array.from(
+    new Set(participantRecords.map((participant) => participant.storeId)),
   );
 
   const rows = await listPurchasableTicketTypes({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
-    accessibleClassroomIds,
+    storeId: query.storeId,
+    accessibleStoreIds,
   });
 
   return jsonResult(rows.map((row: Record<string, unknown>) => serializeTicketType(row)));
@@ -391,10 +391,10 @@ export const createTicketPurchase = async (
     return validationError('organizationId is required.');
   }
 
-  if (body.classroomId) {
-    const scoped = await ctx.resolveRequestedClassroomAccess({
+  if (body.storeId) {
+    const scoped = await ctx.resolveRequestedStoreAccess({
       organizationId,
-      classroomId: body.classroomId,
+      storeId: body.storeId,
       userId: identity.userId,
     });
     if (!scoped || !scoped.access.effective.canUseParticipantBooking) {
@@ -410,7 +410,7 @@ export const createTicketPurchase = async (
     database: ctx.database,
     ticketTypeId: body.ticketTypeId,
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
   });
   if (!ticketType) {
     return notFound('Ticket type not found.');
@@ -418,13 +418,13 @@ export const createTicketPurchase = async (
   const participant = await findParticipantByUserAndOrganization({
     database: ctx.database,
     organizationId,
-    classroomId: ticketType.classroomId,
+    storeId: ticketType.storeId,
     userId: identity.userId,
   });
   if (!participant) {
     return forbidden();
   }
-  if (ticketType.classroomId !== participant.classroomId) {
+  if (ticketType.storeId !== participant.storeId) {
     return forbidden();
   }
   if (!ticketType.isActive || !ticketType.isForSale) {
@@ -436,7 +436,7 @@ export const createTicketPurchase = async (
     database: ctx.database,
     purchaseId,
     organizationId,
-    classroomId: ticketType.classroomId,
+    storeId: ticketType.storeId,
     participantId: participant.id,
     ticketTypeId: ticketType.id,
     serviceIds: parseTicketServiceIds(ticketType.serviceIdsJson),
@@ -471,7 +471,7 @@ export const listMyTicketPurchases = async (
 
   const participantRecords = await ctx.listParticipantRecordsForUser({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (participantRecords.length === 0) {
@@ -482,7 +482,7 @@ export const listMyTicketPurchases = async (
   const rows = await listTicketPurchases({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     participantIds,
     status: query.status,
   });
@@ -510,7 +510,7 @@ export const listStaffTicketPurchases = async (
 
   const hasAccess = await ctx.canManageParticipantsScope({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -520,7 +520,7 @@ export const listStaffTicketPurchases = async (
   const rows = await listTicketPurchases({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     participantId: query.participantId,
     paymentMethod: query.paymentMethod,
     status: query.status,
@@ -547,13 +547,13 @@ export const approveTicketPurchase = async (
     return notFound('Ticket purchase not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, purchase.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, purchase.storeId)) {
     return forbidden();
   }
 
   const hasAccess = await ctx.canManageParticipantsScope({
     organizationId: purchase.organizationId,
-    classroomId: purchase.classroomId,
+    storeId: purchase.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -608,13 +608,13 @@ export const rejectExistingTicketPurchase = async (
     return notFound('Ticket purchase not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, purchase.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, purchase.storeId)) {
     return forbidden();
   }
 
   const hasAccess = await ctx.canManageParticipantsScope({
     organizationId: purchase.organizationId,
-    classroomId: purchase.classroomId,
+    storeId: purchase.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -665,14 +665,14 @@ export const cancelExistingTicketPurchase = async (
     return notFound('Ticket purchase not found.');
   }
 
-  if (isRequestedClassroomMismatch(body.classroomId, purchase.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, purchase.storeId)) {
     return forbidden();
   }
 
   const participant = await findParticipantByUserAndOrganization({
     database: ctx.database,
     organizationId: purchase.organizationId,
-    classroomId: body.classroomId ?? purchase.classroomId,
+    storeId: body.storeId ?? purchase.storeId,
     userId: identity.userId,
   });
   if (!participant || participant.id !== purchase.participantId) {
@@ -715,7 +715,7 @@ export const grantTicketPack = async (
 
   const hasAccess = await ctx.canManageParticipantsScope({
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -733,7 +733,7 @@ export const grantTicketPack = async (
   const participant = await findParticipantForTicketPackGrant({
     database: ctx.database,
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
     participantId: body.participantId,
   });
   if (!participant) {
@@ -743,14 +743,14 @@ export const grantTicketPack = async (
   const ticketType = await findTicketTypeForTicketPackGrant({
     database: ctx.database,
     organizationId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
     ticketTypeId: body.ticketTypeId,
   });
   if (!ticketType) {
     return notFound('Ticket type not found.');
   }
-  if (participant.classroomId !== ticketType.classroomId) {
-    return validationError('Participant and ticket type must belong to the same classroom.');
+  if (participant.storeId !== ticketType.storeId) {
+    return validationError('Participant and ticket type must belong to the same store.');
   }
   if (!ticketType.isActive) {
     return conflict('Ticket type is inactive.');
@@ -765,7 +765,7 @@ export const grantTicketPack = async (
   const issued = await issueTicketPackWithLedger({
     database: ctx.database,
     organizationId,
-    classroomId: participant.classroomId,
+    storeId: participant.storeId,
     participantId: participant.id,
     ticketTypeId: ticketType.id,
     count,
@@ -797,7 +797,7 @@ export const listStaffTicketPacks = async (
 
   const hasAccess = await ctx.canManageParticipantsScope({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -807,7 +807,7 @@ export const listStaffTicketPacks = async (
   const participant = await findParticipantForTicketPackGrant({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     participantId: query.participantId,
   });
   if (!participant) {
@@ -817,7 +817,7 @@ export const listStaffTicketPacks = async (
   await expireActiveTicketPacks({
     database: ctx.database,
     organizationId,
-    classroomId: participant.classroomId,
+    storeId: participant.storeId,
     participantIds: [participant.id],
     now: new Date(),
   });
@@ -825,7 +825,7 @@ export const listStaffTicketPacks = async (
   const rows = await listTicketPacks({
     database: ctx.database,
     organizationId,
-    classroomId: participant.classroomId,
+    storeId: participant.storeId,
     participantIds: [participant.id],
   });
 
@@ -849,13 +849,13 @@ export const adjustExistingTicketPack = async (
   if (!ticketPack) {
     return notFound('Ticket pack not found.');
   }
-  if (isRequestedClassroomMismatch(body.classroomId, ticketPack.classroomId)) {
+  if (isRequestedStoreMismatch(body.storeId, ticketPack.storeId)) {
     return forbidden();
   }
 
   const hasAccess = await ctx.canManageParticipantsScope({
     organizationId: ticketPack.organizationId,
-    classroomId: ticketPack.classroomId,
+    storeId: ticketPack.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -932,7 +932,7 @@ export const listMyTicketPacks = async (
 
   const participantRecords = await ctx.listParticipantRecordsForUser({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (participantRecords.length === 0) {
@@ -943,7 +943,7 @@ export const listMyTicketPacks = async (
   await expireActiveTicketPacks({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     participantIds,
     now: new Date(),
   });
@@ -951,7 +951,7 @@ export const listMyTicketPacks = async (
   const rows = await listTicketPacks({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     participantIds,
   });
 

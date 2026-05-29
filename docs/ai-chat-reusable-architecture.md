@@ -22,7 +22,7 @@ ReserveApp 固有の認可、業務情報、Cloudflare 実装、Web 表示は、
 ### backend feature
 
 `apps/backend/src/features/ai` は、利用者の質問を ReserveApp の会話として処理します。
-この層は、ログイン状態、組織、教室、役割、現在ページの hint を解決し、許可されたナレッジと業務情報だけを回答生成へ渡します。
+この層は、ログイン状態、組織、店舗、役割、現在ページの hint を解決し、許可されたナレッジと業務情報だけを回答生成へ渡します。
 
 実装メモ:
 
@@ -53,7 +53,7 @@ ReserveApp 固有の認可、業務情報、Cloudflare 実装、Web 表示は、
 UI contract は `packages/saas-chatbot-core/src/ui-contract.ts` を共有元にします。
 `AiChatUiStatus` は `closed | ready | sending | error` です。
 送信失敗時は入力を戻します。
-組織や教室の scope が変わったときは会話をリセットし、古い応答は反映しません。
+組織や店舗の scope が変わったときは会話をリセットし、古い応答は反映しません。
 
 ## API と UI の境界
 
@@ -83,7 +83,7 @@ suggested action は案内だけを表します。
 - 根拠付き回答で、source、usage event、会話、assistant message が保存されること。
 - Vectorize 検索失敗時に fallback 状態を保存し、安全な回答に留めること。
 - 別組織の chat と、別 scope の conversationId 再利用を拒否すること。
-- classroom scope が requested organization の中だけで有効になること。
+- store scope が requested organization の中だけで有効になること。
 - currentPage は回答の hint としてだけ使い、participant の請求情報や source 権限を広げないこと。
 - feedback は message owner だけが登録でき、重複時は更新され、payload validation が効くこと。
 - internal AI endpoint は operator だけが使え、knowledge freshness と feedback themes を返すこと。

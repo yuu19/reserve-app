@@ -32,7 +32,7 @@ export const listMyBookings = async (
 
   const participantRecords = await ctx.listParticipantRecordsForUser({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (participantRecords.length === 0) {
@@ -43,7 +43,7 @@ export const listMyBookings = async (
   const rows = await listBookings({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     participantIds,
     status: query.status,
     from: parseIsoDateOrNull(query.from),
@@ -73,7 +73,7 @@ export const listStaffBookings = async (
 
   const hasAccess = await ctx.canManageBookingsScope({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -83,7 +83,7 @@ export const listStaffBookings = async (
   const rows = await listBookings({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     serviceId: query.serviceId,
     participantId: query.participantId,
     status: query.status,

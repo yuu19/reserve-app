@@ -50,8 +50,8 @@ export type AiChatRequest = {
   conversationId?: string;
   /** organization 文脈で質問する場合の organization ID。 */
   organizationId?: string;
-  /** classroom 文脈で質問する場合の classroom ID。 */
-  classroomId?: string;
+  /** store 文脈で質問する場合の store ID。 */
+  storeId?: string;
   /** 質問時の画面 path。 */
   currentPage?: string;
 };
@@ -146,8 +146,8 @@ export type AiChatMessage = {
 export type AiChatContext = {
   /** organization 文脈の ID。 */
   organizationId?: string | null;
-  /** classroom 文脈の ID。 */
-  classroomId?: string | null;
+  /** store 文脈の ID。 */
+  storeId?: string | null;
   /** widget を開いた画面 path。 */
   currentPage?: string | null;
 };

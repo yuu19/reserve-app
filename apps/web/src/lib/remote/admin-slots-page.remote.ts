@@ -1,12 +1,16 @@
 import { query } from '$app/server';
 import type { ScopedApiContext, ServicePayload, SlotPayload } from '$lib/rpc-client';
 import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
-import { createApiGetter, resolveScopedAccessContext, type ApiResult } from '$lib/server/scoped-api';
+import {
+	createApiGetter,
+	resolveScopedAccessContext,
+	type ApiResult
+} from '$lib/server/scoped-api';
 import { z } from 'zod';
 
 const adminSlotsQuerySchema = z.object({
 	orgSlug: z.string().trim().min(1),
-	classroomSlug: z.string().trim().min(1),
+	storeSlug: z.string().trim().min(1),
 	from: z.string().trim().min(1),
 	to: z.string().trim().min(1),
 	serviceId: z.string().trim().min(1).optional()
@@ -39,7 +43,8 @@ const isSlot = (value: unknown): value is SlotPayload =>
 const asServices = (value: unknown): ServicePayload[] =>
 	Array.isArray(value) ? value.filter(isService) : [];
 
-const asSlots = (value: unknown): SlotPayload[] => (Array.isArray(value) ? value.filter(isSlot) : []);
+const asSlots = (value: unknown): SlotPayload[] =>
+	Array.isArray(value) ? value.filter(isSlot) : [];
 
 const assertAllowedFailure = (result: ApiResult, fallback: string) => {
 	if (result.response.ok) {
@@ -50,9 +55,9 @@ const assertAllowedFailure = (result: ApiResult, fallback: string) => {
 
 export const getAdminSlotsPageData = query(
 	adminSlotsQuerySchema,
-	async ({ orgSlug, classroomSlug, from, to, serviceId }) => {
+	async ({ orgSlug, storeSlug, from, to, serviceId }) => {
 		const getApi = createApiGetter();
-		const activeContext: ScopedApiContext = { orgSlug, classroomSlug };
+		const activeContext: ScopedApiContext = { orgSlug, storeSlug };
 		const scopedAccess = await resolveScopedAccessContext(getApi, activeContext);
 		if (!scopedAccess) {
 			return {
@@ -65,7 +70,7 @@ export const getAdminSlotsPageData = query(
 			};
 		}
 
-		if (!scopedAccess.effective.canManageClassroom) {
+		if (!scopedAccess.effective.canManageStore) {
 			return {
 				activeContext,
 				organizationId: scopedAccess.organizationId,
@@ -78,7 +83,7 @@ export const getAdminSlotsPageData = query(
 
 		const scopedQuery = {
 			organizationId: scopedAccess.organizationId,
-			classroomId: scopedAccess.classroomId
+			storeId: scopedAccess.storeId
 		};
 		const [servicesResult, slotsResult] = await Promise.all([
 			getApi('/api/v1/auth/organizations/services', scopedQuery),

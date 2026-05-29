@@ -49,9 +49,9 @@ const asOrganizationRole = (value: unknown): OrganizationMembershipRole | null =
 	return null;
 };
 
-const isAccessTreeClassroom = (
+const isAccessTreeStore = (
 	value: unknown
-): value is AccessTreePayload['orgs'][number]['classrooms'][number] =>
+): value is AccessTreePayload['orgs'][number]['stores'][number] =>
 	isRecord(value) &&
 	typeof value.id === 'string' &&
 	typeof value.slug === 'string' &&
@@ -61,26 +61,26 @@ const isAccessTreeClassroom = (
 	isRecord(value.sources) &&
 	isRecord(value.display) &&
 	(value.facts.orgRole === null || asOrganizationRole(value.facts.orgRole) !== null) &&
-	(value.facts.classroomStaffRole === null ||
-		value.facts.classroomStaffRole === 'manager' ||
-		value.facts.classroomStaffRole === 'staff') &&
+	(value.facts.storeStaffRole === null ||
+		value.facts.storeStaffRole === 'manager' ||
+		value.facts.storeStaffRole === 'staff') &&
 	typeof value.facts.hasParticipantRecord === 'boolean' &&
 	typeof value.effective.canManageOrganization === 'boolean' &&
-	typeof value.effective.canManageClassroom === 'boolean' &&
+	typeof value.effective.canManageStore === 'boolean' &&
 	typeof value.effective.canManageBookings === 'boolean' &&
 	typeof value.effective.canManageParticipants === 'boolean' &&
 	typeof value.effective.canUseParticipantBooking === 'boolean' &&
 	(value.sources.canManageOrganization === null ||
 		value.sources.canManageOrganization === 'org_role') &&
-	(value.sources.canManageClassroom === null ||
-		value.sources.canManageClassroom === 'org_role' ||
-		value.sources.canManageClassroom === 'classroom_member') &&
+	(value.sources.canManageStore === null ||
+		value.sources.canManageStore === 'org_role' ||
+		value.sources.canManageStore === 'store_member') &&
 	(value.sources.canManageBookings === null ||
 		value.sources.canManageBookings === 'org_role' ||
-		value.sources.canManageBookings === 'classroom_member') &&
+		value.sources.canManageBookings === 'store_member') &&
 	(value.sources.canManageParticipants === null ||
 		value.sources.canManageParticipants === 'org_role' ||
-		value.sources.canManageParticipants === 'classroom_member') &&
+		value.sources.canManageParticipants === 'store_member') &&
 	(value.sources.canUseParticipantBooking === null ||
 		value.sources.canUseParticipantBooking === 'participant_record') &&
 	(value.display.primaryRole === null ||
@@ -97,8 +97,8 @@ const isAccessTreeOrg = (value: unknown): value is AccessTreePayload['orgs'][num
 	typeof value.org.id === 'string' &&
 	typeof value.org.slug === 'string' &&
 	typeof value.org.name === 'string' &&
-	Array.isArray(value.classrooms) &&
-	value.classrooms.every((classroom) => isAccessTreeClassroom(classroom));
+	Array.isArray(value.stores) &&
+	value.stores.every((store) => isAccessTreeStore(store));
 
 const asAccessTreePayload = (value: unknown): AccessTreePayload | null => {
 	if (!isRecord(value) || !Array.isArray(value.orgs)) {
@@ -110,10 +110,10 @@ const asAccessTreePayload = (value: unknown): AccessTreePayload | null => {
 	return value as AccessTreePayload;
 };
 
-type LegacyAccessTreeClassroom = {
-	classroomId: string;
-	classroomSlug: string;
-	classroomName: string;
+type LegacyAccessTreeStore = {
+	storeId: string;
+	storeSlug: string;
+	storeName: string;
 	role?: unknown;
 	canManage: boolean;
 	canUseParticipantBooking: boolean;
@@ -125,15 +125,15 @@ type LegacyAccessTreeOrganization = {
 	organizationSlug: string;
 	organizationName: string;
 	role?: unknown;
-	classrooms: LegacyAccessTreeClassroom[];
+	stores: LegacyAccessTreeStore[];
 	logo?: unknown;
 };
 
-const isLegacyAccessTreeClassroom = (value: unknown): value is LegacyAccessTreeClassroom =>
+const isLegacyAccessTreeStore = (value: unknown): value is LegacyAccessTreeStore =>
 	isRecord(value) &&
-	typeof value.classroomId === 'string' &&
-	typeof value.classroomSlug === 'string' &&
-	typeof value.classroomName === 'string' &&
+	typeof value.storeId === 'string' &&
+	typeof value.storeSlug === 'string' &&
+	typeof value.storeName === 'string' &&
 	typeof value.canManage === 'boolean' &&
 	typeof value.canUseParticipantBooking === 'boolean';
 
@@ -142,8 +142,8 @@ const isLegacyAccessTreeOrganization = (value: unknown): value is LegacyAccessTr
 	typeof value.organizationId === 'string' &&
 	typeof value.organizationSlug === 'string' &&
 	typeof value.organizationName === 'string' &&
-	Array.isArray(value.classrooms) &&
-	value.classrooms.every((classroom) => isLegacyAccessTreeClassroom(classroom));
+	Array.isArray(value.stores) &&
+	value.stores.every((store) => isLegacyAccessTreeStore(store));
 
 const normalizeLegacyAccessTreePayload = (value: unknown): AccessTreePayload | null => {
 	if (
@@ -161,58 +161,51 @@ const normalizeLegacyAccessTreePayload = (value: unknown): AccessTreePayload | n
 				name: orgEntry.organizationName,
 				logo: typeof orgEntry.logo === 'string' ? orgEntry.logo : null
 			},
-			classrooms: orgEntry.classrooms.map((classroom) => {
-				const isLegacyManager = classroom.role === 'manager';
-				const isLegacyStaff = classroom.role === 'staff';
-				const hasLegacyRole = isLegacyManager || isLegacyStaff || classroom.role === 'participant';
-				const canManageClassroom = isLegacyManager || (!hasLegacyRole && classroom.canManage);
+			stores: orgEntry.stores.map((store) => {
+				const isLegacyManager = store.role === 'manager';
+				const isLegacyStaff = store.role === 'staff';
+				const hasLegacyRole = isLegacyManager || isLegacyStaff || store.role === 'participant';
+				const canManageStore = isLegacyManager || (!hasLegacyRole && store.canManage);
 				const canManageBookings =
-					isLegacyManager || isLegacyStaff || (!hasLegacyRole && classroom.canManage);
+					isLegacyManager || isLegacyStaff || (!hasLegacyRole && store.canManage);
 				const canManageParticipants =
-					isLegacyManager || isLegacyStaff || (!hasLegacyRole && classroom.canManage);
+					isLegacyManager || isLegacyStaff || (!hasLegacyRole && store.canManage);
 
 				return {
-					id: classroom.classroomId,
-					slug: classroom.classroomSlug,
-					name: classroom.classroomName,
-					logo: typeof classroom.logo === 'string' ? classroom.logo : null,
+					id: store.storeId,
+					slug: store.storeSlug,
+					name: store.storeName,
+					logo: typeof store.logo === 'string' ? store.logo : null,
 					facts: {
 						orgRole: asOrganizationRole(orgEntry.role ?? null),
-						classroomStaffRole:
-							classroom.role === 'manager' || classroom.role === 'staff' ? classroom.role : null,
-						hasParticipantRecord: classroom.canUseParticipantBooking
+						storeStaffRole: store.role === 'manager' || store.role === 'staff' ? store.role : null,
+						hasParticipantRecord: store.canUseParticipantBooking
 					},
 					effective: {
 						canManageOrganization: orgEntry.role === 'owner' || orgEntry.role === 'admin',
-						canManageClassroom,
+						canManageStore,
 						canManageBookings,
 						canManageParticipants,
-						canUseParticipantBooking: classroom.canUseParticipantBooking
+						canUseParticipantBooking: store.canUseParticipantBooking
 					},
 					sources: {
 						canManageOrganization:
 							orgEntry.role === 'owner' || orgEntry.role === 'admin' ? 'org_role' : null,
-						canManageClassroom: canManageClassroom ? 'classroom_member' : null,
-						canManageBookings: canManageBookings ? 'classroom_member' : null,
-						canManageParticipants: canManageParticipants ? 'classroom_member' : null,
-						canUseParticipantBooking: classroom.canUseParticipantBooking
-							? 'participant_record'
-							: null
+						canManageStore: canManageStore ? 'store_member' : null,
+						canManageBookings: canManageBookings ? 'store_member' : null,
+						canManageParticipants: canManageParticipants ? 'store_member' : null,
+						canUseParticipantBooking: store.canUseParticipantBooking ? 'participant_record' : null
 					},
 					display: {
 						primaryRole:
-							classroom.role === 'manager' ||
-							classroom.role === 'staff' ||
-							classroom.role === 'participant'
-								? classroom.role
+							store.role === 'manager' || store.role === 'staff' || store.role === 'participant'
+								? store.role
 								: orgEntry.role === 'owner' || orgEntry.role === 'admin'
 									? orgEntry.role
 									: null,
 						badges:
-							classroom.role === 'manager' ||
-							classroom.role === 'staff' ||
-							classroom.role === 'participant'
-								? [classroom.role]
+							store.role === 'manager' || store.role === 'staff' || store.role === 'participant'
+								? [store.role]
 								: orgEntry.role === 'owner' || orgEntry.role === 'admin'
 									? [orgEntry.role]
 									: []
@@ -301,7 +294,7 @@ export const resolvePendingInvitationHomePath = (
 	if (
 		pendingInvitations.some(
 			(invitation) =>
-				invitation.subjectKind === 'org_operator' || invitation.subjectKind === 'classroom_operator'
+				invitation.subjectKind === 'org_operator' || invitation.subjectKind === 'store_operator'
 		)
 	) {
 		return '/participant/admin-invitations';
@@ -360,13 +353,13 @@ export const loadSession = async (): Promise<{ session: AuthSessionPayload; stat
 };
 
 export type PortalAccess = {
-	// Stage 1: across organizations/classrooms
+	// Stage 1: across organizations/stores
 	hasOrganizationAdminAccess: boolean;
 	hasAdminPortalAccess: boolean;
 	hasParticipantAccess: boolean;
-	// Stage 2: active classroom in URL context (or inferred default)
+	// Stage 2: active store in URL context (or inferred default)
 	canManage: boolean;
-	canManageClassroom: boolean;
+	canManageStore: boolean;
 	canManageBookings: boolean;
 	canManageParticipants: boolean;
 	canUseParticipantBooking: boolean;
@@ -385,7 +378,7 @@ const emptyPortalAccess = (): PortalAccess => ({
 	hasAdminPortalAccess: false,
 	hasParticipantAccess: false,
 	canManage: false,
-	canManageClassroom: false,
+	canManageStore: false,
 	canManageBookings: false,
 	canManageParticipants: false,
 	canUseParticipantBooking: false,
@@ -403,13 +396,13 @@ type FlatAccessEntry = {
 	orgId: string;
 	orgSlug: string;
 	orgRole: OrganizationMembershipRole | null;
-	classroomSlug: string;
+	storeSlug: string;
 	facts: AccessFactsPayload;
 	effective: AccessEffectivePayload;
 	sources: AccessSourcesPayload;
 	display: AccessDisplayPayload;
 	canManage: boolean;
-	canManageClassroom: boolean;
+	canManageStore: boolean;
 	canManageBookings: boolean;
 	canManageParticipants: boolean;
 	canAccessAdminPortal: boolean;
@@ -419,26 +412,26 @@ type FlatAccessEntry = {
 const flattenAccessTree = (tree: AccessTreePayload): FlatAccessEntry[] => {
 	const entries: FlatAccessEntry[] = [];
 	for (const orgEntry of tree.orgs) {
-		for (const classroom of orgEntry.classrooms) {
+		for (const store of orgEntry.stores) {
 			entries.push({
 				orgId: orgEntry.org.id,
 				orgSlug: orgEntry.org.slug,
-				orgRole: classroom.facts.orgRole,
-				classroomSlug: classroom.slug,
-				facts: classroom.facts,
-				effective: classroom.effective,
-				sources: classroom.sources,
-				display: classroom.display,
-				canManage: classroom.effective.canManageClassroom,
-				canManageClassroom: classroom.effective.canManageClassroom,
-				canManageBookings: classroom.effective.canManageBookings,
-				canManageParticipants: classroom.effective.canManageParticipants,
+				orgRole: store.facts.orgRole,
+				storeSlug: store.slug,
+				facts: store.facts,
+				effective: store.effective,
+				sources: store.sources,
+				display: store.display,
+				canManage: store.effective.canManageStore,
+				canManageStore: store.effective.canManageStore,
+				canManageBookings: store.effective.canManageBookings,
+				canManageParticipants: store.effective.canManageParticipants,
 				canAccessAdminPortal:
-					classroom.effective.canManageOrganization ||
-					classroom.effective.canManageClassroom ||
-					classroom.effective.canManageBookings ||
-					classroom.effective.canManageParticipants,
-				canUseParticipantBooking: classroom.effective.canUseParticipantBooking
+					store.effective.canManageOrganization ||
+					store.effective.canManageStore ||
+					store.effective.canManageBookings ||
+					store.effective.canManageParticipants,
+				canUseParticipantBooking: store.effective.canUseParticipantBooking
 			});
 		}
 	}
@@ -454,7 +447,7 @@ const findEntryByContext = (
 	}
 	return (
 		entries.find(
-			(entry) => entry.orgSlug === context.orgSlug && entry.classroomSlug === context.classroomSlug
+			(entry) => entry.orgSlug === context.orgSlug && entry.storeSlug === context.storeSlug
 		) ?? null
 	);
 };
@@ -540,8 +533,8 @@ export const loadPortalAccess = async (
 			hasOrganizationAdminAccess,
 			hasAdminPortalAccess,
 			hasParticipantAccess,
-			canManage: activeEntry?.effective.canManageClassroom ?? false,
-			canManageClassroom: activeEntry?.effective.canManageClassroom ?? false,
+			canManage: activeEntry?.effective.canManageStore ?? false,
+			canManageStore: activeEntry?.effective.canManageStore ?? false,
 			canManageBookings: activeEntry?.effective.canManageBookings ?? false,
 			canManageParticipants: activeEntry?.effective.canManageParticipants ?? false,
 			canUseParticipantBooking: activeEntry?.effective.canUseParticipantBooking ?? false,
@@ -554,7 +547,7 @@ export const loadPortalAccess = async (
 			activeContext: activeEntry
 				? {
 						orgSlug: activeEntry.orgSlug,
-						classroomSlug: activeEntry.classroomSlug
+						storeSlug: activeEntry.storeSlug
 					}
 				: null,
 			accessTree
@@ -577,7 +570,7 @@ export const resolvePortalHomePath = (portalAccess: PortalAccess): PortalHomePat
 	if (portalAccess.hasOrganizationAdminAccess) {
 		return '/admin/dashboard';
 	}
-	if (portalAccess.canManageClassroom || portalAccess.canManageBookings) {
+	if (portalAccess.canManageStore || portalAccess.canManageBookings) {
 		return '/admin/bookings';
 	}
 	if (portalAccess.canManageParticipants) {
@@ -595,7 +588,7 @@ export const resolvePortalHomePath = (portalAccess: PortalAccess): PortalHomePat
 export const getContextFromAccessTree = (
 	accessTree: AccessTreePayload | null | undefined,
 	orgSlug: string,
-	classroomSlug: string
+	storeSlug: string
 ): ScopedApiContext | null => {
 	if (!accessTree) {
 		return null;
@@ -604,8 +597,8 @@ export const getContextFromAccessTree = (
 		if (orgEntry.org.slug !== orgSlug) {
 			continue;
 		}
-		if (orgEntry.classrooms.some((classroom) => classroom.slug === classroomSlug)) {
-			return { orgSlug, classroomSlug };
+		if (orgEntry.stores.some((store) => store.slug === storeSlug)) {
+			return { orgSlug, storeSlug };
 		}
 	}
 	return null;
@@ -619,7 +612,7 @@ export const getScopedContextFromUrlPath = (
 	if (!pathContext) {
 		return null;
 	}
-	return getContextFromAccessTree(accessTree, pathContext.orgSlug, pathContext.classroomSlug);
+	return getContextFromAccessTree(accessTree, pathContext.orgSlug, pathContext.storeSlug);
 };
 
 export const readOrganizationsFromAccessTree = (
@@ -636,7 +629,7 @@ export const readOrganizationsFromAccessTree = (
 	}));
 };
 
-export const readClassroomsFromAccessTree = (
+export const readStoresFromAccessTree = (
 	accessTree: AccessTreePayload | null,
 	orgSlug: string
 ): Array<{
@@ -645,7 +638,7 @@ export const readClassroomsFromAccessTree = (
 	name: string;
 	logo?: string | null;
 	canManage: boolean;
-	canManageClassroom: boolean;
+	canManageStore: boolean;
 	canManageBookings: boolean;
 	canManageParticipants: boolean;
 	canUseParticipantBooking: boolean;
@@ -660,19 +653,19 @@ export const readClassroomsFromAccessTree = (
 	if (!organization) {
 		return [];
 	}
-	return organization.classrooms.map((classroom) => ({
-		id: classroom.id,
-		slug: classroom.slug,
-		name: classroom.name,
-		logo: typeof classroom.logo === 'string' ? classroom.logo : null,
-		canManage: classroom.effective.canManageClassroom,
-		canManageClassroom: classroom.effective.canManageClassroom,
-		canManageBookings: classroom.effective.canManageBookings,
-		canManageParticipants: classroom.effective.canManageParticipants,
-		canUseParticipantBooking: classroom.effective.canUseParticipantBooking,
-		display: classroom.display,
-		facts: classroom.facts,
-		sources: classroom.sources
+	return organization.stores.map((store) => ({
+		id: store.id,
+		slug: store.slug,
+		name: store.name,
+		logo: typeof store.logo === 'string' ? store.logo : null,
+		canManage: store.effective.canManageStore,
+		canManageStore: store.effective.canManageStore,
+		canManageBookings: store.effective.canManageBookings,
+		canManageParticipants: store.effective.canManageParticipants,
+		canUseParticipantBooking: store.effective.canUseParticipantBooking,
+		display: store.display,
+		facts: store.facts,
+		sources: store.sources
 	}));
 };
 
@@ -686,10 +679,10 @@ export const loadOrganizationsFromAccessTree = async (): Promise<OrganizationPay
 	return readOrganizationsFromAccessTree(accessTree);
 };
 
-export const loadClassroomsByOrgSlug = async (
+export const loadStoresByOrgSlug = async (
 	orgSlug: string
 ): Promise<Array<{ id: string; slug: string; name: string; logo?: string | null }>> => {
-	const response = await authRpc.listClassroomsByOrg(orgSlug);
+	const response = await authRpc.listStoresByOrg(orgSlug);
 	const payload = await parseResponseBody(response);
 	if (!response.ok || !Array.isArray(payload)) {
 		return [];

@@ -51,13 +51,13 @@ describe('events.svelte', () => {
 
 		const result = await reservePublicEvent({
 			organizationId: 'org-public',
-			classroomId: 'classroom-public',
+			storeId: 'store-public',
 			slotId: 'slot-public'
 		});
 
 		expect(mockedSelfEnrollParticipant).toHaveBeenCalledWith({
 			organizationId: 'org-public',
-			classroomId: 'classroom-public'
+			storeId: 'store-public'
 		});
 		expect(mockedSelfEnrollParticipantScoped).not.toHaveBeenCalled();
 		expect(mockedCreateBooking).toHaveBeenCalledWith('slot-public');

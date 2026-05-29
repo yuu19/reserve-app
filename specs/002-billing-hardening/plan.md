@@ -39,11 +39,11 @@ Premium entitlement は organization-scoped。payment/tax details は provider-h
 refund/credit note lifecycle は v1 out of scope。新 runtime service と新 top-level package は導入しない。  
 **Scale/Scope**: 既存 001 organization billing を本番向けに harden する差分。monthly/yearly paid entry、
 trial-to-paid/free recovery、internal inspection、payment issue notification、invoice/payment events を対象にする。
-multi-provider、multi-subscription per organization、classroom-scoped billing は対象外。
+multi-provider、multi-subscription per organization、store-scoped billing は対象外。
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
 - **I. Existing Architecture**: PASS。既存 pnpm/Turborepo、Cloudflare Workers/Hono、SvelteKit、
   Expo、D1、Better Auth、Stripe/Resend/Sentry baseline を拡張する。新 app、新 billing subsystem、
@@ -133,8 +133,8 @@ organization context を拡張する。既存 001 artifacts と実装済み migr
 ## Complexity Tracking
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| None | N/A | N/A |
+| --------- | ---------- | ------------------------------------ |
+| None      | N/A        | N/A                                  |
 
 ## Phase 0 Research Output
 

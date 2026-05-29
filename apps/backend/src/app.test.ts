@@ -502,9 +502,9 @@ const selectOrganizationBillingSignalRows = async (organizationId: string) => {
 };
 
 const selectOrganizationOperationalRowCounts = async (organizationId: string) => {
-  const [classroomRow, serviceRow, participantRow, bookingRow] = await Promise.all([
+  const [storeRow, serviceRow, participantRow, bookingRow] = await Promise.all([
     d1
-      .prepare('SELECT COUNT(*) as count FROM classroom WHERE organization_id = ?')
+      .prepare('SELECT COUNT(*) as count FROM store WHERE organization_id = ?')
       .bind(organizationId)
       .first<{ count: number | string }>(),
     d1
@@ -522,7 +522,7 @@ const selectOrganizationOperationalRowCounts = async (organizationId: string) =>
   ]);
 
   return {
-    classroomCount: Number(classroomRow?.count ?? 0),
+    storeCount: Number(storeRow?.count ?? 0),
     serviceCount: Number(serviceRow?.count ?? 0),
     participantCount: Number(participantRow?.count ?? 0),
     bookingCount: Number(bookingRow?.count ?? 0),
@@ -678,9 +678,9 @@ const selectOrganizationSlugById = async (organizationId: string) => {
   return row?.slug ?? null;
 };
 
-const selectClassroomIdBySlug = async (organizationId: string, slug: string) => {
+const selectStoreIdBySlug = async (organizationId: string, slug: string) => {
   const row = await d1
-    .prepare('SELECT id FROM classroom WHERE organization_id = ? AND slug = ? LIMIT 1')
+    .prepare('SELECT id FROM store WHERE organization_id = ? AND slug = ? LIMIT 1')
     .bind(organizationId, slug)
     .first<{ id: string }>();
   return row?.id ?? null;
@@ -1480,8 +1480,8 @@ const insertOrganizationMember = async ({
 const buildOrgInvitationPath = (organizationSlug: string) =>
   `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug)}/invitations`;
 
-const buildClassroomInvitationPath = (organizationSlug: string, classroomSlug: string) =>
-  `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug)}/classrooms/${encodeURIComponent(classroomSlug)}/invitations`;
+const buildStoreInvitationPath = (organizationSlug: string, storeSlug: string) =>
+  `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug)}/stores/${encodeURIComponent(storeSlug)}/invitations`;
 
 const buildInvitationDetailPath = (invitationId: string) =>
   `/api/v1/auth/invitations/${encodeURIComponent(invitationId)}`;
@@ -1558,7 +1558,7 @@ const createParticipantInvitation = async ({
   expect(organizationSlug).toBeTruthy();
 
   const response = await agent.request(
-    buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
+    buildStoreInvitationPath(organizationSlug as string, organizationSlug as string),
     {
       method: 'POST',
       headers: {
@@ -1579,7 +1579,7 @@ const createParticipantInvitation = async ({
   };
 };
 
-const createClassroomOperatorInvitation = async ({
+const createStoreOperatorInvitation = async ({
   agent,
   email,
   role,
@@ -1596,7 +1596,7 @@ const createClassroomOperatorInvitation = async ({
   expect(organizationSlug).toBeTruthy();
 
   const response = await agent.request(
-    buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
+    buildStoreInvitationPath(organizationSlug as string, organizationSlug as string),
     {
       method: 'POST',
       headers: {
@@ -1633,7 +1633,7 @@ type AiKnowledgeFixtureInput = {
   visibility?: AiSourceVisibilityFixture;
   internalOnly?: boolean;
   organizationId?: string | null;
-  classroomId?: string | null;
+  storeId?: string | null;
   indexStatus?: 'pending' | 'indexed' | 'failed' | 'stale' | 'deleted';
   vectorStatus?: 'pending' | 'upserted' | 'failed' | 'deleted';
   indexedAt?: Date;
@@ -1732,7 +1732,7 @@ const createAiTestRuntime = ({
     BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
     BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
     PUBLIC_EVENTS_ORG_SLUG: 'public-events-org',
-    PUBLIC_EVENTS_CLASSROOM_SLUG: 'public-events-org',
+    PUBLIC_EVENTS_STORE_SLUG: 'public-events-org',
     GOOGLE_CLIENT_ID: 'test-google-client-id',
     GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
     INTERNAL_OPERATOR_EMAILS: operatorEmails,
@@ -1792,8 +1792,8 @@ const createAiOwnerFixture = async ({
     name: `AI Org ${token}`,
     slug,
   });
-  const classroomId = await selectClassroomIdBySlug(organizationId, slug);
-  expect(classroomId).toBeTruthy();
+  const storeId = await selectStoreIdBySlug(organizationId, slug);
+  expect(storeId).toBeTruthy();
 
   return {
     agent,
@@ -1801,7 +1801,7 @@ const createAiOwnerFixture = async ({
     userId: (await selectUserIdByEmail(email)) as string,
     organizationId,
     organizationSlug: slug,
-    classroomId: classroomId as string,
+    storeId: storeId as string,
   };
 };
 
@@ -1837,12 +1837,12 @@ const createAiAuthenticatedUser = async ({
 const createAiParticipantFixture = async ({
   application,
   organizationId,
-  classroomId,
+  storeId,
   prefix,
 }: {
   application: ReturnType<typeof createApp>;
   organizationId: string;
-  classroomId: string;
+  storeId: string;
   prefix: string;
 }) => {
   const user = await createAiAuthenticatedUser({
@@ -1852,12 +1852,12 @@ const createAiParticipantFixture = async ({
 
   await d1
     .prepare(
-      'INSERT INTO participant (id, organization_id, classroom_id, user_id, email, name) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO participant (id, organization_id, store_id, user_id, email, name) VALUES (?, ?, ?, ?, ?, ?)',
     )
     .bind(
       crypto.randomUUID(),
       organizationId,
-      classroomId,
+      storeId,
       user.userId,
       user.email,
       `AI Participant ${prefix}`,
@@ -1867,7 +1867,7 @@ const createAiParticipantFixture = async ({
   return user;
 };
 
-const insertAiClassroomFixture = async ({
+const insertAiStoreFixture = async ({
   organizationId,
   slug,
   name,
@@ -1878,7 +1878,7 @@ const insertAiClassroomFixture = async ({
 }) => {
   const id = crypto.randomUUID();
   await d1
-    .prepare('INSERT INTO classroom (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
+    .prepare('INSERT INTO store (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
     .bind(id, organizationId, slug, name)
     .run();
   return id;
@@ -1892,7 +1892,7 @@ const insertAiKnowledgeFixture = async ({
   visibility = 'authenticated',
   internalOnly = false,
   organizationId = null,
-  classroomId = null,
+  storeId = null,
   indexStatus = 'indexed',
   vectorStatus = 'upserted',
   indexedAt = new Date('2026-05-20T00:00:00.000Z'),
@@ -1905,7 +1905,7 @@ const insertAiKnowledgeFixture = async ({
 
   await d1
     .prepare(
-      'INSERT INTO ai_knowledge_document (id, source_kind, source_path, title, locale, visibility, internal_only, organization_id, classroom_id, feature, checksum, index_status, indexed_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO ai_knowledge_document (id, source_kind, source_path, title, locale, visibility, internal_only, organization_id, store_id, feature, checksum, index_status, indexed_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       documentId,
@@ -1916,7 +1916,7 @@ const insertAiKnowledgeFixture = async ({
       visibility,
       internalOnly ? 1 : 0,
       organizationId,
-      classroomId,
+      storeId,
       'ai-test',
       `checksum-${documentId}`,
       indexStatus,
@@ -1929,7 +1929,7 @@ const insertAiKnowledgeFixture = async ({
 
   await d1
     .prepare(
-      'INSERT INTO ai_knowledge_chunk (id, document_id, chunk_index, content, content_hash, title, source_kind, source_path, locale, visibility, internal_only, organization_id, classroom_id, feature, tags_json, indexed_at, vector_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO ai_knowledge_chunk (id, document_id, chunk_index, content, content_hash, title, source_kind, source_path, locale, visibility, internal_only, organization_id, store_id, feature, tags_json, indexed_at, vector_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       chunkId,
@@ -1944,7 +1944,7 @@ const insertAiKnowledgeFixture = async ({
       visibility,
       internalOnly ? 1 : 0,
       organizationId,
-      classroomId,
+      storeId,
       'ai-test',
       JSON.stringify(['ai-test']),
       indexedAt.getTime(),
@@ -2023,14 +2023,14 @@ const selectAiOperationRowCounts = async (organizationId: string) => {
 const selectAiConversationRow = async (conversationId: string) =>
   d1
     .prepare(
-      'SELECT id, actor_user_id as actorUserId, subject_id as subjectId, classroom_id as classroomId, title FROM ai_conversation WHERE id = ? LIMIT 1',
+      'SELECT id, actor_user_id as actorUserId, subject_id as subjectId, store_id as storeId, title FROM ai_conversation WHERE id = ? LIMIT 1',
     )
     .bind(conversationId)
     .first<{
       id: string;
       actorUserId: string;
       subjectId: string;
-      classroomId: string | null;
+      storeId: string | null;
       title: string | null;
     }>();
 
@@ -2151,7 +2151,7 @@ beforeAll(async () => {
       BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
       BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
       PUBLIC_EVENTS_ORG_SLUG: 'public-events-org',
-      PUBLIC_EVENTS_CLASSROOM_SLUG: 'public-events-org',
+      PUBLIC_EVENTS_STORE_SLUG: 'public-events-org',
       GOOGLE_CLIENT_ID: 'test-google-client-id',
       GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
     },
@@ -2267,7 +2267,7 @@ describe('backend app', () => {
   });
 
   it('requires auth for invitation endpoints', async () => {
-    const response = await app.request('/api/v1/auth/orgs/demo/classrooms/demo/invitations', {
+    const response = await app.request('/api/v1/auth/orgs/demo/stores/demo/invitations', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -2299,10 +2299,10 @@ describe('backend app', () => {
   });
 
   it('requires auth for participant invitation endpoints', async () => {
-    const listResponse = await app.request('/api/v1/auth/orgs/demo/classrooms/demo/invitations');
+    const listResponse = await app.request('/api/v1/auth/orgs/demo/stores/demo/invitations');
     expect(listResponse.status).toBe(401);
 
-    const createResponse = await app.request('/api/v1/auth/orgs/demo/classrooms/demo/invitations', {
+    const createResponse = await app.request('/api/v1/auth/orgs/demo/stores/demo/invitations', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -2362,7 +2362,7 @@ describe('backend app', () => {
         content: '予約枠は管理画面の予約運用から作成します。',
         visibility: 'authenticated',
         organizationId: owner.organizationId,
-        classroomId: owner.classroomId,
+        storeId: owner.storeId,
       });
       runtime.setMatchedChunkIds([knowledge.chunkId]);
 
@@ -2414,7 +2414,7 @@ describe('backend app', () => {
         id: payload.conversationId,
         actorUserId: owner.userId,
         subjectId: owner.organizationId,
-        classroomId: owner.classroomId,
+        storeId: owner.storeId,
       });
 
       const messages = await selectAiMessagesForConversation(payload.conversationId as string);
@@ -2546,48 +2546,48 @@ describe('backend app', () => {
       });
     });
 
-    it('keeps classroom scoping inside the requested organization', async () => {
+    it('keeps store scoping inside the requested organization', async () => {
       const runtime = createAiTestRuntime();
       const owner = await createAiOwnerFixture({
         application: runtime.application,
-        prefix: 'ai-classroom-scope',
+        prefix: 'ai-store-scope',
       });
-      const secondClassroomId = await insertAiClassroomFixture({
+      const secondStoreId = await insertAiStoreFixture({
         organizationId: owner.organizationId,
         slug: uniqueAiTestToken('ai-second-room'),
         name: 'AI Second Room',
       });
       const otherOwner = await createAiOwnerFixture({
         application: runtime.application,
-        prefix: 'ai-other-classroom-owner',
+        prefix: 'ai-other-store-owner',
       });
 
-      const wrongOrganizationClassroomResponse = await postAiChat(owner.agent, {
-        message: '別組織の教室を見せてください',
+      const wrongOrganizationStoreResponse = await postAiChat(owner.agent, {
+        message: '別組織の店舗を見せてください',
         organizationId: owner.organizationId,
-        classroomId: otherOwner.classroomId,
+        storeId: otherOwner.storeId,
       });
-      expect(wrongOrganizationClassroomResponse.status).toBe(401);
+      expect(wrongOrganizationStoreResponse.status).toBe(401);
 
       const knowledge = await insertAiKnowledgeFixture({
-        title: '第二教室の予約案内',
+        title: '第二店舗の予約案内',
         sourcePath: `docs/ai-second-room-${crypto.randomUUID()}.md`,
-        content: '第二教室では予約枠の公開前に定員を確認します。',
+        content: '第二店舗では予約枠の公開前に定員を確認します。',
         visibility: 'authenticated',
         organizationId: owner.organizationId,
-        classroomId: secondClassroomId,
+        storeId: secondStoreId,
       });
       runtime.setMatchedChunkIds([knowledge.chunkId]);
 
       const response = await postAiChat(owner.agent, {
-        message: '第二教室の予約運用を教えてください',
+        message: '第二店舗の予約運用を教えてください',
         organizationId: owner.organizationId,
-        classroomId: secondClassroomId,
+        storeId: secondStoreId,
       });
       expect(response.status).toBe(200);
       const payload = (await toJson(response)) as Record<string, unknown>;
       const conversation = await selectAiConversationRow(payload.conversationId as string);
-      expect(conversation?.classroomId).toBe(secondClassroomId);
+      expect(conversation?.storeId).toBe(secondStoreId);
       expect(payload.sources).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -2620,7 +2620,7 @@ describe('backend app', () => {
       const participant = await createAiParticipantFixture({
         application: runtime.application,
         organizationId: owner.organizationId,
-        classroomId: owner.classroomId,
+        storeId: owner.storeId,
         prefix: 'ai-participant-redaction-user',
       });
       const participantKnowledge = await insertAiKnowledgeFixture({
@@ -2629,7 +2629,7 @@ describe('backend app', () => {
         content: '参加者は予約確認画面で自分の予約状況を確認できます。',
         visibility: 'participant',
         organizationId: owner.organizationId,
-        classroomId: owner.classroomId,
+        storeId: owner.storeId,
       });
       const ownerOnlyKnowledge = await insertAiKnowledgeFixture({
         title: 'Owner billing detail',
@@ -2638,7 +2638,7 @@ describe('backend app', () => {
           'Owner-only billing detail: 課金プラン premium 契約状態 active 支払い問題開始 なし',
         visibility: 'owner',
         organizationId: owner.organizationId,
-        classroomId: owner.classroomId,
+        storeId: owner.storeId,
       });
       const internalKnowledge = await insertAiKnowledgeFixture({
         title: 'Internal participant note',
@@ -2647,7 +2647,7 @@ describe('backend app', () => {
         visibility: 'participant',
         internalOnly: true,
         organizationId: owner.organizationId,
-        classroomId: owner.classroomId,
+        storeId: owner.storeId,
       });
       runtime.setMatchedChunkIds([
         ownerOnlyKnowledge.chunkId,
@@ -2658,7 +2658,7 @@ describe('backend app', () => {
       const response = await postAiChat(participant.agent, {
         message: '請求と予約状況について教えてください',
         organizationId: owner.organizationId,
-        classroomId: owner.classroomId,
+        storeId: owner.storeId,
         currentPage: '/admin/billing?tab=payment',
       });
 
@@ -3716,7 +3716,7 @@ describe('backend app', () => {
       .all<{ name: string }>();
     const billingAccountColumns = billingAccountTableInfo.results.map((row) => row.name);
     expect(billingAccountColumns).toContain('subject_id');
-    expect(billingAccountColumns).not.toContain('classroom_id');
+    expect(billingAccountColumns).not.toContain('store_id');
     const readForeignKeys = async (tableName: string) => {
       const result = await d1
         .prepare(`PRAGMA foreign_key_list(${tableName})`)
@@ -3878,19 +3878,19 @@ describe('backend app', () => {
     });
     expect(profileGapAllowedResponse.status).toBe(200);
 
-    const defaultClassroom = await d1
-      .prepare('SELECT id FROM classroom WHERE organization_id = ? LIMIT 1')
+    const defaultStore = await d1
+      .prepare('SELECT id FROM store WHERE organization_id = ? LIMIT 1')
       .bind(organizationId)
       .first<{ id: string }>();
-    expect(defaultClassroom?.id).toBeTruthy();
-    const accidentalClassroomBillingRows = await d1
+    expect(defaultStore?.id).toBeTruthy();
+    const accidentalStoreBillingRows = await d1
       .prepare(
         "SELECT COUNT(*) as count FROM billing_account WHERE subject_type = 'organization' AND subject_id = ?",
       )
-      .bind(defaultClassroom?.id)
+      .bind(defaultStore?.id)
       .first<{ count: number | string }>();
-    if (defaultClassroom?.id !== organizationId) {
-      expect(Number(accidentalClassroomBillingRows?.count ?? 0)).toBe(0);
+    if (defaultStore?.id !== organizationId) {
+      expect(Number(accidentalStoreBillingRows?.count ?? 0)).toBe(0);
     }
   });
 
@@ -8014,7 +8014,7 @@ describe('backend app', () => {
         .first<{ id: string }>();
       expect(ownerUserRow?.id).toBeTruthy();
 
-      const classroomId = crypto.randomUUID();
+      const storeId = crypto.randomUUID();
       const serviceId = crypto.randomUUID();
       const participantId = crypto.randomUUID();
       const slotId = crypto.randomUUID();
@@ -8022,17 +8022,17 @@ describe('backend app', () => {
       const now = Date.now();
 
       await d1
-        .prepare('INSERT INTO classroom (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
-        .bind(classroomId, organizationId, 'trial-completion-room', 'Trial Completion Room')
+        .prepare('INSERT INTO store (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
+        .bind(storeId, organizationId, 'trial-completion-room', 'Trial Completion Room')
         .run();
       await d1
         .prepare(
-          'INSERT INTO service (id, organization_id, classroom_id, name, description, kind, duration_minutes, capacity, booking_policy, requires_ticket, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO service (id, organization_id, store_id, name, description, kind, duration_minutes, capacity, booking_policy, requires_ticket, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .bind(
           serviceId,
           organizationId,
-          classroomId,
+          storeId,
           'Premium Yoga',
           'Trial lifecycle data preservation service',
           'event',
@@ -8045,12 +8045,12 @@ describe('backend app', () => {
         .run();
       await d1
         .prepare(
-          'INSERT INTO participant (id, organization_id, classroom_id, user_id, email, name) VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT INTO participant (id, organization_id, store_id, user_id, email, name) VALUES (?, ?, ?, ?, ?, ?)',
         )
         .bind(
           participantId,
           organizationId,
-          classroomId,
+          storeId,
           ownerUserRow?.id as string,
           'trial-completion-owner@example.com',
           'Trial Completion Owner',
@@ -8058,12 +8058,12 @@ describe('backend app', () => {
         .run();
       await d1
         .prepare(
-          'INSERT INTO slot (id, organization_id, classroom_id, service_id, start_at, end_at, capacity, reserved_count, status, booking_open_at, booking_close_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO slot (id, organization_id, store_id, service_id, start_at, end_at, capacity, reserved_count, status, booking_open_at, booking_close_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .bind(
           slotId,
           organizationId,
-          classroomId,
+          storeId,
           serviceId,
           now + 3_600_000,
           now + 7_200_000,
@@ -8076,23 +8076,14 @@ describe('backend app', () => {
         .run();
       await d1
         .prepare(
-          'INSERT INTO booking (id, organization_id, classroom_id, slot_id, service_id, participant_id, participants_count, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO booking (id, organization_id, store_id, slot_id, service_id, participant_id, participants_count, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         )
-        .bind(
-          bookingId,
-          organizationId,
-          classroomId,
-          slotId,
-          serviceId,
-          participantId,
-          1,
-          'confirmed',
-        )
+        .bind(bookingId, organizationId, storeId, slotId, serviceId, participantId, 1, 'confirmed')
         .run();
 
       const countsBeforeCompletion = await selectOrganizationOperationalRowCounts(organizationId);
       expect(countsBeforeCompletion).toEqual({
-        classroomCount: 2,
+        storeCount: 2,
         serviceCount: 1,
         participantCount: 1,
         bookingCount: 1,
@@ -8712,18 +8703,18 @@ describe('backend app', () => {
     const ownerAccessTreePayload = (await toJson(ownerAccessTreeResponse)) as {
       orgs?: Array<{
         org?: { id?: string; slug?: string; name?: string; logo?: string | null };
-        classrooms?: Array<{
+        stores?: Array<{
           id?: string;
           slug?: string;
           name?: string;
           facts?: {
             orgRole?: string | null;
-            classroomStaffRole?: string | null;
+            storeStaffRole?: string | null;
             hasParticipantRecord?: boolean;
           };
           effective?: {
             canManageOrganization?: boolean;
-            canManageClassroom?: boolean;
+            canManageStore?: boolean;
             canUseParticipantBooking?: boolean;
           };
           display?: {
@@ -8737,11 +8728,11 @@ describe('backend app', () => {
     );
     expect(ownerOrgEntry).toBeDefined();
     expect(ownerOrgEntry?.org?.slug).toBe('access-org');
-    expect(ownerOrgEntry?.classrooms?.[0]?.slug).toBe('access-org');
-    expect(ownerOrgEntry?.classrooms?.[0]?.facts?.orgRole).toBe('owner');
-    expect(ownerOrgEntry?.classrooms?.[0]?.display?.primaryRole).toBe('owner');
-    expect(ownerOrgEntry?.classrooms?.[0]?.effective?.canManageClassroom).toBe(true);
-    expect(ownerOrgEntry?.classrooms?.[0]?.effective?.canUseParticipantBooking).toBe(false);
+    expect(ownerOrgEntry?.stores?.[0]?.slug).toBe('access-org');
+    expect(ownerOrgEntry?.stores?.[0]?.facts?.orgRole).toBe('owner');
+    expect(ownerOrgEntry?.stores?.[0]?.display?.primaryRole).toBe('owner');
+    expect(ownerOrgEntry?.stores?.[0]?.effective?.canManageStore).toBe(true);
+    expect(ownerOrgEntry?.stores?.[0]?.effective?.canUseParticipantBooking).toBe(false);
 
     const participantAccessTreeResponse = await participantUser.request(
       '/api/v1/auth/orgs/access-tree',
@@ -8750,14 +8741,14 @@ describe('backend app', () => {
     const participantAccessTreePayload = (await toJson(participantAccessTreeResponse)) as {
       orgs?: Array<{
         org?: { id?: string };
-        classrooms?: Array<{
+        stores?: Array<{
           facts?: {
             orgRole?: string | null;
-            classroomStaffRole?: string | null;
+            storeStaffRole?: string | null;
             hasParticipantRecord?: boolean;
           };
           effective?: {
-            canManageClassroom?: boolean;
+            canManageStore?: boolean;
             canUseParticipantBooking?: boolean;
           };
           display?: {
@@ -8769,15 +8760,15 @@ describe('backend app', () => {
     const participantOrgEntry = participantAccessTreePayload.orgs?.find(
       (entry) => entry.org?.id === organizationId,
     );
-    expect(participantOrgEntry?.classrooms?.[0]?.facts?.orgRole).toBeNull();
-    expect(participantOrgEntry?.classrooms?.[0]?.facts?.classroomStaffRole).toBeNull();
-    expect(participantOrgEntry?.classrooms?.[0]?.facts?.hasParticipantRecord).toBe(true);
-    expect(participantOrgEntry?.classrooms?.[0]?.display?.primaryRole).toBe('participant');
-    expect(participantOrgEntry?.classrooms?.[0]?.effective?.canManageClassroom).toBe(false);
-    expect(participantOrgEntry?.classrooms?.[0]?.effective?.canUseParticipantBooking).toBe(true);
+    expect(participantOrgEntry?.stores?.[0]?.facts?.orgRole).toBeNull();
+    expect(participantOrgEntry?.stores?.[0]?.facts?.storeStaffRole).toBeNull();
+    expect(participantOrgEntry?.stores?.[0]?.facts?.hasParticipantRecord).toBe(true);
+    expect(participantOrgEntry?.stores?.[0]?.display?.primaryRole).toBe('participant');
+    expect(participantOrgEntry?.stores?.[0]?.effective?.canManageStore).toBe(false);
+    expect(participantOrgEntry?.stores?.[0]?.effective?.canUseParticipantBooking).toBe(true);
   });
 
-  it('allows staff booking and participant operations while blocking classroom schedule management', async () => {
+  it('allows staff booking and participant operations while blocking store schedule management', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -8792,7 +8783,7 @@ describe('backend app', () => {
     });
     await enablePremiumForOrganization(organizationId);
 
-    const staffInvite = await createClassroomOperatorInvitation({
+    const staffInvite = await createStoreOperatorInvitation({
       agent: owner,
       email: 'staff-scope-user@example.com',
       role: 'staff',
@@ -8826,13 +8817,13 @@ describe('backend app', () => {
     const staffAccessTreePayload = (await toJson(staffAccessTreeResponse)) as {
       orgs?: Array<{
         org?: { id?: string };
-        classrooms?: Array<{
+        stores?: Array<{
           facts?: {
             orgRole?: string | null;
-            classroomStaffRole?: string | null;
+            storeStaffRole?: string | null;
           };
           effective?: {
-            canManageClassroom?: boolean;
+            canManageStore?: boolean;
             canManageBookings?: boolean;
             canManageParticipants?: boolean;
           };
@@ -8845,12 +8836,12 @@ describe('backend app', () => {
     const staffOrgEntry = staffAccessTreePayload.orgs?.find(
       (entry) => entry.org?.id === organizationId,
     );
-    expect(staffOrgEntry?.classrooms?.[0]?.facts?.orgRole).toBe('member');
-    expect(staffOrgEntry?.classrooms?.[0]?.facts?.classroomStaffRole).toBe('staff');
-    expect(staffOrgEntry?.classrooms?.[0]?.effective?.canManageClassroom).toBe(false);
-    expect(staffOrgEntry?.classrooms?.[0]?.effective?.canManageBookings).toBe(true);
-    expect(staffOrgEntry?.classrooms?.[0]?.effective?.canManageParticipants).toBe(true);
-    expect(staffOrgEntry?.classrooms?.[0]?.display?.primaryRole).toBe('staff');
+    expect(staffOrgEntry?.stores?.[0]?.facts?.orgRole).toBe('member');
+    expect(staffOrgEntry?.stores?.[0]?.facts?.storeStaffRole).toBe('staff');
+    expect(staffOrgEntry?.stores?.[0]?.effective?.canManageStore).toBe(false);
+    expect(staffOrgEntry?.stores?.[0]?.effective?.canManageBookings).toBe(true);
+    expect(staffOrgEntry?.stores?.[0]?.effective?.canManageParticipants).toBe(true);
+    expect(staffOrgEntry?.stores?.[0]?.display?.primaryRole).toBe('staff');
 
     const serviceResponse = await owner.request('/api/v1/auth/organizations/services', {
       method: 'POST',
@@ -8872,7 +8863,7 @@ describe('backend app', () => {
     const staffServicesResponse = await staffUser.request(
       `/api/v1/auth/organizations/services?organizationId=${encodeURIComponent(
         organizationId,
-      )}&classroomId=${encodeURIComponent(organizationId)}`,
+      )}&storeId=${encodeURIComponent(organizationId)}`,
     );
     expect(staffServicesResponse.status).toBe(200);
     const staffServicesPayload = (await toJson(staffServicesResponse)) as Array<
@@ -8902,7 +8893,7 @@ describe('backend app', () => {
     const staffTicketTypesResponse = await staffUser.request(
       `/api/v1/auth/organizations/ticket-types?organizationId=${encodeURIComponent(
         organizationId,
-      )}&classroomId=${encodeURIComponent(organizationId)}`,
+      )}&storeId=${encodeURIComponent(organizationId)}`,
     );
     expect(staffTicketTypesResponse.status).toBe(200);
     const staffTicketTypesPayload = (await toJson(staffTicketTypesResponse)) as Array<
@@ -8965,7 +8956,7 @@ describe('backend app', () => {
     const staffBookingsResponse = await staffUser.request(
       `/api/v1/auth/organizations/bookings?organizationId=${encodeURIComponent(
         organizationId,
-      )}&classroomId=${encodeURIComponent(organizationId)}&from=${encodeURIComponent(
+      )}&storeId=${encodeURIComponent(organizationId)}&from=${encodeURIComponent(
         rangeStart.toISOString(),
       )}&to=${encodeURIComponent(new Date(rangeStart.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString())}`,
     );
@@ -8974,7 +8965,7 @@ describe('backend app', () => {
     const staffParticipantsResponse = await staffUser.request(
       `/api/v1/auth/organizations/participants?organizationId=${encodeURIComponent(
         organizationId,
-      )}&classroomId=${encodeURIComponent(organizationId)}`,
+      )}&storeId=${encodeURIComponent(organizationId)}`,
     );
     expect(staffParticipantsResponse.status).toBe(200);
   });
@@ -8996,7 +8987,7 @@ describe('backend app', () => {
     const organizationSlug = await selectOrganizationSlugById(organizationId);
     expect(organizationSlug).toBe('malformed-ticket-org');
 
-    const staffInvite = await createClassroomOperatorInvitation({
+    const staffInvite = await createStoreOperatorInvitation({
       agent: owner,
       email: 'malformed-ticket-staff@example.com',
       role: 'staff',
@@ -9024,20 +9015,20 @@ describe('backend app', () => {
     );
     expect(acceptResponse.status).toBe(200);
 
-    const classroomRow = await d1
-      .prepare('SELECT id FROM classroom WHERE organization_id = ? AND slug = ? LIMIT 1')
+    const storeRow = await d1
+      .prepare('SELECT id FROM store WHERE organization_id = ? AND slug = ? LIMIT 1')
       .bind(organizationId, organizationSlug)
       .first<{ id: string }>();
-    expect(classroomRow?.id).toBeTruthy();
+    expect(storeRow?.id).toBeTruthy();
 
     await d1
       .prepare(
-        'INSERT INTO ticket_type (id, organization_id, classroom_id, name, service_ids_json, total_count, expires_in_days, is_active, is_for_sale, stripe_price_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO ticket_type (id, organization_id, store_id, name, service_ids_json, total_count, expires_in_days, is_active, is_for_sale, stripe_price_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .bind(
         crypto.randomUUID(),
         organizationId,
-        classroomRow?.id as string,
+        storeRow?.id as string,
         'Broken Ticket Type',
         '{"broken":',
         5,
@@ -9051,7 +9042,7 @@ describe('backend app', () => {
     const ticketTypesResponse = await staff.request(
       `/api/v1/auth/organizations/ticket-types?organizationId=${encodeURIComponent(
         organizationId,
-      )}&classroomId=${encodeURIComponent(classroomRow?.id as string)}`,
+      )}&storeId=${encodeURIComponent(storeRow?.id as string)}`,
     );
     expect(ticketTypesResponse.status).toBe(200);
     const payload = (await toJson(ticketTypesResponse)) as Array<{
@@ -9062,28 +9053,28 @@ describe('backend app', () => {
     expect(brokenTicketType?.serviceIds).toEqual([]);
   });
 
-  it('supports multiple classrooms in access-tree and scoped service routes', async () => {
+  it('supports multiple stores in access-tree and scoped service routes', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
-      name: 'Multi Classroom Owner',
-      email: 'multi-classroom-owner@example.com',
+      name: 'Multi Store Owner',
+      email: 'multi-store-owner@example.com',
     });
 
     const organizationId = await createOrganization({
       agent: owner,
-      name: 'Multi Classroom Org',
-      slug: 'multi-classroom-org',
+      name: 'Multi Store Org',
+      slug: 'multi-store-org',
     });
     await enablePremiumForOrganization(organizationId);
     const organizationSlug = await selectOrganizationSlugById(organizationId);
-    expect(organizationSlug).toBe('multi-classroom-org');
+    expect(organizationSlug).toBe('multi-store-org');
 
-    const secondClassroomId = crypto.randomUUID();
-    const secondClassroomSlug = 'room-b';
+    const secondStoreId = crypto.randomUUID();
+    const secondStoreSlug = 'room-b';
     await d1
-      .prepare('INSERT INTO classroom (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
-      .bind(secondClassroomId, organizationId, secondClassroomSlug, 'Room B')
+      .prepare('INSERT INTO store (id, organization_id, slug, name) VALUES (?, ?, ?, ?)')
+      .bind(secondStoreId, organizationId, secondStoreSlug, 'Room B')
       .run();
 
     const defaultServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
@@ -9093,8 +9084,8 @@ describe('backend app', () => {
       },
       body: JSON.stringify({
         organizationId,
-        name: 'Default Classroom Service',
-        description: 'default classroom service',
+        name: 'Default Store Service',
+        description: 'default store service',
         kind: 'single',
         bookingPolicy: 'instant',
         durationMinutes: 45,
@@ -9107,7 +9098,7 @@ describe('backend app', () => {
     const scopedServiceResponse = await owner.request(
       `/api/v1/auth/orgs/${encodeURIComponent(
         organizationSlug as string,
-      )}/classrooms/${encodeURIComponent(secondClassroomSlug)}/services`,
+      )}/stores/${encodeURIComponent(secondStoreSlug)}/services`,
       {
         method: 'POST',
         headers: {
@@ -9115,7 +9106,7 @@ describe('backend app', () => {
         },
         body: JSON.stringify({
           name: 'Room B Service',
-          description: 'second classroom service',
+          description: 'second store service',
           kind: 'single',
           bookingPolicy: 'instant',
           durationMinutes: 30,
@@ -9125,22 +9116,22 @@ describe('backend app', () => {
     );
     expect(scopedServiceResponse.status).toBe(200);
     const scopedServicePayload = (await toJson(scopedServiceResponse)) as Record<string, unknown>;
-    expect(scopedServicePayload.classroomId).toBe(secondClassroomId);
+    expect(scopedServicePayload.storeId).toBe(secondStoreId);
 
     const accessTreeResponse = await owner.request('/api/v1/auth/orgs/access-tree');
     expect(accessTreeResponse.status).toBe(200);
     const accessTreePayload = (await toJson(accessTreeResponse)) as {
       orgs?: Array<{
         org?: { id?: string; slug?: string };
-        classrooms?: Array<{
+        stores?: Array<{
           id?: string;
           slug?: string;
           facts?: {
             orgRole?: string | null;
-            classroomStaffRole?: string | null;
+            storeStaffRole?: string | null;
           };
           effective?: {
-            canManageClassroom?: boolean;
+            canManageStore?: boolean;
           };
           display?: {
             primaryRole?: string | null;
@@ -9149,21 +9140,19 @@ describe('backend app', () => {
       }>;
     };
     const orgEntry = accessTreePayload.orgs?.find((entry) => entry.org?.id === organizationId);
-    expect(orgEntry?.classrooms?.map((classroom) => classroom.slug)).toEqual(
-      expect.arrayContaining(['multi-classroom-org', secondClassroomSlug]),
+    expect(orgEntry?.stores?.map((store) => store.slug)).toEqual(
+      expect.arrayContaining(['multi-store-org', secondStoreSlug]),
     );
-    const secondClassroomEntry = orgEntry?.classrooms?.find(
-      (classroom) => classroom.slug === secondClassroomSlug,
-    );
-    expect(secondClassroomEntry?.id).toBe(secondClassroomId);
-    expect(secondClassroomEntry?.facts?.orgRole).toBe('owner');
-    expect(secondClassroomEntry?.display?.primaryRole).toBe('owner');
-    expect(secondClassroomEntry?.effective?.canManageClassroom).toBe(true);
+    const secondStoreEntry = orgEntry?.stores?.find((store) => store.slug === secondStoreSlug);
+    expect(secondStoreEntry?.id).toBe(secondStoreId);
+    expect(secondStoreEntry?.facts?.orgRole).toBe('owner');
+    expect(secondStoreEntry?.display?.primaryRole).toBe('owner');
+    expect(secondStoreEntry?.effective?.canManageStore).toBe(true);
 
     const defaultScopedListResponse = await owner.request(
       `/api/v1/auth/orgs/${encodeURIComponent(
         organizationSlug as string,
-      )}/classrooms/${encodeURIComponent(organizationSlug as string)}/services`,
+      )}/stores/${encodeURIComponent(organizationSlug as string)}/services`,
     );
     expect(defaultScopedListResponse.status).toBe(200);
     const defaultScopedList = (await toJson(defaultScopedListResponse)) as Array<
@@ -9171,12 +9160,12 @@ describe('backend app', () => {
     >;
     expect(defaultScopedList).toHaveLength(1);
     expect(defaultScopedList[0]?.id).toBe(defaultServicePayload.id);
-    expect(defaultScopedList[0]?.classroomId).not.toBe(secondClassroomId);
+    expect(defaultScopedList[0]?.storeId).not.toBe(secondStoreId);
 
     const secondScopedListResponse = await owner.request(
       `/api/v1/auth/orgs/${encodeURIComponent(
         organizationSlug as string,
-      )}/classrooms/${encodeURIComponent(secondClassroomSlug)}/services`,
+      )}/stores/${encodeURIComponent(secondStoreSlug)}/services`,
     );
     expect(secondScopedListResponse.status).toBe(200);
     const secondScopedList = (await toJson(secondScopedListResponse)) as Array<
@@ -9184,40 +9173,39 @@ describe('backend app', () => {
     >;
     expect(secondScopedList).toHaveLength(1);
     expect(secondScopedList[0]?.id).toBe(scopedServicePayload.id);
-    expect(secondScopedList[0]?.classroomId).toBe(secondClassroomId);
+    expect(secondScopedList[0]?.storeId).toBe(secondStoreId);
   });
 
-  it('lists, creates, and updates classrooms for org admins', async () => {
+  it('lists, creates, and updates stores for org admins', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
-      name: 'Classroom Owner',
-      email: 'classroom-owner@example.com',
+      name: 'Store Owner',
+      email: 'store-owner@example.com',
     });
 
     const organizationId = await createOrganization({
       agent: owner,
-      name: 'Classroom Admin Org',
-      slug: 'classroom-admin-org',
+      name: 'Store Admin Org',
+      slug: 'store-admin-org',
     });
     await enablePremiumForOrganization(organizationId);
     const organizationSlug = await selectOrganizationSlugById(organizationId);
-    expect(organizationSlug).toBe('classroom-admin-org');
+    expect(organizationSlug).toBe('store-admin-org');
 
     const initialListResponse = await owner.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
     );
     expect(initialListResponse.status).toBe(200);
     const initialList = (await toJson(initialListResponse)) as Array<Record<string, unknown>>;
     expect(initialList).toHaveLength(1);
-    expect(initialList[0]?.slug).toBe('classroom-admin-org');
+    expect(initialList[0]?.slug).toBe('store-admin-org');
     expect(
-      (initialList[0]?.effective as { canManageClassroom?: boolean } | undefined)
-        ?.canManageClassroom,
+      (initialList[0]?.effective as { canManageStore?: boolean } | undefined)?.canManageStore,
     ).toBe(true);
 
     const createResponse = await owner.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9230,16 +9218,15 @@ describe('backend app', () => {
       },
     );
     expect(createResponse.status).toBe(200);
-    const createdClassroom = (await toJson(createResponse)) as Record<string, unknown>;
-    expect(createdClassroom.slug).toBe('second-room');
-    expect(createdClassroom.name).toBe('Second Room');
+    const createdStore = (await toJson(createResponse)) as Record<string, unknown>;
+    expect(createdStore.slug).toBe('second-room');
+    expect(createdStore.name).toBe('Second Room');
     expect(
-      (createdClassroom.effective as { canManageClassroom?: boolean } | undefined)
-        ?.canManageClassroom,
+      (createdStore.effective as { canManageStore?: boolean } | undefined)?.canManageStore,
     ).toBe(true);
 
     const invalidSlugResponse = await owner.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9256,7 +9243,7 @@ describe('backend app', () => {
     const updateResponse = await owner.request(
       `/api/v1/auth/orgs/${encodeURIComponent(
         organizationSlug as string,
-      )}/classrooms/${encodeURIComponent('second-room')}`,
+      )}/stores/${encodeURIComponent('second-room')}`,
       {
         method: 'PATCH',
         headers: {
@@ -9269,24 +9256,24 @@ describe('backend app', () => {
       },
     );
     expect(updateResponse.status).toBe(200);
-    const updatedClassroom = (await toJson(updateResponse)) as Record<string, unknown>;
-    expect(updatedClassroom.slug).toBe('second-room-renamed');
-    expect(updatedClassroom.name).toBe('Second Room Updated');
+    const updatedStore = (await toJson(updateResponse)) as Record<string, unknown>;
+    expect(updatedStore.slug).toBe('second-room-renamed');
+    expect(updatedStore.name).toBe('Second Room Updated');
 
     const listAfterUpdateResponse = await owner.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
     );
     expect(listAfterUpdateResponse.status).toBe(200);
-    const classroomsAfterUpdate = (await toJson(listAfterUpdateResponse)) as Array<
+    const storesAfterUpdate = (await toJson(listAfterUpdateResponse)) as Array<
       Record<string, unknown>
     >;
-    expect(classroomsAfterUpdate.map((classroom) => classroom.slug)).toEqual(
-      expect.arrayContaining(['classroom-admin-org', 'second-room-renamed']),
+    expect(storesAfterUpdate.map((store) => store.slug)).toEqual(
+      expect.arrayContaining(['store-admin-org', 'second-room-renamed']),
     );
 
     const memberInvite = await createInvitation({
       agent: owner,
-      email: 'classroom-member@example.com',
+      email: 'store-member@example.com',
       role: 'member',
       organizationId,
     });
@@ -9295,8 +9282,8 @@ describe('backend app', () => {
     const member = createAuthAgent(app);
     await signUpUser({
       agent: member,
-      name: 'Classroom Member',
-      email: 'classroom-member@example.com',
+      name: 'Store Member',
+      email: 'store-member@example.com',
     });
     const acceptMemberInviteResponse = await member.request(
       buildInvitationActionPath(memberInvite.payload?.id as string, 'accept'),
@@ -9311,7 +9298,7 @@ describe('backend app', () => {
     expect(acceptMemberInviteResponse.status).toBe(200);
 
     const memberCreateResponse = await member.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9373,8 +9360,8 @@ describe('backend app', () => {
     const baseServicePayload = (await toJson(baseServiceResponse)) as Record<string, unknown>;
     const baseServiceId = baseServicePayload.id as string;
 
-    const classroomCreateResponse = await owner.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+    const storeCreateResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9386,7 +9373,7 @@ describe('backend app', () => {
         }),
       },
     );
-    await expectPremiumDenied(classroomCreateResponse);
+    await expectPremiumDenied(storeCreateResponse);
 
     const orgInvitationResponse = await owner.request(
       buildOrgInvitationPath(organizationSlug as string),
@@ -9403,20 +9390,20 @@ describe('backend app', () => {
     );
     await expectPremiumDenied(orgInvitationResponse);
 
-    const classroomInvitationResponse = await owner.request(
-      buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
+    const storeInvitationResponse = await owner.request(
+      buildStoreInvitationPath(organizationSlug as string, organizationSlug as string),
       {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          email: 'free-classroom-manager@example.com',
+          email: 'free-store-manager@example.com',
           role: 'manager',
         }),
       },
     );
-    await expectPremiumDenied(classroomInvitationResponse);
+    await expectPremiumDenied(storeInvitationResponse);
 
     const approvalServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
       method: 'POST',
@@ -9511,7 +9498,7 @@ describe('backend app', () => {
     });
     expect(memberInvite.response.status).toBe(200);
 
-    const managerInvite = await createClassroomOperatorInvitation({
+    const managerInvite = await createStoreOperatorInvitation({
       agent: owner,
       email: 'premium-roles-manager@example.com',
       role: 'manager',
@@ -9550,14 +9537,11 @@ describe('backend app', () => {
     ).toHaveProperty('status', 200);
 
     const organizationSlug = await selectOrganizationSlugById(organizationId);
-    const defaultClassroomId = await selectClassroomIdBySlug(
-      organizationId,
-      organizationSlug as string,
-    );
-    expect(defaultClassroomId).toBeTruthy();
+    const defaultStoreId = await selectStoreIdBySlug(organizationId, organizationSlug as string);
+    expect(defaultStoreId).toBeTruthy();
 
-    const adminCreateClassroomResponse = await admin.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+    const adminCreateStoreResponse = await admin.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9569,7 +9553,7 @@ describe('backend app', () => {
         }),
       },
     );
-    expect(adminCreateClassroomResponse.status).toBe(200);
+    expect(adminCreateStoreResponse.status).toBe(200);
 
     const serviceCreateResponse = await owner.request('/api/v1/auth/organizations/services', {
       method: 'POST',
@@ -9578,7 +9562,7 @@ describe('backend app', () => {
       },
       body: JSON.stringify({
         organizationId,
-        classroomId: defaultClassroomId,
+        storeId: defaultStoreId,
         name: 'Manager Recurring Service',
         kind: 'recurring',
         durationMinutes: 60,
@@ -9605,7 +9589,7 @@ describe('backend app', () => {
         },
         body: JSON.stringify({
           organizationId,
-          classroomId: defaultClassroomId,
+          storeId: defaultStoreId,
           serviceId,
           timezone: 'Asia/Tokyo',
           frequency: 'weekly',
@@ -9618,8 +9602,8 @@ describe('backend app', () => {
     );
     expect(managerRecurringResponse.status).toBe(200);
 
-    const memberCreateClassroomResponse = await member.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+    const memberCreateStoreResponse = await member.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9631,8 +9615,8 @@ describe('backend app', () => {
         }),
       },
     );
-    expect(memberCreateClassroomResponse.status).toBe(403);
-    expect(await toJson(memberCreateClassroomResponse)).toEqual({ message: 'Forbidden' });
+    expect(memberCreateStoreResponse.status).toBe(403);
+    expect(await toJson(memberCreateStoreResponse)).toEqual({ message: 'Forbidden' });
   });
 
   it('extends premium gating coverage to remaining invitation and participant management surfaces', async () => {
@@ -9653,7 +9637,7 @@ describe('backend app', () => {
     const organizationSlug = await selectOrganizationSlugById(organizationId);
     expect(organizationSlug).toBe('premium-coverage-org');
 
-    const managerInvite = await createClassroomOperatorInvitation({
+    const managerInvite = await createStoreOperatorInvitation({
       agent: owner,
       email: 'premium-coverage-manager@example.com',
       role: 'manager',
@@ -9709,10 +9693,10 @@ describe('backend app', () => {
     );
     await expectPremiumDenied(orgInvitationListResponse);
 
-    const classroomInvitationListResponse = await owner.request(
-      buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
+    const storeInvitationListResponse = await owner.request(
+      buildStoreInvitationPath(organizationSlug as string, organizationSlug as string),
     );
-    await expectPremiumDenied(classroomInvitationListResponse);
+    await expectPremiumDenied(storeInvitationListResponse);
 
     const participantInvitationResponse = await createParticipantInvitation({
       agent: owner,
@@ -9765,14 +9749,11 @@ describe('backend app', () => {
     await enablePremiumForOrganization(organizationId);
 
     const organizationSlug = await selectOrganizationSlugById(organizationId);
-    const defaultClassroomId = await selectClassroomIdBySlug(
-      organizationId,
-      organizationSlug as string,
-    );
-    expect(defaultClassroomId).toBeTruthy();
+    const defaultStoreId = await selectStoreIdBySlug(organizationId, organizationSlug as string);
+    expect(defaultStoreId).toBeTruthy();
 
-    const secondClassroomResponse = await owner.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+    const secondStoreResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9784,7 +9765,7 @@ describe('backend app', () => {
         }),
       },
     );
-    expect(secondClassroomResponse.status).toBe(200);
+    expect(secondStoreResponse.status).toBe(200);
 
     const approvalServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
       method: 'POST',
@@ -9793,7 +9774,7 @@ describe('backend app', () => {
       },
       body: JSON.stringify({
         organizationId,
-        classroomId: defaultClassroomId,
+        storeId: defaultStoreId,
         name: 'Recovery Approval Service',
         kind: 'single',
         durationMinutes: 60,
@@ -9816,7 +9797,7 @@ describe('backend app', () => {
       },
       body: JSON.stringify({
         organizationId,
-        classroomId: defaultClassroomId,
+        storeId: defaultStoreId,
         name: 'Recovery Recurring Service',
         kind: 'recurring',
         durationMinutes: 45,
@@ -9839,7 +9820,7 @@ describe('backend app', () => {
         },
         body: JSON.stringify({
           organizationId,
-          classroomId: defaultClassroomId,
+          storeId: defaultStoreId,
           name: 'Recovery Tickets',
           totalCount: 5,
           serviceIds: [approvalServiceId],
@@ -9866,7 +9847,7 @@ describe('backend app', () => {
         },
         body: JSON.stringify({
           organizationId,
-          classroomId: defaultClassroomId,
+          storeId: defaultStoreId,
           serviceId: recurringServiceId,
           timezone: 'Asia/Tokyo',
           frequency: 'weekly',
@@ -9899,8 +9880,8 @@ describe('backend app', () => {
       currentPeriodEnd: null,
     });
 
-    const deniedClassroomResponse = await owner.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+    const deniedStoreResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9912,8 +9893,8 @@ describe('backend app', () => {
         }),
       },
     );
-    expect(deniedClassroomResponse.status).toBe(403);
-    expect(await toJson(deniedClassroomResponse)).toMatchObject({
+    expect(deniedStoreResponse.status).toBe(403);
+    expect(await toJson(deniedStoreResponse)).toMatchObject({
       code: 'organization_premium_required',
       reason: 'organization_plan_is_free',
     });
@@ -9964,8 +9945,8 @@ describe('backend app', () => {
     );
     expect(generateRecurringResponse.status).toBe(200);
 
-    const restoredClassroomResponse = await owner.request(
-      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/classrooms`,
+    const restoredStoreResponse = await owner.request(
+      `/api/v1/auth/orgs/${encodeURIComponent(organizationSlug as string)}/stores`,
       {
         method: 'POST',
         headers: {
@@ -9977,7 +9958,7 @@ describe('backend app', () => {
         }),
       },
     );
-    expect(restoredClassroomResponse.status).toBe(200);
+    expect(restoredStoreResponse.status).toBe(200);
   });
 
   it('handles participant invitation flows and permissions', async () => {
@@ -10241,7 +10222,7 @@ describe('backend app', () => {
     const organizationSlug = await selectOrganizationSlugById(organizationId);
     expect(organizationSlug).toBe('participant-org');
     const invitationListResponse = await admin.request(
-      buildClassroomInvitationPath(organizationSlug as string, organizationSlug as string),
+      buildStoreInvitationPath(organizationSlug as string, organizationSlug as string),
     );
     expect(invitationListResponse.status).toBe(200);
   });
@@ -10467,6 +10448,8 @@ describe('backend app', () => {
       }),
     });
     expect(allTicketTypeResponse.status).toBe(200);
+    const allTicketTypePayload = (await toJson(allTicketTypeResponse)) as Record<string, unknown>;
+    const allTicketTypeId = allTicketTypePayload.id as string;
 
     const specificTicketTypeResponse = await owner.request(
       '/api/v1/auth/organizations/ticket-types',
@@ -10486,6 +10469,11 @@ describe('backend app', () => {
       },
     );
     expect(specificTicketTypeResponse.status).toBe(200);
+    const specificTicketTypePayload = (await toJson(specificTicketTypeResponse)) as Record<
+      string,
+      unknown
+    >;
+    const specificTicketTypeId = specificTicketTypePayload.id as string;
 
     const inactiveTicketTypeResponse = await owner.request(
       '/api/v1/auth/organizations/ticket-types',
@@ -10505,6 +10493,11 @@ describe('backend app', () => {
       },
     );
     expect(inactiveTicketTypeResponse.status).toBe(200);
+    const inactiveTicketTypePayload = (await toJson(inactiveTicketTypeResponse)) as Record<
+      string,
+      unknown
+    >;
+    const inactiveTicketTypeId = inactiveTicketTypePayload.id as string;
 
     const notForSaleTicketTypeResponse = await owner.request(
       '/api/v1/auth/organizations/ticket-types',
@@ -10523,9 +10516,50 @@ describe('backend app', () => {
       },
     );
     expect(notForSaleTicketTypeResponse.status).toBe(200);
+    const notForSaleTicketTypePayload = (await toJson(notForSaleTicketTypeResponse)) as Record<
+      string,
+      unknown
+    >;
+    const notForSaleTicketTypeId = notForSaleTicketTypePayload.id as string;
+
+    const secondPublicStoreResponse = await owner.request(
+      '/api/v1/auth/orgs/public-events-org/stores',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Public Events Second Room',
+          slug: 'public-events-second-room',
+        }),
+      },
+    );
+    expect(secondPublicStoreResponse.status).toBe(200);
+    const otherStoreTicketTypeResponse = await owner.request(
+      '/api/v1/auth/orgs/public-events-org/stores/public-events-second-room/ticket-types',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Other Store Ticket',
+          totalCount: 4,
+          serviceScope: 'all',
+          isForSale: true,
+        }),
+      },
+    );
+    expect(otherStoreTicketTypeResponse.status).toBe(200);
+    const otherStoreTicketTypePayload = (await toJson(otherStoreTicketTypeResponse)) as Record<
+      string,
+      unknown
+    >;
+    const otherStoreTicketTypeId = otherStoreTicketTypePayload.id as string;
 
     const publicSiteSettingResponse = await owner.request(
-      '/api/v1/auth/orgs/public-events-org/classrooms/public-events-org/public-site',
+      '/api/v1/auth/orgs/public-events-org/stores/public-events-org/public-site',
       {
         method: 'PATCH',
         headers: {
@@ -10544,13 +10578,13 @@ describe('backend app', () => {
     expect(publicSiteSettingResponse.status).toBe(200);
     expect(await toJson(publicSiteSettingResponse)).toMatchObject({
       organizationSlug: 'public-events-org',
-      classroomSlug: 'public-events-org',
+      storeSlug: 'public-events-org',
       siteName: 'Public Events Site',
       address: '東京都千代田区1-1-1',
     });
 
     const publicEventsResponse = await app.request(
-      '/api/v1/public/orgs/public-events-org/classrooms/public-events-org/events',
+      '/api/v1/public/orgs/public-events-org/stores/public-events-org/events',
     );
     expect(publicEventsResponse.status).toBe(200);
     const publicEventsPayload = (await toJson(publicEventsResponse)) as {
@@ -10577,6 +10611,7 @@ describe('backend app', () => {
       serviceScope: 'all',
       serviceIds: [],
       serviceNames: [],
+      href: `/public-events-org/public-events-org/tickets/${allTicketTypeId}`,
     });
 
     const specificPublicTicketType = publicEventsPayload.ticketTypes?.find(
@@ -10588,10 +10623,42 @@ describe('backend app', () => {
       serviceScope: 'specific',
       serviceIds: [serviceId],
       serviceNames: ['Public Event Service'],
+      href: `/public-events-org/public-events-org/tickets/${specificTicketTypeId}`,
     });
 
+    const publicTicketTypeDetailResponse = await app.request(
+      `/api/v1/public/orgs/public-events-org/stores/public-events-org/ticket-types/${encodeURIComponent(specificTicketTypeId)}`,
+    );
+    expect(publicTicketTypeDetailResponse.status).toBe(200);
+    const publicTicketTypeDetail = (await toJson(publicTicketTypeDetailResponse)) as Record<
+      string,
+      unknown
+    >;
+    expect(publicTicketTypeDetail).toMatchObject({
+      id: specificTicketTypeId,
+      name: 'Public Specific Ticket',
+      totalCount: 5,
+      expiresInDays: null,
+      serviceScope: 'specific',
+      serviceIds: [serviceId],
+      serviceNames: ['Public Event Service'],
+      href: `/public-events-org/public-events-org/tickets/${specificTicketTypeId}`,
+    });
+
+    for (const hiddenTicketTypeId of [
+      inactiveTicketTypeId,
+      notForSaleTicketTypeId,
+      otherStoreTicketTypeId,
+      'missing-ticket-type',
+    ]) {
+      const hiddenTicketTypeResponse = await app.request(
+        `/api/v1/public/orgs/public-events-org/stores/public-events-org/ticket-types/${encodeURIComponent(hiddenTicketTypeId)}`,
+      );
+      expect(hiddenTicketTypeResponse.status).toBe(404);
+    }
+
     const publicEventDetailResponse = await app.request(
-      `/api/v1/public/orgs/public-events-org/classrooms/public-events-org/events/${encodeURIComponent(slotId)}`,
+      `/api/v1/public/orgs/public-events-org/stores/public-events-org/events/${encodeURIComponent(slotId)}`,
     );
     expect(publicEventDetailResponse.status).toBe(200);
     const publicEventDetail = (await toJson(publicEventDetailResponse)) as Record<string, unknown>;
@@ -10605,7 +10672,7 @@ describe('backend app', () => {
     ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
 
     const publicSiteResponse = await app.request(
-      '/api/v1/public/orgs/public-events-org/classrooms/public-events-org/site',
+      '/api/v1/public/orgs/public-events-org/stores/public-events-org/site',
     );
     expect(publicSiteResponse.status).toBe(200);
     const publicSitePayload = (await toJson(publicSiteResponse)) as Record<string, unknown>;
@@ -10668,7 +10735,7 @@ describe('backend app', () => {
     expect(scopedSlotResponse.status).toBe(200);
     const scopedSlotPayload = (await toJson(scopedSlotResponse)) as Record<string, unknown>;
     const scopedPublicEventsResponse = await app.request(
-      '/api/v1/public/orgs/scoped-public-events-org/classrooms/scoped-public-events-org/events',
+      '/api/v1/public/orgs/scoped-public-events-org/stores/scoped-public-events-org/events',
     );
     expect(scopedPublicEventsResponse.status).toBe(200);
     const scopedPublicEventsPayload = (await toJson(scopedPublicEventsResponse)) as {
@@ -12239,7 +12306,7 @@ describe('backend app', () => {
     expect(ticketTypeCreateResponse.status).toBe(200);
     const ticketTypePayload = (await toJson(ticketTypeCreateResponse)) as Record<string, unknown>;
     const ticketTypeId = ticketTypePayload.id as string;
-    const classroomId = ticketTypePayload.classroomId as string;
+    const storeId = ticketTypePayload.storeId as string;
 
     const participantId = await selectParticipantIdByEmail(
       organizationId,
@@ -12250,12 +12317,12 @@ describe('backend app', () => {
     const purchaseId = crypto.randomUUID();
     await d1
       .prepare(
-        'INSERT INTO ticket_purchase (id, organization_id, classroom_id, participant_id, ticket_type_id, payment_method, status, stripe_checkout_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO ticket_purchase (id, organization_id, store_id, participant_id, ticket_type_id, payment_method, status, stripe_checkout_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .bind(
         purchaseId,
         organizationId,
-        classroomId,
+        storeId,
         participantId as string,
         ticketTypeId,
         'stripe',
@@ -15192,12 +15259,8 @@ describe('backend app', () => {
     expect(body.paths['/api/v1/auth/sign-in']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations']).toBeDefined();
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/invitations']).toBeDefined();
-    expect(
-      body.paths['/api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations'],
-    ).toBeDefined();
-    expect(
-      body.paths['/api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/public-site'],
-    ).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/public-site']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/user']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}/accept']).toBeDefined();
@@ -15245,14 +15308,13 @@ describe('backend app', () => {
     expect(JSON.stringify(body)).toContain('reminderDelivery');
     expect(JSON.stringify(body)).toContain('reconciliation');
     expect(JSON.stringify(body)).toContain('timeline');
+    expect(body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/site']).toBeDefined();
+    expect(body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events']).toBeDefined();
     expect(
-      body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/site'],
+      body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events/{slotId}'],
     ).toBeDefined();
     expect(
-      body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events'],
-    ).toBeDefined();
-    expect(
-      body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events/{slotId}'],
+      body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/ticket-types/{ticketTypeId}'],
     ).toBeDefined();
   });
 });

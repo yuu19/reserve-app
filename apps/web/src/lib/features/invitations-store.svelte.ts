@@ -1,13 +1,6 @@
-import {
-	authRpc,
-	type ClassroomInvitationRole,
-	type InvitationPayload
-} from '$lib/rpc-client';
+import { authRpc, type StoreInvitationRole, type InvitationPayload } from '$lib/rpc-client';
 import { loadOrganizations } from './organization-context.svelte';
-import {
-	parseResponseBody,
-	toErrorMessage
-} from './auth-session.svelte';
+import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
 import { readOrganizationPremiumRestriction } from './premium-restrictions';
 import { readWindowScopedRouteContext } from './scoped-routing';
 
@@ -25,26 +18,26 @@ const isInvitation = (value: unknown): value is InvitationPayload =>
 const asInvitations = (value: unknown): InvitationPayload[] =>
 	Array.isArray(value) ? value.filter(isInvitation) : [];
 
-const isClassroomRole = (value: string): value is ClassroomInvitationRole =>
+const isStoreRole = (value: string): value is StoreInvitationRole =>
 	value === 'manager' || value === 'staff' || value === 'participant';
 
 const isOperatorInvitation = (invitation: InvitationPayload): boolean =>
-	invitation.subjectKind === 'org_operator' || invitation.subjectKind === 'classroom_operator';
+	invitation.subjectKind === 'org_operator' || invitation.subjectKind === 'store_operator';
 
-export const loadClassroomInvitations = async () => {
+export const loadStoreInvitations = async () => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
 		return {
 			organizationId: null as string | null,
 			operatorInvitations: [] as InvitationPayload[],
 			participantInvitations: [] as InvitationPayload[],
-			canManageClassroom: false,
+			canManageStore: false,
 			canManageParticipants: false,
 			premiumRestriction: null
 		};
 	}
 
-	const [{ activeOrganization, activeClassroom }, invitationResponse] = await Promise.all([
+	const [{ activeOrganization, activeStore }, invitationResponse] = await Promise.all([
 		loadOrganizations(context),
 		authRpc.listInvitationsScoped(context)
 	]);
@@ -55,13 +48,13 @@ export const loadClassroomInvitations = async () => {
 	return {
 		organizationId: activeOrganization?.id ?? null,
 		operatorInvitations: visibleInvitations.filter(
-			(invitation) => invitation.subjectKind === 'classroom_operator'
+			(invitation) => invitation.subjectKind === 'store_operator'
 		),
 		participantInvitations: visibleInvitations.filter(
 			(invitation) => invitation.subjectKind === 'participant'
 		),
-		canManageClassroom: activeClassroom?.canManageClassroom ?? false,
-		canManageParticipants: activeClassroom?.canManageParticipants ?? false,
+		canManageStore: activeStore?.canManageStore ?? false,
+		canManageParticipants: activeStore?.canManageParticipants ?? false,
 		premiumRestriction
 	};
 };
@@ -74,13 +67,13 @@ export const loadReceivedOperatorInvitations = async () => {
 	};
 };
 
-export const createClassroomInvitation = async (input: {
+export const createStoreInvitation = async (input: {
 	email: string;
 	role: string;
 	participantName?: string;
 	resend?: boolean;
 }) => {
-	if (!isClassroomRole(input.role)) {
+	if (!isStoreRole(input.role)) {
 		return {
 			ok: false,
 			status: 422,
@@ -97,7 +90,7 @@ export const createClassroomInvitation = async (input: {
 
 	const context = readWindowScopedRouteContext();
 	if (!context) {
-		return { ok: false, status: 422, message: 'URL に組織/教室コンテキストがありません。' };
+		return { ok: false, status: 422, message: 'URL に組織/店舗コンテキストがありません。' };
 	}
 
 	const response = await authRpc.createInvitationScoped(context, {
@@ -107,7 +100,7 @@ export const createClassroomInvitation = async (input: {
 		resend: input.resend
 	});
 	const payload = await parseResponseBody(response);
-	const invitationLabel = input.role === 'participant' ? '参加者招待' : '教室運営招待';
+	const invitationLabel = input.role === 'participant' ? '参加者招待' : '店舗運営招待';
 	const premiumRestriction = readOrganizationPremiumRestriction(payload);
 
 	return {

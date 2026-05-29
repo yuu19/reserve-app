@@ -21,7 +21,7 @@ const feedbackRetentionExpiresAt = (now: Date): Date =>
   new Date(now.getTime() + FEEDBACK_AGGREGATE_RETENTION_MS);
 
 /**
- * 既存の会話が完全に同じユーザー・組織・教室スコープに属するときだけ再利用する。
+ * 既存の会話が完全に同じユーザー・組織・店舗スコープに属するときだけ再利用する。
  *
  * null は指定された会話 ID が呼び出し側の現在の認可境界外であることを示し、
  * ルート側では forbidden として扱う。
@@ -49,9 +49,9 @@ export const ensureAiConversation = async ({
           eq(dbSchema.aiConversation.actorUserId, scope.userId),
           eq(dbSchema.aiConversation.subjectType, 'organization'),
           eq(dbSchema.aiConversation.subjectId, scope.organizationId),
-          scope.classroomId
-            ? eq(dbSchema.aiConversation.classroomId, scope.classroomId)
-            : isNull(dbSchema.aiConversation.classroomId),
+          scope.storeId
+            ? eq(dbSchema.aiConversation.storeId, scope.storeId)
+            : isNull(dbSchema.aiConversation.storeId),
           eq(dbSchema.aiConversation.status, 'active'),
           isNull(dbSchema.aiConversation.anonymizedAt),
         ),
@@ -78,7 +78,7 @@ export const ensureAiConversation = async ({
     actorUserId: scope.userId,
     subjectType: 'organization',
     subjectId: scope.organizationId,
-    classroomId: scope.classroomId,
+    storeId: scope.storeId,
     channel: 'web',
     status: 'active',
     title: title?.slice(0, 120) ?? null,
@@ -184,7 +184,7 @@ export const recordAiUsageEvent = async ({
     subjectType: 'organization',
     subjectId: scope.organizationId,
     actorUserId: scope.userId,
-    classroomId: scope.classroomId,
+    storeId: scope.storeId,
     conversationId,
     messageId,
     provider: provider ?? null,
@@ -227,9 +227,9 @@ export const canUserAccessAssistantMessage = async ({
         eq(dbSchema.aiConversation.actorUserId, scope.userId),
         eq(dbSchema.aiConversation.subjectType, 'organization'),
         eq(dbSchema.aiConversation.subjectId, scope.organizationId),
-        scope.classroomId
-          ? eq(dbSchema.aiConversation.classroomId, scope.classroomId)
-          : isNull(dbSchema.aiConversation.classroomId),
+        scope.storeId
+          ? eq(dbSchema.aiConversation.storeId, scope.storeId)
+          : isNull(dbSchema.aiConversation.storeId),
       ),
     )
     .limit(1);

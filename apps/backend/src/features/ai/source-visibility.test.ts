@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type {
-  OrganizationClassroomAccess,
+  OrganizationStoreAccess,
   OrganizationRole,
-  ClassroomStaffRole,
+  StoreStaffRole,
 } from '../../domain/booking/authorization.js';
 import {
   canUseInternalKnowledge,
@@ -13,68 +13,67 @@ import {
 
 const buildAccess = ({
   organizationId = 'org-a',
-  classroomId = 'class-a',
+  storeId = 'class-a',
   orgRole = null,
-  classroomStaffRole = null,
+  storeStaffRole = null,
   hasParticipantRecord = false,
 }: {
   organizationId?: string;
-  classroomId?: string;
+  storeId?: string;
   orgRole?: OrganizationRole;
-  classroomStaffRole?: ClassroomStaffRole;
+  storeStaffRole?: StoreStaffRole;
   hasParticipantRecord?: boolean;
-} = {}): OrganizationClassroomAccess => ({
+} = {}): OrganizationStoreAccess => ({
   organizationId,
   organizationSlug: organizationId,
   organizationName: 'Organization',
-  classroomId,
-  classroomSlug: classroomId,
-  classroomName: 'Classroom',
+  storeId,
+  storeSlug: storeId,
+  storeName: 'Store',
   facts: {
     orgRole,
-    classroomStaffRole,
+    storeStaffRole,
     hasParticipantRecord,
   },
   effective: {
     canManageOrganization: orgRole === 'owner' || orgRole === 'admin',
-    canManageClassroom:
-      orgRole === 'owner' || orgRole === 'admin' || classroomStaffRole === 'manager',
+    canManageStore: orgRole === 'owner' || orgRole === 'admin' || storeStaffRole === 'manager',
     canManageBookings:
       orgRole === 'owner' ||
       orgRole === 'admin' ||
-      classroomStaffRole === 'manager' ||
-      classroomStaffRole === 'staff',
+      storeStaffRole === 'manager' ||
+      storeStaffRole === 'staff',
     canManageParticipants:
       orgRole === 'owner' ||
       orgRole === 'admin' ||
-      classroomStaffRole === 'manager' ||
-      classroomStaffRole === 'staff',
+      storeStaffRole === 'manager' ||
+      storeStaffRole === 'staff',
     canUseParticipantBooking: hasParticipantRecord,
   },
   sources: {
     canManageOrganization: orgRole === 'owner' || orgRole === 'admin' ? 'org_role' : null,
-    canManageClassroom:
+    canManageStore:
       orgRole === 'owner' || orgRole === 'admin'
         ? 'org_role'
-        : classroomStaffRole === 'manager'
-          ? 'classroom_member'
+        : storeStaffRole === 'manager'
+          ? 'store_member'
           : null,
     canManageBookings:
       orgRole === 'owner' || orgRole === 'admin'
         ? 'org_role'
-        : classroomStaffRole
-          ? 'classroom_member'
+        : storeStaffRole
+          ? 'store_member'
           : null,
     canManageParticipants:
       orgRole === 'owner' || orgRole === 'admin'
         ? 'org_role'
-        : classroomStaffRole
-          ? 'classroom_member'
+        : storeStaffRole
+          ? 'store_member'
           : null,
     canUseParticipantBooking: hasParticipantRecord ? 'participant_record' : null,
   },
   display: {
-    primaryRole: orgRole ?? classroomStaffRole ?? (hasParticipantRecord ? 'participant' : null),
+    primaryRole: orgRole ?? storeStaffRole ?? (hasParticipantRecord ? 'participant' : null),
     badges: [],
   },
 });
@@ -98,14 +97,14 @@ describe('AI source visibility', () => {
       'manager',
       'admin',
     ]);
-    expect(resolveAllowedVisibilities(buildAccess({ classroomStaffRole: 'manager' }))).toEqual([
+    expect(resolveAllowedVisibilities(buildAccess({ storeStaffRole: 'manager' }))).toEqual([
       'public',
       'authenticated',
       'participant',
       'staff',
       'manager',
     ]);
-    expect(resolveAllowedVisibilities(buildAccess({ classroomStaffRole: 'staff' }))).toEqual([
+    expect(resolveAllowedVisibilities(buildAccess({ storeStaffRole: 'staff' }))).toEqual([
       'public',
       'authenticated',
       'participant',
@@ -118,7 +117,7 @@ describe('AI source visibility', () => {
     ]);
   });
 
-  it('enforces organization, classroom, locale, and internal-only source scope', () => {
+  it('enforces organization, store, locale, and internal-only source scope', () => {
     const participant = buildAccess({ hasParticipantRecord: true });
 
     expect(
@@ -126,7 +125,7 @@ describe('AI source visibility', () => {
         source: {
           visibility: 'participant',
           organizationId: 'org-a',
-          classroomId: 'class-a',
+          storeId: 'class-a',
           locale: 'ja',
         },
         access: participant,
@@ -137,7 +136,7 @@ describe('AI source visibility', () => {
         source: {
           visibility: 'participant',
           organizationId: 'org-b',
-          classroomId: 'class-a',
+          storeId: 'class-a',
           locale: 'ja',
         },
         access: participant,
@@ -148,7 +147,7 @@ describe('AI source visibility', () => {
         source: {
           visibility: 'participant',
           organizationId: 'org-a',
-          classroomId: 'class-b',
+          storeId: 'class-b',
           locale: 'ja',
         },
         access: participant,
@@ -159,7 +158,7 @@ describe('AI source visibility', () => {
         source: {
           visibility: 'participant',
           organizationId: 'org-a',
-          classroomId: 'class-a',
+          storeId: 'class-a',
           locale: 'en',
         },
         access: participant,

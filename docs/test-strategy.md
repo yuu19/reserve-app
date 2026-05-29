@@ -105,7 +105,7 @@ docs の Playwright E2E は、静的なデモページではなく公開済み�
 当面の方針:
 
 - API 契約の破壊は backend / web server 側で先に捕まえる
-- mobile 変更では少なくともログイン、org/classroom 切替、招待一覧、招待受諾の手動確認を行う
+- mobile 変更では少なくともログイン、org/store 切替、招待一覧、招待受諾の手動確認を行う
 - 画面数が増えた時点で、React Native 向けの自動テスト導入を再検討する
 
 ## 3. 実行コマンド
@@ -154,7 +154,7 @@ pnpm --filter @apps/web test:e2e
 ```
 
 通常の web E2E は Stripe test mode を使わない。
-public event 用の組織 slug と教室 slug は Playwright 設定で worker ごとに生成し、環境変数で明示されている場合はその値を使う。
+public event 用の組織 slug と店舗 slug は Playwright 設定で worker ごとに生成し、環境変数で明示されている場合はその値を使う。
 spec は利用者の流れと検証内容を中心に書く。
 画面操作は `apps/web/tests/e2e/pages`、認証や seed data は `apps/web/tests/e2e/helpers` に分ける。
 

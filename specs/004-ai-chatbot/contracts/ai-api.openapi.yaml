@@ -63,7 +63,7 @@ components:
           type: string
         organizationId:
           type: string
-        classroomId:
+        storeId:
           type: string
         currentPage:
           type: string

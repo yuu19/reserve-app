@@ -6,7 +6,7 @@ import {
 	createSlot,
 	expectPublicEventCapacity,
 	futureSlotRange,
-	publicEventsClassroomSlug,
+	publicEventsStoreSlug,
 	publicEventsOrgSlug,
 	signUpAccount,
 	syncRequestCookiesToBrowser,
@@ -40,12 +40,12 @@ test.describe('booking and public event flows', () => {
 
 		await scopedAdminPages.expectServiceVisible({
 			orgSlug: organization.slug,
-			classroomSlug: organization.classroomSlug,
+			storeSlug: organization.storeSlug,
 			serviceName: service.name
 		});
 		await scopedAdminPages.expectSlotVisible({
 			orgSlug: organization.slug,
-			classroomSlug: organization.classroomSlug,
+			storeSlug: organization.storeSlug,
 			serviceName: service.name,
 			locationLabel: 'E2E Room'
 		});
@@ -63,7 +63,7 @@ test.describe('booking and public event flows', () => {
 			request,
 			token,
 			slug: publicEventsOrgSlug,
-			classroomSlug: publicEventsClassroomSlug
+			storeSlug: publicEventsStoreSlug
 		});
 		const service = await createService({
 			request,
@@ -84,7 +84,7 @@ test.describe('booking and public event flows', () => {
 		await publicEventsPage.openEventDetails({
 			serviceName: service.name,
 			orgSlug: publicEventsOrgSlug,
-			classroomSlug: publicEventsClassroomSlug,
+			storeSlug: publicEventsStoreSlug,
 			slotId: slot.id
 		});
 
@@ -103,7 +103,7 @@ test.describe('booking and public event flows', () => {
 		await publicEventsPage.openEventDetails({
 			serviceName: service.name,
 			orgSlug: publicEventsOrgSlug,
-			classroomSlug: publicEventsClassroomSlug,
+			storeSlug: publicEventsStoreSlug,
 			slotId: slot.id
 		});
 		await publicEventsPage.reserveAsParticipant();
@@ -112,7 +112,7 @@ test.describe('booking and public event flows', () => {
 		await expectPublicEventCapacity({
 			request,
 			orgSlug: publicEventsOrgSlug,
-			classroomSlug: publicEventsClassroomSlug,
+			storeSlug: publicEventsStoreSlug,
 			slotId: slot.id,
 			remainingCount: 2,
 			capacity: 3

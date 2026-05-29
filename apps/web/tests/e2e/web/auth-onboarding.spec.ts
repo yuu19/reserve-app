@@ -16,7 +16,7 @@ test.describe('admin authentication and onboarding', () => {
 		const token = uniqueToken(testInfo, 'onboarding');
 		const owner = createAccount(token, 'owner');
 		const organizationName = `Onboarding ${token}`;
-		const classroomName = `Room ${token}`;
+		const storeName = `Room ${token}`;
 		const onboardingPage = new AdminOnboardingPage(page);
 
 		await page.goto('/');
@@ -25,8 +25,8 @@ test.describe('admin authentication and onboarding', () => {
 		await signUpAccount({ request, account: owner });
 		await syncRequestCookiesToBrowser(request, context);
 		await onboardingPage.gotoOnboarding();
-		await onboardingPage.createInitialOrganization({ organizationName, classroomName });
+		await onboardingPage.createInitialOrganization({ organizationName, storeName });
 
-		await onboardingPage.expectDashboard({ organizationName, classroomName });
+		await onboardingPage.expectDashboard({ organizationName, storeName });
 	});
 });

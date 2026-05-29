@@ -5,7 +5,7 @@ import Layout from './+layout.svelte';
 type MockAccessTree = {
 	orgs?: Array<{
 		org?: { slug?: string | null } | null;
-		classrooms?: Array<{ slug?: string | null }> | null;
+		stores?: Array<{ slug?: string | null }> | null;
 	}>;
 } | null;
 
@@ -16,7 +16,7 @@ const buildPortalAccess = (overrides: Record<string, unknown> = {}) => ({
 	hasAdminPortalAccess: false,
 	hasParticipantAccess: false,
 	canManage: false,
-	canManageClassroom: false,
+	canManageStore: false,
 	canManageBookings: false,
 	canManageParticipants: false,
 	canUseParticipantBooking: false,
@@ -29,12 +29,12 @@ const buildPortalAccess = (overrides: Record<string, unknown> = {}) => ({
 	...overrides
 });
 
-const buildClassroomEntry = (overrides: Record<string, unknown> = {}) => ({
+const buildStoreEntry = (overrides: Record<string, unknown> = {}) => ({
 	id: 'room-1',
 	name: 'Room A',
 	slug: 'room-a',
 	canManage: true,
-	canManageClassroom: true,
+	canManageStore: true,
 	canManageBookings: true,
 	canManageParticipants: true,
 	canUseParticipantBooking: true,
@@ -44,12 +44,12 @@ const buildClassroomEntry = (overrides: Record<string, unknown> = {}) => ({
 	},
 	facts: {
 		orgRole: 'admin',
-		classroomStaffRole: 'manager',
+		storeStaffRole: 'manager',
 		hasParticipantRecord: true
 	},
 	sources: {
 		canManageOrganization: 'org_role',
-		canManageClassroom: 'org_role',
+		canManageStore: 'org_role',
 		canManageBookings: 'org_role',
 		canManageParticipants: 'org_role',
 		canUseParticipantBooking: 'participant_record'
@@ -57,25 +57,25 @@ const buildClassroomEntry = (overrides: Record<string, unknown> = {}) => ({
 	...overrides
 });
 
-const buildAccessTreeClassroom = (overrides: Record<string, unknown> = {}) => ({
+const buildAccessTreeStore = (overrides: Record<string, unknown> = {}) => ({
 	id: 'room-1',
 	name: 'Room A',
 	slug: 'room-a',
 	facts: {
 		orgRole: 'admin',
-		classroomStaffRole: 'manager',
+		storeStaffRole: 'manager',
 		hasParticipantRecord: true
 	},
 	effective: {
 		canManageOrganization: true,
-		canManageClassroom: true,
+		canManageStore: true,
 		canManageBookings: true,
 		canManageParticipants: true,
 		canUseParticipantBooking: true
 	},
 	sources: {
 		canManageOrganization: 'org_role',
-		canManageClassroom: 'org_role',
+		canManageStore: 'org_role',
 		canManageBookings: 'org_role',
 		canManageParticipants: 'org_role',
 		canUseParticipantBooking: 'participant_record'
@@ -105,7 +105,7 @@ const mocks = vi.hoisted(() => ({
 	loadPortalAccess: vi.fn(),
 	loadOrganizations: vi.fn(),
 	setActiveOrganization: vi.fn(),
-	listClassroomsByOrgSlug: vi.fn(),
+	listStoresByOrgSlug: vi.fn(),
 	readLastAuthPortal: vi.fn(),
 	writeLastAuthPortal: vi.fn(),
 	goto: vi.fn(),
@@ -158,13 +158,13 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 			return null;
 		}
 		const orgSlug = decodeURIComponent(match[1] ?? '');
-		const classroomSlug = decodeURIComponent(match[2] ?? '');
+		const storeSlug = decodeURIComponent(match[2] ?? '');
 		for (const orgEntry of accessTree.orgs) {
 			if (orgEntry.org?.slug !== orgSlug) {
 				continue;
 			}
-			if (orgEntry.classrooms?.some((classroom) => classroom.slug === classroomSlug)) {
-				return { orgSlug, classroomSlug };
+			if (orgEntry.stores?.some((store) => store.slug === storeSlug)) {
+				return { orgSlug, storeSlug };
 			}
 		}
 		return null;
@@ -174,7 +174,7 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 vi.mock('$lib/features/organization-context.svelte', () => ({
 	loadOrganizations: mocks.loadOrganizations,
 	setActiveOrganization: mocks.setActiveOrganization,
-	listClassroomsByOrgSlug: mocks.listClassroomsByOrgSlug
+	listStoresByOrgSlug: mocks.listStoresByOrgSlug
 }));
 
 vi.mock('$lib/features/auth-lifecycle', () => ({
@@ -243,7 +243,7 @@ describe('/+layout.svelte', () => {
 		mocks.loadPortalAccess.mockReset();
 		mocks.loadOrganizations.mockReset();
 		mocks.setActiveOrganization.mockReset();
-		mocks.listClassroomsByOrgSlug.mockReset();
+		mocks.listStoresByOrgSlug.mockReset();
 		mocks.readLastAuthPortal.mockReset();
 		mocks.writeLastAuthPortal.mockReset();
 		mocks.goto.mockReset();
@@ -259,29 +259,29 @@ describe('/+layout.svelte', () => {
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [{ id: 'org-1', name: 'Org One', slug: 'org-one' }],
 			activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
-			classrooms: [],
-			activeClassroom: null
+			stores: [],
+			activeStore: null
 		});
-		mocks.listClassroomsByOrgSlug.mockResolvedValue([]);
+		mocks.listStoresByOrgSlug.mockResolvedValue([]);
 		mocks.loadPortalAccess.mockResolvedValue(
 			buildPortalAccess({
 				hasOrganizationAdminAccess: true,
 				hasAdminPortalAccess: true,
 				hasParticipantAccess: true,
 				canManage: true,
-				canManageClassroom: true,
+				canManageStore: true,
 				canManageBookings: true,
 				canManageParticipants: true,
 				canUseParticipantBooking: true,
 				activeOrganizationRole: 'admin',
 				activeFacts: {
 					orgRole: 'admin',
-					classroomStaffRole: 'manager',
+					storeStaffRole: 'manager',
 					hasParticipantRecord: true
 				},
 				activeSources: {
 					canManageOrganization: 'org_role',
-					canManageClassroom: 'org_role',
+					canManageStore: 'org_role',
 					canManageBookings: 'org_role',
 					canManageParticipants: 'org_role',
 					canUseParticipantBooking: 'participant_record'
@@ -365,20 +365,20 @@ describe('/+layout.svelte', () => {
 				hasAdminPortalAccess: true,
 				hasParticipantAccess: false,
 				canManage: false,
-				canManageClassroom: false,
+				canManageStore: false,
 				canManageBookings: true,
 				canManageParticipants: true,
 				canUseParticipantBooking: false,
 				activeFacts: {
 					orgRole: null,
-					classroomStaffRole: 'staff',
+					storeStaffRole: 'staff',
 					hasParticipantRecord: false
 				},
 				activeSources: {
 					canManageOrganization: null,
-					canManageClassroom: null,
-					canManageBookings: 'classroom_member',
-					canManageParticipants: 'classroom_member',
+					canManageStore: null,
+					canManageBookings: 'store_member',
+					canManageParticipants: 'store_member',
 					canUseParticipantBooking: null
 				},
 				activeDisplay: {
@@ -392,10 +392,10 @@ describe('/+layout.svelte', () => {
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [{ id: 'org-1', name: 'Org One', slug: 'org-one' }],
 			activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
-			classrooms: [
-				buildClassroomEntry({
+			stores: [
+				buildStoreEntry({
 					canManage: false,
-					canManageClassroom: false,
+					canManageStore: false,
 					canManageBookings: true,
 					canManageParticipants: true,
 					canUseParticipantBooking: false,
@@ -405,21 +405,21 @@ describe('/+layout.svelte', () => {
 					},
 					facts: {
 						orgRole: null,
-						classroomStaffRole: 'staff',
+						storeStaffRole: 'staff',
 						hasParticipantRecord: false
 					},
 					sources: {
 						canManageOrganization: null,
-						canManageClassroom: null,
-						canManageBookings: 'classroom_member',
-						canManageParticipants: 'classroom_member',
+						canManageStore: null,
+						canManageBookings: 'store_member',
+						canManageParticipants: 'store_member',
 						canUseParticipantBooking: null
 					}
 				})
 			],
-			activeClassroom: buildClassroomEntry({
+			activeStore: buildStoreEntry({
 				canManage: false,
-				canManageClassroom: false,
+				canManageStore: false,
 				canManageBookings: true,
 				canManageParticipants: true,
 				canUseParticipantBooking: false,
@@ -429,14 +429,14 @@ describe('/+layout.svelte', () => {
 				},
 				facts: {
 					orgRole: null,
-					classroomStaffRole: 'staff',
+					storeStaffRole: 'staff',
 					hasParticipantRecord: false
 				},
 				sources: {
 					canManageOrganization: null,
-					canManageClassroom: null,
-					canManageBookings: 'classroom_member',
-					canManageParticipants: 'classroom_member',
+					canManageStore: null,
+					canManageBookings: 'store_member',
+					canManageParticipants: 'store_member',
 					canUseParticipantBooking: null
 				}
 			})
@@ -448,7 +448,7 @@ describe('/+layout.svelte', () => {
 			expect(document.querySelector('a[href="/org-one/room-a/admin/participants"]')).not.toBeNull();
 			expect(document.querySelector('a[href="/org-one/room-a/admin/tickets"]')).not.toBeNull();
 			expect(document.querySelector('a[href="/org-one/room-a/admin/services"]')).toBeNull();
-			expect(document.querySelector('a[href="/org-one/room-a/admin/classrooms"]')).toBeNull();
+			expect(document.querySelector('a[href="/org-one/room-a/admin/stores"]')).toBeNull();
 			expect(document.body.textContent).not.toContain('参加者へ切替');
 		});
 	});
@@ -461,18 +461,18 @@ describe('/+layout.svelte', () => {
 				hasAdminPortalAccess: false,
 				hasParticipantAccess: true,
 				canManage: false,
-				canManageClassroom: false,
+				canManageStore: false,
 				canManageBookings: false,
 				canManageParticipants: false,
 				canUseParticipantBooking: true,
 				activeFacts: {
 					orgRole: null,
-					classroomStaffRole: null,
+					storeStaffRole: null,
 					hasParticipantRecord: true
 				},
 				activeSources: {
 					canManageOrganization: null,
-					canManageClassroom: null,
+					canManageStore: null,
 					canManageBookings: null,
 					canManageParticipants: null,
 					canUseParticipantBooking: 'participant_record'
@@ -493,7 +493,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('resyncs stale classroom state from the scoped url context', async () => {
+	it('resyncs stale store state from the scoped url context', async () => {
 		pageState.url = new URL('https://example.com/org-one/room-b/admin/dashboard');
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 
@@ -505,9 +505,9 @@ describe('/+layout.svelte', () => {
 						name: 'Org One',
 						slug: 'org-one'
 					},
-					classrooms: [
-						buildAccessTreeClassroom(),
-						buildAccessTreeClassroom({
+					stores: [
+						buildAccessTreeStore(),
+						buildAccessTreeStore({
 							id: 'room-2',
 							name: 'Room B',
 							slug: 'room-b'
@@ -521,20 +521,20 @@ describe('/+layout.svelte', () => {
 			.mockResolvedValueOnce({
 				organizations: [{ id: 'org-1', name: 'Org One', slug: 'org-one' }],
 				activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
-				classrooms: [
-					buildClassroomEntry(),
-					buildClassroomEntry({ id: 'room-2', name: 'Room B', slug: 'room-b' })
+				stores: [
+					buildStoreEntry(),
+					buildStoreEntry({ id: 'room-2', name: 'Room B', slug: 'room-b' })
 				],
-				activeClassroom: buildClassroomEntry()
+				activeStore: buildStoreEntry()
 			})
 			.mockResolvedValueOnce({
 				organizations: [{ id: 'org-1', name: 'Org One', slug: 'org-one' }],
 				activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
-				classrooms: [
-					buildClassroomEntry(),
-					buildClassroomEntry({ id: 'room-2', name: 'Room B', slug: 'room-b' })
+				stores: [
+					buildStoreEntry(),
+					buildStoreEntry({ id: 'room-2', name: 'Room B', slug: 'room-b' })
 				],
-				activeClassroom: buildClassroomEntry({ id: 'room-2', name: 'Room B', slug: 'room-b' })
+				activeStore: buildStoreEntry({ id: 'room-2', name: 'Room B', slug: 'room-b' })
 			});
 
 		mocks.loadPortalAccess
@@ -544,19 +544,19 @@ describe('/+layout.svelte', () => {
 					hasAdminPortalAccess: true,
 					hasParticipantAccess: true,
 					canManage: true,
-					canManageClassroom: true,
+					canManageStore: true,
 					canManageBookings: true,
 					canManageParticipants: true,
 					canUseParticipantBooking: true,
 					activeOrganizationRole: 'admin',
 					activeFacts: {
 						orgRole: 'admin',
-						classroomStaffRole: 'manager',
+						storeStaffRole: 'manager',
 						hasParticipantRecord: true
 					},
 					activeSources: {
 						canManageOrganization: 'org_role',
-						canManageClassroom: 'org_role',
+						canManageStore: 'org_role',
 						canManageBookings: 'org_role',
 						canManageParticipants: 'org_role',
 						canUseParticipantBooking: 'participant_record'
@@ -567,7 +567,7 @@ describe('/+layout.svelte', () => {
 					},
 					activeDisplayRole: 'admin',
 					hasActiveOrganization: true,
-					activeContext: { orgSlug: 'org-one', classroomSlug: 'room-a' },
+					activeContext: { orgSlug: 'org-one', storeSlug: 'room-a' },
 					accessTree
 				})
 			)
@@ -577,19 +577,19 @@ describe('/+layout.svelte', () => {
 					hasAdminPortalAccess: true,
 					hasParticipantAccess: true,
 					canManage: true,
-					canManageClassroom: true,
+					canManageStore: true,
 					canManageBookings: true,
 					canManageParticipants: true,
 					canUseParticipantBooking: true,
 					activeOrganizationRole: 'admin',
 					activeFacts: {
 						orgRole: 'admin',
-						classroomStaffRole: 'manager',
+						storeStaffRole: 'manager',
 						hasParticipantRecord: true
 					},
 					activeSources: {
 						canManageOrganization: 'org_role',
-						canManageClassroom: 'org_role',
+						canManageStore: 'org_role',
 						canManageBookings: 'org_role',
 						canManageParticipants: 'org_role',
 						canUseParticipantBooking: 'participant_record'
@@ -600,7 +600,7 @@ describe('/+layout.svelte', () => {
 					},
 					activeDisplayRole: 'admin',
 					hasActiveOrganization: true,
-					activeContext: { orgSlug: 'org-one', classroomSlug: 'room-b' },
+					activeContext: { orgSlug: 'org-one', storeSlug: 'room-b' },
 					accessTree
 				})
 			);
@@ -610,11 +610,11 @@ describe('/+layout.svelte', () => {
 		await vi.waitFor(() => {
 			expect(mocks.loadOrganizations).toHaveBeenNthCalledWith(2, {
 				orgSlug: 'org-one',
-				classroomSlug: 'room-b'
+				storeSlug: 'room-b'
 			});
 			expect(mocks.loadPortalAccess).toHaveBeenNthCalledWith(2, {
 				orgSlug: 'org-one',
-				classroomSlug: 'room-b'
+				storeSlug: 'room-b'
 			});
 			expect(document.body.textContent).toContain('Room B');
 		});

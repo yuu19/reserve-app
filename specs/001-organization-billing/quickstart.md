@@ -40,7 +40,7 @@ pnpm --filter @apps/web exec vitest run --project client
 For mobile entitlement-impacting changes, record manual smoke coverage:
 
 - login
-- organization/classroom switching
+- organization/store switching
 - invitation list/acceptance
 - any premium-gated flow visible in mobile
 
@@ -67,7 +67,7 @@ Recorded during implementation on 2026-04-27:
 
 Expo/mobile manual smoke was not executed in this CLI session. No mobile source files were
 changed for this billing implementation. Before release, run manual smoke for login,
-organization/classroom switching, invitation list/acceptance, and any mobile-visible
+organization/store switching, invitation list/acceptance, and any mobile-visible
 premium-gated flow if the deployed entitlement behavior affects mobile users.
 
 ## Constitution Gates

@@ -1,11 +1,12 @@
 import type {
 	PublicSitePagePayload,
 	PublicSiteProfilePayload,
+	PublicTicketTypePayload,
 	ScopedApiContext,
 	UpdatePublicSiteSettingsInput
 } from '$lib/rpc-client';
 import { authRpc } from '$lib/rpc-client';
-import { getPublicSitePage } from '$lib/remote/public-site-page.remote';
+import { getPublicSitePage, getPublicTicketType } from '$lib/remote/public-site-page.remote';
 import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
 
 type JsonRecord = Record<string, unknown>;
@@ -19,9 +20,9 @@ const asPublicSiteProfile = (value: unknown): PublicSiteProfilePayload | null =>
 		typeof value.organizationId !== 'string' ||
 		typeof value.organizationSlug !== 'string' ||
 		typeof value.organizationName !== 'string' ||
-		typeof value.classroomId !== 'string' ||
-		typeof value.classroomSlug !== 'string' ||
-		typeof value.classroomName !== 'string' ||
+		typeof value.storeId !== 'string' ||
+		typeof value.storeSlug !== 'string' ||
+		typeof value.storeName !== 'string' ||
 		typeof value.siteName !== 'string'
 	) {
 		return null;
@@ -33,6 +34,12 @@ export const loadPublicSitePage = async (
 	context: ScopedApiContext
 ): Promise<PublicSitePagePayload> => {
 	return getPublicSitePage(context);
+};
+
+export const loadPublicTicketType = async (
+	context: ScopedApiContext & { ticketTypeId: string }
+): Promise<PublicTicketTypePayload> => {
+	return getPublicTicketType(context);
 };
 
 export const loadPublicSiteSettings = async (

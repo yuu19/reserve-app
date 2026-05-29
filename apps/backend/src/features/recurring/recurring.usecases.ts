@@ -5,7 +5,7 @@ import {
   isSupportedTimezone,
   syncRecurringScheduleSlots,
 } from '../../domain/booking/recurring.js';
-import { isRequestedClassroomMismatch } from '../../shared/classroom-policy.js';
+import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import { assertSupportedTimezone, parseDateParts, parseIsoDateOrNull } from '../../shared/date.js';
 import {
   serializeRecurringException,
@@ -44,12 +44,12 @@ const ensureCanManageSchedule = async ({
   ctx,
   headers,
   recurringScheduleId,
-  classroomId,
+  storeId,
 }: {
   ctx: BookingRouteContext;
   headers: Headers;
   recurringScheduleId: string;
-  classroomId?: string;
+  storeId?: string;
 }) => {
   const identity = await ctx.requireIdentity(headers);
   if (!identity) {
@@ -61,13 +61,13 @@ const ensureCanManageSchedule = async ({
     return { result: notFound('Recurring schedule not found.'), identity, schedule: null };
   }
 
-  if (isRequestedClassroomMismatch(classroomId, schedule.classroomId)) {
+  if (isRequestedStoreMismatch(storeId, schedule.storeId)) {
     return { result: forbidden(), identity, schedule };
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId: schedule.organizationId,
-    classroomId: schedule.classroomId,
+    storeId: schedule.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -113,13 +113,13 @@ export const createRecurringSchedule = async (
     return forbidden();
   }
 
-  if (body.classroomId && body.classroomId !== service.classroomId) {
+  if (body.storeId && body.storeId !== service.storeId) {
     return forbidden();
   }
 
-  const hasAccess = await ctx.canManageClassroomScope({
+  const hasAccess = await ctx.canManageStoreScope({
     organizationId,
-    classroomId: service.classroomId,
+    storeId: service.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -158,7 +158,7 @@ export const createRecurringSchedule = async (
     database: ctx.database,
     recurringScheduleId,
     organizationId,
-    classroomId: service.classroomId,
+    storeId: service.storeId,
     serviceId: body.serviceId,
     timezone,
     frequency: body.frequency,
@@ -207,7 +207,7 @@ export const listManageableRecurringSchedules = async (
 
   const hasAccess = await ctx.canManageBookingsScope({
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     userId: identity.userId,
   });
   if (!hasAccess) {
@@ -217,7 +217,7 @@ export const listManageableRecurringSchedules = async (
   const rows = await listRecurringSchedules({
     database: ctx.database,
     organizationId,
-    classroomId: query.classroomId,
+    storeId: query.storeId,
     serviceId: query.serviceId,
     isActive: query.isActive,
   });
@@ -237,7 +237,7 @@ export const updateExistingRecurringSchedule = async (
     ctx,
     headers,
     recurringScheduleId: body.recurringScheduleId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
   });
   if (guard.result || !guard.schedule) {
     return guard.result ?? notFound('Recurring schedule not found.');
@@ -313,7 +313,7 @@ export const upsertExistingRecurringException = async (
     ctx,
     headers,
     recurringScheduleId: body.recurringScheduleId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
   });
   if (guard.result || !guard.schedule) {
     return guard.result ?? notFound('Recurring schedule not found.');
@@ -330,7 +330,7 @@ export const upsertExistingRecurringException = async (
     existingExceptionId: existing?.id,
     recurringScheduleId: body.recurringScheduleId,
     organizationId: guard.schedule.organizationId,
-    classroomId: guard.schedule.classroomId,
+    storeId: guard.schedule.storeId,
     date: body.date,
     action: body.action,
     overrideStartTimeLocal: body.overrideStartTimeLocal,
@@ -370,7 +370,7 @@ export const generateRecurringSlots = async (
     ctx,
     headers,
     recurringScheduleId: body.recurringScheduleId,
-    classroomId: body.classroomId,
+    storeId: body.storeId,
   });
   if (guard.result || !guard.schedule) {
     return guard.result ?? notFound('Recurring schedule not found.');

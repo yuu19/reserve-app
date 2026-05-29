@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { Pathname } from '$app/types';
@@ -9,17 +8,13 @@
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { formatJaDateTime } from '$lib/date/format';
 	import { loadPublicSitePage } from '$lib/features/public-site.svelte';
-	import type {
-		PublicBookingPagePayload,
-		PublicSitePagePayload,
-		PublicTicketTypePayload
-	} from '$lib/rpc-client';
+	import type { PublicSitePagePayload, PublicTicketTypePayload } from '$lib/rpc-client';
 
 	type ResolvablePath = Pathname;
 
 	const orgSlug = $derived(page.params.orgSlug ?? '');
-	const classroomSlug = $derived(page.params.classroomSlug ?? '');
-	const eventsPath = $derived(`/${orgSlug}/${classroomSlug}/events`);
+	const storeSlug = $derived(page.params.storeSlug ?? '');
+	const eventsPath = $derived(`/${orgSlug}/${storeSlug}/events`);
 
 	let loading = $state(true);
 	let errorMessage = $state<string | null>(null);
@@ -44,16 +39,12 @@
 	const getTicketExpirationLabel = (ticketType: PublicTicketTypePayload): string =>
 		ticketType.expiresInDays ? `${ticketType.expiresInDays}日` : '期限なし';
 
-	const openBookingPage = async (bookingPage: PublicBookingPagePayload) => {
-		await goto(resolve(bookingPage.href as ResolvablePath));
-	};
-
 	onMount(() => {
 		void (async () => {
 			loading = true;
 			errorMessage = null;
 			try {
-				publicSitePage = await loadPublicSitePage({ orgSlug, classroomSlug });
+				publicSitePage = await loadPublicSitePage({ orgSlug, storeSlug });
 			} catch (error) {
 				publicSitePage = null;
 				errorMessage = toExceptionMessage(error, '予約サイトの取得に失敗しました。');
@@ -102,7 +93,7 @@
 						<Button
 							type="button"
 							variant="outline"
-							onclick={() => openBookingPage(firstBookingPage)}>直近の予約ページへ</Button
+							href={resolve(firstBookingPage.href as ResolvablePath)}>直近の予約ページへ</Button
 						>
 					{/if}
 				</div>
@@ -123,7 +114,7 @@
 						<h2 class="text-lg font-semibold text-foreground">基本情報</h2>
 					</CardHeader>
 					<CardContent class="space-y-2 text-sm text-muted-foreground">
-						<p>教室: {publicSitePage.site.classroomName}</p>
+						<p>店舗: {publicSitePage.site.storeName}</p>
 						{#if publicSitePage.site.address}
 							<p>住所: {publicSitePage.site.address}</p>
 						{/if}
@@ -162,45 +153,50 @@
 			{:else}
 				<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 					{#each publicSitePage.bookingPages as bookingPage (bookingPage.id)}
-						<Card class="surface-panel border-border/80 shadow-lg">
-							<CardHeader class="space-y-2">
-								{#if bookingPage.imageUrl}
-									<div class="overflow-hidden rounded-md border border-border/80 bg-secondary/60">
-										<img
-											src={bookingPage.imageUrl}
-											alt={`${bookingPage.title} の画像`}
-											class="h-40 w-full object-cover"
-											loading="lazy"
-										/>
+						<a
+							class="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+							href={resolve(bookingPage.href as ResolvablePath)}
+						>
+							<Card
+								class="surface-panel h-full border-border/80 shadow-lg transition-colors hover:border-primary/60"
+							>
+								<CardHeader class="space-y-2">
+									{#if bookingPage.imageUrl}
+										<div class="overflow-hidden rounded-md border border-border/80 bg-secondary/60">
+											<img
+												src={bookingPage.imageUrl}
+												alt={`${bookingPage.title} の画像`}
+												class="h-40 w-full object-cover"
+												loading="lazy"
+											/>
+										</div>
+									{/if}
+									<div class="flex flex-wrap items-center justify-between gap-2">
+										<h3 class="text-lg font-semibold text-foreground">{bookingPage.title}</h3>
+										<Badge variant={bookingPage.isBookable ? 'outline' : 'secondary'}>
+											{bookingPage.isBookable ? '予約受付中' : '受付外'}
+										</Badge>
 									</div>
-								{/if}
-								<div class="flex flex-wrap items-center justify-between gap-2">
-									<h3 class="text-lg font-semibold text-foreground">{bookingPage.title}</h3>
-									<Badge variant={bookingPage.isBookable ? 'outline' : 'secondary'}>
-										{bookingPage.isBookable ? '予約受付中' : '受付外'}
-									</Badge>
-								</div>
-								<CardDescription>
-									{formatJaDateTime(bookingPage.startAt)} - {formatJaDateTime(bookingPage.endAt)}
-								</CardDescription>
-							</CardHeader>
-							<CardContent class="space-y-3">
-								<div class="space-y-1 text-sm text-muted-foreground">
-									{#if bookingPage.description}
-										<p class="line-clamp-3 whitespace-pre-line text-secondary-foreground">
-											{bookingPage.description}
-										</p>
-									{/if}
-									<p>残枠: {bookingPage.remainingCount} / {bookingPage.capacity}</p>
-									{#if bookingPage.locationLabel}
-										<p>場所: {bookingPage.locationLabel}</p>
-									{/if}
-								</div>
-								<Button type="button" onclick={() => openBookingPage(bookingPage)}
-									>予約ページへ</Button
-								>
-							</CardContent>
-						</Card>
+									<CardDescription>
+										{formatJaDateTime(bookingPage.startAt)} - {formatJaDateTime(bookingPage.endAt)}
+									</CardDescription>
+								</CardHeader>
+								<CardContent class="space-y-3">
+									<div class="space-y-1 text-sm text-muted-foreground">
+										{#if bookingPage.description}
+											<p class="line-clamp-3 whitespace-pre-line text-secondary-foreground">
+												{bookingPage.description}
+											</p>
+										{/if}
+										<p>残枠: {bookingPage.remainingCount} / {bookingPage.capacity}</p>
+										{#if bookingPage.locationLabel}
+											<p>場所: {bookingPage.locationLabel}</p>
+										{/if}
+									</div>
+									<p class="text-sm font-medium text-primary">予約ページへ</p>
+								</CardContent>
+							</Card>
+						</a>
 					{/each}
 				</div>
 			{/if}
@@ -221,21 +217,29 @@
 			{:else}
 				<div class="grid gap-4 md:grid-cols-2">
 					{#each publicSitePage.ticketTypes as ticketType (ticketType.id)}
-						<Card class="surface-panel border-border/80 shadow-lg">
-							<CardHeader class="space-y-2">
-								<div class="flex flex-wrap items-center justify-between gap-2">
-									<h3 class="text-lg font-semibold text-foreground">{ticketType.name}</h3>
-									<Badge variant="outline">{getTicketServiceLabel(ticketType)}</Badge>
-								</div>
-								<CardDescription>
-									{ticketType.totalCount}回 / 有効期限 {getTicketExpirationLabel(ticketType)}
-								</CardDescription>
-							</CardHeader>
-							<CardContent class="space-y-1 text-sm text-muted-foreground">
-								<p>対象サービス: {getTicketServiceLabel(ticketType)}</p>
-								<p>支払方法: 現地決済 / 銀行振込</p>
-							</CardContent>
-						</Card>
+						<a
+							class="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+							href={resolve(ticketType.href as ResolvablePath)}
+						>
+							<Card
+								class="surface-panel h-full border-border/80 shadow-lg transition-colors hover:border-primary/60"
+							>
+								<CardHeader class="space-y-2">
+									<div class="flex flex-wrap items-center justify-between gap-2">
+										<h3 class="text-lg font-semibold text-foreground">{ticketType.name}</h3>
+										<Badge variant="outline">{getTicketServiceLabel(ticketType)}</Badge>
+									</div>
+									<CardDescription>
+										{ticketType.totalCount}回 / 有効期限 {getTicketExpirationLabel(ticketType)}
+									</CardDescription>
+								</CardHeader>
+								<CardContent class="space-y-1 text-sm text-muted-foreground">
+									<p>対象サービス: {getTicketServiceLabel(ticketType)}</p>
+									<p>支払方法: 現地決済 / 銀行振込</p>
+									<p class="font-medium text-primary">詳細を見る</p>
+								</CardContent>
+							</Card>
+						</a>
 					{/each}
 				</div>
 			{/if}

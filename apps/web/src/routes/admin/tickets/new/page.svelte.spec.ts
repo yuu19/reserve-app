@@ -65,19 +65,19 @@ describe('/admin/tickets/new/+page.svelte', () => {
 		mocks.loadTicketManagementPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
-				classroomSlug: 'room-1'
+				storeSlug: 'room-1'
 			},
 			organizationId: 'org-1',
 			canManage: true,
 			canManageParticipants: true,
-			canManageClassroom: true,
+			canManageStore: true,
 			premiumRestriction: null,
 			participants: [],
 			services: [
 				{
 					id: 'service-1',
 					organizationId: 'org-1',
-					classroomId: 'room-1',
+					storeId: 'room-1',
 					name: 'Yoga',
 					description: null,
 					durationMinutes: 60,
@@ -92,7 +92,7 @@ describe('/admin/tickets/new/+page.svelte', () => {
 				{
 					id: 'service-2',
 					organizationId: 'org-1',
-					classroomId: 'room-1',
+					storeId: 'room-1',
 					name: 'Pilates',
 					description: null,
 					durationMinutes: 45,

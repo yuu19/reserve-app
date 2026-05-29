@@ -1,7 +1,7 @@
 import type { BusinessFactsProvider, BusinessFactSummary } from '@repo/saas-chatbot-core';
 import { and, eq, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
-import type { OrganizationClassroomAccess } from '../../domain/booking/authorization.js';
+import type { OrganizationStoreAccess } from '../../domain/booking/authorization.js';
 import * as dbSchema from '../../infra/db/schema.js';
 
 export type { BusinessFactSummary } from '@repo/saas-chatbot-core';
@@ -20,7 +20,7 @@ export const resolveBusinessFacts = async ({
   access,
 }: {
   database: AuthRuntimeDatabase;
-  access: OrganizationClassroomAccess;
+  access: OrganizationStoreAccess;
 }): Promise<BusinessFactSummary> => {
   const factKeys: string[] = [];
   const lines: string[] = [];
@@ -37,7 +37,7 @@ export const resolveBusinessFacts = async ({
         .where(
           and(
             eq(dbSchema.service.organizationId, access.organizationId),
-            eq(dbSchema.service.classroomId, access.classroomId),
+            eq(dbSchema.service.storeId, access.storeId),
           ),
         ),
       database
@@ -46,7 +46,7 @@ export const resolveBusinessFacts = async ({
         .where(
           and(
             eq(dbSchema.participant.organizationId, access.organizationId),
-            eq(dbSchema.participant.classroomId, access.classroomId),
+            eq(dbSchema.participant.storeId, access.storeId),
           ),
         ),
       database
@@ -55,7 +55,7 @@ export const resolveBusinessFacts = async ({
         .where(
           and(
             eq(dbSchema.ticketType.organizationId, access.organizationId),
-            eq(dbSchema.ticketType.classroomId, access.classroomId),
+            eq(dbSchema.ticketType.storeId, access.storeId),
           ),
         ),
       database
@@ -64,7 +64,7 @@ export const resolveBusinessFacts = async ({
         .where(
           and(
             eq(dbSchema.invitation.organizationId, access.organizationId),
-            eq(dbSchema.invitation.classroomId, access.classroomId),
+            eq(dbSchema.invitation.storeId, access.storeId),
           ),
         ),
     ]);
@@ -75,10 +75,10 @@ export const resolveBusinessFacts = async ({
 
     factKeys.push('service_count', 'participant_count', 'ticket_type_count', 'invitation_count');
     lines.push(
-      `対象classroomのサービス数: ${serviceCount}`,
-      `対象classroomの参加者数: ${participantCount}`,
-      `対象classroomのチケット種別数: ${ticketTypeCount}`,
-      `対象classroomの招待数: ${invitationCount}`,
+      `対象storeのサービス数: ${serviceCount}`,
+      `対象storeの参加者数: ${participantCount}`,
+      `対象storeのチケット種別数: ${ticketTypeCount}`,
+      `対象storeの招待数: ${invitationCount}`,
       `予約管理権限: ${access.effective.canManageBookings ? 'あり' : 'なし'}`,
       `参加者管理権限: ${access.effective.canManageParticipants ? 'あり' : 'なし'}`,
       `参加者予約権限: ${access.effective.canUseParticipantBooking ? 'あり' : 'なし'}`,
@@ -139,7 +139,7 @@ export const resolveBusinessFacts = async ({
   };
 };
 
-export type ReserveAppBusinessFactsProvider = BusinessFactsProvider<OrganizationClassroomAccess>;
+export type ReserveAppBusinessFactsProvider = BusinessFactsProvider<OrganizationStoreAccess>;
 
 export const createReserveAppBusinessFactsProvider = ({
   database,

@@ -131,7 +131,7 @@ routes / web UI / docs / tests は既存資産を活かして再配線する
 
 ```txt
 - business-facts.ts の予約システム固有情報
-- context-resolver.ts の組織 / 教室 / public / admin 文脈解決
+- context-resolver.ts の組織 / 店舗 / public / admin 文脈解決
 - source-visibility.ts の予約システム固有公開範囲
 - prompt.ts の reserve-app 固有 system prompt
 - index-ai-knowledge.mjs が参照する reserve-app 固有 knowledge source
@@ -293,7 +293,7 @@ features/ai/answer-generator.ts:
 ### 現在の想定責務
 
 ```txt
-- reserve-app の事業者 / 教室 / サービス / 予約ルールなどの facts を組み立てる
+- reserve-app の事業者 / 店舗 / サービス / 予約ルールなどの facts を組み立てる
 ```
 
 ### 再利用化後の方針
@@ -322,7 +322,7 @@ export interface BusinessFactsProvider<TContext = unknown> {
 ### 現在の想定責務
 
 ```txt
-- public / admin / organization / classroom などの利用文脈を解決する
+- public / admin / organization / store などの利用文脈を解決する
 - どの knowledge / facts / source を見せてよいかの前提を作る
 ```
 
@@ -333,7 +333,7 @@ export interface BusinessFactsProvider<TContext = unknown> {
 core には generic な context 型だけ置きます。
 
 ```ts
-export type ChatSubjectType = 'organization' | 'classroom' | 'public_site' | 'user' | 'admin';
+export type ChatSubjectType = 'organization' | 'store' | 'public_site' | 'user' | 'admin';
 
 export interface ChatRuntimeContext {
   subjectType: string;
@@ -553,7 +553,7 @@ export interface ChatRateLimiter {
 ```txt
 - public user に見せてよい source
 - admin に見せてよい source
-- organization / classroom の scope に合う source
+- organization / store の scope に合う source
 ```
 
 ### 再利用化後の方針
@@ -573,7 +573,7 @@ export interface SourceVisibilityPolicy<TContext = unknown> {
 1. core に SourceVisibilityPolicy を追加
 2. source-visibility.ts は ReserveAppSourceVisibilityPolicy として整理
 3. retriever はこの policy を必ず通す
-4. source-visibility.test.ts は public/admin/classroom/organization の境界を維持
+4. source-visibility.test.ts は public/admin/store/organization の境界を維持
 ```
 
 ## 6. DB / migration 方針
@@ -1345,7 +1345,7 @@ rate-limit.test.ts
   - subject / actor / channel key を確認
 
 source-visibility.test.ts
-  - public / admin / organization / classroom 境界を確認
+  - public / admin / organization / store 境界を確認
 ```
 
 ### Web test

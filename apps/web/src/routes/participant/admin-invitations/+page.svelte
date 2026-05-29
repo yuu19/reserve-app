@@ -7,7 +7,7 @@
 	import {
 		actOperatorInvitation,
 		loadReceivedOperatorInvitations
-	} from '$lib/features/invitations-classroom.svelte';
+	} from '$lib/features/invitations-store.svelte';
 	import {
 		getCurrentPathWithSearch,
 		loadSession,
@@ -28,7 +28,7 @@
 		})[status];
 
 	const invitationKindLabel = (invitation: InvitationPayload) =>
-		invitation.subjectKind === 'org_operator' ? '組織運営招待' : '教室運営招待';
+		invitation.subjectKind === 'org_operator' ? '組織運営招待' : '店舗運営招待';
 
 	let loading = $state(true);
 	let busy = $state(false);
@@ -41,9 +41,8 @@
 	const orgInvitationCount = $derived(
 		receivedInvitations.filter((invitation) => invitation.subjectKind === 'org_operator').length
 	);
-	const classroomInvitationCount = $derived(
-		receivedInvitations.filter((invitation) => invitation.subjectKind === 'classroom_operator')
-			.length
+	const storeInvitationCount = $derived(
+		receivedInvitations.filter((invitation) => invitation.subjectKind === 'store_operator').length
 	);
 
 	const refresh = async () => {
@@ -101,7 +100,7 @@
 	<header class="space-y-2">
 		<h1 class="text-3xl font-semibold text-foreground">受信した運営招待</h1>
 		<p class="text-sm text-muted-foreground">
-			自分宛てに届いた組織運営招待と教室運営招待の承諾・辞退を行います。
+			自分宛てに届いた組織運営招待と店舗運営招待の承諾・辞退を行います。
 		</p>
 	</header>
 
@@ -126,7 +125,7 @@
 
 		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
-				<h2 class="text-lg font-semibold text-foreground">組織 / 教室</h2>
+				<h2 class="text-lg font-semibold text-foreground">組織 / 店舗</h2>
 				<CardDescription>招待種別の内訳です。</CardDescription>
 			</CardHeader>
 			<CardContent class="grid gap-2 text-sm text-secondary-foreground sm:grid-cols-2">
@@ -135,8 +134,8 @@
 					<p class="text-base font-semibold text-foreground">{orgInvitationCount}</p>
 				</div>
 				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
-					<p class="text-xs text-muted-foreground">教室運営</p>
-					<p class="text-base font-semibold text-foreground">{classroomInvitationCount}</p>
+					<p class="text-xs text-muted-foreground">店舗運営</p>
+					<p class="text-base font-semibold text-foreground">{storeInvitationCount}</p>
 				</div>
 			</CardContent>
 		</Card>
@@ -173,8 +172,8 @@
 								<p class="text-sm font-semibold">{invitationKindLabel(invitation)}</p>
 								<p class="text-xs text-muted-foreground">
 									{invitation.organizationName}
-									{#if invitation.classroomName}
-										/ {invitation.classroomName}
+									{#if invitation.storeName}
+										/ {invitation.storeName}
 									{/if}
 								</p>
 								<p class="text-xs text-muted-foreground">

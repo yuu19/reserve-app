@@ -950,7 +950,7 @@ export const reserveAppBillingSubject = (organizationId: string) => ({
 ```ts
 export const RESERVE_APP_ENTITLEMENTS = {
   ORGANIZATION_PREMIUM: 'organization.premium',
-  CLASSROOM_MULTIPLE: 'classroom.multiple',
+  STORE_MULTIPLE: 'store.multiple',
   STAFF_INVITE: 'staff.invite',
   BOOKING_APPROVAL: 'booking.approval',
   TICKET_ENABLED: 'ticket.enabled',
@@ -1106,7 +1106,7 @@ await ctx.requireOrganizationEntitlement({
 - booking approval
 - ticket feature
 - staff invite
-- multiple classroom
+- multiple store
 - advanced billing communication
 ```
 
@@ -1240,7 +1240,7 @@ Scope:
 - booking
 - ticket
 - staff
-- classroom
+- store
 ```
 
 Done:
