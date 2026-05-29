@@ -10524,6 +10524,31 @@ describe('backend app', () => {
     );
     expect(notForSaleTicketTypeResponse.status).toBe(200);
 
+    const publicSiteSettingResponse = await owner.request(
+      '/api/v1/auth/orgs/public-events-org/classrooms/public-events-org/public-site',
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          siteName: 'Public Events Site',
+          description: '予約サイトトップページの説明です。',
+          address: '東京都千代田区1-1-1',
+          phone: '03-0000-0000',
+          businessHours: '平日 10:00-18:00',
+          imageUrl: 'https://example.com/public-site.webp',
+        }),
+      },
+    );
+    expect(publicSiteSettingResponse.status).toBe(200);
+    expect(await toJson(publicSiteSettingResponse)).toMatchObject({
+      organizationSlug: 'public-events-org',
+      classroomSlug: 'public-events-org',
+      siteName: 'Public Events Site',
+      address: '東京都千代田区1-1-1',
+    });
+
     const publicEventsResponse = await app.request(
       '/api/v1/public/orgs/public-events-org/classrooms/public-events-org/events',
     );
@@ -10575,6 +10600,32 @@ describe('backend app', () => {
     expect(publicEventDetail.serviceDescription).toBe('公開向けのサービス説明テキストです。');
     expect(
       (publicEventDetail.ticketTypes as Array<Record<string, unknown>> | undefined)?.map(
+        (ticketType) => ticketType.name,
+      ),
+    ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
+
+    const publicSiteResponse = await app.request(
+      '/api/v1/public/orgs/public-events-org/classrooms/public-events-org/site',
+    );
+    expect(publicSiteResponse.status).toBe(200);
+    const publicSitePayload = (await toJson(publicSiteResponse)) as Record<string, unknown>;
+    expect(publicSitePayload.site).toMatchObject({
+      siteName: 'Public Events Site',
+      description: '予約サイトトップページの説明です。',
+      address: '東京都千代田区1-1-1',
+      phone: '03-0000-0000',
+      businessHours: '平日 10:00-18:00',
+      imageUrl: 'https://example.com/public-site.webp',
+    });
+    expect(
+      (publicSitePayload.bookingPages as Array<Record<string, unknown>> | undefined)?.some(
+        (bookingPage) =>
+          bookingPage.slotId === slotId &&
+          bookingPage.href === `/public-events-org/public-events-org/events/${slotId}`,
+      ),
+    ).toBe(true);
+    expect(
+      (publicSitePayload.ticketTypes as Array<Record<string, unknown>> | undefined)?.map(
         (ticketType) => ticketType.name,
       ),
     ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
@@ -15144,6 +15195,9 @@ describe('backend app', () => {
     expect(
       body.paths['/api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/invitations'],
     ).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/classrooms/{classroomSlug}/public-site'],
+    ).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/user']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}/accept']).toBeDefined();
@@ -15191,6 +15245,9 @@ describe('backend app', () => {
     expect(JSON.stringify(body)).toContain('reminderDelivery');
     expect(JSON.stringify(body)).toContain('reconciliation');
     expect(JSON.stringify(body)).toContain('timeline');
+    expect(
+      body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/site'],
+    ).toBeDefined();
     expect(
       body.paths['/api/v1/public/orgs/{orgSlug}/classrooms/{classroomSlug}/events'],
     ).toBeDefined();

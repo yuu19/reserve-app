@@ -426,6 +426,30 @@ const updateClassroomBodySchema = z.object({
   slug: slugSchema,
 });
 
+const publicSiteSettingSchema = z.object({
+  organizationId: z.string().min(1),
+  organizationSlug: z.string().min(1),
+  organizationName: z.string().min(1),
+  classroomId: z.string().min(1),
+  classroomSlug: z.string().min(1),
+  classroomName: z.string().min(1),
+  siteName: z.string().min(1),
+  description: z.string().nullable(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  businessHours: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+});
+
+const publicSiteSettingBodySchema = z.object({
+  siteName: z.string().trim().max(120).nullable().optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  address: z.string().trim().max(500).nullable().optional(),
+  phone: z.string().trim().max(80).nullable().optional(),
+  businessHours: z.string().trim().max(1000).nullable().optional(),
+  imageUrl: z.string().trim().max(2048).nullable().optional(),
+});
+
 const listOrganizationAccessTreeRoute = createRoute({
   method: 'get',
   path: '/orgs/access-tree',
@@ -551,6 +575,72 @@ const updateClassroomRoute = createRoute({
     },
     409: {
       description: 'Classroom slug already exists',
+    },
+  },
+});
+
+const getPublicSiteSettingRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/public-site',
+  tags: ['Public Site'],
+  summary: 'Get public reservation site settings for a classroom',
+  request: {
+    params: organizationClassroomRouteParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Public site settings',
+      content: {
+        'application/json': {
+          schema: publicSiteSettingSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    403: {
+      description: 'Forbidden',
+    },
+    404: {
+      description: 'Organization or classroom not found',
+    },
+  },
+});
+
+const updatePublicSiteSettingRoute = createRoute({
+  method: 'patch',
+  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/public-site',
+  tags: ['Public Site'],
+  summary: 'Update public reservation site settings for a classroom',
+  request: {
+    params: organizationClassroomRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: publicSiteSettingBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated public site settings',
+      content: {
+        'application/json': {
+          schema: publicSiteSettingSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    403: {
+      description: 'Forbidden',
+    },
+    404: {
+      description: 'Organization or classroom not found',
     },
   },
 });
@@ -1887,6 +1977,57 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     };
   };
 
+  const serializePublicSiteSetting = async ({
+    context,
+  }: {
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationClassroomContext>>>;
+  }) => {
+    const rows = await database
+      .select({
+        siteName: dbSchema.publicSiteSetting.siteName,
+        description: dbSchema.publicSiteSetting.description,
+        address: dbSchema.publicSiteSetting.address,
+        phone: dbSchema.publicSiteSetting.phone,
+        businessHours: dbSchema.publicSiteSetting.businessHours,
+        imageUrl: dbSchema.publicSiteSetting.imageUrl,
+      })
+      .from(dbSchema.publicSiteSetting)
+      .where(
+        and(
+          eq(dbSchema.publicSiteSetting.organizationId, context.organizationId),
+          eq(dbSchema.publicSiteSetting.classroomId, context.classroomId),
+        ),
+      )
+      .limit(1);
+    const setting = rows[0] ?? null;
+
+    return {
+      organizationId: context.organizationId,
+      organizationSlug: context.organizationSlug,
+      organizationName: context.organizationName,
+      classroomId: context.classroomId,
+      classroomSlug: context.classroomSlug,
+      classroomName: context.classroomName,
+      siteName: setting?.siteName?.trim() || context.classroomName || context.organizationName,
+      description: setting?.description ?? null,
+      address: setting?.address ?? null,
+      phone: setting?.phone ?? null,
+      businessHours: setting?.businessHours ?? null,
+      imageUrl: setting?.imageUrl ?? null,
+    };
+  };
+
+  const normalizePublicSiteText = (
+    value: string | null | undefined,
+    fallback: string | null,
+  ): string | null => {
+    if (value === undefined) {
+      return fallback;
+    }
+    const trimmed = value?.trim() ?? '';
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
   const listAccessibleClassroomsForOrganization = async ({
     organizationSlug,
     userId,
@@ -2511,6 +2652,108 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
 
       return c.json(serialized, 200);
+    })();
+  });
+
+  authRoutes.openapi(getPublicSiteSettingRoute, (c) => {
+    return (async () => {
+      const { orgSlug, classroomSlug } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
+      if (!classroomContext) {
+        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationClassroomAccess({
+        database,
+        userId: identity.userId,
+        context: classroomContext,
+      });
+      if (!access.effective.canManageClassroom) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      return c.json(await serializePublicSiteSetting({ context: classroomContext }), 200);
+    })();
+  });
+
+  authRoutes.openapi(updatePublicSiteSettingRoute, (c) => {
+    return (async () => {
+      const { orgSlug, classroomSlug } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const classroomContext = await resolveClassroomContextBySlugs({ orgSlug, classroomSlug });
+      if (!classroomContext) {
+        return c.json({ message: 'Organization or classroom not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationClassroomAccess({
+        database,
+        userId: identity.userId,
+        context: classroomContext,
+      });
+      if (!access.effective.canManageClassroom) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const currentRows = await database
+        .select({
+          siteName: dbSchema.publicSiteSetting.siteName,
+          description: dbSchema.publicSiteSetting.description,
+          address: dbSchema.publicSiteSetting.address,
+          phone: dbSchema.publicSiteSetting.phone,
+          businessHours: dbSchema.publicSiteSetting.businessHours,
+          imageUrl: dbSchema.publicSiteSetting.imageUrl,
+        })
+        .from(dbSchema.publicSiteSetting)
+        .where(
+          and(
+            eq(dbSchema.publicSiteSetting.organizationId, classroomContext.organizationId),
+            eq(dbSchema.publicSiteSetting.classroomId, classroomContext.classroomId),
+          ),
+        )
+        .limit(1);
+      const current = currentRows[0] ?? null;
+      const now = new Date();
+      const nextValues = {
+        siteName: normalizePublicSiteText(body.siteName, current?.siteName ?? null),
+        description: normalizePublicSiteText(body.description, current?.description ?? null),
+        address: normalizePublicSiteText(body.address, current?.address ?? null),
+        phone: normalizePublicSiteText(body.phone, current?.phone ?? null),
+        businessHours: normalizePublicSiteText(body.businessHours, current?.businessHours ?? null),
+        imageUrl: normalizePublicSiteText(body.imageUrl, current?.imageUrl ?? null),
+      };
+
+      await database
+        .insert(dbSchema.publicSiteSetting)
+        .values({
+          id: crypto.randomUUID(),
+          organizationId: classroomContext.organizationId,
+          classroomId: classroomContext.classroomId,
+          ...nextValues,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            dbSchema.publicSiteSetting.organizationId,
+            dbSchema.publicSiteSetting.classroomId,
+          ],
+          set: {
+            ...nextValues,
+            updatedAt: now,
+          },
+        });
+
+      return c.json(await serializePublicSiteSetting({ context: classroomContext }), 200);
     })();
   });
 

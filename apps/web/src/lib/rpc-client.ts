@@ -403,6 +403,46 @@ export type PublicEventDetailPayload = PublicEventListItemPayload & {
 	ticketTypes: PublicTicketTypePayload[];
 };
 
+export type PublicSiteProfilePayload = {
+	organizationId: string;
+	organizationSlug: string;
+	organizationName: string;
+	classroomId: string;
+	classroomSlug: string;
+	classroomName: string;
+	siteName: string;
+	description?: string | null;
+	address?: string | null;
+	phone?: string | null;
+	businessHours?: string | null;
+	imageUrl?: string | null;
+	[key: string]: unknown;
+};
+
+export type PublicBookingPagePayload = {
+	id: string;
+	kind: 'event';
+	title: string;
+	description?: string | null;
+	imageUrl?: string | null;
+	href: string;
+	serviceId: string;
+	slotId: string;
+	startAt: string;
+	endAt: string;
+	remainingCount: number;
+	capacity: number;
+	isBookable: boolean;
+	locationLabel?: string | null;
+	[key: string]: unknown;
+};
+
+export type PublicSitePagePayload = {
+	site: PublicSiteProfilePayload;
+	bookingPages: PublicBookingPagePayload[];
+	ticketTypes: PublicTicketTypePayload[];
+};
+
 export type OrganizationMembershipRole = 'owner' | 'admin' | 'member';
 export type OrganizationInvitationRole = 'admin' | 'member';
 export type ClassroomInvitationRole = 'manager' | 'staff' | 'participant';
@@ -526,6 +566,15 @@ type CreateClassroomInput = {
 type UpdateClassroomInput = {
 	name: string;
 	slug: string;
+};
+
+export type UpdatePublicSiteSettingsInput = {
+	siteName?: string | null;
+	description?: string | null;
+	address?: string | null;
+	phone?: string | null;
+	businessHours?: string | null;
+	imageUrl?: string | null;
 };
 
 type CreateOrganizationInvitationInput = {
@@ -1285,6 +1334,13 @@ export const authRpc = {
 		authFetch(buildOrgAuthPath(orgSlug, '/classrooms'), { json }),
 	updateClassroomByOrg: (orgSlug: string, classroomSlug: string, json: UpdateClassroomInput) =>
 		authFetch(buildOrgAuthPath(orgSlug, `/classrooms/${encodeURIComponent(classroomSlug)}`), {
+			method: 'PATCH',
+			json
+		}),
+	getPublicSiteSettings: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/public-site')),
+	updatePublicSiteSettings: (context: ScopedApiContext, json: UpdatePublicSiteSettingsInput) =>
+		authFetch(buildScopedAuthPath(context, '/public-site'), {
 			method: 'PATCH',
 			json
 		}),

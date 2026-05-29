@@ -148,6 +148,36 @@ export const classroom = sqliteTable(
   ],
 );
 
+export const publicSiteSetting = sqliteTable(
+  'public_site_setting',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    classroomId: text('classroom_id')
+      .notNull()
+      .references(() => classroom.id, { onDelete: 'cascade' }),
+    siteName: text('site_name'),
+    description: text('description'),
+    address: text('address'),
+    phone: text('phone'),
+    businessHours: text('business_hours'),
+    imageUrl: text('image_url'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('public_site_setting_classroom_uidx').on(table.organizationId, table.classroomId),
+    index('public_site_setting_organization_idx').on(table.organizationId),
+  ],
+);
+
 export const classroomMember = sqliteTable(
   'classroom_member',
   {

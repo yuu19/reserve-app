@@ -55,9 +55,70 @@ const publicEventDetailSchema = publicEventSchema.extend({
   ticketTypes: z.array(publicTicketTypeSchema),
 });
 
+const publicSiteProfileSchema = z.object({
+  organizationId: z.string(),
+  organizationSlug: z.string(),
+  organizationName: z.string(),
+  classroomId: z.string(),
+  classroomSlug: z.string(),
+  classroomName: z.string(),
+  siteName: z.string(),
+  description: z.string().nullable(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  businessHours: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+});
+
+const publicReservationPageSchema = z.object({
+  id: z.string(),
+  kind: z.literal('event'),
+  title: z.string(),
+  description: z.string().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
+  href: z.string(),
+  serviceId: z.string(),
+  slotId: z.string(),
+  startAt: z.string(),
+  endAt: z.string(),
+  remainingCount: z.number(),
+  capacity: z.number(),
+  isBookable: z.boolean(),
+  locationLabel: z.string().nullable().optional(),
+});
+
+const publicSitePageSchema = z.object({
+  site: publicSiteProfileSchema,
+  bookingPages: z.array(publicReservationPageSchema),
+  ticketTypes: z.array(publicTicketTypeSchema),
+});
+
 const publicEventRouteParamsSchema = z.object({
   orgSlug: z.string().min(1),
   classroomSlug: z.string().min(1),
+});
+
+const getPublicSiteRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/classrooms/{classroomSlug}/site',
+  tags: ['Public Site'],
+  summary: 'Get public reservation site top page',
+  request: {
+    params: publicEventRouteParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Public reservation site',
+      content: {
+        'application/json': {
+          schema: publicSitePageSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Public organization or classroom not found',
+    },
+  },
 });
 
 const listPublicEventsRoute = createRoute({
@@ -130,6 +191,42 @@ type PublicTicketTypeRow = {
   expiresInDays: number | null;
 };
 
+type PublicEventQueryRow = {
+  organizationId: string;
+  serviceId: string;
+  serviceName: string;
+  serviceDescription: string | null;
+  serviceImageUrl: string | null;
+  serviceKind: 'single' | 'recurring';
+  bookingPolicy: 'instant' | 'approval';
+  requiresTicket: boolean;
+  slotId: string;
+  startAt: Date;
+  endAt: Date;
+  slotStatus: string;
+  capacity: number;
+  reservedCount: number;
+  bookingOpenAt: Date;
+  bookingCloseAt: Date;
+  staffLabel: string | null;
+  locationLabel: string | null;
+};
+
+type PublicContext = {
+  error: null;
+  organization: {
+    id: string;
+    slug: string;
+    name: string;
+    logo: string | null;
+  };
+  classroom: {
+    id: string;
+    slug: string;
+    name: string;
+  };
+};
+
 const isBookableSlot = ({
   slotStatus,
   reservedCount,
@@ -154,28 +251,10 @@ const isBookableSlot = ({
 };
 
 const formatPublicEvent = (
-  row: {
-    organizationId: string;
+  row: PublicEventQueryRow & {
     organizationSlug: string;
     classroomId: string;
     classroomSlug: string;
-    serviceId: string;
-    serviceName: string;
-    serviceDescription: string | null;
-    serviceImageUrl: string | null;
-    serviceKind: 'single' | 'recurring';
-    bookingPolicy: 'instant' | 'approval';
-    requiresTicket: boolean;
-    slotId: string;
-    startAt: Date;
-    endAt: Date;
-    slotStatus: string;
-    capacity: number;
-    reservedCount: number;
-    bookingOpenAt: Date;
-    bookingCloseAt: Date;
-    staffLabel: string | null;
-    locationLabel: string | null;
   },
   now: Date,
 ) => {
@@ -211,6 +290,115 @@ const formatPublicEvent = (
     }),
     staffLabel: row.staffLabel,
     locationLabel: row.locationLabel,
+  };
+};
+
+const listPublicEventRows = async ({
+  database,
+  publicContext,
+  now,
+  limit,
+}: {
+  database: AuthRuntimeDatabase;
+  publicContext: PublicContext;
+  now: Date;
+  limit: number;
+}): Promise<PublicEventQueryRow[]> => {
+  return (await database
+    .select({
+      organizationId: dbSchema.slot.organizationId,
+      serviceId: dbSchema.service.id,
+      serviceName: dbSchema.service.name,
+      serviceDescription: dbSchema.service.description,
+      serviceImageUrl: dbSchema.service.imageUrl,
+      serviceKind: dbSchema.service.kind,
+      bookingPolicy: dbSchema.service.bookingPolicy,
+      requiresTicket: dbSchema.service.requiresTicket,
+      slotId: dbSchema.slot.id,
+      startAt: dbSchema.slot.startAt,
+      endAt: dbSchema.slot.endAt,
+      slotStatus: dbSchema.slot.status,
+      capacity: dbSchema.slot.capacity,
+      reservedCount: dbSchema.slot.reservedCount,
+      bookingOpenAt: dbSchema.slot.bookingOpenAt,
+      bookingCloseAt: dbSchema.slot.bookingCloseAt,
+      staffLabel: dbSchema.slot.staffLabel,
+      locationLabel: dbSchema.slot.locationLabel,
+    })
+    .from(dbSchema.slot)
+    .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.slot.serviceId))
+    .where(
+      and(
+        eq(dbSchema.slot.organizationId, publicContext.organization.id),
+        eq(dbSchema.slot.classroomId, publicContext.classroom.id),
+        eq(dbSchema.service.isActive, true),
+        gte(dbSchema.slot.startAt, now),
+      ),
+    )
+    .orderBy(asc(dbSchema.slot.startAt))
+    .limit(limit)) as PublicEventQueryRow[];
+};
+
+const formatPublicReservationPage = (
+  event: ReturnType<typeof formatPublicEvent>,
+  publicContext: PublicContext,
+) => ({
+  id: event.slotId,
+  kind: 'event' as const,
+  title: event.serviceName,
+  description: event.serviceDescription,
+  imageUrl: event.serviceImageUrl,
+  href: `/${publicContext.organization.slug}/${publicContext.classroom.slug}/events/${event.slotId}`,
+  serviceId: event.serviceId,
+  slotId: event.slotId,
+  startAt: event.startAt,
+  endAt: event.endAt,
+  remainingCount: event.remainingCount,
+  capacity: event.capacity,
+  isBookable: event.isBookable,
+  locationLabel: event.locationLabel,
+});
+
+const readPublicSiteProfile = async ({
+  database,
+  publicContext,
+}: {
+  database: AuthRuntimeDatabase;
+  publicContext: PublicContext;
+}) => {
+  const rows = await database
+    .select({
+      siteName: dbSchema.publicSiteSetting.siteName,
+      description: dbSchema.publicSiteSetting.description,
+      address: dbSchema.publicSiteSetting.address,
+      phone: dbSchema.publicSiteSetting.phone,
+      businessHours: dbSchema.publicSiteSetting.businessHours,
+      imageUrl: dbSchema.publicSiteSetting.imageUrl,
+    })
+    .from(dbSchema.publicSiteSetting)
+    .where(
+      and(
+        eq(dbSchema.publicSiteSetting.organizationId, publicContext.organization.id),
+        eq(dbSchema.publicSiteSetting.classroomId, publicContext.classroom.id),
+      ),
+    )
+    .limit(1);
+  const setting = rows[0] ?? null;
+
+  return {
+    organizationId: publicContext.organization.id,
+    organizationSlug: publicContext.organization.slug,
+    organizationName: publicContext.organization.name,
+    classroomId: publicContext.classroom.id,
+    classroomSlug: publicContext.classroom.slug,
+    classroomName: publicContext.classroom.name,
+    siteName:
+      setting?.siteName?.trim() || publicContext.classroom.name || publicContext.organization.name,
+    description: setting?.description ?? null,
+    address: setting?.address ?? null,
+    phone: setting?.phone ?? null,
+    businessHours: setting?.businessHours ?? null,
+    imageUrl: setting?.imageUrl ?? publicContext.organization.logo ?? null,
   };
 };
 
@@ -289,11 +477,17 @@ const resolvePublicOrganizationClassroom = async ({
   classroomSlug: string;
 }) => {
   const rows = await database
-    .select({ value: dbSchema.organization.id })
+    .select({
+      id: dbSchema.organization.id,
+      slug: dbSchema.organization.slug,
+      name: dbSchema.organization.name,
+      logo: dbSchema.organization.logo,
+    })
     .from(dbSchema.organization)
     .where(eq(dbSchema.organization.slug, orgSlug))
     .limit(1);
-  if (!rows[0]) {
+  const organization = rows[0];
+  if (!organization) {
     return {
       error: {
         status: 404 as const,
@@ -326,6 +520,7 @@ const resolvePublicOrganizationClassroom = async ({
       id: context.organizationId,
       slug: context.organizationSlug,
       name: context.organizationName,
+      logo: organization.logo,
     },
     classroom: {
       id: context.classroomId,
@@ -343,6 +538,54 @@ export const createPublicRoutes = ({
 }) => {
   const publicRoutes = new OpenAPIHono();
 
+  publicRoutes.openapi(getPublicSiteRoute, async (c) => {
+    const { orgSlug, classroomSlug } = c.req.valid('param');
+    const publicContext = await resolvePublicOrganizationClassroom({
+      database,
+      orgSlug,
+      classroomSlug,
+    });
+    if (publicContext.error) {
+      return c.json({ message: publicContext.error.message }, publicContext.error.status);
+    }
+
+    const now = new Date();
+    const [site, rows, ticketTypes] = await Promise.all([
+      readPublicSiteProfile({ database, publicContext }),
+      listPublicEventRows({
+        database,
+        publicContext,
+        now,
+        limit: 12,
+      }),
+      listPublicTicketTypes({
+        database,
+        organizationId: publicContext.organization.id,
+        classroomId: publicContext.classroom.id,
+      }),
+    ]);
+    const events = rows.map((row) =>
+      formatPublicEvent(
+        {
+          ...row,
+          organizationSlug: publicContext.organization.slug,
+          classroomId: publicContext.classroom.id,
+          classroomSlug: publicContext.classroom.slug,
+        },
+        now,
+      ),
+    );
+
+    return c.json(
+      {
+        site,
+        bookingPages: events.map((event) => formatPublicReservationPage(event, publicContext)),
+        ticketTypes,
+      },
+      200,
+    );
+  });
+
   publicRoutes.openapi(listPublicEventsRoute, async (c) => {
     const { orgSlug, classroomSlug } = c.req.valid('param');
     const publicContext = await resolvePublicOrganizationClassroom({
@@ -356,39 +599,12 @@ export const createPublicRoutes = ({
 
     const now = new Date();
     const [rows, ticketTypes] = await Promise.all([
-      database
-        .select({
-          organizationId: dbSchema.slot.organizationId,
-          serviceId: dbSchema.service.id,
-          serviceName: dbSchema.service.name,
-          serviceDescription: dbSchema.service.description,
-          serviceImageUrl: dbSchema.service.imageUrl,
-          serviceKind: dbSchema.service.kind,
-          bookingPolicy: dbSchema.service.bookingPolicy,
-          requiresTicket: dbSchema.service.requiresTicket,
-          slotId: dbSchema.slot.id,
-          startAt: dbSchema.slot.startAt,
-          endAt: dbSchema.slot.endAt,
-          slotStatus: dbSchema.slot.status,
-          capacity: dbSchema.slot.capacity,
-          reservedCount: dbSchema.slot.reservedCount,
-          bookingOpenAt: dbSchema.slot.bookingOpenAt,
-          bookingCloseAt: dbSchema.slot.bookingCloseAt,
-          staffLabel: dbSchema.slot.staffLabel,
-          locationLabel: dbSchema.slot.locationLabel,
-        })
-        .from(dbSchema.slot)
-        .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.slot.serviceId))
-        .where(
-          and(
-            eq(dbSchema.slot.organizationId, publicContext.organization.id),
-            eq(dbSchema.slot.classroomId, publicContext.classroom.id),
-            eq(dbSchema.service.isActive, true),
-            gte(dbSchema.slot.startAt, now),
-          ),
-        )
-        .orderBy(asc(dbSchema.slot.startAt))
-        .limit(300),
+      listPublicEventRows({
+        database,
+        publicContext,
+        now,
+        limit: 300,
+      }),
       listPublicTicketTypes({
         database,
         organizationId: publicContext.organization.id,
