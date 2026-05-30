@@ -1025,10 +1025,22 @@ describe('契約ページ', () => {
 		await expect
 			.element(page.getByRole('heading', { name: '請求書・支払いイベント' }))
 			.toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: '請求書を開く' })).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: '領収書を開く' })).toBeInTheDocument();
-		await expect.element(page.getByText('請求書: checking')).toBeInTheDocument();
-		await expect.element(page.getByText('payment_failed')).toBeInTheDocument();
+		await expect.element(page.getByRole('heading', { name: '請求書・領収書' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { name: '支払いイベント一覧' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('link', { name: '1件目の請求書をStripeで開く' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('link', { name: '2件目の領収書をStripeで開く' }))
+			.toBeInTheDocument();
+		await expect.element(page.getByText('参照可能').first()).toBeInTheDocument();
+		await expect.element(page.getByText('確認中')).toBeInTheDocument();
+		await expect.element(page.getByText('支払い失敗を検出しました')).toBeInTheDocument();
+		await expect.element(page.getByText('失敗', { exact: true })).toBeInTheDocument();
+		await expect.element(page.getByText('payment_failed')).not.toBeInTheDocument();
+		await expect.element(page.getByText('請求書: checking')).not.toBeInTheDocument();
 	});
 
 	it('非オーナーには支払いドキュメントと請求書イベントを隠す', async () => {
@@ -1053,7 +1065,7 @@ describe('契約ページ', () => {
 			.element(page.getByRole('heading', { name: '請求書・支払いイベント' }))
 			.not.toBeInTheDocument();
 		await expect
-			.element(page.getByRole('button', { name: '請求書を開く' }))
+			.element(page.getByRole('link', { name: '1件目の請求書をStripeで開く' }))
 			.not.toBeInTheDocument();
 		await expect.element(page.getByText('payment_failed')).not.toBeInTheDocument();
 	});

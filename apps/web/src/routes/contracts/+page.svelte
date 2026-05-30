@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { ExternalLink } from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { Badge } from '$lib/components/ui/badge';
@@ -29,6 +30,17 @@
 		OrganizationBillingPayload['history'],
 		null | undefined
 	>[number];
+	type OrganizationBillingPaymentDocument = NonNullable<
+		OrganizationBillingPayload['paymentDocuments']
+	>['documents'][number];
+	type OrganizationBillingInvoicePaymentEvent = NonNullable<
+		OrganizationBillingPayload['invoicePaymentEvents']
+	>[number];
+	type PaymentDocumentLink = {
+		href: string;
+		label: string;
+		ariaLabel: string;
+	};
 
 	let loading = $state(true);
 	let busy = $state(false);
@@ -333,6 +345,151 @@
 				return 'border-border/80 bg-secondary/40';
 		}
 	};
+	const resolvePaymentDocumentKindLabel = (
+		documentKind: OrganizationBillingPaymentDocument['documentKind']
+	) => (documentKind === 'receipt' ? '領収書' : '請求書');
+	const resolvePaymentDocumentStatusLabel = (
+		status: OrganizationBillingPaymentDocument['ownerFacingStatus']
+	) => {
+		switch (status) {
+			case 'available':
+				return '参照可能';
+			case 'unavailable':
+				return '参照できません';
+			default:
+				return '確認中';
+		}
+	};
+	const resolvePaymentDocumentStatusVariant = (
+		status: OrganizationBillingPaymentDocument['ownerFacingStatus']
+	): 'default' | 'secondary' | 'destructive' => {
+		switch (status) {
+			case 'available':
+				return 'default';
+			case 'unavailable':
+				return 'destructive';
+			default:
+				return 'secondary';
+		}
+	};
+	const resolvePaymentDocumentCardClassName = (
+		status: OrganizationBillingPaymentDocument['ownerFacingStatus']
+	) => {
+		switch (status) {
+			case 'available':
+				return 'border-success/30 bg-success/10';
+			case 'unavailable':
+				return 'border-warning/45 bg-warning/10';
+			default:
+				return 'border-border/80 bg-secondary/40';
+		}
+	};
+	const resolvePaymentDocumentLinks = (
+		document: OrganizationBillingPaymentDocument,
+		index: number
+	): PaymentDocumentLink[] => {
+		const kindLabel = resolvePaymentDocumentKindLabel(document.documentKind);
+		const ordinalLabel = `${index + 1}件目の${kindLabel}`;
+		const links: Array<PaymentDocumentLink | null> = [
+			document.hostedInvoiceUrl
+				? {
+						href: document.hostedInvoiceUrl,
+						label: 'Stripeで開く',
+						ariaLabel: `${ordinalLabel}をStripeで開く`
+					}
+				: null,
+			document.invoicePdfUrl
+				? {
+						href: document.invoicePdfUrl,
+						label: 'PDFを開く',
+						ariaLabel: `${ordinalLabel}のPDFを開く`
+					}
+				: null,
+			document.receiptUrl
+				? {
+						href: document.receiptUrl,
+						label: '領収書を開く',
+						ariaLabel: `${ordinalLabel}をStripeで開く`
+					}
+				: null
+		];
+
+		return links.filter((link): link is PaymentDocumentLink => Boolean(link));
+	};
+	const resolveInvoicePaymentEventTitle = (
+		eventType: OrganizationBillingInvoicePaymentEvent['eventType']
+	) => {
+		switch (eventType) {
+			case 'payment_succeeded':
+				return '支払いが完了しました';
+			case 'payment_failed':
+				return '支払い失敗を検出しました';
+			case 'payment_action_required':
+				return '支払い方法の認証が必要です';
+			default:
+				return '請求書を確認しました';
+		}
+	};
+	const resolveInvoicePaymentEventSummary = (
+		event: OrganizationBillingInvoicePaymentEvent
+	): string => {
+		switch (event.eventType) {
+			case 'payment_succeeded':
+				return 'Stripe から支払い成功イベントを受信しました。';
+			case 'payment_failed':
+				return 'Stripe から支払い失敗イベントを受信しました。契約管理画面で支払い状況を確認してください。';
+			case 'payment_action_required':
+				return '支払い方法の認証が必要な状態です。契約管理画面で認証状況を確認してください。';
+			default:
+				return 'Stripe 上の請求書参照を確認しました。';
+		}
+	};
+	const resolveInvoicePaymentStatusLabel = (
+		status: OrganizationBillingInvoicePaymentEvent['ownerFacingStatus']
+	) => {
+		switch (status) {
+			case 'available':
+				return '参照可能';
+			case 'action_required':
+				return '認証が必要';
+			case 'failed':
+				return '失敗';
+			case 'succeeded':
+				return '完了';
+			case 'missing':
+				return '未確認';
+			default:
+				return '確認中';
+		}
+	};
+	const resolveInvoicePaymentStatusVariant = (
+		status: OrganizationBillingInvoicePaymentEvent['ownerFacingStatus']
+	): 'default' | 'secondary' | 'destructive' => {
+		switch (status) {
+			case 'succeeded':
+			case 'available':
+				return 'default';
+			case 'failed':
+			case 'action_required':
+				return 'destructive';
+			default:
+				return 'secondary';
+		}
+	};
+	const resolveInvoicePaymentEventCardClassName = (
+		event: OrganizationBillingInvoicePaymentEvent
+	) => {
+		switch (event.ownerFacingStatus) {
+			case 'succeeded':
+			case 'available':
+				return 'border-success/30 bg-success/10';
+			case 'failed':
+			case 'action_required':
+				return 'border-warning/45 bg-warning/10';
+			default:
+				return 'border-border/80 bg-secondary/40';
+		}
+	};
 
 	const refreshContracts = async () => {
 		const { session } = await loadSession();
@@ -576,13 +733,6 @@
 		} finally {
 			busy = false;
 		}
-	};
-
-	const openProviderDocument = (url: string | null) => {
-		if (!url) {
-			return;
-		}
-		window.open(url, '_blank', 'noopener,noreferrer');
 	};
 
 	onMount(() => {
@@ -902,62 +1052,86 @@
 					</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
-					{#if billing.paymentDocuments?.documents.length}
-						<ul class="space-y-2 text-sm text-secondary-foreground">
-							{#each billing.paymentDocuments.documents as document (document.documentKind + document.providerDocumentId)}
-								<li class="rounded-lg border border-border/80 bg-secondary/40 p-3">
-									<p class="font-medium text-foreground">
-										{document.documentKind === 'invoice' ? '請求書' : '領収書'}: {document.ownerFacingStatus}
-									</p>
-									<div class="mt-2 flex flex-wrap gap-3">
-										{#if document.hostedInvoiceUrl}
-											<button
-												type="button"
-												class="text-primary underline"
-												onclick={() => openProviderDocument(document.hostedInvoiceUrl)}
+					<div class="space-y-3">
+						<h3 class="text-sm font-semibold text-secondary-foreground">請求書・領収書</h3>
+						{#if billing.paymentDocuments?.documents.length}
+							<ul class="space-y-2 text-sm text-secondary-foreground">
+								{#each billing.paymentDocuments.documents as document, index (document.documentKind + document.providerDocumentId)}
+									{@const documentLinks = resolvePaymentDocumentLinks(document, index)}
+									<li
+										class={`rounded-lg border p-3 ${resolvePaymentDocumentCardClassName(document.ownerFacingStatus)}`}
+									>
+										<div class="flex min-w-0 flex-wrap items-center gap-2">
+											<p class="font-medium text-foreground">
+												{resolvePaymentDocumentKindLabel(document.documentKind)}
+											</p>
+											<Badge
+												variant={resolvePaymentDocumentStatusVariant(document.ownerFacingStatus)}
 											>
-												請求書を開く
-											</button>
+												{resolvePaymentDocumentStatusLabel(document.ownerFacingStatus)}
+											</Badge>
+										</div>
+										{#if documentLinks.length}
+											<div class="mt-3 flex flex-wrap gap-2">
+												{#each documentLinks as link (link.href + link.label)}
+													<Button
+														href={link.href}
+														target="_blank"
+														rel="noopener noreferrer"
+														variant="outline"
+														size="sm"
+														aria-label={link.ariaLabel}
+													>
+														<ExternalLink class="size-4" aria-hidden="true" />
+														{link.label}
+													</Button>
+												{/each}
+											</div>
+										{:else}
+											<p class="mt-2 text-xs text-muted-foreground">
+												Stripe 側の参照リンクを確認しています。
+											</p>
 										{/if}
-										{#if document.invoicePdfUrl}
-											<button
-												type="button"
-												class="text-primary underline"
-												onclick={() => openProviderDocument(document.invoicePdfUrl)}
-											>
-												PDFを開く
-											</button>
-										{/if}
-										{#if document.receiptUrl}
-											<button
-												type="button"
-												class="text-primary underline"
-												onclick={() => openProviderDocument(document.receiptUrl)}
-											>
-												領収書を開く
-											</button>
-										{/if}
-									</div>
-								</li>
-							{/each}
-						</ul>
-					{:else}
-						<p class="text-sm text-muted-foreground">
-							表示できる請求書・領収書参照はまだありません。
-						</p>
-					{/if}
-					{#if billing.invoicePaymentEvents?.length}
-						<ul class="space-y-2 text-sm text-secondary-foreground">
-							{#each billing.invoicePaymentEvents as event (event.id)}
-								<li class="rounded-lg border border-border/80 bg-secondary/40 p-3">
-									<p class="font-medium text-foreground">{event.eventType}</p>
-									<p class="text-xs text-muted-foreground">
-										{formatJaDateTime(event.occurredAt ?? event.createdAt)} / {event.ownerFacingStatus}
-									</p>
-								</li>
-							{/each}
-						</ul>
-					{/if}
+									</li>
+								{/each}
+							</ul>
+						{:else}
+							<p class="text-sm text-muted-foreground">
+								表示できる請求書・領収書参照はまだありません。
+							</p>
+						{/if}
+					</div>
+					<div class="space-y-3">
+						<h3 class="text-sm font-semibold text-secondary-foreground">支払いイベント一覧</h3>
+						{#if billing.invoicePaymentEvents?.length}
+							<ul class="space-y-2 text-sm text-secondary-foreground">
+								{#each billing.invoicePaymentEvents as event (event.id)}
+									<li
+										class={`rounded-lg border p-3 ${resolveInvoicePaymentEventCardClassName(event)}`}
+									>
+										<div class="flex min-w-0 flex-wrap items-center gap-2">
+											<p class="font-medium text-foreground">
+												{resolveInvoicePaymentEventTitle(event.eventType)}
+											</p>
+											<Badge variant={resolveInvoicePaymentStatusVariant(event.ownerFacingStatus)}>
+												{resolveInvoicePaymentStatusLabel(event.ownerFacingStatus)}
+											</Badge>
+											<span class="text-xs text-muted-foreground">
+												{formatJaDateTime(event.occurredAt ?? event.createdAt)}
+											</span>
+										</div>
+										<p class="mt-2 text-sm text-secondary-foreground">
+											{resolveInvoicePaymentEventSummary(event)}
+										</p>
+									</li>
+								{/each}
+							</ul>
+						{:else}
+							<p class="text-sm text-muted-foreground">
+								表示できる支払いイベントはまだありません。
+							</p>
+						{/if}
+					</div>
 				</CardContent>
 			</Card>
 		</section>
