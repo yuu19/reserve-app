@@ -1,6 +1,6 @@
 # DB説明とER（Org + Store）
 
-最終更新: 2026-05-30
+最終更新: 2026-05-31
 参照: `apps/backend/src/infra/db/schema.ts`
 
 現行DBの全テーブル、リレーション、静的ER図は [database-er-reference.html](./database-er-reference.html) を参照。
@@ -27,6 +27,7 @@
 
 - `organization`
 - `store`
+- `public_site_setting`
 - `member`（Org member）
 - `store_member`（Store staff role）
 - `participant`
@@ -48,7 +49,14 @@
 - `recurring_schedule_exception`
 - `slot`
 - `booking`
+- `booking_answer`
+- `booking_companion`
+- `booking_public_action_token`
 - `booking_audit_log`
+- `public_site_notification_setting`
+- `notification_log`
+- `reminder_policy`
+- `reminder_log`
 - `ticket_type`
 - `ticket_pack`
 - `ticket_purchase`
@@ -82,6 +90,8 @@
 ```mermaid
 erDiagram
   ORGANIZATION ||--o{ STORE : has
+  ORGANIZATION ||--o{ PUBLIC_SITE_SETTING : has
+  STORE ||--o| PUBLIC_SITE_SETTING : configures
   ORGANIZATION ||--o{ MEMBER : has
   STORE ||--o{ STORE_MEMBER : has
 
@@ -109,7 +119,14 @@ erDiagram
   STORE ||--o{ BOOKING : has
   SLOT ||--o{ BOOKING : receives
   PARTICIPANT ||--o{ BOOKING : makes
+  BOOKING ||--o{ BOOKING_ANSWER : records
+  BOOKING ||--o{ BOOKING_COMPANION : includes
+  BOOKING ||--o{ BOOKING_PUBLIC_ACTION_TOKEN : issues
   BOOKING ||--o{ BOOKING_AUDIT_LOG : logged
+  STORE ||--o| PUBLIC_SITE_NOTIFICATION_SETTING : configures
+  BOOKING ||--o{ NOTIFICATION_LOG : emits
+  SERVICE ||--o{ REMINDER_POLICY : configures
+  BOOKING ||--o{ REMINDER_LOG : schedules
 
   ORGANIZATION ||--o{ TICKET_TYPE : has
   STORE ||--o{ TICKET_TYPE : has

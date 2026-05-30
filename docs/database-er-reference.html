@@ -508,11 +508,11 @@
   <body>
     <header>
       <div class="logo">Reserve App DB <span>/</span> schema</div>
-      <div class="v-badge">schema.ts / 2026-05-30</div>
+      <div class="v-badge">schema.ts / 2026-05-31</div>
       <div class="summary">
         <div class="pill">外部リソースなし</div>
-        <div class="pill">40 tables</div>
-        <div class="pill">88 relations</div>
+        <div class="pill">48 tables</div>
+        <div class="pill">106 relations</div>
         <div class="pill warn">現行 Drizzle schema 由来</div>
       </div>
     </header>
@@ -531,6 +531,9 @@
           <div class="sb-label">組織・店舗・参加者</div>
           <a class="sb-link" href="#table-organization"><span class="sb-dot"></span>organization</a>
           <a class="sb-link" href="#table-store"><span class="sb-dot"></span>store</a>
+          <a class="sb-link" href="#table-public_site_setting"
+            ><span class="sb-dot"></span>public_site_setting</a
+          >
           <a class="sb-link" href="#table-member"><span class="sb-dot"></span>member</a>
           <a class="sb-link" href="#table-store_member"><span class="sb-dot"></span>store_member</a>
           <a class="sb-link" href="#table-participant"><span class="sb-dot"></span>participant</a>
@@ -555,6 +558,27 @@
           >
           <a class="sb-link" href="#table-slot"><span class="sb-dot"></span>slot</a>
           <a class="sb-link" href="#table-booking"><span class="sb-dot"></span>booking</a>
+          <a class="sb-link" href="#table-booking_answer"
+            ><span class="sb-dot"></span>booking_answer</a
+          >
+          <a class="sb-link" href="#table-booking_companion"
+            ><span class="sb-dot"></span>booking_companion</a
+          >
+          <a class="sb-link" href="#table-booking_public_action_token"
+            ><span class="sb-dot"></span>booking_public_action_token</a
+          >
+          <a class="sb-link" href="#table-public_site_notification_setting"
+            ><span class="sb-dot"></span>public_site_notification_setting</a
+          >
+          <a class="sb-link" href="#table-notification_log"
+            ><span class="sb-dot"></span>notification_log</a
+          >
+          <a class="sb-link" href="#table-reminder_policy"
+            ><span class="sb-dot"></span>reminder_policy</a
+          >
+          <a class="sb-link" href="#table-reminder_log"
+            ><span class="sb-dot"></span>reminder_log</a
+          >
           <a class="sb-link" href="#table-booking_audit_log"
             ><span class="sb-dot"></span>booking_audit_log</a
           >
@@ -654,8 +678,8 @@
                 >storeInvitation</code
               >
               と <code>participantInvitation</code> は <code>invitation</code> の参照 alias
-              であり、独立テーブルとしては数えていません。現在の Drizzle schema
-              に存在しない旧課金テーブルは含めていません。
+              であり、独立テーブルとしては数えていません。現在の Drizzle schema と <code>apps/backend/drizzle/0030_public_booking_mvp.sql</code>
+              までの公開予約MVPテーブルを反映し、旧課金テーブルは含めていません。
             </div>
             <section class="table-group">
               <h3>認証</h3>
@@ -1031,6 +1055,91 @@
                     <div class="fname">name</div>
                     <div class="ftype">text</div>
                     <div class="fdesc">表示名またはラベル。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-public_site_setting">
+                  <div class="tcard-header">
+                    <div class="tname">public_site_setting</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">14 cols</span><span class="tbadge">2 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">公開予約サイトの店舗単位表示設定。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">site_name<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開サイト上の表示名。未設定時は店舗名等から補完する。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">description<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開サイト説明文。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">address<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開サイトに表示する住所。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">phone<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開サイトに表示する電話番号。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">business_hours<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開サイトに表示する営業時間。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">image_url<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開サイトで利用する画像URL。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">status<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開サイトの公開状態。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">accept_bookings<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(boolean)</div>
+                    <div class="fdesc">公開予約を受け付けるかどうか。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">noindex<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(boolean)</div>
+                    <div class="fdesc">検索エンジンに index させないかどうか。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
@@ -1849,13 +1958,11 @@
                   <div class="tcard-header">
                     <div class="tname">booking</div>
                     <div class="tcard-badges">
-                      <span class="tbadge">15 cols</span><span class="tbadge">7 FK</span
-                      ><span class="tbadge">1 UK</span>
+                      <span class="tbadge">22 cols</span><span class="tbadge">8 FK</span
+                      ><span class="tbadge">2 UK</span>
                     </div>
                   </div>
-                  <div class="tdesc">
-                    参加者による予約。キャンセル、無断欠席、回数券消費との対応を保持する。
-                  </div>
+                  <div class="tdesc">公開予約を含む予約。参加者紐づけがないゲスト予約、連絡先、公開操作IDを保持する。</div>
                   <div class="col-header">
                     <div>column</div>
                     <div>type</div>
@@ -1877,9 +1984,7 @@
                     <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      slot_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span>
-                    </div>
+                    <div class="fname">slot_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">slot.id への必須参照。削除時は cascade。</div>
                   </div>
@@ -1889,59 +1994,77 @@
                     <div class="fdesc">service.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      participant_id<span class="ftag tag-fk">FK</span
-                      ><span class="ftag tag-uk">UK</span>
-                    </div>
+                    <div class="fname">participant_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">participant.id への必須参照。削除時は cascade。</div>
+                    <div class="fdesc">participant.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      participants_count<span class="ftag tag-meta">default</span>
-                    </div>
+                    <div class="fname">public_id<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開予約の照会・操作で使う一意な公開ID。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">source<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">予約作成経路。participant / public など。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">participants_count<span class="ftag tag-meta">default</span></div>
                     <div class="ftype">integer</div>
-                    <div class="fdesc">数値。単位はカラム名に従う。</div>
+                    <div class="fdesc">予約人数。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">status<span class="ftag tag-meta">default</span></div>
+                    <div class="fname">customer_name<span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">状態値。値域はドメイン層またはユースケース層を参照。</div>
+                    <div class="fdesc">公開予約者名。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      cancel_reason<span class="ftag tag-meta">nullable</span>
-                    </div>
+                    <div class="fname">customer_email<span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">
-                      実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。
-                    </div>
+                    <div class="fdesc">公開予約者メールアドレス。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">cancelled_at<span class="ftag tag-meta">nullable</span></div>
-                    <div class="ftype">integer(timestamp_ms)</div>
-                    <div class="fdesc">日時。timestamp_ms。</div>
+                    <div class="fname">customer_phone<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開予約者電話番号。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      cancelled_by_user_id<span class="ftag tag-fk">FK</span
-                      ><span class="ftag tag-meta">nullable</span>
-                    </div>
+                    <div class="fname">note<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">予約者または運営側の補足メモ。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_by_user_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">user.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      no_show_marked_at<span class="ftag tag-meta">nullable</span>
-                    </div>
-                    <div class="ftype">integer(timestamp_ms)</div>
-                    <div class="fdesc">日時。timestamp_ms。</div>
+                    <div class="fname">status<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">予約状態。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      ticket_pack_id<span class="ftag tag-fk">FK</span
-                      ><span class="ftag tag-meta">nullable</span>
-                    </div>
+                    <div class="fname">cancel_reason<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">キャンセル理由。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">cancelled_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">キャンセル日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">cancelled_by_user_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">user.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">no_show_marked_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">無断欠席として記録した日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">ticket_pack_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">ticket_pack.id への任意参照。削除時は set null。</div>
                   </div>
@@ -1954,6 +2077,426 @@
                     <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
                     <div class="ftype">integer(timestamp_ms)</div>
                     <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-booking_answer">
+                  <div class="tcard-header">
+                    <div class="tname">booking_answer</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">6 cols</span><span class="tbadge">1 FK</span
+                      ><span class="tbadge">0 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">公開予約フォームの回答スナップショット。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">booking_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">booking.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">field_id</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">フォーム項目ID。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">label_snapshot</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">予約時点の項目ラベル。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">value_json</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">回答値のJSON文字列。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-booking_companion">
+                  <div class="tcard-header">
+                    <div class="tname">booking_companion</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">5 cols</span><span class="tbadge">1 FK</span
+                      ><span class="tbadge">0 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">公開予約の同伴者情報。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">booking_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">booking.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">name</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">同伴者名。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">note<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">同伴者に関する補足。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-booking_public_action_token">
+                  <div class="tcard-header">
+                    <div class="tname">booking_public_action_token</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">8 cols</span><span class="tbadge">1 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">公開予約のキャンセル等に使う期限付き操作トークン。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">booking_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">booking.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">purpose</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">トークン用途。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">token_hash<span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">トークンハッシュ。一意。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">email_snapshot</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">発行時点の送信先メールアドレス。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">expires_at</div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">有効期限。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">used_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">使用日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-public_site_notification_setting">
+                  <div class="tcard-header">
+                    <div class="tname">public_site_notification_setting</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">10 cols</span><span class="tbadge">2 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">公開予約の通知先設定。店舗単位。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">notify_owner<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(boolean)</div>
+                    <div class="fdesc">Org owner へ通知するかどうか。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">notify_admins<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(boolean)</div>
+                    <div class="fdesc">Org admin へ通知するかどうか。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">notify_store_managers<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(boolean)</div>
+                    <div class="fdesc">店舗 manager へ通知するかどうか。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">notify_staff<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(boolean)</div>
+                    <div class="fdesc">店舗 staff へ通知するかどうか。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">additional_emails_json<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">追加通知先メールアドレスのJSON文字列。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-notification_log">
+                  <div class="tcard-header">
+                    <div class="tname">notification_log</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">12 cols</span><span class="tbadge">3 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">公開予約や予約関連通知の送信状態ログ。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">booking_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">booking.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">event_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">通知対象イベント。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">channel<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">通知チャネル。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">recipient_email</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信先メールアドレス。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">status<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信状態。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">dedupe_key<span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">重複送信防止キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">error_message<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信失敗時のエラー概要。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-reminder_policy">
+                  <div class="tcard-header">
+                    <div class="tname">reminder_policy</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">9 cols</span><span class="tbadge">3 FK</span
+                      ><span class="tbadge">0 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">予約リマインダーの送信ポリシー。店舗またはサービス単位。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">service_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">service.id への任意参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">enabled<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(boolean)</div>
+                    <div class="fdesc">リマインダーを有効にするかどうか。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">minutes_before<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer</div>
+                    <div class="fdesc">予約開始何分前に送るか。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">channel<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">通知チャネル。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-reminder_log">
+                  <div class="tcard-header">
+                    <div class="tname">reminder_log</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">13 cols</span><span class="tbadge">4 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">リマインダー送信予定と送信結果のログ。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">booking_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">booking.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">reminder_policy_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">reminder_policy.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">channel<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">通知チャネル。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">recipient_email</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信先メールアドレス。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">status<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信状態。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">dedupe_key<span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">重複送信防止キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">error_message<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信失敗時のエラー概要。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">scheduled_for</div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">送信予定日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">sent_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">送信日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
                   </div>
                 </article>
                 <article class="tcard" id="table-booking_audit_log">
@@ -2123,11 +2666,11 @@
                   <div class="tcard-header">
                     <div class="tname">ticket_pack</div>
                     <div class="tcard-badges">
-                      <span class="tbadge">11 cols</span><span class="tbadge">4 FK</span
+                      <span class="tbadge">12 cols</span><span class="tbadge">4 FK</span
                       ><span class="tbadge">0 UK</span>
                     </div>
                   </div>
-                  <div class="tdesc">参加者が保有する回数券残高。</div>
+                  <div class="tdesc">参加者が保有する回数券残高。サービス範囲のスナップショットを含む。</div>
                   <div class="col-header">
                     <div>column</div>
                     <div>type</div>
@@ -2159,24 +2702,29 @@
                     <div class="fdesc">ticket_type.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
+                    <div class="fname">service_ids_json<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">利用可能サービスIDのJSONスナップショット。</div>
+                  </div>
+                  <div class="frow">
                     <div class="fname">initial_count</div>
                     <div class="ftype">integer</div>
-                    <div class="fdesc">数値。単位はカラム名に従う。</div>
+                    <div class="fdesc">初期回数。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">remaining_count</div>
                     <div class="ftype">integer</div>
-                    <div class="fdesc">数値。単位はカラム名に従う。</div>
+                    <div class="fdesc">残回数。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">expires_at<span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">integer(timestamp_ms)</div>
-                    <div class="fdesc">日時。timestamp_ms。</div>
+                    <div class="fdesc">有効期限。timestamp_ms。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">status<span class="ftag tag-meta">default</span></div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">状態値。値域はドメイン層またはユースケース層を参照。</div>
+                    <div class="fdesc">回数券状態。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
@@ -2193,13 +2741,11 @@
                   <div class="tcard-header">
                     <div class="tname">ticket_purchase</div>
                     <div class="tcard-badges">
-                      <span class="tbadge">16 cols</span><span class="tbadge">7 FK</span
+                      <span class="tbadge">17 cols</span><span class="tbadge">7 FK</span
                       ><span class="tbadge">1 UK</span>
                     </div>
                   </div>
-                  <div class="tdesc">
-                    回数券購入または承認フロー。Stripe Checkout との対応を含む。
-                  </div>
+                  <div class="tdesc">回数券購入または承認フロー。Stripe Checkout とサービス範囲の対応を含む。</div>
                   <div class="col-header">
                     <div>column</div>
                     <div>type</div>
@@ -2231,69 +2777,54 @@
                     <div class="fdesc">ticket_type.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
+                    <div class="fname">service_ids_json<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">購入対象サービスIDのJSONスナップショット。</div>
+                  </div>
+                  <div class="frow">
                     <div class="fname">payment_method</div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">
-                      実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。
-                    </div>
+                    <div class="fdesc">支払い方法。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">status</div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">状態値。値域はドメイン層またはユースケース層を参照。</div>
+                    <div class="fdesc">購入状態。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      ticket_pack_id<span class="ftag tag-fk">FK</span
-                      ><span class="ftag tag-meta">nullable</span>
-                    </div>
+                    <div class="fname">ticket_pack_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">ticket_pack.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      stripe_checkout_session_id<span class="ftag tag-uk">UK</span
-                      ><span class="ftag tag-meta">nullable</span>
-                    </div>
+                    <div class="fname">stripe_checkout_session_id<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">
-                      識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。
-                    </div>
+                    <div class="fdesc">Stripe Checkout Session ID。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      approved_by_user_id<span class="ftag tag-fk">FK</span
-                      ><span class="ftag tag-meta">nullable</span>
-                    </div>
+                    <div class="fname">approved_by_user_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">user.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">approved_at<span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">integer(timestamp_ms)</div>
-                    <div class="fdesc">日時。timestamp_ms。</div>
+                    <div class="fdesc">承認日時。timestamp_ms。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      rejected_by_user_id<span class="ftag tag-fk">FK</span
-                      ><span class="ftag tag-meta">nullable</span>
-                    </div>
+                    <div class="fname">rejected_by_user_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">user.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">rejected_at<span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">integer(timestamp_ms)</div>
-                    <div class="fdesc">日時。timestamp_ms。</div>
+                    <div class="fdesc">却下日時。timestamp_ms。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      reject_reason<span class="ftag tag-meta">nullable</span>
-                    </div>
+                    <div class="fname">reject_reason<span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">
-                      実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。
-                    </div>
+                    <div class="fdesc">却下理由。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
@@ -4566,6 +5097,18 @@
               <div class="rel-row">
                 <span class="rel-entity">organization</span>
                 <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">public_site_setting</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o|</span>
+                <span class="rel-entity">public_site_setting</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
                 <span class="rel-entity">member</span>
                 <span class="rel-note">organization_id / onDelete cascade</span>
               </div>
@@ -4771,7 +5314,13 @@
                 <span class="rel-entity">participant</span>
                 <span class="rel-conn">||--o{</span>
                 <span class="rel-entity">booking</span>
-                <span class="rel-note">participant_id / onDelete cascade</span>
+                <span class="rel-note">participant_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">user</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">booking</span>
+                <span class="rel-note">created_by_user_id optional / onDelete set null</span>
               </div>
               <div class="rel-row">
                 <span class="rel-entity">user</span>
@@ -4784,6 +5333,96 @@
                 <span class="rel-conn">||--o{</span>
                 <span class="rel-entity">booking</span>
                 <span class="rel-note">ticket_pack_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">booking</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">booking_answer</span>
+                <span class="rel-note">booking_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">booking</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">booking_companion</span>
+                <span class="rel-note">booking_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">booking</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">booking_public_action_token</span>
+                <span class="rel-note">booking_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">public_site_notification_setting</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o|</span>
+                <span class="rel-entity">public_site_notification_setting</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">notification_log</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">notification_log</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">booking</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">notification_log</span>
+                <span class="rel-note">booking_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">reminder_policy</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">reminder_policy</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">service</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">reminder_policy</span>
+                <span class="rel-note">service_id optional / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">reminder_log</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">reminder_log</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">booking</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">reminder_log</span>
+                <span class="rel-note">booking_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">reminder_policy</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">reminder_log</span>
+                <span class="rel-note">reminder_policy_id optional / onDelete set null</span>
               </div>
               <div class="rel-row">
                 <span class="rel-entity">booking</span>
@@ -5085,7 +5724,7 @@
               <svg
                 class="er-svg"
                 xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 2396 1106"
+                viewBox="0 0 2396 1278"
                 role="img"
                 aria-label="Reserve App database ER diagram"
               >
@@ -5109,679 +5748,322 @@
                 <text class="group-label" x="1400" y="24">回数券・購入</text>
                 <text class="group-label" x="1740" y="24">課金 v2 / 汎用モデル</text>
                 <text class="group-label" x="2080" y="24">AI chatbot / RAG</text>
-                <path class="edge" d="M 258 90 C 294 90, 294 182, 40 182" marker-end="url(#arrow)">
+                <path class="edge" d="M 258 90 C 300 90, 300 182, 258 182" marker-end="url(#arrow)">
                   <title>user ||--o{ session: user_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 258 90 C 306 90, 306 274, 40 274" marker-end="url(#arrow)">
+                <path class="edge" d="M 258 90 C 314 90, 314 274, 258 274" marker-end="url(#arrow)">
                   <title>user ||--o{ account: user_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 658 90, 658 182, 380 182"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 668 90, 668 182, 598 182" marker-end="url(#arrow)">
                   <title>organization ||--o{ store: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 670 90, 670 274, 380 274"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 682 90, 682 274, 598 274" marker-end="url(#arrow)">
+                  <title>organization ||--o{ public_site_setting: organization_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 182 C 640 182, 640 274, 598 274" marker-end="url(#arrow)">
+                  <title>store ||--o| public_site_setting: store_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 90 C 654 90, 654 366, 598 366" marker-end="url(#arrow)">
                   <title>organization ||--o{ member: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 258 90 C 342 90, 342 274, 380 274" marker-end="url(#arrow)">
+                <path class="edge" d="M 258 90 C 312 90, 312 366, 380 366" marker-end="url(#arrow)">
                   <title>user ||--o{ member: user_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 634 182, 634 366, 380 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 682 182, 682 458, 598 458" marker-end="url(#arrow)">
                   <title>store ||--o{ store_member: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 258 90 C 319 90, 319 366, 380 366" marker-end="url(#arrow)">
+                <path class="edge" d="M 258 90 C 326 90, 326 458, 380 458" marker-end="url(#arrow)">
                   <title>user ||--o{ store_member: user_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 658 90, 658 458, 380 458"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 654 90, 654 550, 598 550" marker-end="url(#arrow)">
                   <title>organization ||--o{ participant: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 670 182, 670 458, 380 458"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 668 182, 668 550, 598 550" marker-end="url(#arrow)">
                   <title>store ||--o{ participant: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 258 90 C 342 90, 342 458, 380 458" marker-end="url(#arrow)">
+                <path class="edge" d="M 258 90 C 312 90, 312 550, 380 550" marker-end="url(#arrow)">
                   <title>user ||--o{ participant: user_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 659 90, 659 90, 720 90"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 659 90, 659 90, 720 90" marker-end="url(#arrow)">
                   <title>organization ||--o{ invitation: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 659 182, 659 90, 720 90"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 666 182, 666 90, 720 90" marker-end="url(#arrow)">
                   <title>store ||--o{ invitation: store_id optional / onDelete set null</title>
                 </path>
-                <path class="edge" d="M 258 90 C 489 90, 489 90, 720 90" marker-end="url(#arrow)">
-                  <title>
-                    user ||--o{ invitation: responded_by_user_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 258 90 C 503 90, 503 90, 720 90" marker-end="url(#arrow)">
+                  <title>user ||--o{ invitation: responded_by_user_id optional / onDelete set null</title>
                 </path>
-                <path class="edge" d="M 598 274 C 670 274, 670 90, 720 90" marker-end="url(#arrow)">
-                  <title>
-                    member ||--o{ invitation: accepted_member_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 598 366 C 645 366, 645 90, 720 90" marker-end="url(#arrow)">
+                  <title>member ||--o{ invitation: accepted_member_id optional / onDelete set null</title>
                 </path>
-                <path class="edge" d="M 598 366 C 682 366, 682 90, 720 90" marker-end="url(#arrow)">
-                  <title>
-                    store_member ||--o{ invitation: accepted_store_member_id optional / onDelete set
-                    null
-                  </title>
+                <path class="edge" d="M 598 458 C 652 458, 652 90, 720 90" marker-end="url(#arrow)">
+                  <title>store_member ||--o{ invitation: accepted_store_member_id optional / onDelete set null</title>
                 </path>
-                <path class="edge" d="M 598 458 C 659 458, 659 90, 720 90" marker-end="url(#arrow)">
-                  <title>
-                    participant ||--o{ invitation: accepted_participant_id optional / onDelete set
-                    null
-                  </title>
+                <path class="edge" d="M 598 550 C 659 550, 659 90, 720 90" marker-end="url(#arrow)">
+                  <title>participant ||--o{ invitation: accepted_participant_id optional / onDelete set null</title>
                 </path>
-                <path class="edge" d="M 258 90 C 489 90, 489 90, 720 90" marker-end="url(#arrow)">
+                <path class="edge" d="M 258 90 C 496 90, 496 90, 720 90" marker-end="url(#arrow)">
                   <title>user ||--o{ invitation: inviter_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 938 90 C 998 90, 998 182, 720 182" marker-end="url(#arrow)">
-                  <title>
-                    invitation ||--o{ invitation_audit_log: invitation_id / onDelete cascade
-                  </title>
+                <path class="edge" d="M 938 90 C 1022 90, 1022 182, 938 182" marker-end="url(#arrow)">
+                  <title>invitation ||--o{ invitation_audit_log: invitation_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 670 90, 670 182, 720 182"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    organization ||--o{ invitation_audit_log: organization_id / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 90 C 645 90, 645 182, 720 182" marker-end="url(#arrow)">
+                  <title>organization ||--o{ invitation_audit_log: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 682 182, 682 182, 720 182"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    store ||--o{ invitation_audit_log: store_id optional / onDelete set null
-                  </title>
+                <path class="edge edge-strong" d="M 598 182 C 652 182, 652 182, 720 182" marker-end="url(#arrow)">
+                  <title>store ||--o{ invitation_audit_log: store_id optional / onDelete set null</title>
                 </path>
                 <path class="edge" d="M 258 90 C 489 90, 489 182, 720 182" marker-end="url(#arrow)">
                   <title>user ||--o{ invitation_audit_log: actor_user_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 829 90, 829 90, 1060 90"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 836 90, 836 90, 1060 90" marker-end="url(#arrow)">
                   <title>organization ||--o{ service: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 829 182, 829 90, 1060 90"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 843 182, 843 90, 1060 90" marker-end="url(#arrow)">
                   <title>store ||--o{ service: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 829 90, 829 182, 1060 182"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    organization ||--o{ recurring_schedule: organization_id / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 90 C 815 90, 815 182, 1060 182" marker-end="url(#arrow)">
+                  <title>organization ||--o{ recurring_schedule: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 829 182, 829 182, 1060 182"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 822 182, 822 182, 1060 182" marker-end="url(#arrow)">
                   <title>store ||--o{ recurring_schedule: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1278 90 C 1314 90, 1314 182, 1060 182"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 1278 90 C 1362 90, 1362 182, 1278 182" marker-end="url(#arrow)">
                   <title>service ||--o{ recurring_schedule: service_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1278 182 C 1326 182, 1326 274, 1060 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    recurring_schedule ||--o{ recurring_schedule_exception: recurring_schedule_id /
-                    onDelete cascade
-                  </title>
+                <path class="edge" d="M 1278 182 C 1320 182, 1320 274, 1278 274" marker-end="url(#arrow)">
+                  <title>recurring_schedule ||--o{ recurring_schedule_exception: recurring_schedule_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 829 90, 829 274, 1060 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    organization ||--o{ recurring_schedule_exception: organization_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 90 C 843 90, 843 274, 1060 274" marker-end="url(#arrow)">
+                  <title>organization ||--o{ recurring_schedule_exception: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 829 182, 829 274, 1060 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    store ||--o{ recurring_schedule_exception: store_id / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 182 C 815 182, 815 274, 1060 274" marker-end="url(#arrow)">
+                  <title>store ||--o{ recurring_schedule_exception: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 829 90, 829 366, 1060 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 822 90, 822 366, 1060 366" marker-end="url(#arrow)">
                   <title>organization ||--o{ slot: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 829 182, 829 366, 1060 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 829 182, 829 366, 1060 366" marker-end="url(#arrow)">
                   <title>store ||--o{ slot: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1278 90 C 1326 90, 1326 366, 1060 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 1278 90 C 1334 90, 1334 366, 1278 366" marker-end="url(#arrow)">
                   <title>service ||--o{ slot: service_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1278 182 C 1338 182, 1338 366, 1060 366"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    recurring_schedule ||--o{ slot: recurring_schedule_id optional / onDelete set
-                    null
-                  </title>
+                <path class="edge" d="M 1278 182 C 1348 182, 1348 366, 1278 366" marker-end="url(#arrow)">
+                  <title>recurring_schedule ||--o{ slot: recurring_schedule_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 829 90, 829 458, 1060 458"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 815 90, 815 458, 1060 458" marker-end="url(#arrow)">
                   <title>organization ||--o{ booking: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 829 182, 829 458, 1060 458"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 822 182, 822 458, 1060 458" marker-end="url(#arrow)">
                   <title>store ||--o{ booking: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1278 366 C 1314 366, 1314 458, 1060 458"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 1278 366 C 1334 366, 1334 458, 1278 458" marker-end="url(#arrow)">
                   <title>slot ||--o{ booking: slot_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1278 90 C 1326 90, 1326 458, 1060 458"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 1278 90 C 1348 90, 1348 458, 1278 458" marker-end="url(#arrow)">
                   <title>service ||--o{ booking: service_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 598 458 C 829 458, 829 458, 1060 458"
-                  marker-end="url(#arrow)"
-                >
-                  <title>participant ||--o{ booking: participant_id / onDelete cascade</title>
+                <path class="edge" d="M 598 550 C 843 550, 843 458, 1060 458" marker-end="url(#arrow)">
+                  <title>participant ||--o{ booking: participant_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 258 90 C 659 90, 659 458, 1060 458"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    user ||--o{ booking: cancelled_by_user_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 258 90 C 645 90, 645 458, 1060 458" marker-end="url(#arrow)">
+                  <title>user ||--o{ booking: created_by_user_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1400 182 C 1316 182, 1316 458, 1278 458"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    ticket_pack ||--o{ booking: ticket_pack_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 258 90 C 652 90, 652 458, 1060 458" marker-end="url(#arrow)">
+                  <title>user ||--o{ booking: cancelled_by_user_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1278 458 C 1314 458, 1314 550, 1060 550"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 1400 182 C 1339 182, 1339 458, 1278 458" marker-end="url(#arrow)">
+                  <title>ticket_pack ||--o{ booking: ticket_pack_id optional / onDelete set null</title>
+                </path>
+                <path class="edge edge-strong" d="M 1278 458 C 1362 458, 1362 550, 1278 550" marker-end="url(#arrow)">
+                  <title>booking ||--o{ booking_answer: booking_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 1278 458 C 1320 458, 1320 642, 1278 642" marker-end="url(#arrow)">
+                  <title>booking ||--o{ booking_companion: booking_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 1278 458 C 1334 458, 1334 734, 1278 734" marker-end="url(#arrow)">
+                  <title>booking ||--o{ booking_public_action_token: booking_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 90 C 822 90, 822 826, 1060 826" marker-end="url(#arrow)">
+                  <title>organization ||--o{ public_site_notification_setting: organization_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 182 C 829 182, 829 826, 1060 826" marker-end="url(#arrow)">
+                  <title>store ||--o| public_site_notification_setting: store_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 90 C 836 90, 836 918, 1060 918" marker-end="url(#arrow)">
+                  <title>organization ||--o{ notification_log: organization_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 182 C 843 182, 843 918, 1060 918" marker-end="url(#arrow)">
+                  <title>store ||--o{ notification_log: store_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 1278 458 C 1348 458, 1348 918, 1278 918" marker-end="url(#arrow)">
+                  <title>booking ||--o{ notification_log: booking_id optional / onDelete set null</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 90 C 822 90, 822 1010, 1060 1010" marker-end="url(#arrow)">
+                  <title>organization ||--o{ reminder_policy: organization_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 182 C 829 182, 829 1010, 1060 1010" marker-end="url(#arrow)">
+                  <title>store ||--o{ reminder_policy: store_id / onDelete cascade</title>
+                </path>
+                <path class="edge" d="M 1278 90 C 1334 90, 1334 1010, 1278 1010" marker-end="url(#arrow)">
+                  <title>service ||--o{ reminder_policy: service_id optional / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 90 C 843 90, 843 1102, 1060 1102" marker-end="url(#arrow)">
+                  <title>organization ||--o{ reminder_log: organization_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 598 182 C 815 182, 815 1102, 1060 1102" marker-end="url(#arrow)">
+                  <title>store ||--o{ reminder_log: store_id / onDelete cascade</title>
+                </path>
+                <path class="edge edge-strong" d="M 1278 458 C 1320 458, 1320 1102, 1278 1102" marker-end="url(#arrow)">
+                  <title>booking ||--o{ reminder_log: booking_id / onDelete cascade</title>
+                </path>
+                <path class="edge" d="M 1278 1010 C 1334 1010, 1334 1102, 1278 1102" marker-end="url(#arrow)">
+                  <title>reminder_policy ||--o{ reminder_log: reminder_policy_id optional / onDelete set null</title>
+                </path>
+                <path class="edge edge-strong" d="M 1278 458 C 1348 458, 1348 1194, 1278 1194" marker-end="url(#arrow)">
                   <title>booking ||--o{ booking_audit_log: booking_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 829 90, 829 550, 1060 550"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    organization ||--o{ booking_audit_log: organization_id / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 90 C 843 90, 843 1194, 1060 1194" marker-end="url(#arrow)">
+                  <title>organization ||--o{ booking_audit_log: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 829 182, 829 550, 1060 550"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 815 182, 815 1194, 1060 1194" marker-end="url(#arrow)">
                   <title>store ||--o{ booking_audit_log: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 258 90 C 659 90, 659 550, 1060 550"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 258 90 C 652 90, 652 1194, 1060 1194" marker-end="url(#arrow)">
                   <title>user ||--o{ booking_audit_log: actor_user_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 999 90, 999 90, 1400 90"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 999 90, 999 90, 1400 90" marker-end="url(#arrow)">
                   <title>organization ||--o{ ticket_type: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 999 182, 999 90, 1400 90"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 1006 182, 1006 90, 1400 90" marker-end="url(#arrow)">
                   <title>store ||--o{ ticket_type: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 999 90, 999 182, 1400 182"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 90 C 1013 90, 1013 182, 1400 182" marker-end="url(#arrow)">
                   <title>organization ||--o{ ticket_pack: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 999 182, 999 182, 1400 182"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 985 182, 985 182, 1400 182" marker-end="url(#arrow)">
                   <title>store ||--o{ ticket_pack: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 598 458 C 999 458, 999 182, 1400 182"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 598 550 C 992 550, 992 182, 1400 182" marker-end="url(#arrow)">
                   <title>participant ||--o{ ticket_pack: participant_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1618 90 C 1702 90, 1702 182, 1400 182"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 1618 90 C 1702 90, 1702 182, 1618 182" marker-end="url(#arrow)">
                   <title>ticket_type ||--o{ ticket_pack: ticket_type_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 999 90, 999 274, 1400 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    organization ||--o{ ticket_purchase: organization_id / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 90 C 1006 90, 1006 274, 1400 274" marker-end="url(#arrow)">
+                  <title>organization ||--o{ ticket_purchase: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 999 182, 999 274, 1400 274"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 1013 182, 1013 274, 1400 274" marker-end="url(#arrow)">
                   <title>store ||--o{ ticket_purchase: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 598 458 C 999 458, 999 274, 1400 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    participant ||--o{ ticket_purchase: participant_id / onDelete cascade
-                  </title>
+                <path class="edge" d="M 598 550 C 985 550, 985 274, 1400 274" marker-end="url(#arrow)">
+                  <title>participant ||--o{ ticket_purchase: participant_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1618 90 C 1690 90, 1690 274, 1400 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    ticket_type ||--o{ ticket_purchase: ticket_type_id / onDelete cascade
-                  </title>
+                <path class="edge" d="M 1618 90 C 1702 90, 1702 274, 1618 274" marker-end="url(#arrow)">
+                  <title>ticket_type ||--o{ ticket_purchase: ticket_type_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1618 182 C 1702 182, 1702 274, 1400 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    ticket_pack ||--o{ ticket_purchase: ticket_pack_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 1618 182 C 1660 182, 1660 274, 1618 274" marker-end="url(#arrow)">
+                  <title>ticket_pack ||--o{ ticket_purchase: ticket_pack_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 258 90 C 829 90, 829 274, 1400 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    user ||--o{ ticket_purchase: approved_by_user_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 258 90 C 836 90, 836 274, 1400 274" marker-end="url(#arrow)">
+                  <title>user ||--o{ ticket_purchase: approved_by_user_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 258 90 C 829 90, 829 274, 1400 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    user ||--o{ ticket_purchase: rejected_by_user_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 258 90 C 843 90, 843 274, 1400 274" marker-end="url(#arrow)">
+                  <title>user ||--o{ ticket_purchase: rejected_by_user_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 999 90, 999 366, 1400 366"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    organization ||--o{ ticket_ledger: organization_id / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 90 C 985 90, 985 366, 1400 366" marker-end="url(#arrow)">
+                  <title>organization ||--o{ ticket_ledger: organization_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 999 182, 999 366, 1400 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 992 182, 992 366, 1400 366" marker-end="url(#arrow)">
                   <title>store ||--o{ ticket_ledger: store_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1618 182 C 1702 182, 1702 366, 1400 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 1618 182 C 1674 182, 1674 366, 1618 366" marker-end="url(#arrow)">
                   <title>ticket_pack ||--o{ ticket_ledger: ticket_pack_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1278 458 C 1339 458, 1339 366, 1400 366"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    booking ||--o{ ticket_ledger: booking_id optional / onDelete set null
-                  </title>
+                <path class="edge edge-strong" d="M 1278 458 C 1346 458, 1346 366, 1400 366" marker-end="url(#arrow)">
+                  <title>booking ||--o{ ticket_ledger: booking_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 258 90 C 829 90, 829 366, 1400 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 258 90 C 843 90, 843 366, 1400 366" marker-end="url(#arrow)">
                   <title>user ||--o{ ticket_ledger: actor_user_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 2018 90, 2018 182, 1740 182"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_subscription: billing_account_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2000 90, 2000 182, 1958 182" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_subscription: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 2030 90, 2030 274, 1740 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o| billing_payment_issue: billing_account_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2014 90, 2014 274, 1958 274" marker-end="url(#arrow)">
+                  <title>billing_account ||--o| billing_payment_issue: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1958 182 C 2042 182, 2042 274, 1740 274"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_subscription ||--o{ billing_payment_issue: billing_subscription_id
-                    optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 1958 182 C 2028 182, 2028 274, 1958 274" marker-end="url(#arrow)">
+                  <title>billing_subscription ||--o{ billing_payment_issue: billing_subscription_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 1994 90, 1994 366, 1740 366"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_invoice_event: billing_account_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2042 90, 2042 366, 1958 366" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_invoice_event: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 1958 182 C 2006 182, 2006 366, 1740 366"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_subscription ||--o{ billing_invoice_event: billing_subscription_id
-                    optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 1958 182 C 2000 182, 2000 366, 1958 366" marker-end="url(#arrow)">
+                  <title>billing_subscription ||--o{ billing_invoice_event: billing_subscription_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 2018 90, 2018 458, 1740 458"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_entitlement: billing_account_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2014 90, 2014 458, 1958 458" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_entitlement: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 2030 90, 2030 550, 1740 550"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_provider_event: billing_account_id optional /
-                    onDelete set null
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2028 90, 2028 550, 1958 550" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_provider_event: billing_account_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 2042 90, 2042 642, 1740 642"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_operation_attempt: billing_account_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2042 90, 2042 642, 1958 642" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_operation_attempt: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 1994 90, 1994 734, 1740 734"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_audit_event: billing_account_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2000 90, 2000 734, 1958 734" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_audit_event: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 2006 90, 2006 826, 1740 826"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_signal: billing_account_id / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2014 90, 2014 826, 1958 826" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_signal: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 2018 90, 2018 918, 1740 918"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_notification: billing_account_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2028 90, 2028 918, 1958 918" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_notification: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 1958 90 C 2030 90, 2030 1010, 1740 1010"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    billing_account ||--o{ billing_document_reference: billing_account_id / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 1958 90 C 2042 90, 2042 1010, 1958 1010" marker-end="url(#arrow)">
+                  <title>billing_account ||--o{ billing_document_reference: billing_account_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 1339 90, 1339 90, 2080 90"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    organization ||--o{ ai_knowledge_document: organization_id optional / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 90 C 1339 90, 1339 90, 2080 90" marker-end="url(#arrow)">
+                  <title>organization ||--o{ ai_knowledge_document: organization_id optional / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 1339 182, 1339 90, 2080 90"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    store ||--o{ ai_knowledge_document: store_id optional / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 182 C 1346 182, 1346 90, 2080 90" marker-end="url(#arrow)">
+                  <title>store ||--o{ ai_knowledge_document: store_id optional / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 2298 90 C 2346 90, 2346 182, 2080 182"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    ai_knowledge_document ||--o{ ai_knowledge_chunk: document_id / onDelete cascade
-                  </title>
+                <path class="edge" d="M 2298 90 C 2368 90, 2368 182, 2298 182" marker-end="url(#arrow)">
+                  <title>ai_knowledge_document ||--o{ ai_knowledge_chunk: document_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 90 C 1339 90, 1339 182, 2080 182"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    organization ||--o{ ai_knowledge_chunk: organization_id optional / onDelete
-                    cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 90 C 1325 90, 1325 182, 2080 182" marker-end="url(#arrow)">
+                  <title>organization ||--o{ ai_knowledge_chunk: organization_id optional / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 1339 182, 1339 182, 2080 182"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    store ||--o{ ai_knowledge_chunk: store_id optional / onDelete cascade
-                  </title>
+                <path class="edge edge-strong" d="M 598 182 C 1332 182, 1332 182, 2080 182" marker-end="url(#arrow)">
+                  <title>store ||--o{ ai_knowledge_chunk: store_id optional / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 258 90 C 1169 90, 1169 366, 2080 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 258 90 C 1169 90, 1169 366, 2080 366" marker-end="url(#arrow)">
                   <title>user ||--o{ ai_conversation: actor_user_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 1339 182, 1339 366, 2080 366"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 1346 182, 1346 366, 2080 366" marker-end="url(#arrow)">
                   <title>store ||--o{ ai_conversation: store_id optional / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 2298 366 C 2346 366, 2346 458, 2080 458"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    ai_conversation ||--o{ ai_message: conversation_id / onDelete cascade
-                  </title>
+                <path class="edge" d="M 2298 366 C 2382 366, 2382 458, 2298 458" marker-end="url(#arrow)">
+                  <title>ai_conversation ||--o{ ai_message: conversation_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 258 90 C 1169 90, 1169 550, 2080 550"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    user ||--o{ ai_usage_event: actor_user_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 258 90 C 1155 90, 1155 550, 2080 550" marker-end="url(#arrow)">
+                  <title>user ||--o{ ai_usage_event: actor_user_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge edge-strong"
-                  d="M 598 182 C 1339 182, 1339 550, 2080 550"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge edge-strong" d="M 598 182 C 1332 182, 1332 550, 2080 550" marker-end="url(#arrow)">
                   <title>store ||--o{ ai_usage_event: store_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 2298 366 C 2382 366, 2382 550, 2080 550"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    ai_conversation ||--o{ ai_usage_event: conversation_id optional / onDelete set
-                    null
-                  </title>
+                <path class="edge" d="M 2298 366 C 2368 366, 2368 550, 2298 550" marker-end="url(#arrow)">
+                  <title>ai_conversation ||--o{ ai_usage_event: conversation_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 2298 458 C 2334 458, 2334 550, 2080 550"
-                  marker-end="url(#arrow)"
-                >
-                  <title>
-                    ai_message ||--o{ ai_usage_event: message_id optional / onDelete set null
-                  </title>
+                <path class="edge" d="M 2298 458 C 2382 458, 2382 550, 2298 550" marker-end="url(#arrow)">
+                  <title>ai_message ||--o{ ai_usage_event: message_id optional / onDelete set null</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 2298 458 C 2346 458, 2346 642, 2080 642"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 2298 458 C 2340 458, 2340 642, 2298 642" marker-end="url(#arrow)">
                   <title>ai_message ||--o{ ai_feedback: message_id / onDelete cascade</title>
                 </path>
-                <path
-                  class="edge"
-                  d="M 258 90 C 1169 90, 1169 642, 2080 642"
-                  marker-end="url(#arrow)"
-                >
+                <path class="edge" d="M 258 90 C 1155 90, 1155 642, 2080 642" marker-end="url(#arrow)">
                   <title>user ||--o{ ai_feedback: user_id / onDelete cascade</title>
                 </path>
                 <g class="node" transform="translate(40, 54)">
@@ -5828,19 +6110,26 @@
                 </g>
                 <g class="node" transform="translate(380, 238)">
                   <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">public_site_setting</text>
+                  <text class="node-sub" x="12" y="43">14 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 2</text>
+                </g>
+                <g class="node" transform="translate(380, 330)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">member</text>
                   <text class="node-sub" x="12" y="43">5 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 2</text>
                 </g>
-                <g class="node" transform="translate(380, 330)">
+                <g class="node" transform="translate(380, 422)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">store_member</text>
                   <text class="node-sub" x="12" y="43">5 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 2</text>
                 </g>
-                <g class="node" transform="translate(380, 422)">
+                <g class="node" transform="translate(380, 514)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">participant</text>
                   <text class="node-sub" x="12" y="43">8 columns</text>
@@ -5892,11 +6181,60 @@
                 <g class="node" transform="translate(1060, 422)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">booking</text>
-                  <text class="node-sub" x="12" y="43">15 columns</text>
+                  <text class="node-sub" x="12" y="43">22 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
-                  <text class="node-fk" x="118" y="59">FK 7</text>
+                  <text class="node-fk" x="118" y="59">FK 8</text>
                 </g>
                 <g class="node" transform="translate(1060, 514)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">booking_answer</text>
+                  <text class="node-sub" x="12" y="43">6 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 1</text>
+                </g>
+                <g class="node" transform="translate(1060, 606)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">booking_companion</text>
+                  <text class="node-sub" x="12" y="43">5 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 1</text>
+                </g>
+                <g class="node" transform="translate(1060, 698)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">booking_public_action_token</text>
+                  <text class="node-sub" x="12" y="43">8 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 1</text>
+                </g>
+                <g class="node" transform="translate(1060, 790)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">public_site_notification_setting</text>
+                  <text class="node-sub" x="12" y="43">10 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 2</text>
+                </g>
+                <g class="node" transform="translate(1060, 882)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">notification_log</text>
+                  <text class="node-sub" x="12" y="43">12 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 3</text>
+                </g>
+                <g class="node" transform="translate(1060, 974)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">reminder_policy</text>
+                  <text class="node-sub" x="12" y="43">9 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 3</text>
+                </g>
+                <g class="node" transform="translate(1060, 1066)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">reminder_log</text>
+                  <text class="node-sub" x="12" y="43">13 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 4</text>
+                </g>
+                <g class="node" transform="translate(1060, 1158)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">booking_audit_log</text>
                   <text class="node-sub" x="12" y="43">10 columns</text>
@@ -5913,14 +6251,14 @@
                 <g class="node" transform="translate(1400, 146)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">ticket_pack</text>
-                  <text class="node-sub" x="12" y="43">11 columns</text>
+                  <text class="node-sub" x="12" y="43">12 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 4</text>
                 </g>
                 <g class="node" transform="translate(1400, 238)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">ticket_purchase</text>
-                  <text class="node-sub" x="12" y="43">16 columns</text>
+                  <text class="node-sub" x="12" y="43">17 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 7</text>
                 </g>
@@ -6077,725 +6415,853 @@
             <pre class="codebox">
 erDiagram
     user {
-        varchar id PK &quot;主キー。&quot;
-        varchar name &quot;表示名またはラベル。&quot;
-        varchar email UK &quot;メールアドレス。&quot;
-        int email_verified &quot;メールアドレス。&quot;
-        varchar image &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar name "表示名またはラベル。"
+        varchar email UK "メールアドレス。"
+        int email_verified "メールアドレス。"
+        varchar image "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     session {
-        varchar id PK &quot;主キー。&quot;
-        int expires_at &quot;日時。timestamp_ms。&quot;
-        varchar token UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
-        varchar ip_address &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar user_agent &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar user_id FK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar active_organization_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
+        varchar id PK "主キー。"
+        int expires_at "日時。timestamp_ms。"
+        varchar token UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+        varchar ip_address "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar user_agent "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar user_id FK "user.id への必須参照。削除時は cascade。"
+        varchar active_organization_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
     }
 
     account {
-        varchar id PK &quot;主キー。&quot;
-        varchar account_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar user_id FK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar access_token &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar refresh_token &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar id_token &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int access_token_expires_at &quot;日時。timestamp_ms。&quot;
-        int refresh_token_expires_at &quot;日時。timestamp_ms。&quot;
-        varchar scope &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar password &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar account_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar user_id FK "user.id への必須参照。削除時は cascade。"
+        varchar access_token "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar refresh_token "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar id_token "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int access_token_expires_at "日時。timestamp_ms。"
+        int refresh_token_expires_at "日時。timestamp_ms。"
+        varchar scope "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar password "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     verification {
-        varchar id PK &quot;主キー。&quot;
-        varchar identifier &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar value &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int expires_at &quot;日時。timestamp_ms。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar identifier "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar value "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int expires_at "日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     organization {
-        varchar id PK &quot;主キー。&quot;
-        varchar name &quot;表示名またはラベル。&quot;
-        varchar slug UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar logo &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        varchar metadata &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
+        varchar id PK "主キー。"
+        varchar name "表示名またはラベル。"
+        varchar slug UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar logo "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
+        varchar metadata "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
     }
 
     store {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK,UK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar slug UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar name &quot;表示名またはラベル。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK,UK "organization.id への必須参照。削除時は cascade。"
+        varchar slug UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar name "表示名またはラベル。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+    }
+
+    public_site_setting {
+        varchar id PK "主キー。"
+        varchar organization_id FK,UK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK,UK "store.id への必須参照。削除時は cascade。"
+        varchar site_name "公開サイト上の表示名。未設定時は店舗名等から補完する。"
+        varchar description "公開サイト説明文。"
+        varchar address "公開サイトに表示する住所。"
+        varchar phone "公開サイトに表示する電話番号。"
+        varchar business_hours "公開サイトに表示する営業時間。"
+        varchar image_url "公開サイトで利用する画像URL。"
+        varchar status "公開サイトの公開状態。"
+        int accept_bookings "公開予約を受け付けるかどうか。"
+        int noindex "検索エンジンに index させないかどうか。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     member {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar user_id FK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar role &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar user_id FK "user.id への必須参照。削除時は cascade。"
+        varchar role "分類値。値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     store_member {
-        varchar id PK &quot;主キー。&quot;
-        varchar store_id FK,UK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar user_id FK,UK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar role &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar store_id FK,UK "store.id への必須参照。削除時は cascade。"
+        varchar user_id FK,UK "user.id への必須参照。削除時は cascade。"
+        varchar role "分類値。値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     participant {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK,UK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK,UK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar user_id FK,UK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar email UK &quot;メールアドレス。&quot;
-        varchar name &quot;表示名またはラベル。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK,UK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK,UK "store.id への必須参照。削除時は cascade。"
+        varchar user_id FK,UK "user.id への必須参照。削除時は cascade。"
+        varchar email UK "メールアドレス。"
+        varchar name "表示名またはラベル。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     invitation {
-        varchar id PK &quot;主キー。&quot;
-        varchar subject_kind &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への任意参照。削除時は set null。&quot;
-        varchar email &quot;メールアドレス。&quot;
-        varchar role &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar principal_kind &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar participant_name &quot;表示名またはラベル。&quot;
-        varchar status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar responded_by_user_id FK &quot;user.id への任意参照。削除時は set null。&quot;
-        int responded_at &quot;日時。timestamp_ms。&quot;
-        varchar accepted_member_id FK &quot;member.id への任意参照。削除時は set null。&quot;
-        varchar accepted_store_member_id FK &quot;store_member.id への任意参照。削除時は set null。&quot;
-        varchar accepted_participant_id FK &quot;participant.id への任意参照。削除時は set null。&quot;
-        int expires_at &quot;日時。timestamp_ms。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
-        varchar inviter_id FK &quot;user.id への必須参照。削除時は cascade。&quot;
+        varchar id PK "主キー。"
+        varchar subject_kind "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への任意参照。削除時は set null。"
+        varchar email "メールアドレス。"
+        varchar role "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar principal_kind "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar participant_name "表示名またはラベル。"
+        varchar status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar responded_by_user_id FK "user.id への任意参照。削除時は set null。"
+        int responded_at "日時。timestamp_ms。"
+        varchar accepted_member_id FK "member.id への任意参照。削除時は set null。"
+        varchar accepted_store_member_id FK "store_member.id への任意参照。削除時は set null。"
+        varchar accepted_participant_id FK "participant.id への任意参照。削除時は set null。"
+        int expires_at "日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+        varchar inviter_id FK "user.id への必須参照。削除時は cascade。"
     }
 
     invitation_audit_log {
-        varchar id PK &quot;主キー。&quot;
-        varchar invitation_id FK &quot;invitation.id への必須参照。削除時は cascade。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への任意参照。削除時は set null。&quot;
-        varchar actor_user_id FK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar target_email &quot;メールアドレス。&quot;
-        varchar action &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar metadata &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar ip_address &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar user_agent &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar invitation_id FK "invitation.id への必須参照。削除時は cascade。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への任意参照。削除時は set null。"
+        varchar actor_user_id FK "user.id への必須参照。削除時は cascade。"
+        varchar target_email "メールアドレス。"
+        varchar action "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar metadata "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar ip_address "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar user_agent "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     service {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar name &quot;表示名またはラベル。&quot;
-        varchar description &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar image_url &quot;外部またはアプリ内URL。&quot;
-        varchar kind &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        int duration_minutes &quot;数値。単位はカラム名に従う。&quot;
-        int capacity &quot;数値。単位はカラム名に従う。&quot;
-        int booking_open_minutes_before &quot;数値。単位はカラム名に従う。&quot;
-        int booking_close_minutes_before &quot;数値。単位はカラム名に従う。&quot;
-        int cancellation_deadline_minutes &quot;数値。単位はカラム名に従う。&quot;
-        varchar timezone &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar booking_policy &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int requires_ticket &quot;真偽値。&quot;
-        int is_active &quot;真偽値。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar name "表示名またはラベル。"
+        varchar description "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar image_url "外部またはアプリ内URL。"
+        varchar kind "分類値。値域はドメイン層またはユースケース層を参照。"
+        int duration_minutes "数値。単位はカラム名に従う。"
+        int capacity "数値。単位はカラム名に従う。"
+        int booking_open_minutes_before "数値。単位はカラム名に従う。"
+        int booking_close_minutes_before "数値。単位はカラム名に従う。"
+        int cancellation_deadline_minutes "数値。単位はカラム名に従う。"
+        varchar timezone "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar booking_policy "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int requires_ticket "真偽値。"
+        int is_active "真偽値。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     recurring_schedule {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar service_id FK &quot;service.id への必須参照。削除時は cascade。&quot;
-        varchar timezone &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar frequency &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int interval &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar by_weekday_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        int by_monthday &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar start_date &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar end_date &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar start_time_local &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int duration_minutes &quot;数値。単位はカラム名に従う。&quot;
-        int capacity_override &quot;数値。単位はカラム名に従う。&quot;
-        int is_active &quot;真偽値。&quot;
-        int last_generated_at &quot;日時。timestamp_ms。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar service_id FK "service.id への必須参照。削除時は cascade。"
+        varchar timezone "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar frequency "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int interval "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar by_weekday_json "JSON 文字列。構造はユースケース層の型を参照。"
+        int by_monthday "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar start_date "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar end_date "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar start_time_local "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int duration_minutes "数値。単位はカラム名に従う。"
+        int capacity_override "数値。単位はカラム名に従う。"
+        int is_active "真偽値。"
+        int last_generated_at "日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     recurring_schedule_exception {
-        varchar id PK &quot;主キー。&quot;
-        varchar recurring_schedule_id FK,UK &quot;recurring_schedule.id への必須参照。削除時は cascade。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar date UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar action &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar override_start_time_local &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int override_duration_minutes &quot;数値。単位はカラム名に従う。&quot;
-        int override_capacity &quot;数値。単位はカラム名に従う。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar recurring_schedule_id FK,UK "recurring_schedule.id への必須参照。削除時は cascade。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar date UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar action "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar override_start_time_local "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int override_duration_minutes "数値。単位はカラム名に従う。"
+        int override_capacity "数値。単位はカラム名に従う。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     slot {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK,UK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar service_id FK &quot;service.id への必須参照。削除時は cascade。&quot;
-        varchar recurring_schedule_id FK,UK &quot;recurring_schedule.id への任意参照。削除時は set null。&quot;
-        int start_at UK &quot;日時。timestamp_ms。&quot;
-        int end_at &quot;日時。timestamp_ms。&quot;
-        int capacity &quot;数値。単位はカラム名に従う。&quot;
-        int reserved_count &quot;数値。単位はカラム名に従う。&quot;
-        varchar status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar staff_label &quot;表示名またはラベル。&quot;
-        varchar location_label &quot;表示名またはラベル。&quot;
-        int booking_open_at &quot;日時。timestamp_ms。&quot;
-        int booking_close_at &quot;日時。timestamp_ms。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK,UK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar service_id FK "service.id への必須参照。削除時は cascade。"
+        varchar recurring_schedule_id FK,UK "recurring_schedule.id への任意参照。削除時は set null。"
+        int start_at UK "日時。timestamp_ms。"
+        int end_at "日時。timestamp_ms。"
+        int capacity "数値。単位はカラム名に従う。"
+        int reserved_count "数値。単位はカラム名に従う。"
+        varchar status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar staff_label "表示名またはラベル。"
+        varchar location_label "表示名またはラベル。"
+        int booking_open_at "日時。timestamp_ms。"
+        int booking_close_at "日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     booking {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar slot_id FK,UK &quot;slot.id への必須参照。削除時は cascade。&quot;
-        varchar service_id FK &quot;service.id への必須参照。削除時は cascade。&quot;
-        varchar participant_id FK,UK &quot;participant.id への必須参照。削除時は cascade。&quot;
-        int participants_count &quot;数値。単位はカラム名に従う。&quot;
-        varchar status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar cancel_reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int cancelled_at &quot;日時。timestamp_ms。&quot;
-        varchar cancelled_by_user_id FK &quot;user.id への任意参照。削除時は set null。&quot;
-        int no_show_marked_at &quot;日時。timestamp_ms。&quot;
-        varchar ticket_pack_id FK &quot;ticket_pack.id への任意参照。削除時は set null。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar slot_id FK,UK "slot.id への必須参照。削除時は cascade。"
+        varchar service_id FK "service.id への必須参照。削除時は cascade。"
+        varchar participant_id FK,UK "participant.id への任意参照。削除時は set null。"
+        varchar public_id UK "公開予約の照会・操作で使う一意な公開ID。"
+        varchar source "予約作成経路。participant / public など。"
+        int participants_count "予約人数。"
+        varchar customer_name "公開予約者名。"
+        varchar customer_email "公開予約者メールアドレス。"
+        varchar customer_phone "公開予約者電話番号。"
+        varchar note "予約者または運営側の補足メモ。"
+        varchar created_by_user_id FK "user.id への任意参照。削除時は set null。"
+        varchar status "予約状態。"
+        varchar cancel_reason "キャンセル理由。"
+        int cancelled_at "キャンセル日時。timestamp_ms。"
+        varchar cancelled_by_user_id FK "user.id への任意参照。削除時は set null。"
+        int no_show_marked_at "無断欠席として記録した日時。timestamp_ms。"
+        varchar ticket_pack_id FK "ticket_pack.id への任意参照。削除時は set null。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+    }
+
+    booking_answer {
+        varchar id PK "主キー。"
+        varchar booking_id FK "booking.id への必須参照。削除時は cascade。"
+        varchar field_id "フォーム項目ID。"
+        varchar label_snapshot "予約時点の項目ラベル。"
+        varchar value_json "回答値のJSON文字列。"
+        int created_at "作成日時。timestamp_ms。"
+    }
+
+    booking_companion {
+        varchar id PK "主キー。"
+        varchar booking_id FK "booking.id への必須参照。削除時は cascade。"
+        varchar name "同伴者名。"
+        varchar note "同伴者に関する補足。"
+        int created_at "作成日時。timestamp_ms。"
+    }
+
+    booking_public_action_token {
+        varchar id PK "主キー。"
+        varchar booking_id FK "booking.id への必須参照。削除時は cascade。"
+        varchar purpose "トークン用途。"
+        varchar token_hash UK "トークンハッシュ。一意。"
+        varchar email_snapshot "発行時点の送信先メールアドレス。"
+        int expires_at "有効期限。timestamp_ms。"
+        int used_at "使用日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+    }
+
+    public_site_notification_setting {
+        varchar id PK "主キー。"
+        varchar organization_id FK,UK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK,UK "store.id への必須参照。削除時は cascade。"
+        int notify_owner "Org owner へ通知するかどうか。"
+        int notify_admins "Org admin へ通知するかどうか。"
+        int notify_store_managers "店舗 manager へ通知するかどうか。"
+        int notify_staff "店舗 staff へ通知するかどうか。"
+        varchar additional_emails_json "追加通知先メールアドレスのJSON文字列。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+    }
+
+    notification_log {
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar booking_id FK "booking.id への任意参照。削除時は set null。"
+        varchar event_type "通知対象イベント。"
+        varchar channel "通知チャネル。"
+        varchar recipient_email "送信先メールアドレス。"
+        varchar status "送信状態。"
+        varchar dedupe_key UK "重複送信防止キー。"
+        varchar error_message "送信失敗時のエラー概要。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+    }
+
+    reminder_policy {
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar service_id FK "service.id への任意参照。削除時は cascade。"
+        int enabled "リマインダーを有効にするかどうか。"
+        int minutes_before "予約開始何分前に送るか。"
+        varchar channel "通知チャネル。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+    }
+
+    reminder_log {
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar booking_id FK "booking.id への必須参照。削除時は cascade。"
+        varchar reminder_policy_id FK "reminder_policy.id への任意参照。削除時は set null。"
+        varchar channel "通知チャネル。"
+        varchar recipient_email "送信先メールアドレス。"
+        varchar status "送信状態。"
+        varchar dedupe_key UK "重複送信防止キー。"
+        varchar error_message "送信失敗時のエラー概要。"
+        int scheduled_for "送信予定日時。timestamp_ms。"
+        int sent_at "送信日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     booking_audit_log {
-        varchar id PK &quot;主キー。&quot;
-        varchar booking_id FK &quot;booking.id への必須参照。削除時は cascade。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar actor_user_id FK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar action &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar metadata &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar ip_address &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar user_agent &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar booking_id FK "booking.id への必須参照。削除時は cascade。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar actor_user_id FK "user.id への必須参照。削除時は cascade。"
+        varchar action "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar metadata "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar ip_address "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar user_agent "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     ticket_type {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar name &quot;表示名またはラベル。&quot;
-        varchar service_ids_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        int total_count &quot;数値。単位はカラム名に従う。&quot;
-        int expires_in_days &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int is_active &quot;真偽値。&quot;
-        int is_for_sale &quot;真偽値。&quot;
-        varchar stripe_price_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar name "表示名またはラベル。"
+        varchar service_ids_json "JSON 文字列。構造はユースケース層の型を参照。"
+        int total_count "数値。単位はカラム名に従う。"
+        int expires_in_days "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int is_active "真偽値。"
+        int is_for_sale "真偽値。"
+        varchar stripe_price_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     ticket_pack {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar participant_id FK &quot;participant.id への必須参照。削除時は cascade。&quot;
-        varchar ticket_type_id FK &quot;ticket_type.id への必須参照。削除時は cascade。&quot;
-        int initial_count &quot;数値。単位はカラム名に従う。&quot;
-        int remaining_count &quot;数値。単位はカラム名に従う。&quot;
-        int expires_at &quot;日時。timestamp_ms。&quot;
-        varchar status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar participant_id FK "participant.id への必須参照。削除時は cascade。"
+        varchar ticket_type_id FK "ticket_type.id への必須参照。削除時は cascade。"
+        varchar service_ids_json "利用可能サービスIDのJSONスナップショット。"
+        int initial_count "初期回数。"
+        int remaining_count "残回数。"
+        int expires_at "有効期限。timestamp_ms。"
+        varchar status "回数券状態。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     ticket_purchase {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar participant_id FK &quot;participant.id への必須参照。削除時は cascade。&quot;
-        varchar ticket_type_id FK &quot;ticket_type.id への必須参照。削除時は cascade。&quot;
-        varchar payment_method &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar ticket_pack_id FK &quot;ticket_pack.id への任意参照。削除時は set null。&quot;
-        varchar stripe_checkout_session_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar approved_by_user_id FK &quot;user.id への任意参照。削除時は set null。&quot;
-        int approved_at &quot;日時。timestamp_ms。&quot;
-        varchar rejected_by_user_id FK &quot;user.id への任意参照。削除時は set null。&quot;
-        int rejected_at &quot;日時。timestamp_ms。&quot;
-        varchar reject_reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar participant_id FK "participant.id への必須参照。削除時は cascade。"
+        varchar ticket_type_id FK "ticket_type.id への必須参照。削除時は cascade。"
+        varchar service_ids_json "購入対象サービスIDのJSONスナップショット。"
+        varchar payment_method "支払い方法。"
+        varchar status "購入状態。"
+        varchar ticket_pack_id FK "ticket_pack.id への任意参照。削除時は set null。"
+        varchar stripe_checkout_session_id UK "Stripe Checkout Session ID。"
+        varchar approved_by_user_id FK "user.id への任意参照。削除時は set null。"
+        int approved_at "承認日時。timestamp_ms。"
+        varchar rejected_by_user_id FK "user.id への任意参照。削除時は set null。"
+        int rejected_at "却下日時。timestamp_ms。"
+        varchar reject_reason "却下理由。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     ticket_ledger {
-        varchar id PK &quot;主キー。&quot;
-        varchar organization_id FK &quot;organization.id への必須参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への必須参照。削除時は cascade。&quot;
-        varchar ticket_pack_id FK &quot;ticket_pack.id への必須参照。削除時は cascade。&quot;
-        varchar booking_id FK &quot;booking.id への任意参照。削除時は set null。&quot;
-        varchar action &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int delta &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int balance_after &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar actor_user_id FK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar ticket_pack_id FK "ticket_pack.id への必須参照。削除時は cascade。"
+        varchar booking_id FK "booking.id への任意参照。削除時は set null。"
+        varchar action "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int delta "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int balance_after "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar actor_user_id FK "user.id への必須参照。削除時は cascade。"
+        varchar reason "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     billing_account {
-        varchar id PK &quot;主キー。&quot;
-        varchar subject_type UK &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar subject_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_customer_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar billing_email &quot;メールアドレス。&quot;
-        varchar billing_name &quot;表示名またはラベル。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar subject_type UK "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar subject_id UK "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_customer_id UK "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar billing_email "メールアドレス。"
+        varchar billing_name "表示名またはラベル。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     billing_subscription {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        varchar provider UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_subscription_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_schedule_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar plan_code &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar price_code &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar interval &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int current_period_start &quot;日時。timestamp_ms。&quot;
-        int current_period_end &quot;日時。timestamp_ms。&quot;
-        int trial_start &quot;日時。timestamp_ms。&quot;
-        int trial_end &quot;日時。timestamp_ms。&quot;
-        int cancel_at &quot;日時。timestamp_ms。&quot;
-        int cancel_at_period_end &quot;日時。timestamp_ms。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK "billing_account.id への必須参照。削除時は cascade。"
+        varchar provider UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_subscription_id UK "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_schedule_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar plan_code "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar price_code "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar interval "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar status "状態値。値域はドメイン層またはユースケース層を参照。"
+        int current_period_start "日時。timestamp_ms。"
+        int current_period_end "日時。timestamp_ms。"
+        int trial_start "日時。timestamp_ms。"
+        int trial_end "日時。timestamp_ms。"
+        int cancel_at "日時。timestamp_ms。"
+        int cancel_at_period_end "日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     billing_payment_issue {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK,UK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        varchar billing_subscription_id FK &quot;billing_subscription.id への任意参照。削除時は set null。&quot;
-        varchar state &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int issue_started_at &quot;日時。timestamp_ms。&quot;
-        varchar issue_started_at_source &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int past_due_grace_ends_at &quot;日時。timestamp_ms。&quot;
-        varchar latest_provider_event_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar latest_invoice_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar latest_payment_intent_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK,UK "billing_account.id への必須参照。削除時は cascade。"
+        varchar billing_subscription_id FK "billing_subscription.id への任意参照。削除時は set null。"
+        varchar state "状態値。値域はドメイン層またはユースケース層を参照。"
+        int issue_started_at "日時。timestamp_ms。"
+        varchar issue_started_at_source "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int past_due_grace_ends_at "日時。timestamp_ms。"
+        varchar latest_provider_event_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar latest_invoice_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar latest_payment_intent_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     billing_invoice_event {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        varchar billing_subscription_id FK &quot;billing_subscription.id への任意参照。削除時は set null。&quot;
-        varchar event_type UK &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_event_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_invoice_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_payment_intent_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar owner_facing_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int occurred_at &quot;日時。timestamp_ms。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK "billing_account.id への必須参照。削除時は cascade。"
+        varchar billing_subscription_id FK "billing_subscription.id への任意参照。削除時は set null。"
+        varchar event_type UK "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar provider UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_event_id UK "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_invoice_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_payment_intent_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar owner_facing_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        int occurred_at "日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     billing_entitlement {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK,UK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        varchar key UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int active &quot;真偽値。&quot;
-        varchar source &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int valid_from &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int valid_until &quot;日時。timestamp_ms。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK,UK "billing_account.id への必須参照。削除時は cascade。"
+        varchar key UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int active "真偽値。"
+        varchar source "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar reason "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int valid_from "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int valid_until "日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     billing_provider_event {
-        varchar id PK &quot;主キー。&quot;
-        varchar provider UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_event_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar event_type &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar scope UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar payload_hash &quot;整合性確認用ハッシュ。&quot;
-        varchar processing_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar receipt_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int duplicate_detected &quot;真偽値。&quot;
-        int duplicate_detected_at &quot;日時。timestamp_ms。&quot;
-        int attempt_count &quot;数値。単位はカラム名に従う。&quot;
-        int processing_started_at &quot;日時。timestamp_ms。&quot;
-        int last_attempt_at &quot;日時。timestamp_ms。&quot;
-        int processing_stale_after_ms &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar failure_reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar failure_stage &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar last_failure_reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int last_failure_at &quot;日時。timestamp_ms。&quot;
-        varchar billing_account_id FK &quot;billing_account.id への任意参照。削除時は set null。&quot;
-        varchar provider_customer_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_subscription_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
-        int processed_at &quot;日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar provider UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_event_id UK "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar event_type "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar scope UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar payload_hash "整合性確認用ハッシュ。"
+        varchar processing_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar receipt_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        int duplicate_detected "真偽値。"
+        int duplicate_detected_at "日時。timestamp_ms。"
+        int attempt_count "数値。単位はカラム名に従う。"
+        int processing_started_at "日時。timestamp_ms。"
+        int last_attempt_at "日時。timestamp_ms。"
+        int processing_stale_after_ms "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar failure_reason "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar failure_stage "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar last_failure_reason "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int last_failure_at "日時。timestamp_ms。"
+        varchar billing_account_id FK "billing_account.id への任意参照。削除時は set null。"
+        varchar provider_customer_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_subscription_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+        int processed_at "日時。timestamp_ms。"
     }
 
     billing_operation_attempt {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK,UK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        varchar purpose &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar reuse_key UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int attempt_number UK &quot;数値。単位はカラム名に従う。&quot;
-        varchar idempotency_key UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar state &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar handoff_url &quot;外部またはアプリ内URL。&quot;
-        int handoff_expires_at &quot;日時。timestamp_ms。&quot;
-        varchar provider &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_customer_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_subscription_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_checkout_session_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_portal_session_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar failure_reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar created_by_user_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK,UK "billing_account.id への必須参照。削除時は cascade。"
+        varchar purpose "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar reuse_key UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int attempt_number UK "数値。単位はカラム名に従う。"
+        varchar idempotency_key UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar state "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar handoff_url "外部またはアプリ内URL。"
+        int handoff_expires_at "日時。timestamp_ms。"
+        varchar provider "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_customer_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_subscription_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_checkout_session_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_portal_session_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar failure_reason "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar created_by_user_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     billing_audit_event {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK,UK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        int sequence_number UK &quot;数値。単位はカラム名に従う。&quot;
-        varchar source_kind &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar source_context &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar actor_user_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar previous_snapshot_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        varchar next_snapshot_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        varchar provider &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_event_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_customer_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_subscription_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK,UK "billing_account.id への必須参照。削除時は cascade。"
+        int sequence_number UK "数値。単位はカラム名に従う。"
+        varchar source_kind "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar source_context "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar actor_user_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar previous_snapshot_json "JSON 文字列。構造はユースケース層の型を参照。"
+        varchar next_snapshot_json "JSON 文字列。構造はユースケース層の型を参照。"
+        varchar provider "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_event_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_customer_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_subscription_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     billing_signal {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK,UK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        int sequence_number UK &quot;数値。単位はカラム名に従う。&quot;
-        varchar signal_kind &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar signal_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar source_kind &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar app_snapshot_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        varchar provider &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_event_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_customer_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_subscription_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_plan_state &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_subscription_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK,UK "billing_account.id への必須参照。削除時は cascade。"
+        int sequence_number UK "数値。単位はカラム名に従う。"
+        varchar signal_kind "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar signal_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar source_kind "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar reason "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar app_snapshot_json "JSON 文字列。構造はユースケース層の型を参照。"
+        varchar provider "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_event_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_customer_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_subscription_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_plan_state "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_subscription_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     billing_notification {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK,UK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        varchar notification_kind UK &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar channel &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int sequence_number UK &quot;数値。単位はカラム名に従う。&quot;
-        varchar recipient_user_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar recipient_email UK &quot;メールアドレス。&quot;
-        varchar delivery_status UK &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int attempt_number UK &quot;数値。単位はカラム名に従う。&quot;
-        varchar provider_message_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar failure_reason &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_event_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_customer_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_subscription_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_invoice_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar plan_state &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar subscription_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar payment_method_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int trial_ends_at &quot;日時。timestamp_ms。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int sent_at &quot;日時。timestamp_ms。&quot;
-        int failed_at &quot;日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK,UK "billing_account.id への必須参照。削除時は cascade。"
+        varchar notification_kind UK "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar channel "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int sequence_number UK "数値。単位はカラム名に従う。"
+        varchar recipient_user_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar recipient_email UK "メールアドレス。"
+        varchar delivery_status UK "状態値。値域はドメイン層またはユースケース層を参照。"
+        int attempt_number UK "数値。単位はカラム名に従う。"
+        varchar provider_message_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar failure_reason "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_event_id UK "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_customer_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_subscription_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_invoice_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar plan_state "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar subscription_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar payment_method_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        int trial_ends_at "日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+        int sent_at "日時。timestamp_ms。"
+        int failed_at "日時。timestamp_ms。"
     }
 
     billing_document_reference {
-        varchar id PK &quot;主キー。&quot;
-        varchar billing_account_id FK &quot;billing_account.id への必須参照。削除時は cascade。&quot;
-        varchar document_kind UK &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar provider_document_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_customer_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar provider_subscription_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar hosted_invoice_url &quot;外部またはアプリ内URL。&quot;
-        varchar invoice_pdf_url &quot;外部またはアプリ内URL。&quot;
-        varchar receipt_url &quot;外部またはアプリ内URL。&quot;
-        varchar availability &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar owner_facing_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int provider_derived &quot;真偽値。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar billing_account_id FK "billing_account.id への必須参照。削除時は cascade。"
+        varchar document_kind UK "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar provider UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar provider_document_id UK "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_customer_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar provider_subscription_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar hosted_invoice_url "外部またはアプリ内URL。"
+        varchar invoice_pdf_url "外部またはアプリ内URL。"
+        varchar receipt_url "外部またはアプリ内URL。"
+        varchar availability "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar owner_facing_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        int provider_derived "真偽値。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     ai_knowledge_document {
-        varchar id PK &quot;主キー。&quot;
-        varchar source_kind UK &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar source_path UK &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar title &quot;表示名またはラベル。&quot;
-        varchar locale &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar visibility &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int internal_only &quot;真偽値。&quot;
-        varchar organization_id FK,UK &quot;organization.id への任意参照。削除時は cascade。&quot;
-        varchar store_id FK,UK &quot;store.id への任意参照。削除時は cascade。&quot;
-        varchar feature &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar checksum &quot;整合性確認用ハッシュ。&quot;
-        varchar index_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int indexed_at &quot;日時。timestamp_ms。&quot;
-        varchar last_error &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar source_kind UK "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar source_path UK "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar title "表示名またはラベル。"
+        varchar locale "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar visibility "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int internal_only "真偽値。"
+        varchar organization_id FK,UK "organization.id への任意参照。削除時は cascade。"
+        varchar store_id FK,UK "store.id への任意参照。削除時は cascade。"
+        varchar feature "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar checksum "整合性確認用ハッシュ。"
+        varchar index_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        int indexed_at "日時。timestamp_ms。"
+        varchar last_error "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
     ai_knowledge_chunk {
-        varchar id PK &quot;主キー。&quot;
-        varchar document_id FK,UK &quot;ai_knowledge_document.id への必須参照。削除時は cascade。&quot;
-        int chunk_index &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar content &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar content_hash UK &quot;整合性確認用ハッシュ。&quot;
-        varchar title &quot;表示名またはラベル。&quot;
-        varchar source_kind &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar source_path &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar locale &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar visibility &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int internal_only &quot;真偽値。&quot;
-        varchar organization_id FK &quot;organization.id への任意参照。削除時は cascade。&quot;
-        varchar store_id FK &quot;store.id への任意参照。削除時は cascade。&quot;
-        varchar feature &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar tags_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        int indexed_at &quot;日時。timestamp_ms。&quot;
-        varchar vector_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
+        varchar id PK "主キー。"
+        varchar document_id FK,UK "ai_knowledge_document.id への必須参照。削除時は cascade。"
+        int chunk_index "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar content "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar content_hash UK "整合性確認用ハッシュ。"
+        varchar title "表示名またはラベル。"
+        varchar source_kind "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar source_path "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar locale "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar visibility "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int internal_only "真偽値。"
+        varchar organization_id FK "organization.id への任意参照。削除時は cascade。"
+        varchar store_id FK "store.id への任意参照。削除時は cascade。"
+        varchar feature "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar tags_json "JSON 文字列。構造はユースケース層の型を参照。"
+        int indexed_at "日時。timestamp_ms。"
+        varchar vector_status "状態値。値域はドメイン層またはユースケース層を参照。"
     }
 
     ai_knowledge_index_run {
-        varchar id PK &quot;主キー。&quot;
-        varchar source_root &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        int started_at &quot;日時。timestamp_ms。&quot;
-        int finished_at &quot;日時。timestamp_ms。&quot;
-        int documents_seen &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int documents_indexed &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int chunks_upserted &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int chunks_failed &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar embedding_model &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar embedding_shape_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        varchar vector_index_name &quot;表示名またはラベル。&quot;
-        varchar error_summary &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
+        varchar id PK "主キー。"
+        varchar source_root "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar status "状態値。値域はドメイン層またはユースケース層を参照。"
+        int started_at "日時。timestamp_ms。"
+        int finished_at "日時。timestamp_ms。"
+        int documents_seen "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int documents_indexed "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int chunks_upserted "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int chunks_failed "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar embedding_model "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar embedding_shape_json "JSON 文字列。構造はユースケース層の型を参照。"
+        varchar vector_index_name "表示名またはラベル。"
+        varchar error_summary "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
     }
 
     ai_conversation {
-        varchar id PK &quot;主キー。&quot;
-        varchar actor_user_id FK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar subject_type &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar subject_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar store_id FK &quot;store.id への任意参照。削除時は cascade。&quot;
-        varchar channel &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar title &quot;表示名またはラベル。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
-        int last_message_at &quot;日時。timestamp_ms。&quot;
-        int retention_expires_at &quot;日時。timestamp_ms。&quot;
-        int anonymized_at &quot;日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar actor_user_id FK "user.id への必須参照。削除時は cascade。"
+        varchar subject_type "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar subject_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar store_id FK "store.id への任意参照。削除時は cascade。"
+        varchar channel "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar title "表示名またはラベル。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+        int last_message_at "日時。timestamp_ms。"
+        int retention_expires_at "日時。timestamp_ms。"
+        int anonymized_at "日時。timestamp_ms。"
     }
 
     ai_message {
-        varchar id PK &quot;主キー。&quot;
-        varchar conversation_id FK &quot;ai_conversation.id への必須参照。削除時は cascade。&quot;
-        varchar role &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar content &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar sources_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        varchar retrieved_context_json &quot;JSON 文字列。構造はユースケース層の型を参照。&quot;
-        int confidence &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int needs_human_support &quot;真偽値。&quot;
-        varchar provider &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar model &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int input_tokens &quot;数値。単位はカラム名に従う。&quot;
-        int output_tokens &quot;数値。単位はカラム名に従う。&quot;
-        int latency_ms &quot;数値。単位はカラム名に従う。&quot;
-        varchar generation_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar error_code &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar error_summary &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar ai_gateway_log_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int retention_expires_at &quot;日時。timestamp_ms。&quot;
-        int anonymized_at &quot;日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar conversation_id FK "ai_conversation.id への必須参照。削除時は cascade。"
+        varchar role "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar content "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar sources_json "JSON 文字列。構造はユースケース層の型を参照。"
+        varchar retrieved_context_json "JSON 文字列。構造はユースケース層の型を参照。"
+        int confidence "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int needs_human_support "真偽値。"
+        varchar provider "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar model "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int input_tokens "数値。単位はカラム名に従う。"
+        int output_tokens "数値。単位はカラム名に従う。"
+        int latency_ms "数値。単位はカラム名に従う。"
+        varchar generation_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar error_code "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar error_summary "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar ai_gateway_log_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        int created_at "作成日時。timestamp_ms。"
+        int retention_expires_at "日時。timestamp_ms。"
+        int anonymized_at "日時。timestamp_ms。"
     }
 
     ai_usage_event {
-        varchar id PK &quot;主キー。&quot;
-        varchar subject_type &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar subject_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar actor_user_id FK &quot;user.id への任意参照。削除時は set null。&quot;
-        varchar store_id FK &quot;store.id への任意参照。削除時は set null。&quot;
-        varchar conversation_id FK &quot;ai_conversation.id への任意参照。削除時は set null。&quot;
-        varchar message_id FK &quot;ai_message.id への任意参照。削除時は set null。&quot;
-        varchar provider &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar model &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int input_tokens &quot;数値。単位はカラム名に従う。&quot;
-        int output_tokens &quot;数値。単位はカラム名に従う。&quot;
-        int latency_ms &quot;数値。単位はカラム名に従う。&quot;
-        varchar generation_status &quot;状態値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar error_code &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar error_summary &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar ai_gateway_log_id &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar subject_type "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar subject_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar actor_user_id FK "user.id への任意参照。削除時は set null。"
+        varchar store_id FK "store.id への任意参照。削除時は set null。"
+        varchar conversation_id FK "ai_conversation.id への任意参照。削除時は set null。"
+        varchar message_id FK "ai_message.id への任意参照。削除時は set null。"
+        varchar provider "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar model "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int input_tokens "数値。単位はカラム名に従う。"
+        int output_tokens "数値。単位はカラム名に従う。"
+        int latency_ms "数値。単位はカラム名に従う。"
+        varchar generation_status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar error_code "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar error_summary "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar ai_gateway_log_id "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        int created_at "作成日時。timestamp_ms。"
     }
 
     ai_feedback {
-        varchar id PK &quot;主キー。&quot;
-        varchar message_id FK,UK &quot;ai_message.id への必須参照。削除時は cascade。&quot;
-        varchar user_id FK,UK &quot;user.id への必須参照。削除時は cascade。&quot;
-        varchar rating &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        varchar comment &quot;実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。&quot;
-        int resolved &quot;真偽値。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int aggregate_retention_expires_at &quot;日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar message_id FK,UK "ai_message.id への必須参照。削除時は cascade。"
+        varchar user_id FK,UK "user.id への必須参照。削除時は cascade。"
+        varchar rating "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        varchar comment "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
+        int resolved "真偽値。"
+        int created_at "作成日時。timestamp_ms。"
+        int aggregate_retention_expires_at "日時。timestamp_ms。"
     }
 
     ai_usage_counter {
-        varchar id PK &quot;主キー。&quot;
-        varchar scope_kind UK &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        varchar scope_id UK &quot;識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。&quot;
-        varchar window_kind UK &quot;分類値。値域はドメイン層またはユースケース層を参照。&quot;
-        int window_start_at UK &quot;日時。timestamp_ms。&quot;
-        int count &quot;数値。単位はカラム名に従う。&quot;
-        int created_at &quot;作成日時。timestamp_ms。&quot;
-        int updated_at &quot;更新日時。timestamp_ms。&quot;
+        varchar id PK "主キー。"
+        varchar scope_kind UK "分類値。値域はドメイン層またはユースケース層を参照。"
+        varchar scope_id UK "識別子。外部キー制約がない場合は業務スコープまたは外部プロバイダ側ID。"
+        varchar window_kind UK "分類値。値域はドメイン層またはユースケース層を参照。"
+        int window_start_at UK "日時。timestamp_ms。"
+        int count "数値。単位はカラム名に従う。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
     }
 
-    user ||--o{ session : &quot;user_id / onDelete cascade&quot;
-    user ||--o{ account : &quot;user_id / onDelete cascade&quot;
-    organization ||--o{ store : &quot;organization_id / onDelete cascade&quot;
-    organization ||--o{ member : &quot;organization_id / onDelete cascade&quot;
-    user ||--o{ member : &quot;user_id / onDelete cascade&quot;
-    store ||--o{ store_member : &quot;store_id / onDelete cascade&quot;
-    user ||--o{ store_member : &quot;user_id / onDelete cascade&quot;
-    organization ||--o{ participant : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ participant : &quot;store_id / onDelete cascade&quot;
-    user ||--o{ participant : &quot;user_id / onDelete cascade&quot;
-    organization ||--o{ invitation : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ invitation : &quot;store_id optional / onDelete set null&quot;
-    user ||--o{ invitation : &quot;responded_by_user_id optional / onDelete set null&quot;
-    member ||--o{ invitation : &quot;accepted_member_id optional / onDelete set null&quot;
-    store_member ||--o{ invitation : &quot;accepted_store_member_id optional / onDelete set null&quot;
-    participant ||--o{ invitation : &quot;accepted_participant_id optional / onDelete set null&quot;
-    user ||--o{ invitation : &quot;inviter_id / onDelete cascade&quot;
-    invitation ||--o{ invitation_audit_log : &quot;invitation_id / onDelete cascade&quot;
-    organization ||--o{ invitation_audit_log : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ invitation_audit_log : &quot;store_id optional / onDelete set null&quot;
-    user ||--o{ invitation_audit_log : &quot;actor_user_id / onDelete cascade&quot;
-    organization ||--o{ service : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ service : &quot;store_id / onDelete cascade&quot;
-    organization ||--o{ recurring_schedule : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ recurring_schedule : &quot;store_id / onDelete cascade&quot;
-    service ||--o{ recurring_schedule : &quot;service_id / onDelete cascade&quot;
-    recurring_schedule ||--o{ recurring_schedule_exception : &quot;recurring_schedule_id / onDelete cascade&quot;
-    organization ||--o{ recurring_schedule_exception : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ recurring_schedule_exception : &quot;store_id / onDelete cascade&quot;
-    organization ||--o{ slot : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ slot : &quot;store_id / onDelete cascade&quot;
-    service ||--o{ slot : &quot;service_id / onDelete cascade&quot;
-    recurring_schedule ||--o{ slot : &quot;recurring_schedule_id optional / onDelete set null&quot;
-    organization ||--o{ booking : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ booking : &quot;store_id / onDelete cascade&quot;
-    slot ||--o{ booking : &quot;slot_id / onDelete cascade&quot;
-    service ||--o{ booking : &quot;service_id / onDelete cascade&quot;
-    participant ||--o{ booking : &quot;participant_id / onDelete cascade&quot;
-    user ||--o{ booking : &quot;cancelled_by_user_id optional / onDelete set null&quot;
-    ticket_pack ||--o{ booking : &quot;ticket_pack_id optional / onDelete set null&quot;
-    booking ||--o{ booking_audit_log : &quot;booking_id / onDelete cascade&quot;
-    organization ||--o{ booking_audit_log : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ booking_audit_log : &quot;store_id / onDelete cascade&quot;
-    user ||--o{ booking_audit_log : &quot;actor_user_id / onDelete cascade&quot;
-    organization ||--o{ ticket_type : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ ticket_type : &quot;store_id / onDelete cascade&quot;
-    organization ||--o{ ticket_pack : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ ticket_pack : &quot;store_id / onDelete cascade&quot;
-    participant ||--o{ ticket_pack : &quot;participant_id / onDelete cascade&quot;
-    ticket_type ||--o{ ticket_pack : &quot;ticket_type_id / onDelete cascade&quot;
-    organization ||--o{ ticket_purchase : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ ticket_purchase : &quot;store_id / onDelete cascade&quot;
-    participant ||--o{ ticket_purchase : &quot;participant_id / onDelete cascade&quot;
-    ticket_type ||--o{ ticket_purchase : &quot;ticket_type_id / onDelete cascade&quot;
-    ticket_pack ||--o{ ticket_purchase : &quot;ticket_pack_id optional / onDelete set null&quot;
-    user ||--o{ ticket_purchase : &quot;approved_by_user_id optional / onDelete set null&quot;
-    user ||--o{ ticket_purchase : &quot;rejected_by_user_id optional / onDelete set null&quot;
-    organization ||--o{ ticket_ledger : &quot;organization_id / onDelete cascade&quot;
-    store ||--o{ ticket_ledger : &quot;store_id / onDelete cascade&quot;
-    ticket_pack ||--o{ ticket_ledger : &quot;ticket_pack_id / onDelete cascade&quot;
-    booking ||--o{ ticket_ledger : &quot;booking_id optional / onDelete set null&quot;
-    user ||--o{ ticket_ledger : &quot;actor_user_id / onDelete cascade&quot;
-    billing_account ||--o{ billing_subscription : &quot;billing_account_id / onDelete cascade&quot;
-    billing_account ||--o| billing_payment_issue : &quot;billing_account_id / onDelete cascade&quot;
-    billing_subscription ||--o{ billing_payment_issue : &quot;billing_subscription_id optional / onDelete set null&quot;
-    billing_account ||--o{ billing_invoice_event : &quot;billing_account_id / onDelete cascade&quot;
-    billing_subscription ||--o{ billing_invoice_event : &quot;billing_subscription_id optional / onDelete set null&quot;
-    billing_account ||--o{ billing_entitlement : &quot;billing_account_id / onDelete cascade&quot;
-    billing_account ||--o{ billing_provider_event : &quot;billing_account_id optional / onDelete set null&quot;
-    billing_account ||--o{ billing_operation_attempt : &quot;billing_account_id / onDelete cascade&quot;
-    billing_account ||--o{ billing_audit_event : &quot;billing_account_id / onDelete cascade&quot;
-    billing_account ||--o{ billing_signal : &quot;billing_account_id / onDelete cascade&quot;
-    billing_account ||--o{ billing_notification : &quot;billing_account_id / onDelete cascade&quot;
-    billing_account ||--o{ billing_document_reference : &quot;billing_account_id / onDelete cascade&quot;
-    organization ||--o{ ai_knowledge_document : &quot;organization_id optional / onDelete cascade&quot;
-    store ||--o{ ai_knowledge_document : &quot;store_id optional / onDelete cascade&quot;
-    ai_knowledge_document ||--o{ ai_knowledge_chunk : &quot;document_id / onDelete cascade&quot;
-    organization ||--o{ ai_knowledge_chunk : &quot;organization_id optional / onDelete cascade&quot;
-    store ||--o{ ai_knowledge_chunk : &quot;store_id optional / onDelete cascade&quot;
-    user ||--o{ ai_conversation : &quot;actor_user_id / onDelete cascade&quot;
-    store ||--o{ ai_conversation : &quot;store_id optional / onDelete cascade&quot;
-    ai_conversation ||--o{ ai_message : &quot;conversation_id / onDelete cascade&quot;
-    user ||--o{ ai_usage_event : &quot;actor_user_id optional / onDelete set null&quot;
-    store ||--o{ ai_usage_event : &quot;store_id optional / onDelete set null&quot;
-    ai_conversation ||--o{ ai_usage_event : &quot;conversation_id optional / onDelete set null&quot;
-    ai_message ||--o{ ai_usage_event : &quot;message_id optional / onDelete set null&quot;
-    ai_message ||--o{ ai_feedback : &quot;message_id / onDelete cascade&quot;
-    user ||--o{ ai_feedback : &quot;user_id / onDelete cascade&quot;</pre
+    user ||--o{ session : "user_id / onDelete cascade"
+    user ||--o{ account : "user_id / onDelete cascade"
+    organization ||--o{ store : "organization_id / onDelete cascade"
+    organization ||--o{ public_site_setting : "organization_id / onDelete cascade"
+    store ||--o| public_site_setting : "store_id / onDelete cascade"
+    organization ||--o{ member : "organization_id / onDelete cascade"
+    user ||--o{ member : "user_id / onDelete cascade"
+    store ||--o{ store_member : "store_id / onDelete cascade"
+    user ||--o{ store_member : "user_id / onDelete cascade"
+    organization ||--o{ participant : "organization_id / onDelete cascade"
+    store ||--o{ participant : "store_id / onDelete cascade"
+    user ||--o{ participant : "user_id / onDelete cascade"
+    organization ||--o{ invitation : "organization_id / onDelete cascade"
+    store ||--o{ invitation : "store_id optional / onDelete set null"
+    user ||--o{ invitation : "responded_by_user_id optional / onDelete set null"
+    member ||--o{ invitation : "accepted_member_id optional / onDelete set null"
+    store_member ||--o{ invitation : "accepted_store_member_id optional / onDelete set null"
+    participant ||--o{ invitation : "accepted_participant_id optional / onDelete set null"
+    user ||--o{ invitation : "inviter_id / onDelete cascade"
+    invitation ||--o{ invitation_audit_log : "invitation_id / onDelete cascade"
+    organization ||--o{ invitation_audit_log : "organization_id / onDelete cascade"
+    store ||--o{ invitation_audit_log : "store_id optional / onDelete set null"
+    user ||--o{ invitation_audit_log : "actor_user_id / onDelete cascade"
+    organization ||--o{ service : "organization_id / onDelete cascade"
+    store ||--o{ service : "store_id / onDelete cascade"
+    organization ||--o{ recurring_schedule : "organization_id / onDelete cascade"
+    store ||--o{ recurring_schedule : "store_id / onDelete cascade"
+    service ||--o{ recurring_schedule : "service_id / onDelete cascade"
+    recurring_schedule ||--o{ recurring_schedule_exception : "recurring_schedule_id / onDelete cascade"
+    organization ||--o{ recurring_schedule_exception : "organization_id / onDelete cascade"
+    store ||--o{ recurring_schedule_exception : "store_id / onDelete cascade"
+    organization ||--o{ slot : "organization_id / onDelete cascade"
+    store ||--o{ slot : "store_id / onDelete cascade"
+    service ||--o{ slot : "service_id / onDelete cascade"
+    recurring_schedule ||--o{ slot : "recurring_schedule_id optional / onDelete set null"
+    organization ||--o{ booking : "organization_id / onDelete cascade"
+    store ||--o{ booking : "store_id / onDelete cascade"
+    slot ||--o{ booking : "slot_id / onDelete cascade"
+    service ||--o{ booking : "service_id / onDelete cascade"
+    participant ||--o{ booking : "participant_id optional / onDelete set null"
+    user ||--o{ booking : "created_by_user_id optional / onDelete set null"
+    user ||--o{ booking : "cancelled_by_user_id optional / onDelete set null"
+    ticket_pack ||--o{ booking : "ticket_pack_id optional / onDelete set null"
+    booking ||--o{ booking_answer : "booking_id / onDelete cascade"
+    booking ||--o{ booking_companion : "booking_id / onDelete cascade"
+    booking ||--o{ booking_public_action_token : "booking_id / onDelete cascade"
+    organization ||--o{ public_site_notification_setting : "organization_id / onDelete cascade"
+    store ||--o| public_site_notification_setting : "store_id / onDelete cascade"
+    organization ||--o{ notification_log : "organization_id / onDelete cascade"
+    store ||--o{ notification_log : "store_id / onDelete cascade"
+    booking ||--o{ notification_log : "booking_id optional / onDelete set null"
+    organization ||--o{ reminder_policy : "organization_id / onDelete cascade"
+    store ||--o{ reminder_policy : "store_id / onDelete cascade"
+    service ||--o{ reminder_policy : "service_id optional / onDelete cascade"
+    organization ||--o{ reminder_log : "organization_id / onDelete cascade"
+    store ||--o{ reminder_log : "store_id / onDelete cascade"
+    booking ||--o{ reminder_log : "booking_id / onDelete cascade"
+    reminder_policy ||--o{ reminder_log : "reminder_policy_id optional / onDelete set null"
+    booking ||--o{ booking_audit_log : "booking_id / onDelete cascade"
+    organization ||--o{ booking_audit_log : "organization_id / onDelete cascade"
+    store ||--o{ booking_audit_log : "store_id / onDelete cascade"
+    user ||--o{ booking_audit_log : "actor_user_id / onDelete cascade"
+    organization ||--o{ ticket_type : "organization_id / onDelete cascade"
+    store ||--o{ ticket_type : "store_id / onDelete cascade"
+    organization ||--o{ ticket_pack : "organization_id / onDelete cascade"
+    store ||--o{ ticket_pack : "store_id / onDelete cascade"
+    participant ||--o{ ticket_pack : "participant_id / onDelete cascade"
+    ticket_type ||--o{ ticket_pack : "ticket_type_id / onDelete cascade"
+    organization ||--o{ ticket_purchase : "organization_id / onDelete cascade"
+    store ||--o{ ticket_purchase : "store_id / onDelete cascade"
+    participant ||--o{ ticket_purchase : "participant_id / onDelete cascade"
+    ticket_type ||--o{ ticket_purchase : "ticket_type_id / onDelete cascade"
+    ticket_pack ||--o{ ticket_purchase : "ticket_pack_id optional / onDelete set null"
+    user ||--o{ ticket_purchase : "approved_by_user_id optional / onDelete set null"
+    user ||--o{ ticket_purchase : "rejected_by_user_id optional / onDelete set null"
+    organization ||--o{ ticket_ledger : "organization_id / onDelete cascade"
+    store ||--o{ ticket_ledger : "store_id / onDelete cascade"
+    ticket_pack ||--o{ ticket_ledger : "ticket_pack_id / onDelete cascade"
+    booking ||--o{ ticket_ledger : "booking_id optional / onDelete set null"
+    user ||--o{ ticket_ledger : "actor_user_id / onDelete cascade"
+    billing_account ||--o{ billing_subscription : "billing_account_id / onDelete cascade"
+    billing_account ||--o| billing_payment_issue : "billing_account_id / onDelete cascade"
+    billing_subscription ||--o{ billing_payment_issue : "billing_subscription_id optional / onDelete set null"
+    billing_account ||--o{ billing_invoice_event : "billing_account_id / onDelete cascade"
+    billing_subscription ||--o{ billing_invoice_event : "billing_subscription_id optional / onDelete set null"
+    billing_account ||--o{ billing_entitlement : "billing_account_id / onDelete cascade"
+    billing_account ||--o{ billing_provider_event : "billing_account_id optional / onDelete set null"
+    billing_account ||--o{ billing_operation_attempt : "billing_account_id / onDelete cascade"
+    billing_account ||--o{ billing_audit_event : "billing_account_id / onDelete cascade"
+    billing_account ||--o{ billing_signal : "billing_account_id / onDelete cascade"
+    billing_account ||--o{ billing_notification : "billing_account_id / onDelete cascade"
+    billing_account ||--o{ billing_document_reference : "billing_account_id / onDelete cascade"
+    organization ||--o{ ai_knowledge_document : "organization_id optional / onDelete cascade"
+    store ||--o{ ai_knowledge_document : "store_id optional / onDelete cascade"
+    ai_knowledge_document ||--o{ ai_knowledge_chunk : "document_id / onDelete cascade"
+    organization ||--o{ ai_knowledge_chunk : "organization_id optional / onDelete cascade"
+    store ||--o{ ai_knowledge_chunk : "store_id optional / onDelete cascade"
+    user ||--o{ ai_conversation : "actor_user_id / onDelete cascade"
+    store ||--o{ ai_conversation : "store_id optional / onDelete cascade"
+    ai_conversation ||--o{ ai_message : "conversation_id / onDelete cascade"
+    user ||--o{ ai_usage_event : "actor_user_id optional / onDelete set null"
+    store ||--o{ ai_usage_event : "store_id optional / onDelete set null"
+    ai_conversation ||--o{ ai_usage_event : "conversation_id optional / onDelete set null"
+    ai_message ||--o{ ai_usage_event : "message_id optional / onDelete set null"
+    ai_message ||--o{ ai_feedback : "message_id / onDelete cascade"
+    user ||--o{ ai_feedback : "user_id / onDelete cascade"</pre
             >
           </section>
         </div>
