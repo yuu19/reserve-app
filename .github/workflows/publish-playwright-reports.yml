@@ -72,12 +72,38 @@ jobs:
             rm -rf "${tmp_dir}"
           }
 
+          record_report_updated_at() {
+            local env_name="$1"
+            local run_id="$2"
+            local title="$3"
+            local updated_at=""
+            local formatted_at=""
+
+            if ! updated_at="$(gh api "repos/${REPO}/actions/runs/${run_id}" --jq '.updated_at')" || [ -z "${updated_at}" ] || [ "${updated_at}" = "null" ]; then
+              echo "::warning::${title} source workflow run ${run_id} updated_at could not be read."
+              formatted_at="更新日時不明"
+              updated_at=""
+            elif ! formatted_at="$(TZ=Asia/Tokyo date -d "${updated_at}" '+%Y-%m-%d %H:%M JST')"; then
+              echo "::warning::${title} source workflow run ${run_id} updated_at (${updated_at}) could not be formatted."
+              formatted_at="更新日時不明"
+              updated_at=""
+            fi
+
+            {
+              printf '%s=%s\n' "${env_name}" "${formatted_at}"
+              printf '%s_ISO=%s\n' "${env_name}" "${updated_at}"
+            } >> "$GITHUB_ENV"
+
+            echo "${title}: source workflow run ${run_id} updated at ${formatted_at}."
+          }
+
           download_report() {
             local workflow_name="$1"
             local artifact_name="$2"
             local target_dir="$3"
             local title="$4"
             local preferred_run_id="$5"
+            local updated_at_env_name="$6"
             local run_id=""
             local run_ids=()
 
@@ -87,6 +113,7 @@ jobs:
             if [ -n "${preferred_run_id}" ]; then
               if gh run download "${preferred_run_id}" --repo "${REPO}" --name "${artifact_name}" --dir "${target_dir}"; then
                 normalize_report_dir "${target_dir}"
+                record_report_updated_at "${updated_at_env_name}" "${preferred_run_id}" "${title}"
                 echo "${title}: downloaded ${artifact_name} from run ${preferred_run_id}."
                 return 0
               fi
@@ -115,6 +142,7 @@ jobs:
 
               if gh run download "${run_id}" --repo "${REPO}" --name "${artifact_name}" --dir "${target_dir}"; then
                 normalize_report_dir "${target_dir}"
+                record_report_updated_at "${updated_at_env_name}" "${run_id}" "${title}"
                 echo "${title}: downloaded ${artifact_name} from run ${run_id}."
                 return 0
               fi
@@ -137,9 +165,9 @@ jobs:
             stripe_run_id="${TRIGGER_RUN_ID}"
           fi
 
-          download_report "CI Tests" "playwright-report-docs" ".pages/docs" "Docs report" "${ci_run_id}" || true
-          download_report "CI Tests" "playwright-report-web" ".pages/web" "Web report" "${ci_run_id}" || true
-          download_report "Stripe Billing E2E" "playwright-report-stripe-billing" ".pages/stripe-billing" "Stripe Billing report" "${stripe_run_id}" || true
+          download_report "CI Tests" "playwright-report-docs" ".pages/docs" "Docs report" "${ci_run_id}" "DOCS_REPORT_UPDATED_AT" || true
+          download_report "CI Tests" "playwright-report-web" ".pages/web" "Web report" "${ci_run_id}" "WEB_REPORT_UPDATED_AT" || true
+          download_report "Stripe Billing E2E" "playwright-report-stripe-billing" ".pages/stripe-billing" "Stripe Billing report" "${stripe_run_id}" "STRIPE_BILLING_REPORT_UPDATED_AT" || true
 
       - name: Create missing report placeholders
         shell: bash
@@ -178,8 +206,32 @@ jobs:
           write_placeholder ".pages/stripe-billing" "Stripe Billing report unavailable" "No Stripe Billing Playwright report artifact was available for the latest main branch run."
 
       - name: Create report index
+        shell: bash
         run: |
-          cat > .pages/index.html <<'HTML'
+          set -euo pipefail
+
+          report_meta_html() {
+            local label="$1"
+            local datetime="$2"
+
+            if [ "${label}" = "未生成" ] || [ "${label}" = "更新日時不明" ]; then
+              printf '<span class="report-link__status">%s</span>' "${label}"
+              return 0
+            fi
+
+            if [ -n "${datetime}" ]; then
+              printf '<time datetime="%s">%s</time>' "${datetime}" "${label}"
+              return 0
+            fi
+
+            printf '<time>%s</time>' "${label}"
+          }
+
+          docs_report_updated_at="${DOCS_REPORT_UPDATED_AT:-未生成}"
+          web_report_updated_at="${WEB_REPORT_UPDATED_AT:-未生成}"
+          stripe_billing_report_updated_at="${STRIPE_BILLING_REPORT_UPDATED_AT:-未生成}"
+
+          cat > .pages/index.html <<HTML
           <!doctype html>
           <html lang="en">
             <head>
@@ -220,7 +272,10 @@ jobs:
                   list-style: none;
                 }
                 a {
-                  display: block;
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  gap: 12px 20px;
                   padding: 16px 18px;
                   border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
                   border-radius: 8px;
@@ -228,9 +283,30 @@ jobs:
                   text-decoration: none;
                   font-weight: 700;
                 }
+                .report-link__name {
+                  min-width: 0;
+                }
+                time,
+                .report-link__status {
+                  flex: 0 0 auto;
+                  color: color-mix(in srgb, CanvasText 62%, transparent);
+                  font-size: 0.875rem;
+                  font-weight: 600;
+                  white-space: nowrap;
+                }
                 a:hover,
                 a:focus-visible {
                   border-color: color-mix(in srgb, CanvasText 46%, transparent);
+                }
+                @media (max-width: 520px) {
+                  a {
+                    align-items: flex-start;
+                    flex-direction: column;
+                  }
+                  time,
+                  .report-link__status {
+                    white-space: normal;
+                  }
                 }
               </style>
             </head>
@@ -239,9 +315,24 @@ jobs:
                 <h1>Playwright Reports</h1>
                 <p>Latest available reports generated from main branch workflows.</p>
                 <ul>
-                  <li><a href="./docs/index.html">Docs report</a></li>
-                  <li><a href="./web/index.html">Web report</a></li>
-                  <li><a href="./stripe-billing/index.html">Stripe Billing report</a></li>
+                  <li>
+                    <a href="./docs/index.html">
+                      <span class="report-link__name">Docs report</span>
+                      $(report_meta_html "${docs_report_updated_at}" "${DOCS_REPORT_UPDATED_AT_ISO:-}")
+                    </a>
+                  </li>
+                  <li>
+                    <a href="./web/index.html">
+                      <span class="report-link__name">Web report</span>
+                      $(report_meta_html "${web_report_updated_at}" "${WEB_REPORT_UPDATED_AT_ISO:-}")
+                    </a>
+                  </li>
+                  <li>
+                    <a href="./stripe-billing/index.html">
+                      <span class="report-link__name">Stripe Billing report</span>
+                      $(report_meta_html "${stripe_billing_report_updated_at}" "${STRIPE_BILLING_REPORT_UPDATED_AT_ISO:-}")
+                    </a>
+                  </li>
                 </ul>
               </main>
             </body>

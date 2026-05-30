@@ -1,6 +1,6 @@
 # Playwright Report の R2 公開構成
 
-最終更新: 2026-05-25
+最終更新: 2026-05-31
 
 ## 目的
 
@@ -261,6 +261,10 @@ URL は R2 object を直接指すため、`index.html` まで含む。
 - `Docs report`: docs Playwright E2E
 - `Web report`: web Playwright E2E
 - `Stripe Billing report`: Stripe 課金 Playwright E2E
+
+各行の右側には、対象レポートを生成した元 workflow run の更新日時が表示される。
+日時は GitHub Actions API の `updated_at` を JST に変換した値で、`YYYY-MM-DD HH:mm JST` の形式で表示する。
+artifact が見つからず placeholder が公開される場合は、日時の代わりに `未生成` と表示する。
 
 Cloudflare Access を設定している場合、最初に Access の認証画面が出る。
 許可されたアカウントで認証すると、R2 上の HTML レポートを閲覧できる。
