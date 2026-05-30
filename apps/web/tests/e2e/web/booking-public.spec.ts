@@ -27,7 +27,7 @@ test.describe('booking and public event flows', () => {
 			organization,
 			name: `Service ${token}`
 		});
-		const slotRange = futureSlotRange();
+		const slotRange = futureSlotRange(1);
 		await createSlot({
 			request,
 			organization,
@@ -70,7 +70,7 @@ test.describe('booking and public event flows', () => {
 			organization,
 			name: `Public Event ${token}`
 		});
-		const slotRange = futureSlotRange();
+		const slotRange = futureSlotRange(1);
 		const slot = await createSlot({
 			request,
 			organization,

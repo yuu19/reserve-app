@@ -7,6 +7,8 @@ import {
 import { AiChatWidgetPage } from '../pages';
 
 test.describe('AI chat widget', () => {
+	test.setTimeout(120_000);
+
 	test('shows grounded answers and records feedback without calling real AI services', async ({
 		page,
 		request,
@@ -70,5 +72,63 @@ test.describe('AI chat widget', () => {
 
 		await aiChatWidget.expectGroundedAnswer();
 		await aiChatWidget.markHelpful();
+		await aiChatWidget.followSuggestedAction({
+			organization,
+			label: '単発予約枠作成を開く',
+			expectedPath: '/admin/schedules/slots/new'
+		});
+	});
+
+	test('shows API errors without calling real AI services', async ({
+		page,
+		request,
+		context
+	}, testInfo) => {
+		const token = uniqueToken(testInfo, 'ai-error');
+		const { organization } = await createOwnerOrganization({ request, context, token });
+		await syncRequestCookiesToBrowser(request, context);
+		const aiChatWidget = new AiChatWidgetPage(page);
+
+		await page.route('**/api/v1/ai/chat', async (route) => {
+			await route.fulfill({
+				status: 500,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					message: 'AI応答の生成に失敗しました。'
+				})
+			});
+		});
+
+		await aiChatWidget.gotoDashboard(organization);
+		await aiChatWidget.ask('エラー表示を確認したい');
+
+		await aiChatWidget.expectErrorMessage('AI応答の生成に失敗しました。');
+	});
+
+	test('shows retry guidance for rate limit responses', async ({
+		page,
+		request,
+		context
+	}, testInfo) => {
+		const token = uniqueToken(testInfo, 'ai-rate-limit');
+		const { organization } = await createOwnerOrganization({ request, context, token });
+		await syncRequestCookiesToBrowser(request, context);
+		const aiChatWidget = new AiChatWidgetPage(page);
+
+		await page.route('**/api/v1/ai/chat', async (route) => {
+			await route.fulfill({
+				status: 429,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					message: '利用上限に達しました。',
+					retryAfterSeconds: 120
+				})
+			});
+		});
+
+		await aiChatWidget.gotoDashboard(organization);
+		await aiChatWidget.ask('利用上限の表示を確認したい');
+
+		await aiChatWidget.expectErrorMessage('利用上限に達しました。 2分後に再試行できます。');
 	});
 });

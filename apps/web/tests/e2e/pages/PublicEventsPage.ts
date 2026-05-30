@@ -24,12 +24,11 @@ export class PublicEventsPage extends BasePage {
 		storeSlug: string;
 		slotId: string;
 	}) {
-		const eventCard = this.page
-			.locator('article, div, section')
-			.filter({ hasText: serviceName })
-			.first();
-		await expect(eventCard).toBeVisible({ timeout: 15_000 });
-		await eventCard.getByRole('button', { name: 'イベント詳細へ' }).click();
+		const eventLink = this.page.getByRole('link', {
+			name: new RegExp(`${escapeRegex(serviceName)}[\\s\\S]*イベント詳細へ`)
+		});
+		await expect(eventLink).toBeVisible({ timeout: 15_000 });
+		await eventLink.click();
 		await expect(this.page).toHaveURL(new RegExp(`/${orgSlug}/${storeSlug}/events/${slotId}`));
 	}
 
