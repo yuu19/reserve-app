@@ -1,13 +1,21 @@
 import type { Page } from '@playwright/test';
 
+/**
+ * E2E page object が共有する最小 base class。
+ */
 export class BasePage {
-	protected readonly page: Page;
+  protected readonly page: Page;
 
-	constructor(page: Page) {
-		this.page = page;
-	}
+  constructor(page: Page) {
+    this.page = page;
+  }
 
-	async goto(path: string) {
-		await this.page.goto(path);
-	}
+  /**
+   * App 内の path へ移動する。
+   *
+   * @param path - Playwright baseURL からの相対 path。
+   */
+  async goto(path: string) {
+    await this.page.goto(path);
+  }
 }
