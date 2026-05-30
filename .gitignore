@@ -11,6 +11,7 @@ dist
 build
 .svelte-kit
 .wrangler
+.webwright/
 .vercel
 .expo
 .expo-shared
