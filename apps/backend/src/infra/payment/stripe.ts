@@ -35,6 +35,7 @@ type StripeSetupCheckoutSessionCreateInput = {
   successUrl: string;
   cancelUrl: string;
   customerId: string;
+  currency: string;
   clientReferenceId?: string;
   idempotencyKey?: string;
   metadata?: Record<string, string>;
@@ -475,6 +476,7 @@ export const createSetupCheckoutSession = async ({
   successUrl,
   cancelUrl,
   customerId,
+  currency,
   clientReferenceId,
   idempotencyKey,
   metadata,
@@ -484,6 +486,7 @@ export const createSetupCheckoutSession = async ({
   params.set('success_url', successUrl);
   params.set('cancel_url', cancelUrl);
   params.set('customer', customerId);
+  params.set('currency', currency);
 
   if (clientReferenceId) {
     params.set('client_reference_id', clientReferenceId);

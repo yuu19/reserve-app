@@ -23,6 +23,8 @@ export type StripeBillingProviderOptions = {
   testClockId?: string | null;
 };
 
+const RESERVE_APP_BILLING_CURRENCY = 'jpy';
+
 const toSubscription = (subscription: ProviderSubscription): ProviderSubscription => subscription;
 
 const toPortalSessionInput = ({
@@ -111,6 +113,7 @@ export const createStripeBillingProvider = ({
       customerId,
       successUrl,
       cancelUrl,
+      currency: RESERVE_APP_BILLING_CURRENCY,
       clientReferenceId: metadata.organizationId,
       metadata,
       idempotencyKey,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createBillingPortalSession,
   createCustomer,
+  createSetupCheckoutSession,
   createSubscriptionCheckoutSession,
   readStripeSubscriptionSummary,
 } from './stripe.js';
@@ -72,6 +73,57 @@ describe('Stripe 課金アダプター', () => {
     expect(params.get('metadata[billingPurpose]')).toBe('organization_plan');
     expect(params.get('metadata[organizationId]')).toBe('org_123');
     expect(params.get('metadata[billingInterval]')).toBe('month');
+  });
+
+  it('支払い方法登録用 Checkout セッションに setup mode の通貨を送る', async () => {
+    let capturedBody = '';
+    let capturedHeaders: HeadersInit | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      capturedBody = typeof init?.body === 'string' ? init.body : '';
+      capturedHeaders = init?.headers;
+      return new Response(
+        JSON.stringify({
+          id: 'cs_test_setup',
+          url: 'https://checkout.stripe.com/c/cs_test_setup',
+          payment_status: 'no_payment_required',
+          status: 'open',
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    });
+
+    await expect(
+      createSetupCheckoutSession({
+        env,
+        successUrl: 'https://example.com/contracts?paymentMethod=success',
+        cancelUrl: 'https://example.com/contracts?paymentMethod=cancel',
+        customerId: 'cus_test',
+        currency: 'jpy',
+        clientReferenceId: 'org_123',
+        idempotencyKey: 'billing-setup-operation-123',
+        metadata: {
+          billingPurpose: 'organization_payment_method',
+          organizationId: 'org_123',
+        },
+      }),
+    ).resolves.toMatchObject({
+      id: 'cs_test_setup',
+      url: 'https://checkout.stripe.com/c/cs_test_setup',
+      paymentStatus: 'no_payment_required',
+      status: 'open',
+    });
+
+    const params = new URLSearchParams(capturedBody);
+    expect(readHeader(capturedHeaders, 'idempotency-key')).toBe('billing-setup-operation-123');
+    expect(params.get('mode')).toBe('setup');
+    expect(params.get('currency')).toBe('jpy');
+    expect(params.get('customer')).toBe('cus_test');
+    expect(params.get('client_reference_id')).toBe('org_123');
+    expect(params.get('metadata[billingPurpose]')).toBe('organization_payment_method');
+    expect(params.get('metadata[organizationId]')).toBe('org_123');
   });
 
   it('課金ポータルセッションに冪等性キーと購読更新フローデータを送る', async () => {

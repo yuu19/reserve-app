@@ -7688,6 +7688,7 @@ describe('バックエンドアプリ', () => {
       expect(createdCustomerCalls).toBe(1);
       expect(createdSetupSessionCalls).toBe(1);
       expect(lastSetupSessionBody).toContain('mode=setup');
+      expect(lastSetupSessionBody).toContain('currency=jpy');
       expect(lastSetupSessionBody).toContain('customer=cus_test_payment_method');
 
       const billingAfterHandoff = await selectOrganizationBillingRow(organizationId);
