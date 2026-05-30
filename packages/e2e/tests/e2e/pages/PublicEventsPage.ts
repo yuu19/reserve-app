@@ -32,8 +32,16 @@ export class PublicEventsPage extends BasePage {
 		await expect(this.page).toHaveURL(new RegExp(`/${orgSlug}/${storeSlug}/events/${slotId}`));
 	}
 
-	async reserveAsParticipant() {
-		await this.page.getByRole('button', { name: '参加登録して予約する' }).click();
+	async reserveAsGuest({
+		name,
+		email
+	}: {
+		name: string;
+		email: string;
+	}) {
+		await this.page.getByRole('textbox', { name: '氏名' }).fill(name);
+		await this.page.getByRole('textbox', { name: 'メールアドレス' }).fill(email);
+		await this.page.getByRole('button', { name: '予約する' }).click();
 	}
 
 	async expectParticipantLogin() {
@@ -41,8 +49,9 @@ export class PublicEventsPage extends BasePage {
 	}
 
 	async expectReservationComplete() {
-		await expect(this.page.getByText('参加登録が完了しました。')).toBeVisible();
-		await expect(this.page.getByText('予約を申し込みました。')).toBeVisible();
+		await expect(
+			this.page.getByRole('main').getByText('予約を受け付けました。')
+		).toBeVisible();
 	}
 }
 

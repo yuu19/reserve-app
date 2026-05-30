@@ -108,11 +108,11 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
   - 期待結果: owner 操作、non-owner の閲覧、支払い問題、請求書・領収書リンク表示の分岐が壊れていない。
   - 記録:
 - [ ] 通常の web Playwright E2E が成功している。
-  - 実行例: `pnpm --filter @apps/web test:e2e`
+  - 実行例: `pnpm --filter @repo/e2e test:e2e`
   - 期待結果: Stripe test mode に依存しない主要導線が壊れていない。
   - 記録:
 - [ ] Stripe 課金 E2E が検証環境または GitHub Actions で成功している。
-  - 実行例: `BILLING_E2E_ENABLED=true pnpm --filter @apps/web test:e2e:billing`
+  - 実行例: `BILLING_E2E_ENABLED=true pnpm --filter @repo/e2e test:e2e:billing`
   - 期待結果: Test Clock を使ったトライアル、有料化、支払い失敗、復旧、トライアル終了の主要遷移が通る。
   - 記録:
 - [ ] GitHub Actions の Stripe Billing E2E 結果を確認した。
@@ -122,9 +122,9 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
 実装メモ:
 
 - CI Tests workflow: [`.github/workflows/ci-tests.yml`](../.github/workflows/ci-tests.yml)
-- Web Playwright 設定: [`apps/web/playwright.config.ts`](../apps/web/playwright.config.ts)
-- Stripe Billing E2E spec: [`apps/web/tests/e2e/billing/stripe-test-clock.spec.ts`](../apps/web/tests/e2e/billing/stripe-test-clock.spec.ts)
-- web scripts: [`apps/web/package.json`](../apps/web/package.json)
+- Playwright E2E 設定: [`packages/e2e/playwright.config.ts`](../packages/e2e/playwright.config.ts)
+- Stripe Billing E2E spec: [`packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`](../packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts)
+- E2E scripts: [`packages/e2e/package.json`](../packages/e2e/package.json)
 - backend scripts: [`apps/backend/package.json`](../apps/backend/package.json)
 
 ## 4. 手動確認

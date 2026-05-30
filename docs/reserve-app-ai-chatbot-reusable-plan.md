@@ -69,7 +69,7 @@ apps/backend/src/features/ai/source-visibility.test.ts
 apps/web/src/lib/features/ai-chat.spec.ts
 apps/web/src/lib/components/ai/AiChatWidget.svelte.spec.ts
 apps/web/src/lib/components/ai/AiSourceList.svelte.spec.ts
-apps/web/tests/e2e/ai/ai-chat-widget.spec.ts
+packages/e2e/tests/e2e/ai/ai-chat-widget.spec.ts
 ```
 
 ### Docs / Specs

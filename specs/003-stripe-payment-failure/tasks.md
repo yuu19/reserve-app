@@ -17,7 +17,7 @@
 
 - **Backend**: `apps/backend/src/`, integration tests in `apps/backend/src/app.test.ts` or focused nearby `*.test.ts`
 - **Web**: `apps/web/src/lib/`, `apps/web/src/routes/`, route specs near changed files
-- **E2E**: `apps/web/tests/e2e/billing/`
+- **E2E**: `packages/e2e/tests/e2e/billing/`
 - **Docs**: `docs/`
 
 ---
@@ -43,7 +43,7 @@
 - [x] T006 [P] Add frontend billing payload payment issue fields in `apps/web/src/lib/rpc-client.ts`
 - [x] T007 [P] Add shared backend fixture helpers for payment issue billing rows, invoice events, notifications, signals, and webhook receipts in `apps/backend/src/app.test.ts`
 - [x] T008 [P] Add shared web route fixture helpers for payment issue summaries and safe history entries in `apps/web/src/routes/contracts/page.svelte.spec.ts`
-- [x] T009 [P] Add Stripe Billing E2E helper support for declined payment recovery and repeated event replay in `apps/web/tests/e2e/billing/stripe-test-clock-helpers.ts`
+- [x] T009 [P] Add Stripe Billing E2E helper support for declined payment recovery and repeated event replay in `packages/e2e/tests/e2e/billing/stripe-test-clock-helpers.ts`
 
 **Checkpoint**: Foundation ready. User story implementation can proceed.
 
@@ -136,7 +136,7 @@
 - [x] T038 [P] [US4] Add backend webhook tests for payment failure followed by success and success followed by delayed stale failure in `apps/backend/src/app.test.ts`
 - [x] T039 [P] [US4] Add backend webhook tests for untrusted signatures and unknown customer, subscription, or organization linkage in `apps/backend/src/app.test.ts`
 - [x] T040 [P] [US4] Add maintenance and reconciliation tests for hourly risky-state checks and daily provider-linked checks in `apps/backend/src/billing/organization-billing-maintenance.test.ts`
-- [x] T041 [P] [US4] Extend Stripe Test Clock billing E2E for failed renewal recovery and repeated Stripe event replay in `apps/web/tests/e2e/billing/stripe-test-clock.spec.ts`
+- [x] T041 [P] [US4] Extend Stripe Test Clock billing E2E for failed renewal recovery and repeated Stripe event replay in `packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`
 
 ### Implementation for User Story 4
 
@@ -158,7 +158,7 @@
 - [x] T048 [P] Update Stripe Billing E2E and CI expectations in `docs/test-strategy.md`
 - [x] T049 [P] Verify DESIGN.md accessibility and layout requirements for payment issue UI in `apps/web/src/routes/contracts/+page.svelte`
 - [ ] T050 Run targeted backend verification for `apps/backend/src/billing/organization-billing-policy.test.ts`, `apps/backend/src/billing/organization-billing-notifications.test.ts`, `apps/backend/src/billing/organization-billing-maintenance.test.ts`, and `apps/backend/src/app.test.ts`
-- [ ] T051 Run targeted web and billing E2E verification for `apps/web/src/routes/contracts/page.svelte.spec.ts` and `apps/web/tests/e2e/billing/stripe-test-clock.spec.ts`
+- [ ] T051 Run targeted web and billing E2E verification for `apps/web/src/routes/contracts/page.svelte.spec.ts` and `packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`
 - [ ] T052 Run final repository verification for `package.json` using `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm format:check`
 
 ---
@@ -238,7 +238,7 @@ Task: "T032 [P] [US3] Add contract page history tests in apps/web/src/routes/con
 # Convergence tests are independent until webhook implementation begins:
 Task: "T037 [P] [US4] Add duplicate trusted event tests in apps/backend/src/app.test.ts"
 Task: "T038 [P] [US4] Add out-of-order recovery tests in apps/backend/src/app.test.ts"
-Task: "T041 [P] [US4] Extend Stripe Test Clock E2E in apps/web/tests/e2e/billing/stripe-test-clock.spec.ts"
+Task: "T041 [P] [US4] Extend Stripe Test Clock E2E in packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts"
 ```
 
 ---

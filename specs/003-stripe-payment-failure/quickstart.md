@@ -101,7 +101,7 @@ pnpm --filter @apps/web test
 Stripe Billing E2E when secrets are available:
 
 ```bash
-pnpm --filter @apps/web test:e2e:billing
+pnpm --filter @repo/e2e test:e2e:billing
 ```
 
 Broader checks before completion:

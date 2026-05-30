@@ -38,7 +38,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
-        run: pnpm --filter @apps/web exec playwright install --with-deps chromium
+        run: pnpm --filter @repo/e2e exec playwright install --with-deps chromium
 
       - name: Run Stripe Billing Playwright E2E
         env:
@@ -47,14 +47,14 @@ jobs:
           STRIPE_PREMIUM_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_E2E_PREMIUM_MONTHLY_PRICE_ID }}
           STRIPE_PREMIUM_YEARLY_PRICE_ID: ${{ secrets.STRIPE_E2E_PREMIUM_YEARLY_PRICE_ID }}
           E2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_E2E_WEBHOOK_SECRET }}
-        run: pnpm --filter @apps/web test:e2e:billing
+        run: pnpm --filter @repo/e2e test:e2e:billing
 
       - name: Upload Stripe Billing Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-stripe-billing
-          path: apps/web/playwright-report/
+          path: packages/e2e/playwright-report/
           if-no-files-found: ignore
           retention-days: 30
 
@@ -64,6 +64,6 @@ jobs:
         with:
           name: playwright-artifacts-stripe-billing
           path: |
-            apps/web/test-results/
+            packages/e2e/test-results/
           if-no-files-found: ignore
           retention-days: 30

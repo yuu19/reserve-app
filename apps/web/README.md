@@ -160,31 +160,31 @@ backend は local D1 を使い、永続化先はリポジトリ直下の `.wrang
 実行:
 
 ```bash
-pnpm --filter @apps/web run test:e2e
+pnpm --filter @repo/e2e run test:e2e
 ```
 
 テスト一覧だけを確認する場合:
 
 ```bash
-pnpm --filter @apps/web run test:e2e -- --list
+pnpm --filter @repo/e2e run test:e2e -- --list
 ```
 
 ブラウザを表示して確認する場合:
 
 ```bash
-pnpm --filter @apps/web run test:e2e:headed
+pnpm --filter @repo/e2e run test:e2e:headed
 ```
 
 UI モードを使う場合:
 
 ```bash
-pnpm --filter @apps/web run test:e2e:ui
+pnpm --filter @repo/e2e run test:e2e:ui
 ```
 
 DB と Playwright の出力を消す場合:
 
 ```bash
-pnpm --filter @apps/web run clean:e2e
+pnpm --filter @repo/e2e run clean:e2e
 ```
 
 CI では pull request と `main` push で Chromium の E2E を実行します。

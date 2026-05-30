@@ -203,7 +203,7 @@ app 側では、migration と billing regression を確認します。
 
 ```sh
 pnpm --filter @apps/backend exec drizzle-kit check --config ./drizzle.config.ts
-pnpm --filter @apps/web test:e2e:billing
+pnpm --filter @repo/e2e test:e2e:billing
 ```
 
 別 SaaS では、上の app 名を導入先に読み替えます。

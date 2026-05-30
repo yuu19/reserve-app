@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
-const webRoot = fileURLToPath(new URL('.', import.meta.url));
+const e2eRoot = fileURLToPath(new URL('.', import.meta.url));
 const backendEnvFile = path.join(os.tmpdir(), 'reserve-app-backend-e2e.vars');
 const webE2eEnvFile = path.join(os.tmpdir(), 'reserve-app-web-e2e-env.json');
 const publicEventsOrgSlug =
@@ -122,6 +122,7 @@ export default defineConfig({
 					env: {
 						...process.env,
 						PUBLIC_BACKEND_URL: 'http://localhost:3000',
+						PUBLIC_AI_CHAT_ENABLED: 'true',
 						PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
 						PUBLIC_EVENTS_STORE_SLUG: publicEventsStoreSlug
 					},
@@ -150,6 +151,7 @@ export default defineConfig({
 					env: {
 						...process.env,
 						PUBLIC_BACKEND_URL: 'http://localhost:3000',
+						PUBLIC_AI_CHAT_ENABLED: 'true',
 						PUBLIC_EVENTS_ORG_SLUG: publicEventsOrgSlug,
 						PUBLIC_EVENTS_STORE_SLUG: publicEventsStoreSlug
 					},
@@ -164,5 +166,5 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] }
 		}
 	],
-	outputDir: path.join(webRoot, 'test-results')
+	outputDir: path.join(e2eRoot, 'test-results')
 });

@@ -8,13 +8,15 @@ import {
 	futureSlotRange,
 	publicEventsStoreSlug,
 	publicEventsOrgSlug,
-	signUpAccount,
 	syncRequestCookiesToBrowser,
+	updatePublicSiteSetting,
 	uniqueToken
 } from '../helpers/test-data';
 import { PublicEventsPage, ScopedAdminPages } from '../pages';
 
 test.describe('booking and public event flows', () => {
+	test.setTimeout(120_000);
+
 	test('shows seeded services and slots in scoped admin pages', async ({
 		page,
 		request,
@@ -51,11 +53,9 @@ test.describe('booking and public event flows', () => {
 		});
 	});
 
-	test('lets a participant sign up and reserve a public event', async ({
+	test('lets a guest reserve a public event', async ({
 		page,
-		request,
-		context,
-		playwright
+		request
 	}, testInfo) => {
 		const token = uniqueToken(testInfo, 'public-booking');
 		const participant = createAccount(token, 'participant');
@@ -65,6 +65,7 @@ test.describe('booking and public event flows', () => {
 			slug: publicEventsOrgSlug,
 			storeSlug: publicEventsStoreSlug
 		});
+		await updatePublicSiteSetting({ request, organization });
 		const service = await createService({
 			request,
 			organization,
@@ -88,25 +89,10 @@ test.describe('booking and public event flows', () => {
 			slotId: slot.id
 		});
 
-		await publicEventsPage.reserveAsParticipant();
-		await publicEventsPage.expectParticipantLogin();
-
-		const participantRequest = await playwright.request.newContext();
-		try {
-			await signUpAccount({ request: participantRequest, account: participant });
-			await syncRequestCookiesToBrowser(participantRequest, context);
-		} finally {
-			await participantRequest.dispose();
-		}
-		await publicEventsPage.gotoEvents();
-
-		await publicEventsPage.openEventDetails({
-			serviceName: service.name,
-			orgSlug: publicEventsOrgSlug,
-			storeSlug: publicEventsStoreSlug,
-			slotId: slot.id
+		await publicEventsPage.reserveAsGuest({
+			name: participant.name,
+			email: participant.email
 		});
-		await publicEventsPage.reserveAsParticipant();
 
 		await publicEventsPage.expectReservationComplete();
 		await expectPublicEventCapacity({

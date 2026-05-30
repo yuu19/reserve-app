@@ -162,17 +162,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
-        run: pnpm --filter @apps/web exec playwright install --with-deps chromium
+        run: pnpm --filter @repo/e2e exec playwright install --with-deps chromium
 
       - name: Run web Playwright E2E
-        run: pnpm --filter @apps/web test:e2e
+        run: pnpm --filter @repo/e2e test:e2e
 
       - name: Upload web Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-web
-          path: apps/web/playwright-report/
+          path: packages/e2e/playwright-report/
           if-no-files-found: ignore
           retention-days: 30
 
@@ -182,6 +182,6 @@ jobs:
         with:
           name: playwright-artifacts-web
           path: |
-            apps/web/test-results/
+            packages/e2e/test-results/
           if-no-files-found: ignore
           retention-days: 30

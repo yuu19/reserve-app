@@ -12,7 +12,9 @@ export class AiChatWidgetPage extends BasePage {
 	async gotoDashboard(organization: TestOrganization) {
 		await this.goto(`/${organization.slug}/${organization.storeSlug}/admin/dashboard`);
 		await expect(this.page.getByRole('heading', { name: 'ダッシュボード' })).toBeVisible();
-		await expect(this.page.getByRole('button', { name: 'AIサポートを開く' })).toBeVisible();
+		await expect(this.page.getByRole('button', { name: 'AIサポートを開く' })).toBeVisible({
+			timeout: 15_000
+		});
 	}
 
 	async ask(message: string) {

@@ -252,6 +252,35 @@ export const createSlot = async ({
 	return { id: id as string, startAt, endAt };
 };
 
+export const updatePublicSiteSetting = async ({
+	request,
+	organization,
+	siteName = organization.name,
+	status = 'public',
+	acceptBookings = true
+}: {
+	request: APIRequestContext;
+	organization: TestOrganization;
+	siteName?: string;
+	status?: 'public' | 'private' | 'suspended';
+	acceptBookings?: boolean;
+}) => {
+	const response = await request.patch(
+		`${backendUrl}/api/v1/auth/orgs/${encodeURIComponent(
+			organization.slug
+		)}/stores/${encodeURIComponent(organization.storeSlug)}/public-site`,
+		{
+			data: {
+				siteName,
+				status,
+				acceptBookings,
+				noindex: true
+			}
+		}
+	);
+	await expectOkJson(response, `update public site setting for ${organization.slug}`);
+};
+
 export const startPremiumTrial = async ({
 	request,
 	organization

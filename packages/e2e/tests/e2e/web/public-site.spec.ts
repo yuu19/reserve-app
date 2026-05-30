@@ -11,6 +11,7 @@ import {
 	signUpAccount,
 	startPremiumTrial,
 	syncRequestCookiesToBrowser,
+	updatePublicSiteSetting,
 	uniqueToken
 } from '../helpers/test-data';
 import { PublicSitePage } from '../pages';
@@ -28,6 +29,7 @@ test.describe('public store site', () => {
 		const participant = createAccount(token, 'participant');
 		const { organization } = await createOwnerOrganization({ request, token });
 		await startPremiumTrial({ request, organization });
+		await updatePublicSiteSetting({ request, organization });
 		const service = await createService({
 			request,
 			organization,

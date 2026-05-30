@@ -104,7 +104,7 @@ apps/web/
             ├── +page.svelte
             └── page.svelte.spec.ts
 
-apps/web/tests/e2e/billing/
+packages/e2e/tests/e2e/billing/
 ├── stripe-test-clock.spec.ts
 └── stripe-test-clock-helpers.ts
 ```

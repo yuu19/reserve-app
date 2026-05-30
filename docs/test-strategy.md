@@ -150,13 +150,13 @@ browser component test は UI を大きく触った PR でローカル実行す�
 ### Web Playwright E2E
 
 ```bash
-pnpm --filter @apps/web test:e2e
+pnpm --filter @repo/e2e test:e2e
 ```
 
 通常の web E2E は Stripe test mode を使わない。
 public event 用の組織 slug と店舗 slug は Playwright 設定で worker ごとに生成し、環境変数で明示されている場合はその値を使う。
 spec は利用者の流れと検証内容を中心に書く。
-画面操作は `apps/web/tests/e2e/pages`、認証や seed data は `apps/web/tests/e2e/helpers` に分ける。
+画面操作は `packages/e2e/tests/e2e/pages`、認証や seed data は `packages/e2e/tests/e2e/helpers` に分ける。
 
 ### Docs Playwright E2E
 
@@ -169,7 +169,7 @@ docs E2E は docs worker を build し、preview server 上でマニュアルを
 ### Stripe 課金 E2E
 
 ```bash
-pnpm --filter @apps/web test:e2e:billing
+pnpm --filter @repo/e2e test:e2e:billing
 ```
 
 Stripe 課金 E2E は、実際の Stripe test mode と Test Clock を使って契約状態の遷移を確認する。
@@ -200,7 +200,7 @@ GitHub Actions `.github/workflows/ci-tests.yml` では次を実行する。
 - `pnpm --filter @apps/web test:coverage`
 - `pnpm --filter @apps/docs build`
 - `pnpm --filter @apps/docs test:e2e`
-- `pnpm --filter @apps/web test:e2e`
+- `pnpm --filter @repo/e2e test:e2e`
 
 これは次を意味する。
 

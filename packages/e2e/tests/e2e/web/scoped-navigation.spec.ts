@@ -1,8 +1,10 @@
 import { test } from '@playwright/test';
 import {
 	acceptInvitation,
+	createAccount,
 	createOwnerOrganization,
 	createParticipantInvitation,
+	signUpAccount,
 	startPremiumTrial,
 	syncRequestCookiesToBrowser,
 	uniqueToken
@@ -15,10 +17,12 @@ test.describe('scoped navigation', () => {
 	test('keeps organization and store slugs in dashboard actions and sidebar links', async ({
 		page,
 		request,
-		context
+		context,
+		playwright
 	}, testInfo) => {
 		const token = uniqueToken(testInfo, 'scoped-nav');
 		const { owner, organization } = await createOwnerOrganization({ request, context, token });
+		const sidebarParticipant = createAccount(token, 'participant-sidebar');
 		await startPremiumTrial({ request, organization });
 		const participantInvitation = await createParticipantInvitation({
 			request,
@@ -27,6 +31,12 @@ test.describe('scoped navigation', () => {
 			participantName: owner.name
 		});
 		await acceptInvitation({ request, invitation: participantInvitation });
+		const sidebarParticipantInvitation = await createParticipantInvitation({
+			request,
+			organization,
+			email: sidebarParticipant.email,
+			participantName: sidebarParticipant.name
+		});
 		await syncRequestCookiesToBrowser(request, context);
 
 		const scopedNavigation = new ScopedNavigationPage(page);
@@ -56,12 +66,23 @@ test.describe('scoped navigation', () => {
 			await scopedNavigation.openSidebarLink({ organization, ...link });
 		}
 
-		await scopedNavigation.gotoDashboard(organization);
-		await scopedNavigation.switchToParticipantPortal();
-		await scopedNavigation.openSidebarLink({
-			organization,
-			label: '予約確認',
-			expectedPath: '/participant/bookings'
-		});
+		const participantRequest = await playwright.request.newContext();
+		try {
+			await signUpAccount({ request: participantRequest, account: sidebarParticipant });
+			await acceptInvitation({
+				request: participantRequest,
+				invitation: sidebarParticipantInvitation
+			});
+			await context.clearCookies();
+			await syncRequestCookiesToBrowser(participantRequest, context);
+			await scopedNavigation.gotoParticipantHome(organization);
+			await scopedNavigation.openSidebarLink({
+				organization,
+				label: '予約確認',
+				expectedPath: '/participant/bookings'
+			});
+		} finally {
+			await participantRequest.dispose();
+		}
 	});
 });

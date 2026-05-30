@@ -8,6 +8,7 @@ import {
 	signUpAccount,
 	startPremiumTrial,
 	syncRequestCookiesToBrowser,
+	updatePublicSiteSetting,
 	uniqueToken
 } from '../helpers/test-data';
 import { TicketFlowPage } from '../pages';
@@ -26,6 +27,7 @@ test.describe('ticket purchase flow', () => {
 		const ticketName = `Ticket ${token}`;
 		const { organization } = await createOwnerOrganization({ request, context, token });
 		await startPremiumTrial({ request, organization });
+		await updatePublicSiteSetting({ request, organization });
 		await syncRequestCookiesToBrowser(request, context);
 		const ticketFlow = new TicketFlowPage(page);
 

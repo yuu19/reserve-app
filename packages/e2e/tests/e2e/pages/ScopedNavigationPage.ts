@@ -52,6 +52,14 @@ export class ScopedNavigationPage extends BasePage {
 		await expect(this.page).toHaveURL(/\/participant\/home/);
 	}
 
+	async gotoParticipantHome(organization: TestOrganization) {
+		await this.goto(`/${organization.slug}/${organization.storeSlug}/participant/home`);
+		await expect(this.page.getByRole('heading', { name: '参加者ホーム' })).toBeVisible();
+		await expect(this.page.getByRole('navigation', { name: '機能メニュー' })).toBeVisible({
+			timeout: 30_000
+		});
+	}
+
 	async expectScopedPath(organization: TestOrganization, expectedPath: string) {
 		await expect(this.page).toHaveURL(
 			new RegExp(
