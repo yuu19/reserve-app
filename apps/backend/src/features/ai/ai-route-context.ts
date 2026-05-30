@@ -25,10 +25,13 @@ import { reserveAppPromptBuilder } from './prompt.js';
 import { reserveAppSourceVisibilityPolicy } from './source-visibility.js';
 import type { BusinessFactSummary } from './prompt.js';
 
+/** AI route が参照する Workers AI、Vectorize、AI Gateway、認証環境変数の合成型。 */
 export type AiRoutesEnv = AuthRuntimeEnv & AiAnswerEnv & AiRetrieverEnv;
 
+/** Internal AI endpoint の operator check 結果。HTTP status と同じ値で扱う。 */
 export type InternalOperatorAccessResult = { status: 200 | 401 | 403 };
 
+/** AI route で request header と任意の組織・店舗・画面文脈から access context を解決する入力。 */
 export type ResolveAiRouteRequestContextInput = {
   headers: Headers;
   organizationId?: string | null;
@@ -36,6 +39,7 @@ export type ResolveAiRouteRequestContextInput = {
   currentPage?: string | null;
 };
 
+/** AI chat 完了時に Sentry breadcrumb へ残す認可済み文脈と生成結果。 */
 export type AiChatBreadcrumbInput = {
   access: OrganizationStoreAccess;
   generated: GeneratedAiAnswer;
@@ -43,6 +47,12 @@ export type AiChatBreadcrumbInput = {
   durationMs: number;
 };
 
+/**
+ * AI route handler が利用する依存を 1 箇所に集約した context。
+ *
+ * 認可、RAG 検索、business facts、回答生成、rate limit、source sanitization を
+ * route 層から差し替えやすくし、テストでは同じ境界を mock する。
+ */
 export type AiRouteContext = {
   auth: AuthInstance;
   database: AuthRuntimeDatabase;
@@ -88,6 +98,15 @@ const getSessionEmailVerified = (session: unknown): boolean => {
   return (user as Record<string, unknown>).emailVerified === true;
 };
 
+/**
+ * D1-backed store と AI provider を組み合わせた AI route context を作成する。
+ *
+ * @param input - AI route の依存。
+ * @param input.auth - Better Auth instance。
+ * @param input.database - Conversation、usage、knowledge lookup に使う database。
+ * @param input.env - Workers AI、Vectorize、AI Gateway、認証の環境変数。
+ * @returns AI chat と internal AI route が共有する context。
+ */
 export const createAiRouteContext = ({
   auth,
   database,

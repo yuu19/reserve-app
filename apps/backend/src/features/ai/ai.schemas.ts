@@ -6,14 +6,20 @@ import {
   AI_SUGGESTED_ACTION_KINDS,
 } from '@repo/saas-chatbot-core';
 
+/** AI 回答の根拠種別を API response と OpenAPI に公開する schema。 */
 export const aiSourceKindSchema = z.enum(AI_SOURCE_KINDS);
+
+/** AI ナレッジの公開範囲を API response と OpenAPI に公開する schema。 */
 export const aiSourceVisibilitySchema = z.enum(AI_SOURCE_VISIBILITIES);
+
+/** AI 回答に添える次アクション候補の表示文言、遷移先、種別を表す schema。 */
 export const aiSuggestedActionSchema = z.object({
   label: z.string(),
   href: z.string().nullable().optional(),
   actionKind: z.enum(AI_SUGGESTED_ACTION_KINDS),
 });
 
+/** ログインユーザーが AI チャットへ送る質問と画面文脈を検証する schema。 */
 export const aiChatRequestSchema = z.object({
   message: z.string().trim().min(1).max(4000),
   conversationId: z.string().optional(),
@@ -22,6 +28,7 @@ export const aiChatRequestSchema = z.object({
   currentPage: z.string().max(2048).optional(),
 });
 
+/** 認可後にユーザーへ返せる AI 回答の根拠参照だけを表す schema。 */
 export const aiSourceReferenceSchema = z.object({
   sourceKind: aiSourceKindSchema,
   title: z.string(),
@@ -30,6 +37,7 @@ export const aiSourceReferenceSchema = z.object({
   visibility: aiSourceVisibilitySchema.optional(),
 });
 
+/** AI チャット回答、根拠、提案アクション、rate limit 残量を返す response schema。 */
 export const aiChatResponseSchema = z.object({
   conversationId: z.string(),
   messageId: z.string(),
@@ -44,17 +52,20 @@ export const aiChatResponseSchema = z.object({
   }),
 });
 
+/** AI メッセージへの評価と任意コメントを受け取る feedback request schema。 */
 export const feedbackRequestSchema = z.object({
   rating: z.enum(AI_FEEDBACK_RATINGS),
   comment: z.string().max(1000).optional(),
 });
 
+/** 受理済み feedback の識別子と評価を返す response schema。 */
 export const feedbackResponseSchema = z.object({
   feedbackId: z.string(),
   messageId: z.string(),
   rating: z.enum(AI_FEEDBACK_RATINGS),
 });
 
+/** 内部運用者向けに AI ナレッジ文書の索引状態を一覧表示する schema。 */
 export const knowledgeStatusSchema = z.object({
   documentId: z.string(),
   sourceKind: aiSourceKindSchema,
@@ -68,12 +79,14 @@ export const knowledgeStatusSchema = z.object({
   lastError: z.string().nullable(),
 });
 
+/** 低評価 feedback の確認で使うテーマ集約結果を表す schema。 */
 export const feedbackThemeSchema = z.object({
   theme: z.string(),
   count: z.number().int().min(0),
   latestAt: z.string().nullable(),
 });
 
+/** 認証済みユーザーが AI チャットへ質問する OpenAPI route 定義。 */
 export const chatRoute = createRoute({
   method: 'post',
   path: '/chat',
@@ -104,6 +117,7 @@ export const chatRoute = createRoute({
   },
 });
 
+/** AI の回答メッセージに評価を送信する OpenAPI route 定義。 */
 export const feedbackRoute = createRoute({
   method: 'post',
   path: '/messages/{messageId}/feedback',
@@ -136,6 +150,7 @@ export const feedbackRoute = createRoute({
   },
 });
 
+/** 内部運用者が AI ナレッジの鮮度を確認する OpenAPI route 定義。 */
 export const internalKnowledgeRoute = createRoute({
   method: 'get',
   path: '/knowledge',
@@ -157,6 +172,7 @@ export const internalKnowledgeRoute = createRoute({
   },
 });
 
+/** 内部運用者が直近の低評価 feedback 傾向を確認する OpenAPI route 定義。 */
 export const internalFeedbackThemesRoute = createRoute({
   method: 'get',
   path: '/feedback-themes',
@@ -178,10 +194,23 @@ export const internalFeedbackThemesRoute = createRoute({
   },
 });
 
+/** AI チャット request body の型。 */
 export type AiChatRequestBody = z.infer<typeof aiChatRequestSchema>;
+
+/** AI チャット response body の型。 */
 export type AiChatResponseBody = z.infer<typeof aiChatResponseSchema>;
+
+/** AI feedback route の path params 型。 */
 export type AiFeedbackRouteParams = z.infer<typeof feedbackRoute.request.params>;
+
+/** AI feedback request body の型。 */
 export type AiFeedbackRequestBody = z.infer<typeof feedbackRequestSchema>;
+
+/** AI feedback response body の型。 */
 export type AiFeedbackResponseBody = z.infer<typeof feedbackResponseSchema>;
+
+/** 内部ナレッジ状態 response item の型。 */
 export type AiKnowledgeStatusBody = z.infer<typeof knowledgeStatusSchema>;
+
+/** 内部 feedback theme response item の型。 */
 export type AiFeedbackThemeBody = z.infer<typeof feedbackThemeSchema>;

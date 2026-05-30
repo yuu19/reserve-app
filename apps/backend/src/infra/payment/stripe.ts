@@ -51,6 +51,7 @@ type StripeBillingPortalSessionCreateInput = {
   };
 };
 
+/** Stripe Checkout session のうち、アプリが保存・返却する最小情報。 */
 export type StripeCheckoutSession = {
   id: string;
   url: string;
@@ -58,6 +59,7 @@ export type StripeCheckoutSession = {
   status?: string;
 };
 
+/** Webhook handler が検証後に扱う Stripe event の最小 payload。 */
 export type StripeWebhookEvent = {
   id: string;
   type: string;
@@ -67,6 +69,7 @@ export type StripeWebhookEvent = {
   };
 };
 
+/** Stripe-Signature 検証結果を receipt に保存できる粒度で表す status。 */
 export type StripeWebhookSignatureVerificationStatus =
   | 'verified'
   | 'missing'
@@ -74,11 +77,13 @@ export type StripeWebhookSignatureVerificationStatus =
   | 'mismatched'
   | 'invalid';
 
+/** Stripe customer から billing policy が参照する default payment method summary。 */
 export type StripeCustomerSummary = {
   id: string;
   defaultPaymentMethodId: string | null;
 };
 
+/** Organization billing Checkout webhook metadata。 */
 export type StripeBillingCheckoutMetadata = {
   billingPurpose: 'organization_plan';
   organizationId: string;
@@ -86,11 +91,13 @@ export type StripeBillingCheckoutMetadata = {
   billingInterval: 'month' | 'year';
 };
 
+/** 支払い方法登録 Checkout webhook metadata。 */
 export type StripePaymentMethodCheckoutMetadata = {
   billingPurpose: 'organization_payment_method';
   organizationId: string;
 };
 
+/** Stripe subscription payload から application aggregate が使う値だけを抽出した summary。 */
 export type StripeSubscriptionSummary = {
   id: string;
   customerId: string | null;
@@ -101,6 +108,7 @@ export type StripeSubscriptionSummary = {
   priceId: string | null;
 };
 
+/** Invoice document reference と owner 表示に使う Stripe invoice summary。 */
 export type StripeInvoiceDocumentSummary = {
   id: string;
   customerId: string | null;
@@ -109,12 +117,14 @@ export type StripeInvoiceDocumentSummary = {
   invoicePdfUrl: string | null;
 };
 
+/** Receipt document reference に使う Stripe charge summary。 */
 export type StripeChargeReceiptDocumentSummary = {
   id: string;
   customerId: string | null;
   receiptUrl: string | null;
 };
 
+/** Invoice/payment webhook から通知・document reference に使う payment event summary。 */
 export type StripeInvoicePaymentEventSummary = {
   invoiceId: string | null;
   customerId: string | null;
@@ -323,6 +333,7 @@ export const createCustomer = async ({
   };
 };
 
+/** 旧 ticket checkout 用の one-time payment Checkout session を作成する。 */
 export const createCheckoutSession = async ({
   env,
   priceId,
@@ -503,6 +514,7 @@ export const createSetupCheckoutSession = async ({
   };
 };
 
+/** Customer invoice settings に default payment method を設定する。 */
 export const updateCustomerDefaultPaymentMethod = async ({
   env,
   customerId,
@@ -522,6 +534,7 @@ export const updateCustomerDefaultPaymentMethod = async ({
   });
 };
 
+/** Subscription に default payment method を設定し、以後の invoice に反映させる。 */
 export const updateSubscriptionDefaultPaymentMethod = async ({
   env,
   subscriptionId,
@@ -579,6 +592,7 @@ export const createBillingPortalSession = async ({
   };
 };
 
+/** Customer の default payment method を Stripe API から読み取る。 */
 export const readStripeCustomerSummary = async ({
   env,
   customerId,
@@ -614,6 +628,7 @@ export const readStripeCustomerSummary = async ({
   };
 };
 
+/** Subscription ID を指定して Stripe API から application summary を読み取る。 */
 export const readStripeSubscriptionSummaryById = async ({
   env,
   subscriptionId,
@@ -637,6 +652,7 @@ export const readStripeSubscriptionSummaryById = async ({
   return summary;
 };
 
+/** Setup mode Checkout session から customer、subscription、setup intent の summary を読み取る。 */
 export const readStripeSetupCheckoutSessionSummaryById = async ({
   env,
   sessionId,
@@ -702,12 +718,14 @@ export const verifyStripeWebhookSignatureDetailed = async ({
     : 'mismatched';
 };
 
+/** 詳細な署名検証結果を boolean に縮約し、webhook route の gate として使う。 */
 export const verifyStripeWebhookSignature = async (
   input: Parameters<typeof verifyStripeWebhookSignatureDetailed>[0],
 ): Promise<boolean> => {
   return (await verifyStripeWebhookSignatureDetailed(input)) === 'verified';
 };
 
+/** JSON raw body から webhook processing に必要な event id/type/data object だけを読み取る。 */
 export const parseStripeWebhookEvent = (rawBody: string): StripeWebhookEvent | null => {
   try {
     const parsed = JSON.parse(rawBody) as unknown;
@@ -826,6 +844,7 @@ export const readStripePaymentMethodCheckoutMetadata = (
   };
 };
 
+/** Stripe invoice payload から保存可能な document reference 情報だけを読み取る。 */
 export const readStripeInvoiceDocumentSummary = (
   value: unknown,
 ): StripeInvoiceDocumentSummary | null => {
@@ -847,6 +866,7 @@ export const readStripeInvoiceDocumentSummary = (
   };
 };
 
+/** Stripe charge payload から receipt document reference 情報だけを読み取る。 */
 export const readStripeChargeReceiptDocumentSummary = (
   value: unknown,
 ): StripeChargeReceiptDocumentSummary | null => {
@@ -895,6 +915,7 @@ export const readStripeInvoicePaymentEventSummary = (
   };
 };
 
+/** Customer/subscription に紐づく invoice document summary を Stripe API から新しい順に読み取る。 */
 export const readStripeSubscriptionInvoiceDocumentSummaries = async ({
   env,
   customerId,
@@ -926,6 +947,7 @@ export const readStripeSubscriptionInvoiceDocumentSummaries = async ({
     .filter((summary): summary is StripeInvoiceDocumentSummary => summary !== null);
 };
 
+/** Checkout session payload から webhook 同期に必要な customer/subscription/setup intent 情報を読み取る。 */
 export const readStripeCheckoutSessionSummary = (
   value: unknown,
 ): {

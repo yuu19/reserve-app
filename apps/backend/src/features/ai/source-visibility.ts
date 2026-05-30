@@ -19,6 +19,7 @@ export type {
   AiSourceVisibility,
 };
 
+/** AI ナレッジ可視性判定に必要な access context と internal operator bypass 情報。 */
 export type AiAccessContext = {
   access: OrganizationStoreAccess;
   internalOperator?: boolean;
@@ -126,6 +127,17 @@ export const isSourceScopeAllowed = ({
   return true;
 };
 
+/**
+ * モデルが返した source reference を、呼び出しユーザーに見せられる形へ縮約する。
+ *
+ * 権限外の source は `null` にし、specs の path は owner または internal operator にだけ公開する。
+ *
+ * @param input - モデル出力の source と認可済み access context。
+ * @param input.source - 回答生成 provider が返した source reference。
+ * @param input.access - route 側で解決済みの organization/store access。
+ * @param input.internalOperator - internal operator として閲覧しているか。
+ * @returns ユーザーへ返せる source reference。公開不可の場合は `null`。
+ */
 export const sanitizeSourceReference = ({
   source,
   access,
@@ -162,8 +174,10 @@ export const sanitizeSourceReference = ({
   };
 };
 
+/** Reserve App の organization/store access を使う source visibility policy 型。 */
 export type ReserveAppSourceVisibilityPolicy = SourceVisibilityPolicy<OrganizationStoreAccess>;
 
+/** RAG 検索結果と生成済み source reference に適用する Reserve App 標準 policy。 */
 export const reserveAppSourceVisibilityPolicy: ReserveAppSourceVisibilityPolicy = {
   resolveAllowedVisibilities,
   canUseInternalKnowledge: ({ context, internalOperator = false }) =>

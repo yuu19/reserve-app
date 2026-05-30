@@ -264,6 +264,13 @@ export const checkAndIncrementAiUsage = async ({
   };
 };
 
+/**
+ * Reserve App の AI chat 用 rate limiter adapter を作成する。
+ *
+ * @param input - rate limit counter を保存する依存。
+ * @param input.database - AI usage counter を読む D1-backed database。
+ * @returns `@repo/saas-chatbot-core` の chat runtime が利用する rate limiter。
+ */
 export const createReserveAppChatRateLimiter = ({
   database,
 }: {

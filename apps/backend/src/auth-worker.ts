@@ -87,6 +87,12 @@ type VectorizeBinding = {
   ) => Promise<unknown>;
 };
 
+/**
+ * Cloudflare Worker に注入される backend binding と環境変数。
+ *
+ * D1、Workers AI、Vectorize、R2、Images、Stripe、Sentry の binding を
+ * Better Auth runtime が扱う環境変数へ重ねる。
+ */
 export type BackendWorkerEnv = AuthRuntimeEnv & {
   DB: D1DatabaseBinding;
   AI?: WorkersAiBinding;
@@ -118,6 +124,12 @@ export type BackendWorkerEnv = AuthRuntimeEnv & {
   SENTRY_RELEASE?: string;
 };
 
+/**
+ * Worker binding の D1 database から Better Auth runtime を作成する。
+ *
+ * @param env - Cloudflare Worker の binding と環境変数。
+ * @returns Better Auth instance、trusted origins、database、env をまとめた runtime。
+ */
 export const createWorkerAuthRuntime = (env: BackendWorkerEnv) => {
   const db = drizzle(env.DB);
 

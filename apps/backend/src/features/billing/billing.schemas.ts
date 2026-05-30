@@ -1,34 +1,42 @@
 import { createRoute, z } from '@hono/zod-openapi';
 
+/** 組織課金 summary 取得で、対象 organization を明示する query schema。 */
 export const organizationBillingQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+/** Premium Checkout を開始する organization と請求間隔を受け取る body schema。 */
 export const organizationBillingCheckoutBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
   billingInterval: z.enum(['month', 'year']),
 });
 
+/** Stripe Customer Portal handoff を開始する organization を受け取る body schema。 */
 export const organizationBillingPortalBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+/** Premium trial を開始する organization を受け取る body schema。 */
 export const organizationBillingTrialBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+/** Trial 中の支払い方法登録 handoff を開始する organization を受け取る body schema。 */
 export const organizationBillingPaymentMethodBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+/** Trial 終了時の Premium lifecycle 判定を実行する organization を受け取る body schema。 */
 export const organizationBillingTrialCompletionBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+/** 内部 billing inspection の対象 organization を path parameter から検証する schema。 */
 export const internalBillingInspectionParamsSchema = z.object({
   organizationId: z.string().min(1),
 });
 
+/** Stripe price と既知 tier catalog から解決した有料 tier の API schema。 */
 export const organizationBillingPaidTierSchema = z.object({
   code: z.enum(['premium_default', 'premium_growth', 'premium_scale', 'premium_unknown']),
   label: z.string().min(1),
@@ -39,6 +47,7 @@ export const organizationBillingPaidTierSchema = z.object({
   diagnosticReason: z.string().nullable(),
 });
 
+/** Owner が現在実行できる課金 action と、実行できない理由を返す schema。 */
 export const organizationBillingActionAvailabilitySchema = z.object({
   canStartTrial: z.boolean(),
   canStartPaidCheckout: z.boolean(),
@@ -50,6 +59,7 @@ export const organizationBillingActionAvailabilitySchema = z.object({
   readOnlyReason: z.string().nullable(),
 });
 
+/** Checkout や entitlement を遮断しない billing profile readiness の表示 schema。 */
 export const organizationBillingProfileReadinessSchema = z.object({
   state: z.enum(['complete', 'incomplete', 'unavailable', 'not_required']),
   nextAction: z.string().nullable(),
@@ -58,6 +68,7 @@ export const organizationBillingProfileReadinessSchema = z.object({
   gatesPremiumEligibility: z.literal(false),
 });
 
+/** Invoice/payment webhook 由来の owner 向け payment event を返す schema。 */
 export const organizationBillingInvoicePaymentEventSchema = z.object({
   id: z.string().min(1),
   organizationId: z.string().min(1),
@@ -85,6 +96,7 @@ export const organizationBillingInvoicePaymentEventSchema = z.object({
   createdAt: z.string().nullable(),
 });
 
+/** UI と inspection が共有する支払い問題 state の schema。 */
 export const organizationBillingPaymentIssueStateSchema = z.enum([
   'none',
   'payment_failed',
@@ -97,12 +109,14 @@ export const organizationBillingPaymentIssueStateSchema = z.enum([
   'stale_failure_history_only',
 ]);
 
+/** 支払い問題の開始時刻、根拠、猶予期限を返す schema。 */
 export const organizationBillingPaymentIssueTimingSchema = z.object({
   issueStartedAt: z.string().nullable(),
   issueStartedAtSource: z.enum(['provider_issue_time', 'application_receipt_time', 'none']),
   graceEndsAt: z.string().nullable(),
 });
 
+/** Owner UI が表示する現在の organization billing summary の response schema。 */
 export const organizationBillingSummarySchema = z.object({
   organizationId: z.string().min(1),
   planCode: z.enum(['free', 'premium']),
@@ -171,6 +185,7 @@ export const organizationBillingSummarySchema = z.object({
   invoicePaymentEvents: z.array(organizationBillingInvoicePaymentEventSchema),
 });
 
+/** Stripe など外部 provider へ遷移する handoff URL と再利用状態の schema。 */
 export const organizationBillingHandoffSchema = z.object({
   provider: z.literal('stripe'),
   purpose: z.enum(['trial_start', 'paid_checkout', 'payment_method_setup', 'billing_portal']),
@@ -180,6 +195,7 @@ export const organizationBillingHandoffSchema = z.object({
   operationAttemptId: z.string().min(1).optional(),
 });
 
+/** 課金 action 実行結果、更新後 summary、外部 handoff 情報を返す schema。 */
 export const organizationBillingActionResponseSchema = z.object({
   status: z.enum(['succeeded', 'processing', 'conflict', 'failed']),
   message: z.string().nullable(),
@@ -187,11 +203,14 @@ export const organizationBillingActionResponseSchema = z.object({
   handoff: organizationBillingHandoffSchema.nullable(),
   url: z.string().url().nullable().optional(),
 });
+
+/** 課金 action が domain response または単純 message を返す場合の union schema。 */
 export const organizationBillingActionOrMessageResponseSchema = z.union([
   organizationBillingActionResponseSchema,
   z.object({ message: z.string().min(1) }),
 ]);
 
+/** Internal inspection で lifecycle と entitlement の現在値を要約する schema。 */
 export const internalBillingInspectionSummarySchema = z.object({
   planCode: z.enum(['free', 'premium']),
   planState: z.enum(['free', 'premium_trial', 'premium_paid']),
@@ -217,6 +236,7 @@ export const internalBillingInspectionSummarySchema = z.object({
   billingProfileReadiness: organizationBillingProfileReadinessSchema,
 });
 
+/** Internal inspection で Stripe 側に紐づく provider state を返す schema。 */
 export const internalBillingInspectionProviderSchema = z.object({
   stripeCustomerId: z.string().nullable(),
   stripeSubscriptionId: z.string().nullable(),
@@ -229,6 +249,7 @@ export const internalBillingInspectionProviderSchema = z.object({
   paidTier: organizationBillingPaidTierSchema.nullable(),
 });
 
+/** Billing aggregate の append-only lifecycle event を inspection 用に返す schema。 */
 export const internalBillingInspectionLifecycleEventSchema = z.object({
   sequenceNumber: z.number().int().nonnegative(),
   sourceKind: z.string().min(1),
@@ -246,6 +267,7 @@ export const internalBillingInspectionLifecycleEventSchema = z.object({
   }),
 });
 
+/** Billing reconciliation や通知などの support signal を inspection 用に返す schema。 */
 export const internalBillingInspectionSignalSchema = z.object({
   sequenceNumber: z.number().int().nonnegative(),
   signalKind: z.string().min(1),
@@ -259,6 +281,7 @@ export const internalBillingInspectionSignalSchema = z.object({
   createdAt: z.string().nullable(),
 });
 
+/** Stripe 側と application aggregate 側の現在値を並べて比較する schema。 */
 export const internalBillingInspectionReconciliationCurrentComparisonSchema = z.object({
   providerPlanState: z.enum(['free', 'premium_trial', 'premium_paid']).nullable(),
   providerSubscriptionStatus: z
@@ -278,6 +301,7 @@ export const internalBillingInspectionReconciliationCurrentComparisonSchema = z.
   appEntitlementState: z.enum(['free_only', 'premium_enabled']),
 });
 
+/** Reconciliation mismatch や解決状態を時系列で確認する signal schema。 */
 export const internalBillingInspectionReconciliationSignalSchema = z.object({
   sequenceNumber: z.number().int().nonnegative(),
   signalStatus: z.enum(['pending', 'mismatch', 'unavailable', 'resolved']),
@@ -303,6 +327,7 @@ export const internalBillingInspectionReconciliationSignalSchema = z.object({
   createdAt: z.string().nullable(),
 });
 
+/** Reconciliation 判断に使う Stripe webhook 受領履歴の inspection schema。 */
 export const internalBillingInspectionReconciliationWebhookEventSchema = z.object({
   id: z.string().min(1),
   eventType: z.string().min(1),
@@ -316,6 +341,7 @@ export const internalBillingInspectionReconciliationWebhookEventSchema = z.objec
   processedAt: z.string().nullable(),
 });
 
+/** 署名・payload・処理 stage ごとの webhook failure を返す inspection schema。 */
 export const internalBillingInspectionReconciliationWebhookFailureSchema = z.object({
   eventId: z.string().min(1).nullable(),
   eventType: z.string().min(1).nullable(),
@@ -324,6 +350,7 @@ export const internalBillingInspectionReconciliationWebhookFailureSchema = z.obj
   createdAt: z.string().nullable(),
 });
 
+/** Stripe と application state の整合性、signal、webhook 履歴をまとめる schema。 */
 export const internalBillingInspectionReconciliationSchema = z.object({
   status: z.enum(['not_applicable', 'aligned', 'mismatch', 'pending', 'unavailable', 'incomplete']),
   comparable: z.boolean(),
@@ -335,6 +362,7 @@ export const internalBillingInspectionReconciliationSchema = z.object({
   recentWebhookFailures: z.array(internalBillingInspectionReconciliationWebhookFailureSchema),
 });
 
+/** Trial reminder や支払い問題通知の個別配送履歴を返す schema。 */
 export const internalBillingInspectionNotificationHistoryEntrySchema = z.object({
   sequenceNumber: z.number().int().nonnegative(),
   notificationKind: z.enum([
@@ -369,6 +397,7 @@ export const internalBillingInspectionNotificationHistoryEntrySchema = z.object(
   createdAt: z.string().nullable(),
 });
 
+/** Trial reminder の期待状態と実配送履歴を検査する schema。 */
 export const internalBillingInspectionReminderDeliverySchema = z.object({
   status: z.enum(['not_expected', 'missing', 'pending', 'delivered', 'failed', 'unknown']),
   expected: z.boolean(),
@@ -383,10 +412,12 @@ export const internalBillingInspectionReminderDeliverySchema = z.object({
   history: z.array(internalBillingInspectionNotificationHistoryEntrySchema),
 });
 
+/** Internal inspection の通知セクション全体を表す schema。 */
 export const internalBillingInspectionNotificationsSchema = z.object({
   reminderDelivery: internalBillingInspectionReminderDeliverySchema,
 });
 
+/** 支払い問題通知の宛先ごとの配送状態と retry 可否を返す schema。 */
 export const internalPaymentIssueNotificationRecipientSchema = z.object({
   recipientUserId: z.string().min(1).nullable(),
   recipientEmail: z.string().min(1).nullable(),
@@ -395,11 +426,13 @@ export const internalPaymentIssueNotificationRecipientSchema = z.object({
   failureReason: z.string().min(1).nullable(),
 });
 
+/** 支払い問題に関連して support が確認すべき signal を返す schema。 */
 export const internalPaymentIssueSupportSignalSchema = z.object({
   reason: z.string().min(1),
   status: z.string().min(1),
 });
 
+/** 支払い失敗・認証要求・猶予期限に関する internal inspection schema。 */
 export const internalPaymentIssueInspectionSchema = z.object({
   paymentIssueState: organizationBillingPaymentIssueStateSchema,
   notificationRecipients: z.array(internalPaymentIssueNotificationRecipientSchema),
@@ -407,6 +440,7 @@ export const internalPaymentIssueInspectionSchema = z.object({
   supportSignals: z.array(internalPaymentIssueSupportSignalSchema),
 });
 
+/** Owner へ直接 URL を保存せず provider reference として扱う payment document schema。 */
 export const internalBillingInspectionPaymentDocumentsSchema = z.object({
   aggregateRoot: z.literal('billing_account'),
   provider: z.literal('stripe'),
@@ -429,6 +463,7 @@ export const internalBillingInspectionPaymentDocumentsSchema = z.object({
   ),
 });
 
+/** Stripe Checkout/Portal など外部 handoff operation の試行履歴 schema。 */
 export const internalBillingInspectionOperationAttemptSchema = z.object({
   id: z.string().min(1),
   purpose: z.enum(['trial_start', 'paid_checkout', 'payment_method_setup', 'billing_portal']),
@@ -446,6 +481,7 @@ export const internalBillingInspectionOperationAttemptSchema = z.object({
   updatedAt: z.string().nullable(),
 });
 
+/** Billing state、通知、reconciliation、webhook を同じ時系列で見る timeline schema。 */
 export const internalBillingInspectionTimelineEntrySchema = z.object({
   id: z.string().min(1),
   lane: z.enum(['billing_state', 'reconciliation', 'notification', 'provider_webhook']),
@@ -472,10 +508,12 @@ export const internalBillingInspectionTimelineEntrySchema = z.object({
   webhookFailureStage: z.string().min(1).nullable(),
 });
 
+/** Internal inspection の timeline entries を返す schema。 */
 export const internalBillingInspectionTimelineSchema = z.object({
   entries: z.array(internalBillingInspectionTimelineEntrySchema),
 });
 
+/** Internal operator 向けの読み取り専用 billing inspection response schema。 */
 export const internalBillingInspectionResponseSchema = z.object({
   organizationId: z.string().min(1),
   organizationName: z.string().min(1),
@@ -495,6 +533,7 @@ export const internalBillingInspectionResponseSchema = z.object({
   timeline: internalBillingInspectionTimelineSchema,
 });
 
+/** Owner が organization billing summary を取得する OpenAPI route 定義。 */
 export const getOrganizationBillingRoute = createRoute({
   method: 'get',
   path: '/organizations/billing',
@@ -527,6 +566,7 @@ export const getOrganizationBillingRoute = createRoute({
   },
 });
 
+/** Owner が Premium subscription 用 Checkout handoff を作成する OpenAPI route 定義。 */
 export const createOrganizationBillingCheckoutRoute = createRoute({
   method: 'post',
   path: '/organizations/billing/checkout',
@@ -574,6 +614,7 @@ export const createOrganizationBillingCheckoutRoute = createRoute({
   },
 });
 
+/** Owner が Stripe Customer Portal handoff を作成する OpenAPI route 定義。 */
 export const createOrganizationBillingPortalRoute = createRoute({
   method: 'post',
   path: '/organizations/billing/portal',
@@ -621,6 +662,7 @@ export const createOrganizationBillingPortalRoute = createRoute({
   },
 });
 
+/** Owner が Premium trial を開始する OpenAPI route 定義。 */
 export const createOrganizationBillingTrialRoute = createRoute({
   method: 'post',
   path: '/organizations/billing/trial',
@@ -668,6 +710,7 @@ export const createOrganizationBillingTrialRoute = createRoute({
   },
 });
 
+/** Owner が trial 中の支払い方法登録 handoff を開始する OpenAPI route 定義。 */
 export const createOrganizationBillingPaymentMethodRoute = createRoute({
   method: 'post',
   path: '/organizations/billing/payment-method',
@@ -715,6 +758,7 @@ export const createOrganizationBillingPaymentMethodRoute = createRoute({
   },
 });
 
+/** Owner が trial 終了時の Premium lifecycle 判定を実行する OpenAPI route 定義。 */
 export const createOrganizationBillingTrialCompletionRoute = createRoute({
   method: 'post',
   path: '/organizations/billing/trial/complete',
@@ -762,6 +806,7 @@ export const createOrganizationBillingTrialCompletionRoute = createRoute({
   },
 });
 
+/** Internal operator が organization billing の検査 view を取得する OpenAPI route 定義。 */
 export const getInternalBillingInspectionRoute = createRoute({
   method: 'get',
   path: '/internal/organizations/{organizationId}/billing-inspection',
@@ -794,14 +839,27 @@ export const getInternalBillingInspectionRoute = createRoute({
   },
 });
 
+/** Organization billing summary 取得 query の型。 */
 export type OrganizationBillingQuery = z.infer<typeof organizationBillingQuerySchema>;
+
+/** Premium Checkout 作成 body の型。 */
 export type OrganizationBillingCheckoutBody = z.infer<typeof organizationBillingCheckoutBodySchema>;
+
+/** Customer Portal 作成 body の型。 */
 export type OrganizationBillingPortalBody = z.infer<typeof organizationBillingPortalBodySchema>;
+
+/** Premium trial 開始 body の型。 */
 export type OrganizationBillingTrialBody = z.infer<typeof organizationBillingTrialBodySchema>;
+
+/** 支払い方法登録 handoff 作成 body の型。 */
 export type OrganizationBillingPaymentMethodBody = z.infer<
   typeof organizationBillingPaymentMethodBodySchema
 >;
+
+/** Trial completion 評価 body の型。 */
 export type OrganizationBillingTrialCompletionBody = z.infer<
   typeof organizationBillingTrialCompletionBodySchema
 >;
+
+/** Internal billing inspection path params の型。 */
 export type InternalBillingInspectionParams = z.infer<typeof internalBillingInspectionParamsSchema>;

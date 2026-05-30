@@ -5,18 +5,32 @@ import {
   type OrganizationBillingProfileReadiness,
 } from './organization-billing-profile.js';
 
+/** Organization Premium trial の既定期間。単位は days。 */
 export const ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS = 7;
+
+/** Past due のまま Premium entitlement を猶予する期間。単位は days。 */
 export const ORGANIZATION_BILLING_PAST_DUE_GRACE_DAYS = 7;
+
+/** Trial または有料 subscription が既にある場合に返す lifecycle conflict message。 */
 export const ORGANIZATION_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE =
   'Organization already has an active premium trial or paid subscription.';
+
+/** Trial completion 対象の active trial がない場合に返す conflict message。 */
 export const ORGANIZATION_PREMIUM_TRIAL_COMPLETION_CONFLICT_MESSAGE =
   'Organization does not have an active premium trial.';
+
+/** Trial 終了時刻に達していない場合に返す not-ready message。 */
 export const ORGANIZATION_PREMIUM_TRIAL_COMPLETION_NOT_READY_MESSAGE =
   'Organization premium trial has not reached its completion time yet.';
+
+/** Stripe payment method 反映待ちの trial completion retry message。 */
 export const ORGANIZATION_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE =
   'Payment method status is still syncing with Stripe. Retry after billing synchronization completes.';
 
+/** Organization billing が扱う plan code。 */
 export type OrganizationBillingPlanCode = 'free' | 'premium';
+
+/** Stripe と application aggregate をまたいで扱う subscription status。 */
 export type OrganizationBillingSubscriptionStatus =
   | 'free'
   | 'trialing'
@@ -25,8 +39,14 @@ export type OrganizationBillingSubscriptionStatus =
   | 'canceled'
   | 'unpaid'
   | 'incomplete';
+
+/** Owner UI と entitlement policy が表示する plan lifecycle state。 */
 export type OrganizationBillingPlanState = 'free' | 'premium_trial' | 'premium_paid';
+
+/** Trial 完了や CTA 表示で使う支払い方法登録状態。 */
 export type OrganizationBillingPaymentMethodStatus = 'not_started' | 'pending' | 'registered';
+
+/** Owner UI と internal inspection が共有する支払い問題 state。 */
 export type OrganizationBillingPaymentIssueState =
   | 'none'
   | 'payment_failed'
@@ -37,15 +57,21 @@ export type OrganizationBillingPaymentIssueState =
   | 'incomplete'
   | 'recovered'
   | 'stale_failure_history_only';
+
+/** 支払い問題開始時刻が provider 由来か application 受領時刻由来かを表す値。 */
 export type OrganizationBillingPaymentIssueStartedAtSource =
   | 'provider_issue_time'
   | 'application_receipt_time'
   | 'none';
+
+/** 支払い問題の開始時刻と猶予期限を owner 表示向けにまとめた型。 */
 export type OrganizationBillingPaymentIssueTiming = {
   issueStartedAt: string | null;
   issueStartedAtSource: OrganizationBillingPaymentIssueStartedAtSource;
   graceEndsAt: string | null;
 };
+
+/** 支払い方法登録状態を判定した理由。 */
 export type OrganizationBillingPaymentMethodReason =
   | 'plan_is_free'
   | 'missing_customer'
@@ -54,11 +80,13 @@ export type OrganizationBillingPaymentMethodReason =
   | 'stripe_not_configured'
   | 'stripe_lookup_failed';
 
+/** 支払い方法登録状態とその根拠を組み合わせた評価結果。 */
 export type OrganizationBillingPaymentMethodEvaluation = {
   status: OrganizationBillingPaymentMethodStatus;
   reason: OrganizationBillingPaymentMethodReason;
 };
 
+/** Owner が現在実行できる billing action と実行できない理由。 */
 export type OrganizationBillingActionAvailability = {
   canStartTrial: boolean;
   canStartPaidCheckout: boolean;
@@ -70,6 +98,7 @@ export type OrganizationBillingActionAvailability = {
   readOnlyReason: string | null;
 };
 
+/** Billing policy が plan state と payment method を解決するために読む最小 summary。 */
 export type OrganizationBillingSummaryLike = {
   planCode: OrganizationBillingPlanCode;
   billingInterval: 'month' | 'year' | null;
@@ -191,6 +220,7 @@ export const resolveOrganizationBillingPaymentIssueState = ({
   return 'none';
 };
 
+/** Stripe price や DB 値から billing interval として扱える値だけを正規化する。 */
 export const isBillingInterval = (value: string | null): 'month' | 'year' | null => {
   if (value === 'month' || value === 'year') {
     return value;
@@ -198,6 +228,7 @@ export const isBillingInterval = (value: string | null): 'month' | 'year' | null
   return null;
 };
 
+/** 不明な文字列を除外し、billing subscription status として扱える値だけを返す。 */
 export const isBillingSubscriptionStatus = (
   value: string | null,
 ): OrganizationBillingSubscriptionStatus | null => {
@@ -215,6 +246,7 @@ export const isBillingSubscriptionStatus = (
   return null;
 };
 
+/** Premium entitlement と provider handoff の対象になる active 系 subscription status かを判定する。 */
 export const hasActivePremiumSubscription = (value: string | null): boolean => {
   return (
     value === 'trialing' ||
@@ -225,6 +257,7 @@ export const hasActivePremiumSubscription = (value: string | null): boolean => {
   );
 };
 
+/** Billing summary row に保存された profile readiness を owner 表示用の型へ正規化する。 */
 export const resolveOrganizationBillingProfileReadiness = (
   billing: OrganizationBillingSummaryLike,
 ): OrganizationBillingProfileReadiness =>
@@ -314,6 +347,7 @@ export const resolveOrganizationBillingActionAvailability = ({
   };
 };
 
+/** Plan code と subscription status から owner UI の plan lifecycle state を解決する。 */
 export const resolveOrganizationBillingPlanState = ({
   planCode,
   subscriptionStatus,
@@ -328,6 +362,7 @@ export const resolveOrganizationBillingPlanState = ({
   return subscriptionStatus === 'trialing' ? 'premium_trial' : 'premium_paid';
 };
 
+/** Trial 中の場合だけ current period end を trial end として返す。 */
 export const resolveOrganizationBillingTrialEndsAt = ({
   planState,
   currentPeriodEnd,
@@ -397,6 +432,7 @@ export const resolveOrganizationBillingPaymentMethodEvaluation = async ({
   }
 };
 
+/** 支払い方法評価結果から owner UI が使う状態値だけを返す。 */
 export const resolveOrganizationBillingPaymentMethodStatus = async ({
   env,
   planCode,
@@ -415,6 +451,7 @@ export const resolveOrganizationBillingPaymentMethodStatus = async ({
   return paymentMethod.status;
 };
 
+/** 環境変数に設定された Stripe price id から billing interval を逆引きする。 */
 export const resolveBillingIntervalFromPriceId = (
   env: AuthRuntimeEnv,
   priceId: string | null,

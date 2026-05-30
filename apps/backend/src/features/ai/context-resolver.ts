@@ -14,6 +14,11 @@ import { canAccessInternalBillingInspection } from '../../domain/billing/interna
 import * as dbSchema from '../../infra/db/schema.js';
 import { resolveAllowedVisibilities, type AiSourceVisibility } from './source-visibility.js';
 
+/**
+ * AI chat request ごとに確定したユーザー identity、店舗 access、RAG 可視性、runtime context。
+ *
+ * クライアント指定の organizationId/storeId は、この型へ変換される時点で所属範囲に制限される。
+ */
 export type AiRequestContext = {
   identity: SessionIdentity;
   access: OrganizationStoreAccess;
@@ -67,6 +72,16 @@ const resolveContextByStoreId = async ({
  *
  * クライアント指定の組織・店舗 ID で所属レコード以上にアクセスが広がらないよう、
  * チャットルートは検索・生成の前にこの関数を通す。
+ *
+ * @param input - 認証、database、request header、任意の組織・店舗指定。
+ * @param input.auth - Better Auth instance。
+ * @param input.database - 組織・店舗・所属情報を読む database。
+ * @param input.env - internal operator allowlist を含む環境変数。
+ * @param input.headers - Better Auth session を解決する request headers。
+ * @param input.organizationId - クライアントが指定した対象 organization ID。
+ * @param input.storeId - クライアントが指定した対象 store ID。
+ * @param input.currentPage - UI から渡された現在画面の hint。
+ * @returns AI 検索・生成に使える request context。認証または所属が不足する場合は `null`。
  */
 export const resolveAiRequestContext = async ({
   auth,

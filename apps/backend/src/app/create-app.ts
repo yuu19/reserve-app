@@ -30,6 +30,25 @@ type CreateAppOptions = {
 /**
  * Better Auth、OpenAPI route、公開 route、Stripe webhook、機能別 route を
  * 単一の D1-backed runtime に束ねて Worker の HTTP 窓口を構成する。
+ *
+ * @param options - Worker runtime から注入する依存。
+ * @param options.auth - Better Auth instance。
+ * @param options.authTrustedOrigins - CORS と Better Auth が許可する origin 一覧。
+ * @param options.database - route と webhook が共有する D1-backed Drizzle database。
+ * @param options.env - Backend runtime の環境変数。
+ * @param options.organizationLogoService - organization logo の読み書きを扱う service。
+ * @param options.serviceImageUploadService - service image の署名付き upload を扱う service。
+ * @returns Hono RPC と OpenAPI route を登録済みの application instance。
+ *
+ * @example
+ * ```typescript
+ * const app = createApp({
+ *   auth,
+ *   authTrustedOrigins,
+ *   database,
+ *   env,
+ * });
+ * ```
  */
 export const createApp = ({
   auth,
@@ -184,4 +203,5 @@ export const createApp = ({
   return app;
 };
 
+/** Hono RPC client が参照する backend application 型。 */
 export type AppType = ReturnType<typeof createApp>;

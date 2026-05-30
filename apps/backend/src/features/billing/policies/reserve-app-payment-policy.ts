@@ -1,18 +1,32 @@
 import type { AuthRuntimeEnv } from '../../../auth-runtime.js';
 import { readStripeCustomerSummary } from '../../../infra/payment/stripe.js';
 
+/** Reserve App Premium trial の既定期間。単位は days。 */
 export const RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS = 7;
+
+/** Past due のまま Reserve App Premium entitlement を猶予する期間。単位は days。 */
 export const RESERVE_APP_BILLING_PAST_DUE_GRACE_DAYS = 7;
+
+/** Trial または有料 subscription が既にある場合に返す lifecycle conflict message。 */
 export const RESERVE_APP_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE =
   'Organization already has an active premium trial or paid subscription.';
+
+/** Trial completion 対象の active trial がない場合に返す conflict message。 */
 export const RESERVE_APP_PREMIUM_TRIAL_COMPLETION_CONFLICT_MESSAGE =
   'Organization does not have an active premium trial.';
+
+/** Trial 終了時刻に達していない場合に返す not-ready message。 */
 export const RESERVE_APP_PREMIUM_TRIAL_COMPLETION_NOT_READY_MESSAGE =
   'Organization premium trial has not reached its completion time yet.';
+
+/** Stripe payment method 反映待ちの trial completion retry message。 */
 export const RESERVE_APP_PREMIUM_TRIAL_COMPLETION_PENDING_MESSAGE =
   'Payment method status is still syncing with Stripe. Retry after billing synchronization completes.';
 
+/** Reserve App billing が扱う plan code。 */
 export type ReserveAppBillingPlanCode = 'free' | 'premium';
+
+/** Stripe と application aggregate をまたいで扱う subscription status。 */
 export type ReserveAppBillingSubscriptionStatus =
   | 'free'
   | 'trialing'
@@ -21,8 +35,14 @@ export type ReserveAppBillingSubscriptionStatus =
   | 'canceled'
   | 'unpaid'
   | 'incomplete';
+
+/** Owner UI と entitlement policy が表示する plan lifecycle state。 */
 export type ReserveAppBillingPlanState = 'free' | 'premium_trial' | 'premium_paid';
+
+/** Trial 完了や CTA 表示で使う支払い方法登録状態。 */
 export type ReserveAppBillingPaymentMethodStatus = 'not_started' | 'pending' | 'registered';
+
+/** Owner UI と internal inspection が共有する支払い問題 state。 */
 export type ReserveAppBillingPaymentIssueState =
   | 'none'
   | 'payment_failed'
@@ -33,15 +53,21 @@ export type ReserveAppBillingPaymentIssueState =
   | 'incomplete'
   | 'recovered'
   | 'stale_failure_history_only';
+
+/** 支払い問題開始時刻が provider 由来か application 受領時刻由来かを表す値。 */
 export type ReserveAppBillingPaymentIssueStartedAtSource =
   | 'provider_issue_time'
   | 'application_receipt_time'
   | 'none';
+
+/** 支払い問題の開始時刻と猶予期限を owner 表示向けにまとめた型。 */
 export type ReserveAppBillingPaymentIssueTiming = {
   issueStartedAt: string | null;
   issueStartedAtSource: ReserveAppBillingPaymentIssueStartedAtSource;
   graceEndsAt: string | null;
 };
+
+/** 支払い方法登録状態を判定した理由。 */
 export type ReserveAppBillingPaymentMethodReason =
   | 'plan_is_free'
   | 'missing_customer'
@@ -50,6 +76,7 @@ export type ReserveAppBillingPaymentMethodReason =
   | 'stripe_not_configured'
   | 'stripe_lookup_failed';
 
+/** 支払い方法登録状態とその根拠を組み合わせた評価結果。 */
 export type ReserveAppBillingPaymentMethodEvaluation = {
   status: ReserveAppBillingPaymentMethodStatus;
   reason: ReserveAppBillingPaymentMethodReason;
@@ -84,6 +111,7 @@ const toTime = (value: string | Date | null | undefined): number | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 };
 
+/** 支払い失敗の起点時刻と猶予期限を、provider 時刻とアプリ受領時刻のどちら由来か判別できる形で返す。 */
 export const resolveReserveAppBillingPaymentIssueTiming = ({
   paymentIssueStartedAt,
   pastDueGraceEndsAt,
@@ -110,6 +138,9 @@ export const resolveReserveAppBillingPaymentIssueTiming = ({
   };
 };
 
+/**
+ * Subscription status と直近の invoice/payment event から、owner 向けに表示する支払い問題状態を決める。
+ */
 export const resolveReserveAppBillingPaymentIssueState = ({
   subscriptionStatus,
   entitlementReason,
@@ -156,6 +187,7 @@ export const resolveReserveAppBillingPaymentIssueState = ({
   return 'none';
 };
 
+/** Stripe price や DB 値から billing interval として扱える値だけを正規化する。 */
 export const isReserveAppBillingInterval = (value: string | null): 'month' | 'year' | null => {
   if (value === 'month' || value === 'year') {
     return value;
@@ -163,6 +195,7 @@ export const isReserveAppBillingInterval = (value: string | null): 'month' | 'ye
   return null;
 };
 
+/** 不明な文字列を除外し、billing subscription status として扱える値だけを返す。 */
 export const isReserveAppBillingSubscriptionStatus = (
   value: string | null,
 ): ReserveAppBillingSubscriptionStatus | null => {
@@ -180,6 +213,7 @@ export const isReserveAppBillingSubscriptionStatus = (
   return null;
 };
 
+/** Premium entitlement と provider handoff の対象になる active 系 subscription status かを判定する。 */
 export const hasActiveReserveAppPremiumSubscription = (value: string | null): boolean => {
   return (
     value === 'trialing' ||
@@ -190,6 +224,7 @@ export const hasActiveReserveAppPremiumSubscription = (value: string | null): bo
   );
 };
 
+/** Plan code と subscription status から owner UI の plan lifecycle state を解決する。 */
 export const resolveReserveAppBillingPlanState = ({
   planCode,
   subscriptionStatus,
@@ -204,6 +239,7 @@ export const resolveReserveAppBillingPlanState = ({
   return subscriptionStatus === 'trialing' ? 'premium_trial' : 'premium_paid';
 };
 
+/** Trial 中の場合だけ current period end を trial end として返す。 */
 export const resolveReserveAppBillingTrialEndsAt = ({
   planState,
   currentPeriodEnd,
@@ -214,6 +250,11 @@ export const resolveReserveAppBillingTrialEndsAt = ({
   return planState === 'premium_trial' ? currentPeriodEnd : null;
 };
 
+/**
+ * Stripe customer の default payment method を読み、trial 終了や CTA 表示に使う支払い方法状態を評価する。
+ *
+ * Stripe 未設定・一時的な lookup 失敗は、即時失格ではなく pending として扱う。
+ */
 export const resolveReserveAppBillingPaymentMethodEvaluation = async ({
   env,
   planCode,
@@ -268,6 +309,7 @@ export const resolveReserveAppBillingPaymentMethodEvaluation = async ({
   }
 };
 
+/** 支払い方法評価結果から owner UI が使う状態値だけを返す。 */
 export const resolveReserveAppBillingPaymentMethodStatus = async ({
   env,
   planCode,

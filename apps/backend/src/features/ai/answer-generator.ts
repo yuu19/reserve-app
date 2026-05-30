@@ -17,6 +17,12 @@ export type { GeneratedAiAnswer } from '@repo/saas-chatbot-core';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
+/**
+ * Provider や parsing で発生した unknown error を保存可能な短い文字列へ正規化する。
+ *
+ * @param error - catch した任意の error 値。
+ * @returns 監査ログと usage event に保存する最大 500 文字の summary。
+ */
 export const summarizeAiError = (error: unknown): string => {
   const message =
     error instanceof Error
@@ -182,6 +188,19 @@ const defaultSuggestedActions = ({
  *
  * 根拠不足、検索失敗、Workers AI 利用不可のときも、呼び出し側が
  * 監査可能なアシスタントメッセージを保存できるよう、決定的な代替 payload を返す。
+ *
+ * @param input - 回答生成に必要な認可済み context、質問、根拠、provider。
+ * @param input.env - Workers AI と AI Gateway の環境変数。
+ * @param input.userId - 質問したログインユーザー ID。
+ * @param input.access - route 側で解決済みの organization/store access。
+ * @param input.currentPage - UI から渡された現在画面の hint。
+ * @param input.message - ユーザーの質問文。
+ * @param input.retrievedContexts - source visibility 適用済みの検索結果。
+ * @param input.businessFacts - 回答時点で DB から読める業務 facts。
+ * @param input.retrievalErrorSummary - RAG 検索失敗時の診断 summary。
+ * @param input.answerProvider - テストや fallback で差し替える回答 provider。
+ * @param input.promptBuilder - prompt 構築 policy。
+ * @returns ユーザーへ返す回答、根拠、提案 action、provider 観測値。
  */
 export const generateAnswer = async ({
   env,
