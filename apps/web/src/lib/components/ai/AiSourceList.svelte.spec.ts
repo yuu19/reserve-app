@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import AiSourceList from './AiSourceList.svelte';
 
-describe('AiSourceList.svelte', () => {
-	it('renders safe source labels and suppresses unavailable restricted paths', async () => {
+describe('AiSourceList.svelte コンポーネント', () => {
+	it('安全なソースラベルを表示し利用できない制限付きパスを抑止する', async () => {
 		render(AiSourceList, {
 			sources: [
 				{
@@ -30,7 +30,7 @@ describe('AiSourceList.svelte', () => {
 		expect(document.body.textContent).not.toContain('specs/004-ai-chatbot/spec.md');
 	});
 
-	it('shows a fallback when no permitted sources are displayable', async () => {
+	it('表示可能な許可済みソースがない場合はフォールバックを表示する', async () => {
 		render(AiSourceList, { sources: [] });
 
 		await expect.element(page.getByText('確認できる参照元は表示できません。')).toBeInTheDocument();

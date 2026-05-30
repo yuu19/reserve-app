@@ -15,12 +15,12 @@ vi.mock('$app/state', () => ({
 	}
 }));
 
-describe('/+page.svelte', () => {
+describe('トップページ', () => {
 	beforeEach(() => {
 		mocks.url = new URL('http://localhost/');
 	});
 
-	it('should render landing sections and login links', async () => {
+	it('ランディングセクションとログインリンクを表示する', async () => {
 		render(Page);
 
 		const heading = page.getByRole('heading', {
@@ -49,7 +49,7 @@ describe('/+page.svelte', () => {
 		expect(footerLoginLink?.getAttribute('href')).toBe('#portal-entry');
 	});
 
-	it('should carry next query into login links', async () => {
+	it('ログインリンクへ next クエリを引き継ぐ', async () => {
 		mocks.url = new URL('http://localhost/?next=/admin/services/new');
 		render(Page);
 

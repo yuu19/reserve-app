@@ -8,10 +8,10 @@ import {
   resolveReserveAppPremiumEntitlementPolicy,
 } from './reserve-app-billing-entitlement-policy.js';
 
-describe('reserve-app billing premium entitlement policy', () => {
+describe('reserve-app プレミアム課金エンタイトルメントポリシー', () => {
   const now = new Date('2026-04-09T12:00:00.000Z');
 
-  it('returns a free-only entitlement for free organizations', () => {
+  it('無料組織には無料専用エンタイトルメントを返す', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'free',
       subscriptionStatus: 'free',
@@ -31,7 +31,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('keeps active premium trials eligible for the whole organization', () => {
+  it('アクティブなプレミアムトライアルを組織全体で有効に保つ', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'trialing',
@@ -51,7 +51,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('exposes a distinct reason when the active trial already has a payment method', () => {
+  it('アクティブトライアルに支払い方法が登録済みの場合は専用の理由を公開する', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'trialing',
@@ -68,7 +68,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('removes premium eligibility once the trial end has passed even if billing state is still trialing', () => {
+  it('課金状態が trialing でもトライアル終了後はプレミアム資格を外す', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'trialing',
@@ -86,7 +86,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('treats missing trial end information as ineligible instead of assuming premium access', () => {
+  it('トライアル終了情報がない場合はプレミアムアクセスを仮定せず対象外にする', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'trialing',
@@ -103,7 +103,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('keeps active paid subscriptions eligible', () => {
+  it('アクティブな有料購読を有効に保つ', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'active',
@@ -126,7 +126,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('keeps past_due eligible during the seven-day grace window', () => {
+  it('past_due を 7 日間の猶予期間中は有効に保つ', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'past_due',
@@ -144,7 +144,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('stops premium after past_due grace expires', () => {
+  it('past_due 猶予期限切れ後はプレミアムを停止する', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'past_due',
@@ -162,7 +162,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('stops premium immediately for unpaid, incomplete, and canceled paid states', () => {
+  it('unpaid・incomplete・canceled の有料状態では即座にプレミアムを停止する', () => {
     for (const [subscriptionStatus, reason] of [
       ['unpaid', 'premium_paid_unpaid'],
       ['incomplete', 'premium_paid_incomplete'],
@@ -185,7 +185,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     }
   });
 
-  it('classifies payment issue timing from provider timestamps and application receipt fallback', () => {
+  it('プロバイダー時刻とアプリケーション受領時刻のフォールバックから支払い問題のタイミングを分類する', () => {
     expect(
       resolveOrganizationBillingPaymentIssueTiming({
         paymentIssueStartedAt: '2026-05-01T09:00:00.000Z',
@@ -211,7 +211,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('classifies unresolved, recovered, and stale payment issue states', () => {
+  it('未解決・復旧済み・古い支払い問題状態を分類する', () => {
     expect(
       resolveOrganizationBillingPaymentIssueState({
         subscriptionStatus: 'past_due',
@@ -251,7 +251,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     ).toBe('stale_failure_history_only');
   });
 
-  it('keeps scheduled period-end cancellation eligible until provider state changes', () => {
+  it('プロバイダー状態が変わるまで期間末キャンセル予定を有効に保つ', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'active',
@@ -269,7 +269,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('maps existing premium price ids to the default paid tier without leaking provider ids to consumers', () => {
+  it('既存のプレミアム価格 ID を既定の有料ティアへマッピングし利用側にプロバイダー ID を漏らさない', () => {
     const result = resolveReserveAppBillingPaidTier({
       planCode: 'premium',
       stripePriceId: 'price_current_monthly',
@@ -287,7 +287,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('supports future tier capability bundles through explicit catalog entries', () => {
+  it('明示的なカタログ定義で将来のティア機能セットをサポートする', () => {
     const result = resolveReserveAppBillingPaidTier({
       planCode: 'premium',
       stripePriceId: 'price_growth_monthly',
@@ -312,7 +312,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     });
   });
 
-  it('exposes unknown paid provider prices without granting capabilities', () => {
+  it('不明な有料プロバイダー価格を機能付与なしで公開する', () => {
     const result = resolveReserveAppBillingPaidTier({
       planCode: 'premium',
       stripePriceId: 'price_unmapped_provider_value',
@@ -331,7 +331,7 @@ describe('reserve-app billing premium entitlement policy', () => {
     expect(result.capabilities).not.toContain('advanced_billing_communications');
   });
 
-  it('stops premium eligibility for unknown paid provider prices', () => {
+  it('不明な有料プロバイダー価格ではプレミアム資格を停止する', () => {
     const result = resolveReserveAppPremiumEntitlementPolicy({
       planCode: 'premium',
       subscriptionStatus: 'active',

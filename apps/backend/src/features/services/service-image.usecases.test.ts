@@ -62,8 +62,8 @@ const createContext = (overrides: Partial<BookingRouteContext> = {}): BookingRou
   } as unknown as BookingRouteContext;
 };
 
-describe('service image usecases', () => {
-  it('returns 503 before auth work when service image upload is not configured', async () => {
+describe('サービス画像ユースケース', () => {
+  it('サービス画像アップロード未設定時は認証処理前に 503 を返す', async () => {
     const requireIdentity = vi.fn();
     const ctx = createContext({
       serviceImageUploadService: null,
@@ -87,7 +87,7 @@ describe('service image usecases', () => {
     expect(requireIdentity).not.toHaveBeenCalled();
   });
 
-  it('keeps image upload authorization checks in the usecase', async () => {
+  it('画像アップロード認可チェックをユースケース内に保持する', async () => {
     const createSignedUploadUrl = vi.fn();
     const ctx = createContext({
       serviceImageUploadService: {
@@ -116,7 +116,7 @@ describe('service image usecases', () => {
     expect(createSignedUploadUrl).not.toHaveBeenCalled();
   });
 
-  it('maps ServiceImageUploadError status and message for signed URL creation', async () => {
+  it('署名付き URL 作成時に ServiceImageUploadError のステータスとメッセージを対応付ける', async () => {
     const ctx = createContext();
     vi.mocked(ctx.serviceImageUploadService?.createSignedUploadUrl).mockRejectedValue(
       new ServiceImageUploadError('Image file is too large.', 413),
@@ -138,7 +138,7 @@ describe('service image usecases', () => {
     });
   });
 
-  it('maps signed upload service errors without route-level exception handling', async () => {
+  it('ルートレベルの例外処理なしで署名付きアップロードサービスエラーを対応付ける', async () => {
     const ctx = createContext();
     vi.mocked(ctx.serviceImageUploadService?.uploadBySignedUrl).mockRejectedValue(
       new ServiceImageUploadError('Invalid upload signature.', 401),
@@ -156,7 +156,7 @@ describe('service image usecases', () => {
     });
   });
 
-  it('returns service image response with object metadata headers', async () => {
+  it('オブジェクトメタデータヘッダー付きのサービス画像レスポンスを返す', async () => {
     const ctx = createContext();
 
     const response = await getServiceImage(ctx, 'service-image-organization-test.webp');

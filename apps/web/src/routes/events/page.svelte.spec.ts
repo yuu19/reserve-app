@@ -23,7 +23,7 @@ vi.mock('$lib/features/events.svelte', () => ({
 	loadPublicEvents: mocks.loadPublicEvents
 }));
 
-describe('/events/+page.svelte', () => {
+describe('公開イベント一覧ページ', () => {
 	beforeEach(() => {
 		pageState.params = {};
 		mocks.loadPublicEvents.mockReset();
@@ -71,19 +71,21 @@ describe('/events/+page.svelte', () => {
 		});
 	});
 
-	it('should render public events heading and description', async () => {
+	it('公開イベントの見出しと説明を表示する', async () => {
 		render(EventsPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '公開イベント' }))
 			.toBeInTheDocument();
 		await expect
 			.element(
-				page.getByText('イベント閲覧はログイン不要です。参加登録・予約操作はログイン後に行えます。')
+				page.getByText(
+					'イベント閲覧と予約はログイン不要です。回数券が必要なサービスは参加者画面から予約してください。'
+				)
 			)
 			.toBeInTheDocument();
 	});
 
-	it('renders purchasable ticket types as detail links', async () => {
+	it('購入可能な回数券種別を詳細リンクとして表示する', async () => {
 		render(EventsPage);
 
 		await expect
@@ -97,7 +99,7 @@ describe('/events/+page.svelte', () => {
 			.toHaveAttribute('href', '/org-one/room-one/tickets/ticket-all');
 	});
 
-	it('loads scoped public events from route params', async () => {
+	it('ルートパラメータからスコープ付き公開イベントを読み込む', async () => {
 		pageState.params = { orgSlug: 'org2', storeSlug: 'world' };
 		render(EventsPage);
 
@@ -113,14 +115,14 @@ describe('/events/+page.svelte', () => {
 			.toHaveAttribute('href', '/org-one/room-one/tickets/ticket-all');
 	});
 
-	it('renders event cards as detail links', async () => {
+	it('イベントカードを詳細リンクとして表示する', async () => {
 		render(EventsPage);
 
 		const eventLink = page.getByRole('link', { name: /公開ヨガ/ }).first();
 		await expect.element(eventLink).toHaveAttribute('href', '/org-one/room-one/events/slot-1');
 	});
 
-	it('renders empty ticket message when no ticket type is purchasable', async () => {
+	it('購入可能な回数券種別がない場合は空の回数券メッセージを表示する', async () => {
 		mocks.loadPublicEvents.mockResolvedValueOnce({
 			events: [],
 			ticketTypes: []

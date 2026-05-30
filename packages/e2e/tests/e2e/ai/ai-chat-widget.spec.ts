@@ -6,10 +6,10 @@ import {
 } from '../helpers/test-data';
 import { AiChatWidgetPage } from '../pages';
 
-test.describe('AI chat widget', () => {
+test.describe('AIチャットウィジェット', () => {
 	test.setTimeout(120_000);
 
-	test('shows grounded answers and records feedback without calling real AI services', async ({
+	test('実AIサービスを呼ばずに根拠付き回答を表示しフィードバックを記録する', async ({
 		page,
 		request,
 		context
@@ -79,7 +79,7 @@ test.describe('AI chat widget', () => {
 		});
 	});
 
-	test('shows API errors without calling real AI services', async ({
+	test('実AIサービスを呼ばずにAPIエラーを表示する', async ({
 		page,
 		request,
 		context
@@ -105,7 +105,7 @@ test.describe('AI chat widget', () => {
 		await aiChatWidget.expectErrorMessage('AI応答の生成に失敗しました。');
 	});
 
-	test('shows retry guidance for rate limit responses', async ({
+	test('レート制限応答で再試行案内を表示する', async ({
 		page,
 		request,
 		context

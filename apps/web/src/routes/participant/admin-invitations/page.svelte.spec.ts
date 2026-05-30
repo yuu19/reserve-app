@@ -35,7 +35,7 @@ vi.mock('svelte-sonner', () => ({
 
 const { default: ParticipantAdminInvitationsPage } = await import('./+page.svelte');
 
-describe('/participant/admin-invitations/+page.svelte', () => {
+describe('参加者オペレーター招待ページ', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
@@ -73,14 +73,14 @@ describe('/participant/admin-invitations/+page.svelte', () => {
 		});
 	});
 
-	it('should render participant operator invitation heading', async () => {
+	it('参加者オペレーター招待の見出しを表示する', async () => {
 		render(ParticipantAdminInvitationsPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '受信した運営招待' }))
 			.toBeInTheDocument();
 	});
 
-	it('shows premium restriction guidance when operator invitation acceptance is blocked', async () => {
+	it('オペレーター招待受諾がブロックされた場合はプレミアム制限案内を表示する', async () => {
 		mocks.loadReceivedOperatorInvitations.mockResolvedValue({
 			received: [
 				{

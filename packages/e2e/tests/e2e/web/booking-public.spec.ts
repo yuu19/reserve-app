@@ -14,10 +14,10 @@ import {
 } from '../helpers/test-data';
 import { PublicEventsPage, ScopedAdminPages } from '../pages';
 
-test.describe('booking and public event flows', () => {
+test.describe('予約と公開イベントフロー', () => {
 	test.setTimeout(120_000);
 
-	test('shows seeded services and slots in scoped admin pages', async ({
+	test('seed済みサービスと予約枠をスコープ付き管理画面に表示する', async ({
 		page,
 		request,
 		context
@@ -53,7 +53,7 @@ test.describe('booking and public event flows', () => {
 		});
 	});
 
-	test('lets a guest reserve a public event', async ({
+	test('ゲストが公開イベントを予約できる', async ({
 		page,
 		request
 	}, testInfo) => {

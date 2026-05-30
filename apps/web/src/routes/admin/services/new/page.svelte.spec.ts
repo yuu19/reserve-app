@@ -48,7 +48,7 @@ vi.mock('$lib/features/scoped-routing', async () => {
 	};
 });
 
-describe('/admin/services/new/+page.svelte', () => {
+describe('サービス作成ページ', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
@@ -79,7 +79,7 @@ describe('/admin/services/new/+page.svelte', () => {
 		});
 	});
 
-	it('should render services create page', async () => {
+	it('サービス作成ページを表示する', async () => {
 		render(AdminServiceCreatePage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: 'サービス作成' }))
@@ -113,7 +113,7 @@ describe('/admin/services/new/+page.svelte', () => {
 		expect(createSection?.querySelector('form')?.className ?? '').toContain('md:grid-cols-2');
 	});
 
-	it('should show loading message and hide organization-required message during initial load', async () => {
+	it('初期読み込み中は読み込みメッセージを表示し組織必須メッセージを隠す', async () => {
 		mocks.getAdminServicesPageData.mockImplementation(() => new Promise(() => {}));
 
 		render(AdminServiceCreatePage);
@@ -124,7 +124,7 @@ describe('/admin/services/new/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
-	it('should show organization-required message after load when no active organization', async () => {
+	it('読み込み後にアクティブ組織がない場合は組織必須メッセージを表示する', async () => {
 		mocks.getAdminServicesPageData.mockResolvedValue({
 			activeContext: null,
 			organizationId: null,
@@ -141,7 +141,7 @@ describe('/admin/services/new/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('shows premium restriction guidance with contracts CTA for owners', async () => {
+	it('オーナーには契約 CTA 付きでプレミアム制限案内を表示する', async () => {
 		mocks.getAdminServicesPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',

@@ -4,8 +4,8 @@ import {
   readAiTokenUsage,
 } from './cloudflare-ai-answer-provider.js';
 
-describe('Cloudflare AI answer provider', () => {
-  it('returns provider, model, latency, gateway log id, and token usage when available', async () => {
+describe('Cloudflare AI 回答プロバイダー', () => {
+  it('利用可能な場合はプロバイダー・モデル・レイテンシ・Gateway ログ ID・トークン使用量を返す', async () => {
     const run = vi.fn(async () => ({
       response: '{"answer":"ok"}',
       usage: {
@@ -39,7 +39,7 @@ describe('Cloudflare AI answer provider', () => {
     expect(result.latencyMs).toEqual(expect.any(Number));
   });
 
-  it('keeps token usage nullable when the Workers AI result omits usage metadata', () => {
+  it('Workers AI 結果に使用量メタデータがない場合はトークン使用量を nullable に保つ', () => {
     expect(readAiTokenUsage({ response: '{"answer":"ok"}' })).toEqual({
       inputTokens: null,
       outputTokens: null,

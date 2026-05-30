@@ -51,7 +51,7 @@ vi.mock('$lib/features/invitations-participant.svelte', () => ({
 	loadParticipantFeatureData: mocks.loadParticipantFeatureData
 }));
 
-describe('/dashboard/+page.svelte', () => {
+describe('ダッシュボードページ', () => {
 	beforeEach(() => {
 		pageState.url = new URL('https://example.com/admin/dashboard');
 		mocks.goto.mockReset();
@@ -104,7 +104,7 @@ describe('/dashboard/+page.svelte', () => {
 		});
 	});
 
-	it('renders active organization logo in dashboard card', async () => {
+	it('ダッシュボードカードにアクティブ組織ロゴを表示する', async () => {
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [
 				{
@@ -142,7 +142,7 @@ describe('/dashboard/+page.svelte', () => {
 		expect(logoImage?.getAttribute('src')).toBe('https://cdn.example.com/yusuke.webp');
 	});
 
-	it('shows fallback text when active organization is not selected', async () => {
+	it('アクティブ組織が未選択の場合はフォールバックテキストを表示する', async () => {
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [],
 			activeOrganization: null
@@ -153,7 +153,7 @@ describe('/dashboard/+page.svelte', () => {
 		await expect.element(page.getByText('選択されていません')).toBeInTheDocument();
 	});
 
-	it('preserves scoped admin context when navigating from scoped dashboard', async () => {
+	it('スコープ付きダッシュボードからの遷移でスコープ付き管理コンテキストを保持する', async () => {
 		pageState.url = new URL('https://example.com/org-one/room-a/admin/dashboard');
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [
@@ -179,7 +179,7 @@ describe('/dashboard/+page.svelte', () => {
 		expect(mocks.goto).toHaveBeenCalledWith('/org-one/room-a/admin/participants');
 	});
 
-	it('preserves scoped admin context for ticket management navigation', async () => {
+	it('回数券管理への遷移でスコープ付き管理コンテキストを保持する', async () => {
 		pageState.url = new URL('https://example.com/org-one/room-a/admin/dashboard');
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [
@@ -205,7 +205,7 @@ describe('/dashboard/+page.svelte', () => {
 		expect(mocks.goto).toHaveBeenCalledWith('/org-one/room-a/admin/tickets');
 	});
 
-	it('preserves scoped admin context for public site navigation', async () => {
+	it('公開サイトへの遷移でスコープ付き管理コンテキストを保持する', async () => {
 		pageState.url = new URL('https://example.com/org-one/room-a/admin/dashboard');
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [

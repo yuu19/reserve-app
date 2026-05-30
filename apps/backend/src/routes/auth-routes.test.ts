@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { resolveE2eStripeTestClockId } from './auth-routes.js';
 
-describe('E2E Stripe Test Clock guard', () => {
-  it('ignores test clock headers unless E2E testing is explicitly enabled', () => {
+describe('E2E Stripe Test Clock ガード', () => {
+  it('E2E テストが明示的に有効でない場合は Test Clock ヘッダーを無視する', () => {
     expect(
       resolveE2eStripeTestClockId({
         env: {
@@ -17,7 +17,7 @@ describe('E2E Stripe Test Clock guard', () => {
     ).toBeNull();
   });
 
-  it('requires the configured E2E secret', () => {
+  it('設定済み E2E シークレットを要求する', () => {
     expect(
       resolveE2eStripeTestClockId({
         env: {
@@ -32,7 +32,7 @@ describe('E2E Stripe Test Clock guard', () => {
     ).toBeNull();
   });
 
-  it('accepts only Stripe test clock identifiers', () => {
+  it('Stripe Test Clock 識別子だけを受け入れる', () => {
     expect(
       resolveE2eStripeTestClockId({
         env: {
@@ -47,7 +47,7 @@ describe('E2E Stripe Test Clock guard', () => {
     ).toBeNull();
   });
 
-  it('returns the test clock id for authorized E2E requests', () => {
+  it('認可済み E2E リクエストには Test Clock ID を返す', () => {
     expect(
       resolveE2eStripeTestClockId({
         env: {

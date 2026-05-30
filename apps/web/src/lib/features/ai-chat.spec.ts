@@ -8,12 +8,12 @@ const createClientMock = (): AiChatClient => ({
 	submitFeedback: vi.fn()
 });
 
-describe('ai-chat state', () => {
+describe('AI チャット状態', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});
 
-	it('sends the current input and appends assistant responses with sources and actions', async () => {
+	it('現在の入力を送信しソースとアクション付きのアシスタント回答を追加する', async () => {
 		const client = createClientMock();
 		vi.mocked(client.ask).mockResolvedValue({
 			conversationId: 'conv-a',
@@ -65,7 +65,7 @@ describe('ai-chat state', () => {
 		});
 	});
 
-	it('restores input and exposes a typed API error when the chat request fails', async () => {
+	it('チャットリクエスト失敗時に入力を復元し型付き API エラーを公開する', async () => {
 		const client = createClientMock();
 		vi.mocked(client.ask).mockRejectedValue(
 			createAiClientError({
@@ -96,7 +96,7 @@ describe('ai-chat state', () => {
 		});
 	});
 
-	it('restores input and exposes a typed network error when the chat request cannot connect', async () => {
+	it('チャットリクエスト接続不可時に入力を復元し型付きネットワークエラーを公開する', async () => {
 		const client = createClientMock();
 		vi.mocked(client.ask).mockRejectedValue(
 			createAiClientError({
@@ -116,7 +116,7 @@ describe('ai-chat state', () => {
 		expect(state.input).toBe('通信失敗になる質問');
 	});
 
-	it('clears conversation-scoped chat data when reset', () => {
+	it('リセット時に会話スコープのチャットデータをクリアする', () => {
 		const state = createAiChatState();
 		state.openConversation();
 		state.messages = [
@@ -147,7 +147,7 @@ describe('ai-chat state', () => {
 		expect(state.lastRateLimit).toBeNull();
 	});
 
-	it('ignores stale responses after a conversation reset', async () => {
+	it('会話リセット後の古いレスポンスを無視する', async () => {
 		const client = createClientMock();
 		let resolveResponse: (response: AiChatResponse) => void = () => {};
 		vi.mocked(client.ask).mockReturnValue(
@@ -182,7 +182,7 @@ describe('ai-chat state', () => {
 		expect(state.status).toBe('ready');
 	});
 
-	it('submits feedback and records failed feedback attempts', async () => {
+	it('フィードバックを送信し失敗した試行を記録する', async () => {
 		const client = createClientMock();
 		const state = createAiChatState(client);
 		state.messages = [

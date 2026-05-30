@@ -87,12 +87,12 @@ const createStore = () =>
     readInternalInspection: vi.fn(),
   }) as unknown as ReserveAppBillingStore;
 
-describe('billing presenter', () => {
+describe('課金プレゼンター', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('includes owner-only history, documents and invoice payment events for owners', async () => {
+  it('オーナーにはオーナー限定の履歴・ドキュメント・請求書支払いイベントを含める', async () => {
     const store = createStore();
 
     const result = await readOrganizationBillingSummaryPayload({

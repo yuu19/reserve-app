@@ -232,7 +232,7 @@ const emitAfterNavigate = (
 	}
 };
 
-describe('/+layout.svelte', () => {
+describe('共通レイアウト', () => {
 	beforeEach(() => {
 		vi.useRealTimers();
 		delete publicEnv.env.PUBLIC_AI_CHAT_ENABLED;
@@ -300,7 +300,7 @@ describe('/+layout.svelte', () => {
 		);
 	});
 
-	it('shows the AI widget after login when the feature flag is enabled', async () => {
+	it('機能フラグが有効な場合はログイン後に AI ウィジェットを表示する', async () => {
 		renderLayout();
 
 		await vi.waitFor(() => {
@@ -308,7 +308,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('hides the AI widget when the feature flag is false', async () => {
+	it('機能フラグが false の場合は AI ウィジェットを隠す', async () => {
 		publicEnv.env.PUBLIC_AI_CHAT_ENABLED = 'false';
 		renderLayout();
 
@@ -318,7 +318,7 @@ describe('/+layout.svelte', () => {
 		expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
 	});
 
-	it('hides the AI widget before login', async () => {
+	it('ログイン前は AI ウィジェットを隠す', async () => {
 		mocks.loadSession.mockResolvedValue({
 			session: null,
 			status: 401
@@ -331,7 +331,7 @@ describe('/+layout.svelte', () => {
 		expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
 	});
 
-	it('shows only admin sidebar items when active portal is admin', async () => {
+	it('アクティブポータルが管理者の場合は管理者サイドバー項目だけを表示する', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 		renderLayout();
 
@@ -345,7 +345,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('shows only participant sidebar items when active portal is participant', async () => {
+	it('アクティブポータルが参加者の場合は参加者サイドバー項目だけを表示する', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('participant');
 		renderLayout();
 
@@ -357,7 +357,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('shows booking and participant admin items for staff without org-admin items', async () => {
+	it('スタッフには org-admin 項目なしで予約と参加者管理項目を表示する', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 		mocks.loadPortalAccess.mockResolvedValue(
 			buildPortalAccess({
@@ -453,7 +453,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('falls back to participant portal when stored admin is no longer accessible', async () => {
+	it('保存済み管理者ポータルにアクセスできなくなった場合は参加者ポータルへフォールバックする', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 		mocks.loadPortalAccess.mockResolvedValue(
 			buildPortalAccess({
@@ -493,7 +493,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('resyncs stale store state from the scoped url context', async () => {
+	it('古い店舗状態をスコープ付き URL コンテキストから再同期する', async () => {
 		pageState.url = new URL('https://example.com/org-one/room-b/admin/dashboard');
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 
@@ -620,7 +620,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('keeps the navigation progress bar hidden on initial render', async () => {
+	it('初期表示ではナビゲーション進捗バーを隠したままにする', async () => {
 		renderLayout();
 
 		await vi.waitFor(() => {
@@ -628,7 +628,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('shows the navigation progress bar after the delay and hides it after completion', async () => {
+	it('遅延後にナビゲーション進捗バーを表示し完了後に隠す', async () => {
 		vi.useFakeTimers();
 		renderLayout();
 
@@ -652,7 +652,7 @@ describe('/+layout.svelte', () => {
 		});
 	});
 
-	it('does not show the navigation progress bar for fast navigations', async () => {
+	it('高速な遷移ではナビゲーション進捗バーを表示しない', async () => {
 		vi.useFakeTimers();
 		renderLayout();
 
@@ -668,7 +668,7 @@ describe('/+layout.svelte', () => {
 		expect(document.querySelector('[data-testid="navigation-progress"]')).toBeNull();
 	});
 
-	it('ignores hash-only navigations for the progress bar', async () => {
+	it('進捗バーではハッシュだけの遷移を無視する', async () => {
 		vi.useFakeTimers();
 		renderLayout();
 

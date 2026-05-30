@@ -7,13 +7,13 @@ import {
 
 const STORAGE_KEY = 'reserve-app:last-auth-portal';
 
-describe('auth-portal-preference', () => {
+describe('認証ポータル設定', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
 	});
 
-	it('persists and clears auth portal value', () => {
+	it('認証ポータル値を保存・クリアする', () => {
 		const store = new Map<string, string>();
 		vi.stubGlobal('window', {
 			localStorage: {
@@ -37,7 +37,7 @@ describe('auth-portal-preference', () => {
 		expect(readLastAuthPortal()).toBeNull();
 	});
 
-	it('returns null for invalid stored value', () => {
+	it('保存値が不正な場合は null を返す', () => {
 		vi.stubGlobal('window', {
 			localStorage: {
 				getItem: () => 'unknown',
@@ -49,7 +49,7 @@ describe('auth-portal-preference', () => {
 		expect(readLastAuthPortal()).toBeNull();
 	});
 
-	it('is safe when window is unavailable', () => {
+	it('window が利用できない場合も安全に扱う', () => {
 		expect(readLastAuthPortal()).toBeNull();
 		expect(() => writeLastAuthPortal('admin')).not.toThrow();
 		expect(() => clearLastAuthPortal()).not.toThrow();

@@ -48,7 +48,7 @@ vi.mock('$lib/features/scoped-routing', async () => {
 	};
 });
 
-describe('/admin/schedules/recurring/new/+page.svelte', () => {
+describe('繰り返し枠作成ページ', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
@@ -80,7 +80,7 @@ describe('/admin/schedules/recurring/new/+page.svelte', () => {
 		});
 	});
 
-	it('should render recurring create page', async () => {
+	it('繰り返し枠作成ページを表示する', async () => {
 		render(AdminRecurringCreatePage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '定期Schedule作成' }))
@@ -109,7 +109,7 @@ describe('/admin/schedules/recurring/new/+page.svelte', () => {
 		expect(createSection?.querySelector('form')?.className ?? '').toContain('md:grid-cols-2');
 	});
 
-	it('shows premium restriction guidance on recurring create page', async () => {
+	it('繰り返し枠作成ページでプレミアム制限案内を表示する', async () => {
 		mocks.getAdminRecurringPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',

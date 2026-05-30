@@ -26,7 +26,7 @@ vi.mock('./bookings.svelte', () => ({
 	createBooking: vi.fn()
 }));
 
-describe('events.svelte', () => {
+describe('イベント機能', () => {
 	const mockedSelfEnrollParticipant = vi.mocked(authRpc.selfEnrollParticipant);
 	const mockedSelfEnrollParticipantScoped = vi.mocked(authRpc.selfEnrollParticipantScoped);
 	const mockedParseResponseBody = vi.mocked(parseResponseBody);
@@ -36,7 +36,7 @@ describe('events.svelte', () => {
 		vi.clearAllMocks();
 	});
 
-	it('calls self-enroll before booking and returns booking result', async () => {
+	it('予約前に自己登録を呼び出し予約結果を返す', async () => {
 		mockedSelfEnrollParticipant.mockResolvedValueOnce(
 			new Response(JSON.stringify({ created: true }), {
 				status: 200,
@@ -71,7 +71,7 @@ describe('events.svelte', () => {
 		});
 	});
 
-	it('does not call booking when self-enroll fails', async () => {
+	it('自己登録が失敗した場合は予約を呼び出さない', async () => {
 		mockedSelfEnrollParticipant.mockResolvedValueOnce(
 			new Response(JSON.stringify({ message: 'プロフィールを確認してください。' }), {
 				status: 400,
@@ -95,7 +95,7 @@ describe('events.svelte', () => {
 		});
 	});
 
-	it('returns created false when participant already exists', async () => {
+	it('参加者がすでに存在する場合は created false を返す', async () => {
 		mockedSelfEnrollParticipant.mockResolvedValueOnce(
 			new Response(JSON.stringify({ created: false }), {
 				status: 200,

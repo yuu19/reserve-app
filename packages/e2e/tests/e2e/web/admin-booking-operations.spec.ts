@@ -12,10 +12,10 @@ import {
 } from '../helpers/test-data';
 import { BookingOperationsPage } from '../pages';
 
-test.describe('admin booking operations', () => {
+test.describe('管理者の予約運用', () => {
 	test.setTimeout(180_000);
 
-	test('covers service creation, slot creation, approval booking, cancellation, and recurring creation', async ({
+	test('サービス作成・予約枠作成・承認制予約・キャンセル・定期作成を検証する', async ({
 		page,
 		request,
 		context,

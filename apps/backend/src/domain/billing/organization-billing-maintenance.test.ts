@@ -4,8 +4,8 @@ import {
   resolvePastDueGraceReminderStripeEventId,
 } from './organization-billing-maintenance.js';
 
-describe('organization billing maintenance', () => {
-  it('selects past-due grace reminders in the three-days-before-expiry window', () => {
+describe('組織課金メンテナンス', () => {
+  it('期限切れ 3 日前の期間にある past_due 猶予リマインダーを選択する', () => {
     const now = new Date('2026-05-01T00:00:00.000Z');
 
     expect(
@@ -28,7 +28,7 @@ describe('organization billing maintenance', () => {
     ).toBe(false);
   });
 
-  it('uses a deterministic reminder receipt id per organization and grace deadline', () => {
+  it('組織と猶予期限ごとに決定的なリマインド受領 ID を使う', () => {
     expect(
       resolvePastDueGraceReminderStripeEventId({
         organizationId: 'org-1',

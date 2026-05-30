@@ -36,8 +36,8 @@ const createContext = ({
     createProvider: vi.fn() as never,
   });
 
-describe('billing route context', () => {
-  it('normalizes session identity and falls back to the active organization id', async () => {
+describe('課金ルートコンテキスト', () => {
+  it('セッション識別子を正規化しアクティブ組織 ID へフォールバックする', async () => {
     const ctx = createContext({
       session: {
         user: {
@@ -70,7 +70,7 @@ describe('billing route context', () => {
     ).toBe('organization-requested');
   });
 
-  it('returns normalized organization membership roles from the current database', async () => {
+  it('現在のデータベースから正規化済み組織メンバーシップロールを返す', async () => {
     const query = createDatabase('admin');
     const ctx = createContext({ database: query.database });
 
@@ -84,7 +84,7 @@ describe('billing route context', () => {
     expect(query.limit).toHaveBeenCalledWith(1);
   });
 
-  it('returns null when the membership row has an unsupported role', async () => {
+  it('メンバーシップ行が未対応ロールの場合は null を返す', async () => {
     const ctx = createContext({ database: createDatabase('billing_manager').database });
 
     await expect(

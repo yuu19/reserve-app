@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveReserveAppPaymentIssueNotificationRecipientPlans } from './reserve-app-billing-notifications.js';
 
-describe('organization billing payment issue notification planning', () => {
+describe('組織課金の支払い問題通知計画', () => {
   const owners = [
     {
       userId: 'owner-sent',
@@ -20,7 +20,7 @@ describe('organization billing payment issue notification planning', () => {
     },
   ];
 
-  it('retries only failed verified-owner recipients and skips recipients already sent', () => {
+  it('失敗した確認済みオーナー受信者だけを再試行し送信済み受信者をスキップする', () => {
     const plans = resolveReserveAppPaymentIssueNotificationRecipientPlans({
       owners,
       attempts: [

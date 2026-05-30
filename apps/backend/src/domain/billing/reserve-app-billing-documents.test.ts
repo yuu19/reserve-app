@@ -6,8 +6,8 @@ import {
   normalizeStripeInvoiceDocument,
 } from './reserve-app-billing-documents.js';
 
-describe('reserve-app billing document readiness', () => {
-  it('normalizes available invoice and receipt document references from provider payloads', () => {
+describe('reserve-app 課金ドキュメント準備状態', () => {
+  it('プロバイダーペイロードから利用可能な請求書・領収書ドキュメント参照を正規化する', () => {
     const invoice = normalizeStripeInvoiceDocument({
       id: 'in_available',
       customer: 'cus_documents',
@@ -40,7 +40,7 @@ describe('reserve-app billing document readiness', () => {
     });
   });
 
-  it('distinguishes unavailable, missing, and checking document states without raw payment details', () => {
+  it('生の支払い詳細を含めず利用不可・欠落・確認中のドキュメント状態を区別する', () => {
     const unavailableInvoice = normalizeStripeInvoiceDocument({
       id: 'in_unavailable',
       customer: 'cus_documents',

@@ -49,7 +49,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 	loadOrganizationBilling: mocks.loadOrganizationBilling
 }));
 
-describe('/admin/stores/+page.svelte', () => {
+describe('店舗管理ページ', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
@@ -96,7 +96,7 @@ describe('/admin/stores/+page.svelte', () => {
 		});
 	});
 
-	it('shows premium restriction guidance after store creation is denied by premium gating', async () => {
+	it('プレミアム制限で店舗作成が拒否された後に制限案内を表示する', async () => {
 		mocks.createStore.mockResolvedValue({
 			ok: false,
 			status: 403,

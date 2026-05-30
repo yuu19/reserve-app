@@ -13,10 +13,10 @@ import {
 } from '../helpers/test-data';
 import { TicketFlowPage } from '../pages';
 
-test.describe('ticket purchase flow', () => {
+test.describe('回数券購入フロー', () => {
 	test.setTimeout(120_000);
 
-	test('lets a participant request a ticket pack and an admin approve it', async ({
+	test('参加者が回数券購入申請し管理者が承認できる', async ({
 		page,
 		request,
 		context,

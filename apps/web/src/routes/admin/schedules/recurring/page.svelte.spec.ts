@@ -9,8 +9,8 @@ vi.mock('$env/dynamic/public', () => ({
 	}
 }));
 
-describe('/admin/schedules/recurring/+page.svelte', () => {
-	it('should render recurring list page', async () => {
+describe('繰り返し枠一覧ページ', () => {
+	it('繰り返し枠一覧ページを表示する', async () => {
 		render(AdminRecurringPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '定期Schedule一覧' }))

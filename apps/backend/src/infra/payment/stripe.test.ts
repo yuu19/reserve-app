@@ -17,12 +17,12 @@ const readHeader = (headers: HeadersInit | undefined, name: string) => {
   return new Headers(headers).get(name);
 };
 
-describe('Stripe billing adapter', () => {
+describe('Stripe 課金アダプター', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('sends idempotency keys and organization metadata for subscription checkout sessions', async () => {
+  it('購読 Checkout セッションに冪等性キーと組織メタデータを送る', async () => {
     let capturedBody = '';
     let capturedHeaders: HeadersInit | undefined;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
@@ -74,7 +74,7 @@ describe('Stripe billing adapter', () => {
     expect(params.get('metadata[billingInterval]')).toBe('month');
   });
 
-  it('sends idempotency keys and subscription update flow data for billing portal sessions', async () => {
+  it('課金ポータルセッションに冪等性キーと購読更新フローデータを送る', async () => {
     let capturedBody = '';
     let capturedHeaders: HeadersInit | undefined;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
@@ -120,7 +120,7 @@ describe('Stripe billing adapter', () => {
     );
   });
 
-  it('can attach an E2E-only test clock when creating Stripe customers', async () => {
+  it('Stripe 顧客作成時に E2E 専用 Test Clock を付与できる', async () => {
     let capturedBody = '';
     let capturedHeaders: HeadersInit | undefined;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
@@ -156,7 +156,7 @@ describe('Stripe billing adapter', () => {
     expect(params.get('metadata[organizationId]')).toBe('org_123');
   });
 
-  it('normalizes provider subscription summaries without exposing raw Stripe payloads', () => {
+  it('生の Stripe ペイロードを公開せずプロバイダー購読サマリーを正規化する', () => {
     const summary = readStripeSubscriptionSummary({
       id: 'sub_summary',
       customer: 'cus_summary',

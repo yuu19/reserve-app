@@ -39,7 +39,7 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 		typeof payload === 'string' && payload.length > 0 ? payload : fallback
 }));
 
-describe('/participant/login/+page.svelte', () => {
+describe('参加者ログインページ', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
@@ -54,14 +54,14 @@ describe('/participant/login/+page.svelte', () => {
 		mocks.loadPendingInvitationHomePath.mockResolvedValue(null);
 	});
 
-	it('should render participant login heading', async () => {
+	it('参加者ログインの見出しを表示する', async () => {
 		render(ParticipantLoginPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '予約者ページログイン' }))
 			.toBeInTheDocument();
 	});
 
-	it('redirects newly signed-in users without access to public events', async () => {
+	it('公開イベントへのアクセスがない新規サインインユーザーをリダイレクトする', async () => {
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { id: 'user-1' }, session: { id: 'session-1' } },
 			status: 200

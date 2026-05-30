@@ -55,13 +55,13 @@ const buildStoreEntry = (overrides: Record<string, unknown> = {}) => ({
 	...overrides
 });
 
-describe('auth-session.svelte', () => {
+describe('認証セッション処理', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
 	});
 
-	it('redirects to login with encoded next path', () => {
+	it('エンコード済み next パス付きでログインへリダイレクトする', () => {
 		const assign = vi.fn();
 		vi.stubGlobal('window', {
 			location: {
@@ -75,7 +75,7 @@ describe('auth-session.svelte', () => {
 		);
 	});
 
-	it('redirects admin paths to admin login', () => {
+	it('管理者パスを管理者ログインへリダイレクトする', () => {
 		const assign = vi.fn();
 		vi.stubGlobal('window', {
 			location: {
@@ -89,7 +89,7 @@ describe('auth-session.svelte', () => {
 		);
 	});
 
-	it('redirects unknown paths to auth entry selection', () => {
+	it('不明なパスを認証入口選択へリダイレクトする', () => {
 		const assign = vi.fn();
 		vi.stubGlobal('window', {
 			location: {
@@ -101,7 +101,7 @@ describe('auth-session.svelte', () => {
 		expect(assign).toHaveBeenCalledWith('/?next=%2Funknown%2Fpath');
 	});
 
-	it('redirects participant invitation acceptance path to participant login', () => {
+	it('参加者招待受諾パスを参加者ログインへリダイレクトする', () => {
 		const assign = vi.fn();
 		vi.stubGlobal('window', {
 			location: {
@@ -115,7 +115,7 @@ describe('auth-session.svelte', () => {
 		);
 	});
 
-	it('prefers last used organization when it exists in membership', () => {
+	it('メンバーシップに存在する場合は最後に使った組織を優先する', () => {
 		const organizations = [
 			{ id: 'org-a', name: 'A', slug: 'a' },
 			{ id: 'org-b', name: 'B', slug: 'b' }
@@ -123,12 +123,12 @@ describe('auth-session.svelte', () => {
 		expect(resolveLastUsedOrganizationId(organizations, 'org-b')).toBe('org-b');
 	});
 
-	it('returns null when last used organization is not in membership', () => {
+	it('最後に使った組織がメンバーシップにない場合は null を返す', () => {
 		const organizations = [{ id: 'org-a', name: 'A', slug: 'a' }];
 		expect(resolveLastUsedOrganizationId(organizations, 'org-x')).toBeNull();
 	});
 
-	it('resolves admin dashboard when manage access exists', () => {
+	it('管理アクセスがある場合は管理ダッシュボードを解決する', () => {
 		expect(
 			resolvePortalHomePath(
 				buildPortalAccess({
@@ -164,7 +164,7 @@ describe('auth-session.svelte', () => {
 		).toBe('/admin/dashboard');
 	});
 
-	it('resolves admin dashboard when stage1 admin access exists even if active organization is participant-only', () => {
+	it('アクティブ組織が参加者専用でも stage1 管理アクセスがある場合は管理ダッシュボードを解決する', () => {
 		expect(
 			resolvePortalHomePath(
 				buildPortalAccess({
@@ -199,7 +199,7 @@ describe('auth-session.svelte', () => {
 		).toBe('/admin/dashboard');
 	});
 
-	it('resolves participant home when participant-only access exists', () => {
+	it('参加者専用アクセスがある場合は参加者ホームを解決する', () => {
 		expect(
 			resolvePortalHomePath(
 				buildPortalAccess({
@@ -234,7 +234,7 @@ describe('auth-session.svelte', () => {
 		).toBe('/participant/home');
 	});
 
-	it('resolves admin bookings when staff booking access exists', () => {
+	it('スタッフ予約アクセスがある場合は管理予約を解決する', () => {
 		expect(
 			resolvePortalHomePath(
 				buildPortalAccess({
@@ -269,11 +269,11 @@ describe('auth-session.svelte', () => {
 		).toBe('/admin/bookings');
 	});
 
-	it('returns null when no portal access exists', () => {
+	it('ポータルアクセスがない場合は null を返す', () => {
 		expect(resolvePortalHomePath(buildPortalAccess())).toBeNull();
 	});
 
-	it('normalizes legacy array access tree payloads', () => {
+	it('旧配列形式のアクセスツリーペイロードを正規化する', () => {
 		expect(
 			normalizeAccessTreePayload([
 				{
@@ -338,7 +338,7 @@ describe('auth-session.svelte', () => {
 		});
 	});
 
-	it('preserves staff booking and participant capabilities in legacy payload normalization', () => {
+	it('旧ペイロード正規化でスタッフ予約と参加者機能を保持する', () => {
 		expect(
 			normalizeAccessTreePayload([
 				{
@@ -403,7 +403,7 @@ describe('auth-session.svelte', () => {
 		});
 	});
 
-	it('accepts current object-shaped access tree payloads', () => {
+	it('現行のオブジェクト形式アクセスツリーペイロードを受け入れる', () => {
 		const payload = {
 			orgs: [
 				{
@@ -449,7 +449,7 @@ describe('auth-session.svelte', () => {
 		expect(normalizeAccessTreePayload(payload)).toEqual(payload);
 	});
 
-	it('resolves a scoped context from the current URL path when it exists in the access tree', () => {
+	it('アクセスツリーに存在する場合は現在の URL パスからスコープ付きコンテキストを解決する', () => {
 		const accessTree = {
 			orgs: [
 				{
@@ -528,7 +528,7 @@ describe('auth-session.svelte', () => {
 		});
 	});
 
-	it('returns null for unknown scoped contexts in the URL path', () => {
+	it('URL パス内の不明なスコープ付きコンテキストには null を返す', () => {
 		const accessTree = {
 			orgs: [
 				{

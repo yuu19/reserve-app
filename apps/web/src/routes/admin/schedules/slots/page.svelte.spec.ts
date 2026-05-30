@@ -9,8 +9,8 @@ vi.mock('$env/dynamic/public', () => ({
 	}
 }));
 
-describe('/admin/schedules/slots/+page.svelte', () => {
-	it('should render slots list page', async () => {
+describe('単発枠一覧ページ', () => {
+	it('単発枠一覧ページを表示する', async () => {
 		render(AdminSlotsPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '単発予約枠一覧' }))

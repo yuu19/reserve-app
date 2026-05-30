@@ -9,8 +9,8 @@ vi.mock('$env/dynamic/public', () => ({
 	}
 }));
 
-describe('/admin/services/+page.svelte', () => {
-	it('should render services list page', async () => {
+describe('サービス一覧ページ', () => {
+	it('サービス一覧ページを表示する', async () => {
 		render(AdminServicesPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: 'サービス一覧' }))

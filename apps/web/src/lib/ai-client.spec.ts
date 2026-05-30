@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { askAi, isAiClientError, submitAiFeedback } from './ai-client';
 
-describe('ai-client', () => {
+describe('AI クライアント', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 	});
 
-	it('throws a typed API error and preserves retry metadata', async () => {
+	it('型付き API エラーを投げ再試行メタデータを保持する', async () => {
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async () => {
@@ -35,7 +35,7 @@ describe('ai-client', () => {
 		});
 	});
 
-	it('throws a typed network error when fetch fails', async () => {
+	it('fetch 失敗時に型付きネットワークエラーを投げる', async () => {
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async () => {
@@ -57,7 +57,7 @@ describe('ai-client', () => {
 		}
 	});
 
-	it('throws a typed parse error when a success response cannot be parsed', async () => {
+	it('成功レスポンスを解析できない場合に型付き parse エラーを投げる', async () => {
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async () => {
@@ -77,7 +77,7 @@ describe('ai-client', () => {
 		});
 	});
 
-	it('uses feedback-specific typed API errors', async () => {
+	it('フィードバック専用の型付き API エラーを使う', async () => {
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async () => {

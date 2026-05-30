@@ -78,8 +78,8 @@ const buildAccess = ({
   },
 });
 
-describe('AI source visibility', () => {
-  it('maps owner/admin/manager/staff/participant roles to allowed visibility levels', () => {
+describe('AI ソース可視性', () => {
+  it('owner・admin・manager・staff・participant ロールを許可可視性レベルへ対応付ける', () => {
     expect(resolveAllowedVisibilities(buildAccess({ orgRole: 'owner' }))).toEqual([
       'public',
       'authenticated',
@@ -117,7 +117,7 @@ describe('AI source visibility', () => {
     ]);
   });
 
-  it('enforces organization, store, locale, and internal-only source scope', () => {
+  it('組織・店舗・ロケール・内部専用のソーススコープを強制する', () => {
     const participant = buildAccess({ hasParticipantRecord: true });
 
     expect(
@@ -175,7 +175,7 @@ describe('AI source visibility', () => {
     ).toBe(false);
   });
 
-  it('allows internal knowledge only for internal operators and org owner/admin users', () => {
+  it('内部ナレッジを内部オペレーターと組織 owner/admin ユーザーだけに許可する', () => {
     expect(canUseInternalKnowledge({ access: buildAccess({ orgRole: 'owner' }) })).toBe(true);
     expect(canUseInternalKnowledge({ access: buildAccess({ orgRole: 'admin' }) })).toBe(true);
     expect(
@@ -189,7 +189,7 @@ describe('AI source visibility', () => {
     );
   });
 
-  it('hides internal spec paths unless the user is owner or internal operator', () => {
+  it('ユーザーがオーナーまたは内部オペレーターでない場合は内部 spec パスを隠す', () => {
     const source = {
       sourceKind: 'specs' as const,
       title: 'AI chatbot spec',

@@ -10,10 +10,10 @@ import {
 } from '../helpers/test-data';
 import { StoreInvitationsPage } from '../pages';
 
-test.describe('scoped store invitations', () => {
+test.describe('スコープ付き店舗招待', () => {
 	test.setTimeout(120_000);
 
-	test('manages store operator and participant invitations from the scoped store page', async ({
+	test('スコープ付き店舗画面で店舗運営者招待と参加者招待を管理する', async ({
 		page,
 		request,
 		context,

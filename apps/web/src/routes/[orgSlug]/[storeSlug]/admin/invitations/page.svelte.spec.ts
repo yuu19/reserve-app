@@ -46,7 +46,7 @@ vi.mock('svelte-sonner', () => ({
 
 const { default: StoreInvitationsPage } = await import('./+page.svelte');
 
-describe('/[orgSlug]/[storeSlug]/admin/invitations/+page.svelte', () => {
+describe('スコープ付き店舗招待管理ページ', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
@@ -99,7 +99,7 @@ describe('/[orgSlug]/[storeSlug]/admin/invitations/+page.svelte', () => {
 		});
 	});
 
-	it('should render store invitations heading', async () => {
+	it('店舗招待の見出しを表示する', async () => {
 		render(StoreInvitationsPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '店舗招待' }))
@@ -112,7 +112,7 @@ describe('/[orgSlug]/[storeSlug]/admin/invitations/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('shows premium restriction guidance when store invitation management is premium-gated', async () => {
+	it('店舗招待管理がプレミアム制限されている場合は制限案内を表示する', async () => {
 		mocks.loadStoreInvitations.mockResolvedValue({
 			organizationId: 'org-1',
 			operatorInvitations: [],

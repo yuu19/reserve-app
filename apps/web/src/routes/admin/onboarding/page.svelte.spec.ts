@@ -36,7 +36,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 	uploadOrganizationLogo: vi.fn()
 }));
 
-describe('/admin/onboarding/+page.svelte', () => {
+describe('管理者オンボーディングページ', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
@@ -66,14 +66,14 @@ describe('/admin/onboarding/+page.svelte', () => {
 		mocks.loadPendingInvitationHomePath.mockResolvedValue(null);
 	});
 
-	it('renders onboarding heading for users without portal access', async () => {
+	it('ポータルアクセスのないユーザーにオンボーディング見出しを表示する', async () => {
 		render(AdminOnboardingPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '最初の組織と店舗を作成' }))
 			.toBeInTheDocument();
 	});
 
-	it('redirects participant-only users away from onboarding', async () => {
+	it('参加者専用ユーザーをオンボーディングからリダイレクトする', async () => {
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false,
 			hasAdminPortalAccess: false,

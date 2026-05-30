@@ -16,10 +16,10 @@ import {
 } from '../helpers/test-data';
 import { PublicSitePage } from '../pages';
 
-test.describe('public store site', () => {
+test.describe('公開店舗サイト', () => {
 	test.setTimeout(120_000);
 
-	test('shows booking pages and ticket cards with participant-aware ticket CTAs', async ({
+	test('予約ページと回数券カードを表示し参加者状態に応じた回数券CTAを出す', async ({
 		page,
 		request,
 		context,

@@ -629,8 +629,8 @@ const createProviderEvent = ({
     processedAt,
   });
 
-describe('createDrizzleBillingStore', () => {
-  it('preserves arbitrary billing subject types when writing and reading accounts', async () => {
+describe('createDrizzleBillingStore の課金ストア', () => {
+  it('アカウント書き込みと読み取りで任意の課金対象種別を保持する', async () => {
     const createdAt = new Date('2026-01-01T00:00:00.000Z');
     const { database } = createSampleDatabase();
     const store = createDrizzleBillingStore({
@@ -660,7 +660,7 @@ describe('createDrizzleBillingStore', () => {
     expect(found?.subjectType).toBe('project');
   });
 
-  it('reuses the store schema for workspace subscriptions and entitlements', async () => {
+  it('ワークスペース購読とエンタイトルメントにストアスキーマを再利用する', async () => {
     const createdAt = new Date('2026-01-02T00:00:00.000Z');
     const { database, entitlements, subscriptions } = createSampleDatabase();
     const store = createDrizzleBillingStore({
@@ -727,8 +727,8 @@ describe('createDrizzleBillingStore', () => {
   });
 });
 
-describe('createDrizzleBillingEventStore', () => {
-  it('claims the first provider event receipt', async () => {
+describe('createDrizzleBillingEventStore のイベントストア', () => {
+  it('最初のプロバイダーイベント受領を取得する', async () => {
     const now = new Date('2026-01-01T00:00:00.000Z');
     const { database, providerEvents } = createSampleDatabase();
     const store = createDrizzleBillingEventStore({
@@ -759,7 +759,7 @@ describe('createDrizzleBillingEventStore', () => {
     );
   });
 
-  it('marks processed duplicates without reclaiming them', async () => {
+  it('処理済み重複を再取得せずにマークする', async () => {
     const now = new Date('2026-01-01T00:01:00.000Z');
     const processedAt = new Date('2026-01-01T00:00:30.000Z');
     const providerEvents = [
@@ -796,7 +796,7 @@ describe('createDrizzleBillingEventStore', () => {
     );
   });
 
-  it('reclaims a failed provider event with the next attempt number', async () => {
+  it('失敗したプロバイダーイベントを次の試行番号で再取得する', async () => {
     const now = new Date('2026-01-01T00:01:00.000Z');
     const providerEvents = [
       createProviderEvent({
@@ -835,7 +835,7 @@ describe('createDrizzleBillingEventStore', () => {
     );
   });
 
-  it('reclaims a stale processing provider event as duplicate processing', async () => {
+  it('処理中の古いプロバイダーイベントを重複処理として再取得する', async () => {
     const now = new Date('2026-01-01T00:02:00.000Z');
     const staleStartedAt = new Date('2026-01-01T00:00:00.000Z');
     const providerEvents = [
@@ -875,8 +875,8 @@ describe('createDrizzleBillingEventStore', () => {
   });
 });
 
-describe('createDrizzleBillingOperationStore', () => {
-  it('claims a new operation attempt with a deterministic id', async () => {
+describe('createDrizzleBillingOperationStore の操作ストア', () => {
+  it('決定的な ID で新しい操作試行を取得する', async () => {
     const now = new Date('2026-01-01T00:00:00.000Z');
     const { database, operationAttempts } = createSampleDatabase();
     const store = createDrizzleBillingOperationStore({
@@ -909,7 +909,7 @@ describe('createDrizzleBillingOperationStore', () => {
     expect(operationAttempts).toHaveLength(1);
   });
 
-  it('reuses a fresh processing attempt for the same reuse key', async () => {
+  it('同じ再利用キーの新しい処理中試行を再利用する', async () => {
     const now = new Date('2026-01-01T00:01:00.000Z');
     const operationAttempts = [
       createOperationAttempt({
@@ -936,7 +936,7 @@ describe('createDrizzleBillingOperationStore', () => {
     expect(operationAttempts).toHaveLength(1);
   });
 
-  it('reuses an unexpired succeeded handoff', async () => {
+  it('期限切れでない成功済みハンドオフを再利用する', async () => {
     const now = new Date('2026-01-01T00:01:00.000Z');
     const operationAttempts = [
       createOperationAttempt({
@@ -965,7 +965,7 @@ describe('createDrizzleBillingOperationStore', () => {
     expect(operationAttempts).toHaveLength(1);
   });
 
-  it('expires a stale processing attempt before claiming the next attempt', async () => {
+  it('次の試行を取得する前に古い処理中試行を期限切れにする', async () => {
     const now = new Date('2026-01-01T00:03:00.000Z');
     const operationAttempts = [
       createOperationAttempt({
@@ -1005,7 +1005,7 @@ describe('createDrizzleBillingOperationStore', () => {
     expect(operationAttempts).toHaveLength(2);
   });
 
-  it('updates failed and expired attempts with the injected clock', async () => {
+  it('注入された clock で失敗済み・期限切れ試行を更新する', async () => {
     const updatedAt = new Date('2026-01-01T00:04:00.000Z');
     const operationAttempts = [
       createOperationAttempt({ id: 'attempt-1' }),
@@ -1045,7 +1045,7 @@ describe('createDrizzleBillingOperationStore', () => {
     );
   });
 
-  it('reads recent attempts in newest-first order', async () => {
+  it('最近の試行を新しい順で読み取る', async () => {
     const operationAttempts = [
       createOperationAttempt({
         id: 'old',

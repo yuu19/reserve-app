@@ -32,7 +32,7 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 	getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
 }));
 
-describe('/bookings/+page.svelte', () => {
+describe('予約入口ページ', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.readLastAuthPortal.mockReset();
@@ -79,7 +79,7 @@ describe('/bookings/+page.svelte', () => {
 		mocks.getCurrentPathWithSearch.mockReturnValue('/bookings');
 	});
 
-	it('redirects to participant bookings when fixed portal is participant', async () => {
+	it('固定ポータルが参加者の場合は参加者予約へリダイレクトする', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('participant');
 		render(BookingsPage);
 
@@ -88,7 +88,7 @@ describe('/bookings/+page.svelte', () => {
 		});
 	});
 
-	it('uses participant bookings as default when participant portal is preferred', async () => {
+	it('参加者ポータルが優先される場合は参加者予約を既定にする', async () => {
 		mocks.readLastAuthPortal.mockReturnValue(null);
 		mocks.resolvePortalHomePath.mockReturnValue('/participant/home');
 		render(BookingsPage);
@@ -98,7 +98,7 @@ describe('/bookings/+page.svelte', () => {
 		});
 	});
 
-	it('redirects to admin bookings when fixed portal is admin and manage is allowed', async () => {
+	it('固定ポータルが管理者で管理が許可されている場合は管理予約へリダイレクトする', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 		render(BookingsPage);
 
@@ -107,7 +107,7 @@ describe('/bookings/+page.svelte', () => {
 		});
 	});
 
-	it('redirects staff users to admin bookings when admin portal access exists', async () => {
+	it('管理ポータルアクセスがあるスタッフユーザーを管理予約へリダイレクトする', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false,
@@ -146,7 +146,7 @@ describe('/bookings/+page.svelte', () => {
 		});
 	});
 
-	it('falls back to participant bookings when stored admin portal is no longer allowed', async () => {
+	it('保存済み管理ポータルが許可されなくなった場合は参加者予約へフォールバックする', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('admin');
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false,

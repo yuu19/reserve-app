@@ -24,7 +24,7 @@ const STRIPE_BILLING_UI_TIMEOUT_MS = 15_000;
 
 test.describe.configure({ mode: 'serial', timeout: STRIPE_BILLING_E2E_TIMEOUT_MS });
 
-test.describe('Stripe Test Clock billing lifecycle', () => {
+test.describe('Stripe Test Clock 課金ライフサイクル', () => {
 	const clocksToDelete: string[] = [];
 
 	test.afterEach(async () => {
@@ -36,7 +36,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 		}
 	});
 
-	test('converges from trial to paid after a successful Test Clock renewal', async ({
+	test('Test Clock の更新成功後にトライアルから有料へ収束する', async ({
 		page,
 		request
 	}) => {
@@ -103,7 +103,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 		});
 	});
 
-	test('surfaces payment issue state after a failed Test Clock renewal', async ({
+	test('Test Clock の更新失敗後に支払い問題状態を表示する', async ({
 		page,
 		request
 	}) => {
@@ -212,7 +212,7 @@ test.describe('Stripe Test Clock billing lifecycle', () => {
 			});
 	});
 
-	test('returns to free when a trial ends without a payment method', async ({ page, request }) => {
+	test('支払い方法なしでトライアルが終了すると free に戻る', async ({ page, request }) => {
 		const slug = `billing-e2e-cancel-${Date.now()}`;
 		const createdGte = Math.floor(Date.now() / 1000) - 60;
 		const clock = await createStripeTestClock(slug);

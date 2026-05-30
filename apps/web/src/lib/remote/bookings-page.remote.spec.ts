@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { getBookingsPageData } from './bookings-page.remote';
 
-describe('bookings-page.remote', () => {
-	it('exports bookings page remote query', () => {
+describe('予約ページ remote', () => {
+	it('予約ページの remote query を export する', () => {
 		expect(typeof getBookingsPageData).toBe('function');
 	});
 });

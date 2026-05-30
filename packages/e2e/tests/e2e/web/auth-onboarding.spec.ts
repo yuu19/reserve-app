@@ -7,8 +7,8 @@ import {
 } from '../helpers/test-data';
 import { AdminOnboardingPage } from '../pages';
 
-test.describe('admin authentication and onboarding', () => {
-	test('creates the first organization after owner sign-up', async ({
+test.describe('管理者認証とオンボーディング', () => {
+	test('owner サインアップ後に最初の組織を作成する', async ({
 		page,
 		request,
 		context

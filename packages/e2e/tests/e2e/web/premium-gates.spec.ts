@@ -9,10 +9,10 @@ import {
 } from '../helpers/test-data';
 import { BookingOperationsPage } from '../pages';
 
-test.describe('premium gated web features', () => {
+test.describe('プレミアム制限付きWeb機能', () => {
 	test.setTimeout(120_000);
 
-	test('gates ticket, store invitation, and recurring schedule surfaces until trial starts', async ({
+	test('トライアル開始まで回数券・店舗招待・定期スケジュール画面を制限する', async ({
 		page,
 		request,
 		context

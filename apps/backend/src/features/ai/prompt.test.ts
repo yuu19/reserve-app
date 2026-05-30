@@ -39,8 +39,8 @@ const access: OrganizationStoreAccess = {
   },
 };
 
-describe('AI prompt helpers', () => {
-  it('keeps action execution and authority limits in the system prompt', () => {
+describe('AI プロンプトヘルパー', () => {
+  it('システムプロンプトにアクション実行と権限の制限を保持する', () => {
     const prompt = buildAiSystemPrompt();
 
     expect(prompt).toContain('操作は実行せず');
@@ -48,7 +48,7 @@ describe('AI prompt helpers', () => {
     expect(prompt).toContain('根拠がない');
   });
 
-  it('redacts secrets, card-like numbers, and billing URLs', () => {
+  it('秘密情報・カード状の番号・課金 URL をマスクする', () => {
     const redacted = redactSensitiveText(
       'sk_live_abc123\ncard 4242 4242 4242 4242\ninvoice https://billing.example.com/inv_1',
     );
@@ -59,7 +59,7 @@ describe('AI prompt helpers', () => {
     expect(redacted).not.toContain('sk_live_abc123');
   });
 
-  it('structures user context, retrieved docs, DB facts, and the question separately', () => {
+  it('ユーザーコンテキスト・取得文書・DB ファクト・質問を分けて構造化する', () => {
     const prompt = buildAnswerPrompt({
       userId: 'user-a',
       access,
@@ -89,7 +89,7 @@ describe('AI prompt helpers', () => {
     expect(prompt).toContain('serviceCount: 2');
   });
 
-  it('skips AI Gateway cache for billing and sensitive fact prompts', () => {
+  it('課金と機密ファクトのプロンプトでは AI Gateway キャッシュをスキップする', () => {
     expect(shouldSkipAiGatewayCache('請求書はどこですか？', null)).toBe(true);
     expect(
       shouldSkipAiGatewayCache('予約枠を作るには？', {

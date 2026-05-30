@@ -103,7 +103,7 @@ const renderSlotCreatePage = async () => {
 		.toBeInTheDocument();
 };
 
-describe('/admin/schedules/slots/new/+page.svelte', () => {
+describe('単発枠作成ページ', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
@@ -131,7 +131,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		});
 	});
 
-	it('should render slots create page with single back link and concrete action label', async () => {
+	it('単一の戻るリンクと具体的な操作ラベル付きで枠作成ページを表示する', async () => {
 		await renderSlotCreatePage();
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '単発予約枠作成' }))
@@ -159,7 +159,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		expect(document.body.textContent ?? '').toContain('サービスを選択してください。');
 	});
 
-	it('should disable time inputs until date is selected and hide end-date picker by default', async () => {
+	it('日付選択まで時刻入力を無効化し終了日ピッカーを既定で隠す', async () => {
 		await renderSlotCreatePage();
 
 		const startTimeInput = document.getElementById('slot-start-time') as HTMLInputElement | null;
@@ -170,7 +170,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		expect(document.getElementById('slot-end-date')).toBeNull();
 	});
 
-	it('should show end-date picker only when end-date toggle is enabled', async () => {
+	it('終了日トグルが有効な場合だけ終了日ピッカーを表示する', async () => {
 		await renderSlotCreatePage();
 
 		const toggle = document.getElementById(
@@ -185,7 +185,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		});
 	});
 
-	it('should show range validation error and disable submit when end is earlier than start', async () => {
+	it('終了が開始より前の場合は範囲検証エラーを表示し送信を無効化する', async () => {
 		await renderSlotCreatePage();
 
 		await selectSlotService('単発60分');
@@ -208,7 +208,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		await expect.element(page.getByRole('button', { name: '単発予約枠を作成' })).toBeDisabled();
 	});
 
-	it('should auto-calculate end time from selected service duration', async () => {
+	it('選択したサービス時間から終了時刻を自動計算する', async () => {
 		await renderSlotCreatePage();
 
 		await selectSlotService('単発90分');
@@ -224,7 +224,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		});
 	});
 
-	it('should keep manually edited end time when start time changes later', async () => {
+	it('開始時刻が後から変わっても手動編集した終了時刻を維持する', async () => {
 		await renderSlotCreatePage();
 
 		await selectSlotService('単発60分');

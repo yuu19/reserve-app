@@ -39,7 +39,7 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 		typeof payload === 'string' && payload.length > 0 ? payload : fallback
 }));
 
-describe('/admin/login/+page.svelte', () => {
+describe('管理者ログインページ', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
@@ -54,14 +54,14 @@ describe('/admin/login/+page.svelte', () => {
 		mocks.loadPendingInvitationHomePath.mockResolvedValue(null);
 	});
 
-	it('should render admin login heading', async () => {
+	it('管理者ログインの見出しを表示する', async () => {
 		render(AdminLoginPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '管理画面ログイン' }))
 			.toBeInTheDocument();
 	});
 
-	it('redirects newly signed-in users without admin portal access to onboarding', async () => {
+	it('管理ポータルアクセスのない新規サインインユーザーをオンボーディングへリダイレクトする', async () => {
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { id: 'user-1' }, session: { id: 'session-1' } },
 			status: 200
@@ -89,7 +89,7 @@ describe('/admin/login/+page.svelte', () => {
 		await expect.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null).toBe('/admin/onboarding');
 	});
 
-	it('prefers participant home when the user only has participant access', async () => {
+	it('参加者アクセスのみのユーザーには参加者ホームを優先する', async () => {
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { id: 'user-2' }, session: { id: 'session-2' } },
 			status: 200

@@ -18,8 +18,8 @@ const createContext = (session: unknown, env: { INTERNAL_OPERATOR_EMAILS?: strin
   };
 };
 
-describe('AI route context', () => {
-  it('denies internal operator access when the request is unauthenticated', async () => {
+describe('AI ルートコンテキスト', () => {
+  it('未認証リクエストでは内部オペレーターアクセスを拒否する', async () => {
     const { ctx, getSession } = createContext(null, {
       INTERNAL_OPERATOR_EMAILS: 'operator@example.com',
     });
@@ -30,7 +30,7 @@ describe('AI route context', () => {
     expect(getSession).toHaveBeenCalledTimes(2);
   });
 
-  it('denies internal operator access when the email is not allowed or unverified', async () => {
+  it('メールが許可外または未確認の場合は内部オペレーターアクセスを拒否する', async () => {
     const unlisted = createContext(
       {
         user: {
@@ -74,7 +74,7 @@ describe('AI route context', () => {
     });
   });
 
-  it('allows internal operator access for a verified allowlisted email', async () => {
+  it('確認済み許可リストメールには内部オペレーターアクセスを許可する', async () => {
     const { ctx } = createContext(
       {
         user: {

@@ -5,13 +5,13 @@ import {
 	onAuthSessionUpdated
 } from './auth-lifecycle';
 
-describe('auth-lifecycle', () => {
+describe('認証ライフサイクル', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
 	});
 
-	it('dispatches auth updated event when session changes', () => {
+	it('セッション変更時に認証更新イベントを dispatch する', () => {
 		const dispatchEvent = vi.fn();
 		vi.stubGlobal('window', {
 			dispatchEvent
@@ -24,7 +24,7 @@ describe('auth-lifecycle', () => {
 		expect(event.type).toBe(AUTH_SESSION_UPDATED_EVENT);
 	});
 
-	it('subscribes and unsubscribes listener', () => {
+	it('リスナーを購読・解除する', () => {
 		const addEventListener = vi.fn();
 		const removeEventListener = vi.fn();
 		vi.stubGlobal('window', {

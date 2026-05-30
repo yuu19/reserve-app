@@ -203,6 +203,55 @@ const selectBookingStatus = async (bookingId: string) => {
   return row?.status ?? null;
 };
 
+const selectBookingByPublicId = async (publicId: string) => {
+  return d1
+    .prepare(
+      'SELECT id, public_id as publicId, participant_id as participantId, source, customer_name as customerName, customer_email as customerEmail, customer_phone as customerPhone, participants_count as participantsCount, status FROM booking WHERE public_id = ? LIMIT 1',
+    )
+    .bind(publicId)
+    .first<{
+      id: string;
+      publicId: string;
+      participantId: string | null;
+      source: string;
+      customerName: string | null;
+      customerEmail: string | null;
+      customerPhone: string | null;
+      participantsCount: number | string;
+      status: string;
+    }>();
+};
+
+const hashPublicActionTokenForTest = async (token: string): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return toHex(digest);
+};
+
+const insertPublicCancelTokenForTest = async ({
+  bookingId,
+  token,
+  emailSnapshot,
+  expiresAt,
+}: {
+  bookingId: string;
+  token: string;
+  emailSnapshot: string;
+  expiresAt: Date;
+}) => {
+  await d1
+    .prepare(
+      "INSERT INTO booking_public_action_token (id, booking_id, purpose, token_hash, email_snapshot, expires_at) VALUES (?, ?, 'cancel', ?, ?, ?)",
+    )
+    .bind(
+      crypto.randomUUID(),
+      bookingId,
+      await hashPublicActionTokenForTest(token),
+      emailSnapshot,
+      expiresAt.getTime(),
+    )
+    .run();
+};
+
 const selectTicketPackRemaining = async (ticketPackId: string) => {
   const row = await d1
     .prepare('SELECT remaining_count as remainingCount FROM ticket_pack WHERE id = ?')
@@ -2164,29 +2213,29 @@ afterAll(async () => {
   await mf.dispose();
 });
 
-describe('backend app', () => {
-  it('returns hello message at GET /', async () => {
+describe('バックエンドアプリ', () => {
+  it('GET / で hello メッセージを返す', async () => {
     const response = await app.request('/');
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('Hono + Better Auth API');
   });
 
-  it('returns health response at GET /api/health', async () => {
+  it('GET /api/health でヘルスレスポンスを返す', async () => {
     const response = await app.request('/api/health');
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
   });
 
-  it('marks API responses as non-indexable', async () => {
+  it('API レスポンスを検索エンジンのインデックス対象外にする', async () => {
     const response = await app.request('/api/health');
 
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
   });
 
-  it('disallows crawling on the API domain', async () => {
+  it('API ドメインのクロールを許可しない', async () => {
     const response = await app.request('/robots.txt');
 
     expect(response.status).toBe(200);
@@ -2194,7 +2243,7 @@ describe('backend app', () => {
     expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
   });
 
-  it('prevents OAuth callback URLs from being cached or leaked by referrer', async () => {
+  it('OAuth コールバック URL のキャッシュとリファラー漏えいを防ぐ', async () => {
     const response = await app.request('/api/auth/callback/google');
 
     expect(response.headers.get('cache-control')).toBe('no-store');
@@ -2202,14 +2251,14 @@ describe('backend app', () => {
     expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
   });
 
-  it('exposes RPC auth session endpoint', async () => {
+  it('RPC 認証セッションエンドポイントを公開する', async () => {
     const response = await app.request('/api/v1/auth/session');
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('null');
   });
 
-  it('redirects Google OIDC start endpoint by default', async () => {
+  it('Google OIDC 開始エンドポイントは既定でリダイレクトする', async () => {
     const response = await app.request(
       '/api/v1/auth/oidc/google?callbackURL=http%3A%2F%2Flocalhost%3A5173%2F',
     );
@@ -2220,7 +2269,7 @@ describe('backend app', () => {
     );
   });
 
-  it('sets oauth_state cookie on Google OIDC start endpoint', async () => {
+  it('Google OIDC 開始エンドポイントで oauth_state Cookie を設定する', async () => {
     const response = await app.request(
       '/api/v1/auth/oidc/google?callbackURL=http%3A%2F%2Flocalhost%3A5173%2F',
     );
@@ -2230,7 +2279,7 @@ describe('backend app', () => {
     expect(setCookies.some((cookie) => /oauth_state=/.test(cookie))).toBe(true);
   });
 
-  it('uses non-secure oauth_state cookie for local http development', async () => {
+  it('ローカル HTTP 開発では oauth_state Cookie を非 Secure にする', async () => {
     const response = await app.request(
       '/api/v1/auth/oidc/google?callbackURL=http%3A%2F%2Flocalhost%3A5173%2F',
     );
@@ -2242,7 +2291,7 @@ describe('backend app', () => {
     expect(oauthStateCookie).not.toContain('Secure');
   });
 
-  it('keeps JSON response when disableRedirect=true for Google OIDC start endpoint', async () => {
+  it('Google OIDC 開始エンドポイントで disableRedirect=true のとき JSON レスポンスを維持する', async () => {
     const response = await app.request(
       '/api/v1/auth/oidc/google?callbackURL=http%3A%2F%2Flocalhost%3A5173%2F&disableRedirect=true',
     );
@@ -2255,18 +2304,18 @@ describe('backend app', () => {
     expect((body.url as string) || '').toContain('https://accounts.google.com/o/oauth2/v2/auth');
   });
 
-  it('requires auth for organization endpoints', async () => {
+  it('組織エンドポイントに認証を要求する', async () => {
     const response = await app.request('/api/v1/auth/organizations');
 
     expect(response.status).toBe(401);
   });
 
-  it('requires auth for organization access endpoint', async () => {
+  it('組織アクセスエンドポイントに認証を要求する', async () => {
     const response = await app.request('/api/v1/auth/orgs/access-tree');
     expect(response.status).toBe(401);
   });
 
-  it('requires auth for invitation endpoints', async () => {
+  it('招待エンドポイントに認証を要求する', async () => {
     const response = await app.request('/api/v1/auth/orgs/demo/stores/demo/invitations', {
       method: 'POST',
       headers: {
@@ -2281,7 +2330,7 @@ describe('backend app', () => {
     expect(response.status).toBe(401);
   });
 
-  it('requires auth for invitation detail/reject endpoints', async () => {
+  it('招待詳細・拒否エンドポイントに認証を要求する', async () => {
     const detailResponse = await app.request(buildInvitationDetailPath('dummy-id'));
     expect(detailResponse.status).toBe(401);
 
@@ -2298,7 +2347,7 @@ describe('backend app', () => {
     expect(rejectResponse.status).toBe(401);
   });
 
-  it('requires auth for participant invitation endpoints', async () => {
+  it('参加者招待エンドポイントに認証を要求する', async () => {
     const listResponse = await app.request('/api/v1/auth/orgs/demo/stores/demo/invitations');
     expect(listResponse.status).toBe(401);
 
@@ -2319,8 +2368,8 @@ describe('backend app', () => {
     expect(detailResponse.status).toBe(401);
   });
 
-  describe('AI route integration', () => {
-    it('rejects unauthenticated and invalid chat requests', async () => {
+  describe('AI ルート連携', () => {
+    it('未認証または不正なチャットリクエストを拒否する', async () => {
       const runtime = createAiTestRuntime();
 
       const unauthenticatedResponse = await runtime.application.request('/api/v1/ai/chat', {
@@ -2348,7 +2397,7 @@ describe('backend app', () => {
       expect(invalidBodyResponse.status).toBe(400);
     });
 
-    it('persists a grounded chat answer with sources, usage, and no operation side effects', async () => {
+    it('根拠付きチャット回答をソースと使用量つきで保存し操作系の副作用を発生させない', async () => {
       const runtime = createAiTestRuntime({
         answer: '予約枠は予約運用画面から作成できます。',
       });
@@ -2451,7 +2500,7 @@ describe('backend app', () => {
       expect(runtime.answerPrompts[0]?.userPrompt).toContain('Retrieved docs:');
     });
 
-    it('stores retrieval fallback status when Vectorize search fails', async () => {
+    it('Vectorize 検索失敗時に検索フォールバック状態を保存する', async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       try {
         const runtime = createAiTestRuntime({
@@ -2501,7 +2550,7 @@ describe('backend app', () => {
       }
     });
 
-    it('denies cross-organization chat and rejects conversation reuse across scopes', async () => {
+    it('組織をまたぐチャットとスコープ外の会話再利用を拒否する', async () => {
       const runtime = createAiTestRuntime();
       const owner = await createAiOwnerFixture({
         application: runtime.application,
@@ -2546,7 +2595,7 @@ describe('backend app', () => {
       });
     });
 
-    it('keeps store scoping inside the requested organization', async () => {
+    it('店舗スコープをリクエストされた組織内に限定する', async () => {
       const runtime = createAiTestRuntime();
       const owner = await createAiOwnerFixture({
         application: runtime.application,
@@ -2598,7 +2647,7 @@ describe('backend app', () => {
       );
     });
 
-    it('treats currentPage as a hint without expanding participant billing or source access', async () => {
+    it('currentPage をヒントとして扱い参加者の課金情報やソースアクセスを拡張しない', async () => {
       const runtime = createAiTestRuntime({
         answer: '請求の詳細はownerへ確認してください。',
       });
@@ -2678,7 +2727,7 @@ describe('backend app', () => {
       expect(prompt).not.toContain('支払い問題開始:');
     });
 
-    it('upserts feedback only for the message owner and validates feedback payloads', async () => {
+    it('メッセージ所有者のフィードバックだけを upsert しペイロードを検証する', async () => {
       const runtime = createAiTestRuntime();
       const owner = await createAiOwnerFixture({
         application: runtime.application,
@@ -2797,7 +2846,7 @@ describe('backend app', () => {
       expect(await selectAiFeedbackRowsForMessage(messageId)).toEqual(updatedRows);
     });
 
-    it('protects internal AI endpoints and returns knowledge freshness and feedback themes', async () => {
+    it('内部 AI エンドポイントを保護しナレッジ鮮度とフィードバックテーマを返す', async () => {
       const operatorEmail = `${uniqueAiTestToken('ai-operator')}@example.com`;
       const runtime = createAiTestRuntime({
         operatorEmails: operatorEmail,
@@ -2913,7 +2962,7 @@ describe('backend app', () => {
     });
   });
 
-  it('allows first registrants and owners to create organizations but blocks invited users', async () => {
+  it('初回登録者とオーナーの組織作成を許可し招待ユーザーはブロックする', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -3009,7 +3058,7 @@ describe('backend app', () => {
     expect(acceptedCreateResponse.status).toBe(403);
   });
 
-  it('creates free billing rows and syncs premium subscription state via Stripe', async () => {
+  it('無料課金行を作成し Stripe 経由でプレミアム購読状態を同期する', async () => {
     const stripeSecretKey = 'sk_test_billing';
     const stripeWebhookSecret = 'whsec_test_billing';
     const stripeMonthlyPriceId = 'price_premium_monthly';
@@ -3563,7 +3612,7 @@ describe('backend app', () => {
     }
   });
 
-  it('records Stripe webhook signature and payload failures for billing webhooks', async () => {
+  it('課金 Webhook の Stripe 署名エラーとペイロードエラーを記録する', async () => {
     const stripeWebhookSecret = 'whsec_test_failure_records';
     const authRuntimeWithStripe = createAuthRuntime({
       database: drizzle(d1),
@@ -3688,7 +3737,7 @@ describe('backend app', () => {
     );
   });
 
-  it('enforces hardened Premium gate states and keeps billing scoped to organization rows', async () => {
+  it('強化されたプレミアム制限状態を適用し課金を組織行に限定する', async () => {
     const { agent: owner, organizationId } = await createBillingFixtureOwner({
       name: 'Billing Hardening Gate Owner',
       email: 'billing-hardening-gate-owner@example.com',
@@ -3894,7 +3943,7 @@ describe('backend app', () => {
     }
   });
 
-  it('returns payment issue summary fields and gates Premium by grace and terminal states', async () => {
+  it('支払い問題サマリー項目を返し猶予状態と終端状態でプレミアムを制御する', async () => {
     const dayMs = 24 * 60 * 60 * 1000;
     const issueStartedAt = new Date(Date.now() - 4 * dayMs);
     const activeGraceEndsAt = new Date(issueStartedAt.getTime() + 7 * dayMs);
@@ -3985,7 +4034,7 @@ describe('backend app', () => {
     });
   });
 
-  it('returns common billing action envelopes and reuses owner handoffs within 30 minutes', async () => {
+  it('共通の課金アクション応答を返し 30 分以内のオーナーハンドオフを再利用する', async () => {
     const stripeMonthlyPriceId = 'price_handoff_monthly';
     const stripeYearlyPriceId = 'price_handoff_yearly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -4363,7 +4412,7 @@ describe('backend app', () => {
     }
   });
 
-  it('keeps billing readable but blocks owner handoffs when Stripe prices are missing', async () => {
+  it('Stripe 価格がない場合も課金情報は読み取り可能にしつつオーナーハンドオフをブロックする', async () => {
     const authRuntimeWithStripe = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -4420,7 +4469,7 @@ describe('backend app', () => {
     });
   });
 
-  it('marks failed trial setup and portal billing operation attempts immediately', async () => {
+  it('トライアル設定失敗とポータル課金操作試行を即座に失敗として記録する', async () => {
     const stripeMonthlyPriceId = 'price_operation_failure_monthly';
     const authRuntimeWithStripe = createAuthRuntime({
       database: drizzle(d1),
@@ -4609,7 +4658,7 @@ describe('backend app', () => {
     }
   });
 
-  it('normalizes invoice payment webhooks, suppresses duplicates, and records payment issue notifications', async () => {
+  it('請求書支払い Webhook を正規化し重複を抑止して支払い問題通知を記録する', async () => {
     const stripeWebhookSecret = 'whsec_test_invoice_payment_events';
     const stripeMonthlyPriceId = 'price_invoice_payment_monthly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -5069,7 +5118,7 @@ describe('backend app', () => {
     }
   });
 
-  it('keeps delayed stale payment failures as history and support context after provider recovery', async () => {
+  it('プロバイダー復旧後も遅延した古い支払い失敗を履歴とサポート文脈として保持する', async () => {
     const stripeWebhookSecret = 'whsec_test_stale_payment_issue';
     const stripeMonthlyPriceId = 'price_stale_payment_issue_monthly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -5232,7 +5281,7 @@ describe('backend app', () => {
     }
   });
 
-  it('runs targeted and full billing reconciliation for risky and provider-linked states', async () => {
+  it('リスク状態とプロバイダー連携状態に対して対象指定と全体の課金照合を実行する', async () => {
     const stripeMonthlyPriceId = 'price_reconcile_monthly';
     const database = drizzle(d1);
     const env = {
@@ -5395,7 +5444,7 @@ describe('backend app', () => {
     }
   });
 
-  it('returns owner-safe billing history while restricting history detail for non-owners', async () => {
+  it('オーナー向けに安全な課金履歴を返し非オーナーには履歴詳細を制限する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -5551,7 +5600,7 @@ describe('backend app', () => {
     expect(adminPayload.history).toBeNull();
   });
 
-  it('returns owner-safe payment issue and recovery history without payment details or raw provider payloads', async () => {
+  it('支払い詳細や生プロバイダーペイロードを含めずオーナー向け支払い問題・復旧履歴を返す', async () => {
     const issueOccurredAt = new Date('2026-05-01T00:00:00.000Z');
     const recoveredAt = new Date('2026-05-02T00:00:00.000Z');
     const { agent: owner, organizationId } = await createPaymentIssueBillingFixture({
@@ -5616,7 +5665,7 @@ describe('backend app', () => {
     expect(serialized).not.toContain('rawPayload');
   });
 
-  it('retries unmatched billing subscription webhooks until organization linkage is ready', async () => {
+  it('組織紐付けが準備できるまで未照合の課金購読 Webhook を再試行する', async () => {
     const stripeWebhookSecret = 'whsec_test_unmatched_billing';
     const stripeMonthlyPriceId = 'price_unmatched_monthly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -5783,7 +5832,7 @@ describe('backend app', () => {
     }
   });
 
-  it('reconciles stale subscription events using the latest Stripe subscription state', async () => {
+  it('最新の Stripe 購読状態で古い購読イベントを照合する', async () => {
     const stripeWebhookSecret = 'whsec_test_out_of_order';
     const stripeMonthlyPriceId = 'price_out_of_order_monthly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -5963,7 +6012,7 @@ describe('backend app', () => {
     }
   });
 
-  it('keeps expired trial subscription webhooks retryable when trial completion is still pending', async () => {
+  it('トライアル完了が未処理の間は期限切れトライアル購読 Webhook を再試行可能に保つ', async () => {
     const stripeWebhookSecret = 'whsec_test_trial_webhook_pending';
     const stripeMonthlyPriceId = 'price_trial_webhook_pending_monthly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -6132,7 +6181,7 @@ describe('backend app', () => {
     }
   });
 
-  it('marks claimed webhook events as failed when unexpected processing errors occur', async () => {
+  it('取得済み Webhook イベントで予期しない処理エラーが起きたら失敗として記録する', async () => {
     const stripeWebhookSecret = 'whsec_test_unexpected_processing';
     const authRuntimeWithStripe = createAuthRuntime({
       database: drizzle(d1),
@@ -6223,7 +6272,7 @@ describe('backend app', () => {
     ]);
   });
 
-  it('does not treat fresh processing billing webhook duplicates as successful no-ops', async () => {
+  it('処理中の新しい課金 Webhook 重複を成功済み no-op として扱わない', async () => {
     const stripeWebhookSecret = 'whsec_test_processing_duplicate';
     const stripeMonthlyPriceId = 'price_processing_duplicate_monthly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -6300,7 +6349,7 @@ describe('backend app', () => {
     });
   });
 
-  it('reclaims stale processing billing webhook events for Stripe redelivery', async () => {
+  it('Stripe 再配信用に処理中の古い課金 Webhook イベントを再取得する', async () => {
     const stripeWebhookSecret = 'whsec_test_stale_processing';
     const stripeMonthlyPriceId = 'price_stale_processing_monthly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -6375,7 +6424,7 @@ describe('backend app', () => {
     });
   });
 
-  it('sends owner-only trial reminder emails and records billing notification history', async () => {
+  it('オーナー限定のトライアルリマインドメールを送信し課金通知履歴を記録する', async () => {
     const stripeWebhookSecret = 'whsec_test_trial_reminder_success';
     const stripeMonthlyPriceId = 'price_trial_reminder_monthly';
     const authRuntimeWithReminder = createAuthRuntime({
@@ -6599,7 +6648,7 @@ describe('backend app', () => {
     }
   });
 
-  it('adjusts trial reminder email messaging when the payment method is already registered', async () => {
+  it('支払い方法登録済みの場合にトライアルリマインドメールの文面を調整する', async () => {
     const stripeWebhookSecret = 'whsec_test_trial_reminder_registered';
     const stripeMonthlyPriceId = 'price_trial_reminder_registered_monthly';
     const authRuntimeWithReminder = createAuthRuntime({
@@ -6763,7 +6812,7 @@ describe('backend app', () => {
     }
   });
 
-  it('suppresses duplicate trial reminder webhook deliveries after a successful send', async () => {
+  it('送信成功後のトライアルリマインド Webhook 重複配信を抑止する', async () => {
     const stripeWebhookSecret = 'whsec_test_trial_reminder_duplicate';
     const stripeMonthlyPriceId = 'price_trial_reminder_duplicate_monthly';
     const authRuntimeWithReminder = createAuthRuntime({
@@ -6920,7 +6969,7 @@ describe('backend app', () => {
     }
   });
 
-  it('records retryable trial reminder delivery failures and succeeds on Stripe redelivery', async () => {
+  it('再試行可能なトライアルリマインド配信失敗を記録し Stripe 再配信で成功する', async () => {
     const stripeWebhookSecret = 'whsec_test_trial_reminder_retry';
     const stripeMonthlyPriceId = 'price_trial_reminder_retry_monthly';
     const authRuntimeWithReminder = createAuthRuntime({
@@ -7152,7 +7201,7 @@ describe('backend app', () => {
     }
   });
 
-  it('starts owner-only premium trials and rejects duplicate active lifecycle states', async () => {
+  it('オーナー限定のプレミアムトライアルを開始し重複するアクティブ状態を拒否する', async () => {
     const stripeMonthlyPriceId = 'price_owner_only_trial_monthly';
     const currentPeriodStartSeconds = Math.floor(Date.now() / 1000);
     const currentPeriodEndSeconds = currentPeriodStartSeconds + 7 * 24 * 60 * 60;
@@ -7346,7 +7395,7 @@ describe('backend app', () => {
     }
   });
 
-  it('creates a Stripe-backed trial subscription when premium price configuration is available', async () => {
+  it('プレミアム価格設定がある場合に Stripe 管理のトライアル購読を作成する', async () => {
     const stripeSecretKey = 'sk_test_trial_subscription';
     const stripeWebhookSecret = 'whsec_test_trial_subscription';
     const stripeMonthlyPriceId = 'price_trial_monthly';
@@ -7489,7 +7538,7 @@ describe('backend app', () => {
     }
   });
 
-  it('creates an owner-only payment method registration handoff and reflects setup status in billing summary', async () => {
+  it('オーナー限定の支払い方法登録ハンドオフを作成し設定状態を課金サマリーに反映する', async () => {
     const stripeSecretKey = 'sk_test_dummy';
     const stripeWebhookSecret = 'whsec_test_dummy';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -7686,7 +7735,7 @@ describe('backend app', () => {
     }
   });
 
-  it('syncs setup checkout completion into Stripe default payment methods', async () => {
+  it('セットアップ Checkout 完了を Stripe の既定支払い方法へ同期する', async () => {
     const stripeSecretKey = 'sk_test_setup_webhook';
     const stripeWebhookSecret = 'whsec_test_setup_webhook';
     const stripeMonthlyPriceId = 'price_setup_webhook_monthly';
@@ -7933,7 +7982,7 @@ describe('backend app', () => {
     }
   });
 
-  it('converts an ended premium trial to premium paid and preserves operational data', async () => {
+  it('終了したプレミアムトライアルを有料プレミアムへ変換し運用データを保持する', async () => {
     const stripeSecretKey = 'sk_test_dummy';
     const stripeWebhookSecret = 'whsec_test_dummy';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -8171,7 +8220,7 @@ describe('backend app', () => {
     }
   });
 
-  it('returns an ended premium trial to free when billing conditions are not met', async () => {
+  it('課金条件を満たさない終了済みプレミアムトライアルを無料へ戻す', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -8271,7 +8320,7 @@ describe('backend app', () => {
     );
   });
 
-  it('completes expired local premium trials from scheduled billing maintenance', async () => {
+  it('スケジュールされた課金メンテナンスで期限切れローカルプレミアムトライアルを完了する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -8338,7 +8387,7 @@ describe('backend app', () => {
     ]);
   });
 
-  it('rejects invalid trial completion requests and keeps the existing billing state unchanged', async () => {
+  it('不正なトライアル完了リクエストを拒否し既存の課金状態を維持する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -8405,7 +8454,7 @@ describe('backend app', () => {
     );
   });
 
-  it('keeps the trial unchanged when payment method reflection cannot be confirmed yet', async () => {
+  it('支払い方法の反映をまだ確認できない場合はトライアルを変更しない', async () => {
     const stripeSecretKey = 'sk_test_dummy';
     const stripeWebhookSecret = 'whsec_test_dummy';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -8514,7 +8563,7 @@ describe('backend app', () => {
     }
   });
 
-  it('handles invitation policies and audit logs', async () => {
+  it('招待ポリシーと監査ログを処理する', async () => {
     const inviter = createAuthAgent(app);
     await signUpUser({
       agent: inviter,
@@ -8655,7 +8704,7 @@ describe('backend app', () => {
     expect(await selectInvitationActionCount(cancelInvitationId, 'cancelled')).toBe(1);
   });
 
-  it('lists organization access for owner and participant-only user', async () => {
+  it('オーナーと参加者専用ユーザーの組織アクセスを一覧する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -8768,7 +8817,7 @@ describe('backend app', () => {
     expect(participantOrgEntry?.stores?.[0]?.effective?.canUseParticipantBooking).toBe(true);
   });
 
-  it('allows staff booking and participant operations while blocking store schedule management', async () => {
+  it('店舗スケジュール管理をブロックしつつスタッフ予約と参加者操作を許可する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -8970,7 +9019,7 @@ describe('backend app', () => {
     expect(staffParticipantsResponse.status).toBe(200);
   });
 
-  it('does not fail ticket type listing when stored serviceIdsJson is malformed', async () => {
+  it('保存済み serviceIdsJson が不正でも回数券種別一覧は失敗しない', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -9053,7 +9102,7 @@ describe('backend app', () => {
     expect(brokenTicketType?.serviceIds).toEqual([]);
   });
 
-  it('supports multiple stores in access-tree and scoped service routes', async () => {
+  it('アクセスツリーとスコープ付きサービスルートで複数店舗をサポートする', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -9176,7 +9225,7 @@ describe('backend app', () => {
     expect(secondScopedList[0]?.storeId).toBe(secondStoreId);
   });
 
-  it('lists, creates, and updates stores for org admins', async () => {
+  it('組織管理者向けに店舗の一覧・作成・更新を行う', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -9312,7 +9361,7 @@ describe('backend app', () => {
     );
     expect(memberCreateResponse.status).toBe(403);
   });
-  it('denies premium-only backend operations for free organizations with a shared entitlement payload', async () => {
+  it('無料組織のプレミアム限定バックエンド操作を共通エンタイトルメントペイロードで拒否する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -9467,7 +9516,7 @@ describe('backend app', () => {
     await expectPremiumDenied(ticketTypeCreateResponse);
   });
 
-  it('allows premium operations for non-owner operational roles while preserving role-based denial', async () => {
+  it('ロール別拒否を維持しつつ非オーナーの運用ロールにプレミアム操作を許可する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -9619,7 +9668,7 @@ describe('backend app', () => {
     expect(await toJson(memberCreateStoreResponse)).toEqual({ message: 'Forbidden' });
   });
 
-  it('extends premium gating coverage to remaining invitation and participant management surfaces', async () => {
+  it('残りの招待・参加者管理画面にもプレミアム制限の対象範囲を広げる', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -9733,7 +9782,7 @@ describe('backend app', () => {
     await expectPremiumDenied(acceptManagerInviteResponse);
   });
 
-  it('preserves premium operational data across entitlement loss and recovery', async () => {
+  it('エンタイトルメント喪失と復旧をまたいでプレミアム運用データを保持する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -9961,7 +10010,7 @@ describe('backend app', () => {
     expect(restoredStoreResponse.status).toBe(200);
   });
 
-  it('handles participant invitation flows and permissions', async () => {
+  it('参加者招待フローと権限を処理する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -10227,7 +10276,7 @@ describe('backend app', () => {
     expect(invitationListResponse.status).toBe(200);
   });
 
-  it('requires auth for booking domain endpoints', async () => {
+  it('予約ドメインエンドポイントに認証を要求する', async () => {
     const targets: Array<{
       path: string;
       method: 'GET' | 'POST';
@@ -10382,7 +10431,7 @@ describe('backend app', () => {
     }
   });
 
-  it('lists public events and supports self-enroll before booking', async () => {
+  it('公開イベントを一覧し予約前の自己登録をサポートする', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -10407,6 +10456,7 @@ describe('backend app', () => {
         description: '公開向けのサービス説明テキストです。',
         kind: 'single',
         bookingPolicy: 'instant',
+        cancellationDeadlineMinutes: 30,
         durationMinutes: 60,
         capacity: 3,
       }),
@@ -10697,6 +10747,108 @@ describe('backend app', () => {
       ),
     ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
 
+    const publicBookingResponse = await app.request(
+      '/api/v1/public/orgs/public-events-org/stores/public-events-org/bookings',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId,
+          customerName: 'Guest Booker',
+          customerEmail: 'guest-booker@example.com',
+          customerPhone: '090-0000-0000',
+          participantsCount: 2,
+          companions: [{ name: 'Guest Companion' }],
+          note: '公開予約の備考',
+        }),
+      },
+    );
+    expect(publicBookingResponse.status).toBe(200);
+    const publicBookingPayload = (await toJson(publicBookingResponse)) as Record<string, unknown>;
+    expect(publicBookingPayload.bookingPublicId).toMatch(/^bk_/);
+    const publicBookingRow = await selectBookingByPublicId(
+      publicBookingPayload.bookingPublicId as string,
+    );
+    expect(publicBookingRow).toMatchObject({
+      participantId: null,
+      source: 'public_site',
+      customerName: 'Guest Booker',
+      customerEmail: 'guest-booker@example.com',
+      customerPhone: '090-0000-0000',
+      status: 'confirmed',
+    });
+    expect(Number(publicBookingRow?.participantsCount ?? 0)).toBe(2);
+    expect(await selectSlotReservedCount(slotId)).toBe(2);
+
+    const publicCancelToken = 'test-public-cancel-token';
+    await insertPublicCancelTokenForTest({
+      bookingId: publicBookingRow?.id ?? '',
+      token: publicCancelToken,
+      emailSnapshot: 'guest-booker@example.com',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    const publicCancelResponse = await app.request(
+      `/api/v1/public/orgs/public-events-org/stores/public-events-org/bookings/${encodeURIComponent(
+        publicBookingPayload.bookingPublicId as string,
+      )}/cancel`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          token: publicCancelToken,
+          reason: '公開予約キャンセル',
+        }),
+      },
+    );
+    expect(publicCancelResponse.status).toBe(200);
+    expect(await selectBookingStatus(publicBookingRow?.id ?? '')).toBe('cancelled_by_participant');
+    expect(await selectSlotReservedCount(slotId)).toBe(0);
+
+    const reusedPublicCancelResponse = await app.request(
+      `/api/v1/public/orgs/public-events-org/stores/public-events-org/bookings/${encodeURIComponent(
+        publicBookingPayload.bookingPublicId as string,
+      )}/cancel`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          token: publicCancelToken,
+        }),
+      },
+    );
+    expect(reusedPublicCancelResponse.status).toBe(409);
+
+    const staffCreateResponse = await owner.request(
+      '/api/v1/auth/orgs/public-events-org/stores/public-events-org/bookings/staff-create',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId,
+          source: 'phone',
+          customerName: 'Phone Booker',
+          customerEmail: 'phone-booker@example.com',
+          customerPhone: '03-1111-2222',
+          participantsCount: 1,
+          notifyCustomer: false,
+          companions: [{ name: 'Phone Companion' }],
+          note: '電話受付',
+        }),
+      },
+    );
+    expect(staffCreateResponse.status).toBe(200);
+    const staffCreatePayload = (await toJson(staffCreateResponse)) as Record<string, unknown>;
+    expect(staffCreatePayload).toMatchObject({
+      participantId: null,
+      source: 'phone',
+      customerName: 'Phone Booker',
+      customerEmail: 'phone-booker@example.com',
+      customerPhone: '03-1111-2222',
+      participantsCount: 1,
+      status: 'confirmed',
+    });
+    expect(await selectSlotReservedCount(slotId)).toBe(1);
+
     const scopedOrganizationId = await createOrganization({
       agent: owner,
       name: 'Scoped Public Events Org',
@@ -10734,6 +10886,47 @@ describe('backend app', () => {
     });
     expect(scopedSlotResponse.status).toBe(200);
     const scopedSlotPayload = (await toJson(scopedSlotResponse)) as Record<string, unknown>;
+    const scopedPublicEventsWithoutSiteResponse = await app.request(
+      '/api/v1/public/orgs/scoped-public-events-org/stores/scoped-public-events-org/events',
+    );
+    expect(scopedPublicEventsWithoutSiteResponse.status).toBe(404);
+
+    const privateScopedPublicSiteSettingResponse = await owner.request(
+      '/api/v1/auth/orgs/scoped-public-events-org/stores/scoped-public-events-org/public-site',
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          siteName: 'Scoped Private Events Site',
+          status: 'private',
+          acceptBookings: true,
+        }),
+      },
+    );
+    expect(privateScopedPublicSiteSettingResponse.status).toBe(200);
+    const scopedPublicEventsPrivateResponse = await app.request(
+      '/api/v1/public/orgs/scoped-public-events-org/stores/scoped-public-events-org/events',
+    );
+    expect(scopedPublicEventsPrivateResponse.status).toBe(404);
+
+    const scopedPublicSiteSettingResponse = await owner.request(
+      '/api/v1/auth/orgs/scoped-public-events-org/stores/scoped-public-events-org/public-site',
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          siteName: 'Scoped Public Events Site',
+          status: 'public',
+          acceptBookings: true,
+        }),
+      },
+    );
+    expect(scopedPublicSiteSettingResponse.status).toBe(200);
+
     const scopedPublicEventsResponse = await app.request(
       '/api/v1/public/orgs/scoped-public-events-org/stores/scoped-public-events-org/events',
     );
@@ -10765,6 +10958,24 @@ describe('backend app', () => {
       name: 'Self Enroll User',
       email: 'self-enroll-user@example.com',
     });
+
+    const forbiddenStaffCreateResponse = await participantUser.request(
+      '/api/v1/auth/orgs/public-events-org/stores/public-events-org/bookings/staff-create',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          slotId,
+          source: 'phone',
+          customerName: 'Blocked Booker',
+          customerEmail: 'blocked-booker@example.com',
+          participantsCount: 1,
+        }),
+      },
+    );
+    expect(forbiddenStaffCreateResponse.status).toBe(403);
 
     const bookingBeforeSelfEnrollResponse = await participantUser.request(
       '/api/v1/auth/organizations/bookings',
@@ -10850,7 +11061,7 @@ describe('backend app', () => {
     expect([200, 409]).toContain(bookingAfterSelfEnrollResponse.status);
   });
 
-  it('validates service name/description limits and normalizes description on update', async () => {
+  it('サービス名・説明の上限を検証し更新時に説明を正規化する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -10934,7 +11145,7 @@ describe('backend app', () => {
     expect(updateDescriptionPayload.description).toBeNull();
   });
 
-  it('updates slot with guard conditions and recalculates booking window', async () => {
+  it('ガード条件付きで枠を更新し予約受付期間を再計算する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -11162,7 +11373,7 @@ describe('backend app', () => {
     expect(updateStartedSlotResponse.status).toBe(409);
   });
 
-  it('handles booking and ticket flows with permissions', async () => {
+  it('予約と回数券のフローを権限付きで処理する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -11507,7 +11718,7 @@ describe('backend app', () => {
     expect(noShowTwiceResponse.status).toBe(409);
   });
 
-  it('applies issued ticket pack service scopes when consuming tickets', async () => {
+  it('回数券消費時に発行済み回数券パックのサービススコープを適用する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -11724,7 +11935,7 @@ describe('backend app', () => {
     expect(await selectTicketPackRemaining(allPackId)).toBe(0);
   });
 
-  it('handles ticket purchase approval, rejection and participant cancel flows', async () => {
+  it('回数券購入の承認・拒否・参加者キャンセルフローを処理する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -11998,7 +12209,7 @@ describe('backend app', () => {
     expect(participantApproveForbidden.status).toBe(403);
   });
 
-  it('updates ticket types and adjusts issued ticket packs without deleting history', async () => {
+  it('履歴を削除せず回数券種別を更新し発行済み回数券パックを調整する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -12234,7 +12445,7 @@ describe('backend app', () => {
     expect(purchasablePayload.some((ticketType) => ticketType.id === ticketTypeId)).toBe(false);
   });
 
-  it('handles legacy stripe ticket purchase webhook idempotently', async () => {
+  it('旧 Stripe 回数券購入 Webhook を冪等に処理する', async () => {
     const stripeWebhookSecret = 'whsec_test_dummy';
     const authRuntimeWithStripe = createAuthRuntime({
       database: drizzle(d1),
@@ -12392,7 +12603,7 @@ describe('backend app', () => {
     expect(invalidSignatureResponse.status).toBe(400);
   });
 
-  it('handles approval booking policy flows', async () => {
+  it('承認制予約ポリシーフローを処理する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -12750,7 +12961,7 @@ describe('backend app', () => {
     expect(await selectBookingStatus(capacityBookingId2)).toBe('pending_approval');
   });
 
-  it('sends booking notification emails for booking lifecycle events', async () => {
+  it('予約ライフサイクルイベントの予約通知メールを送信する', async () => {
     const authRuntimeWithEmail = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -12987,7 +13198,7 @@ describe('backend app', () => {
     }
   });
 
-  it('sends booking notification emails for approval lifecycle events', async () => {
+  it('承認ライフサイクルイベントの予約通知メールを送信する', async () => {
     const authRuntimeWithEmail = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -13182,7 +13393,7 @@ describe('backend app', () => {
     }
   });
 
-  it('generates recurring slots and applies skip exception', async () => {
+  it('繰り返し枠を生成しスキップ例外を適用する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
@@ -13284,7 +13495,7 @@ describe('backend app', () => {
     expect(skippedSlotRow?.status).toBe('canceled');
   });
 
-  it('denies internal billing inspection to non-internal users even when they own the organization', async () => {
+  it('組織オーナーでも内部ユーザーでない場合は内部課金調査を拒否する', async () => {
     const authRuntimeWithInternalInspection = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -13318,7 +13529,7 @@ describe('backend app', () => {
     });
   });
 
-  it('requires allowlisted operators to have a verified email before accessing internal billing inspection', async () => {
+  it('内部課金調査前に許可リスト登録オペレーターへメール確認済みを要求する', async () => {
     const authRuntimeWithInternalInspection = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -13362,7 +13573,7 @@ describe('backend app', () => {
     expect(allowedResponse.status).toBe(200);
   });
 
-  it('returns internal payment issue inspection with recipient outcomes, stale failures, and support signals', async () => {
+  it('受信者結果・古い失敗・サポートシグナルを含む内部支払い問題調査を返す', async () => {
     const authRuntimeWithInternalInspection = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -13491,7 +13702,7 @@ describe('backend app', () => {
     expect(serialized).not.toContain('rawPayload');
   });
 
-  it('returns a read-only internal billing inspection view with normalized auth and billing edge cases', async () => {
+  it('認証と課金の境界事例を正規化した読み取り専用の内部課金調査ビューを返す', async () => {
     const authRuntimeWithInternalInspection = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -13931,7 +14142,7 @@ describe('backend app', () => {
     });
   });
 
-  it('returns internal reminder delivery audit inspection for delivered, pending, failed, missing, and unknown reminder outcomes', async () => {
+  it('配信済み・保留・失敗・欠落・不明のリマインド結果に対する内部配信監査調査を返す', async () => {
     const authRuntimeWithInternalInspection = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -14422,7 +14633,7 @@ describe('backend app', () => {
     );
   });
 
-  it('returns internal reconciliation diagnosis for mismatch, aligned recovery, pending, unavailable, incomplete, and not-applicable organizations', async () => {
+  it('不一致・復旧一致・保留・利用不可・未完了・対象外組織の内部照合診断を返す', async () => {
     const authRuntimeWithInternalInspection = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -14943,7 +15154,7 @@ describe('backend app', () => {
     expect(freePayload).toHaveProperty('reconciliation.recentWebhookEvents', []);
   });
 
-  it('returns an internal billing investigation timeline that correlates billing, reminder, reconciliation, and webhook context', async () => {
+  it('課金・リマインド・照合・Webhook 文脈を関連付けた内部課金調査タイムラインを返す', async () => {
     const authRuntimeWithInternalInspection = createAuthRuntime({
       database: drizzle(d1),
       env: {
@@ -15221,7 +15432,7 @@ describe('backend app', () => {
     expect(payload).not.toHaveProperty('rawProviderPayload');
   });
 
-  it('sets CORS headers for API routes', async () => {
+  it('API ルートに CORS ヘッダーを設定する', async () => {
     const origin = 'http://localhost:5173';
     const response = await app.request('/api/health', {
       headers: {
@@ -15234,7 +15445,7 @@ describe('backend app', () => {
     expect(response.headers.get('access-control-allow-credentials')).toBe('true');
   });
 
-  it('responds to auth CORS preflight requests', async () => {
+  it('認証 CORS プリフライトリクエストに応答する', async () => {
     const origin = 'http://localhost:5173';
     const response = await app.request('/api/auth/sign-in', {
       method: 'OPTIONS',
@@ -15249,7 +15460,7 @@ describe('backend app', () => {
     expect(response.headers.get('access-control-allow-credentials')).toBe('true');
   });
 
-  it('serves OpenAPI schema', async () => {
+  it('OpenAPI スキーマを提供する', async () => {
     const response = await app.request('/api/openapi.json');
 
     expect(response.status).toBe(200);
@@ -15286,6 +15497,9 @@ describe('backend app', () => {
     expect(body.paths['/api/v1/auth/organizations/bookings/approve']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/reject']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/no-show']).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/staff-create'],
+    ).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-types']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-types/update']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/ticket-types/purchasable']).toBeDefined();
@@ -15315,6 +15529,12 @@ describe('backend app', () => {
     ).toBeDefined();
     expect(
       body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/ticket-types/{ticketTypeId}'],
+    ).toBeDefined();
+    expect(body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings']).toBeDefined();
+    expect(
+      body.paths[
+        '/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings/{bookingPublicId}/cancel'
+      ],
     ).toBeDefined();
   });
 });

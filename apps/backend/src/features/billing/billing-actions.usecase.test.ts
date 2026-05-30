@@ -204,12 +204,12 @@ const createContext = ({
   };
 };
 
-describe('billing action usecases', () => {
+describe('課金アクションユースケース', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('marks checkout operation succeeded when Stripe checkout handoff is created', async () => {
+  it('Stripe Checkout ハンドオフ作成時に checkout 操作を成功として記録する', async () => {
     const { ctx, operationStore } = createContext();
 
     const result = await createSubscriptionCheckoutHandoff({
@@ -230,7 +230,7 @@ describe('billing action usecases', () => {
     expect(operationStore.markFailed).not.toHaveBeenCalled();
   });
 
-  it('marks checkout operation failed when Stripe checkout handoff creation fails', async () => {
+  it('Stripe Checkout ハンドオフ作成失敗時に checkout 操作を失敗として記録する', async () => {
     const provider = createProvider({
       createSubscriptionCheckoutSession: vi.fn(async () => {
         throw new Error('checkout failed');
@@ -252,7 +252,7 @@ describe('billing action usecases', () => {
     expect(operationStore.markSucceeded).not.toHaveBeenCalled();
   });
 
-  it('marks trial operation failed when trial state update fails', async () => {
+  it('トライアル状態更新失敗時に trial 操作を失敗として記録する', async () => {
     const { ctx, store, operationStore } = createContext();
     vi.mocked(store.startPremiumTrial).mockRejectedValue(new Error('trial update failed'));
 
@@ -269,7 +269,7 @@ describe('billing action usecases', () => {
     });
   });
 
-  it('marks setup operation failed when setup handoff creation fails', async () => {
+  it('setup ハンドオフ作成失敗時に setup 操作を失敗として記録する', async () => {
     const provider = createProvider({
       createSetupCheckoutSession: vi.fn(async () => {
         throw new Error('setup failed');
@@ -290,7 +290,7 @@ describe('billing action usecases', () => {
     });
   });
 
-  it('marks portal operation failed when portal handoff creation fails', async () => {
+  it('ポータルハンドオフ作成失敗時に portal 操作を失敗として記録する', async () => {
     const provider = createProvider({
       createBillingPortalSession: vi.fn(async () => {
         throw new Error('portal failed');
@@ -311,7 +311,7 @@ describe('billing action usecases', () => {
     });
   });
 
-  it('returns 403 before operation claim for non-owner billing actions', async () => {
+  it('非オーナーの課金アクションでは操作取得前に 403 を返す', async () => {
     const actions = [
       () =>
         createSubscriptionCheckoutHandoff({

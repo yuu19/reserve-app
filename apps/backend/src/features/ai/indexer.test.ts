@@ -46,14 +46,14 @@ const createDocument = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-describe('AI knowledge indexer', () => {
+describe('AI ナレッジインデクサー', () => {
   afterEach(async () => {
     await Promise.all(
       tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })),
     );
   });
 
-  it('chunks long knowledge content with overlap and ignores empty content', () => {
+  it('長いナレッジ本文を重なり付きで分割し空本文を無視する', () => {
     expect(chunkKnowledgeContent({ content: '   \n\n ' })).toEqual([]);
 
     const chunks = chunkKnowledgeContent({
@@ -65,7 +65,7 @@ describe('AI knowledge indexer', () => {
     expect(chunks).toEqual(['0123456789', '789abcdefg', 'efghij']);
   });
 
-  it('defines stable default knowledge source roots', () => {
+  it('安定した既定のナレッジソースルートを定義する', () => {
     expect(
       createDefaultKnowledgeSourceRoots({ repoRoot: '/repo' }).map(
         ({ id, repoRelativePrefix, sourceKind, visibility, internalOnly }) => ({
@@ -101,7 +101,7 @@ describe('AI knowledge indexer', () => {
     ]);
   });
 
-  it('discovers markdown/spec documents with frontmatter metadata and titles', async () => {
+  it('frontmatter メタデータとタイトルを持つ Markdown・spec 文書を検出する', async () => {
     const rootDir = await createTempDir();
     await writeFile(
       rootDir,
@@ -142,7 +142,7 @@ describe('AI knowledge indexer', () => {
     expect(documents[0]?.content).toContain('# 見出し');
   });
 
-  it('preserves root visibility and internal-only policy during repository discovery', async () => {
+  it('リポジトリ検出中にルート可視性と内部専用ポリシーを維持する', async () => {
     const repoRoot = await createTempDir();
     await writeFile(
       repoRoot,
@@ -177,7 +177,7 @@ describe('AI knowledge indexer', () => {
     });
   });
 
-  it('dry-run does not call D1, Vectorize, or Workers AI dependencies', async () => {
+  it('dry-run では D1・Vectorize・Workers AI 依存を呼び出さない', async () => {
     const result = await runKnowledgeIndexing({
       documents: [createDocument()],
       apply: false,
@@ -205,7 +205,7 @@ describe('AI knowledge indexer', () => {
     });
   });
 
-  it('treats no arguments as dry-run and rejects conflicting apply modes', () => {
+  it('引数なしを dry-run として扱い競合する apply モードを拒否する', () => {
     expect(parseArgs([])).toMatchObject({
       apply: false,
       dryRun: true,
@@ -241,7 +241,7 @@ describe('AI knowledge indexer', () => {
     expect(() => parseArgs(['--unknown'])).toThrow('Unknown option: --unknown');
   });
 
-  it('filters discovery by repository-relative source path', async () => {
+  it('リポジトリ相対ソースパスで検出結果を絞り込む', async () => {
     const repoRoot = await createTempDir();
     await writeFile(repoRoot, 'apps/docs/manual-a.md', '# A');
     await writeFile(repoRoot, 'apps/docs/manual-b.md', '# B');
@@ -254,7 +254,7 @@ describe('AI knowledge indexer', () => {
     expect(documents.map((document) => document.sourcePath)).toEqual(['apps/docs/manual-a.md']);
   });
 
-  it('filters discovery by source root and repository-relative source path together', async () => {
+  it('ソースルートとリポジトリ相対ソースパスを組み合わせて検出結果を絞り込む', async () => {
     const repoRoot = await createTempDir();
     await writeFile(repoRoot, 'apps/docs/manual-a.md', '# A');
     await writeFile(repoRoot, 'docs/operator.md', '# Operator');
@@ -293,7 +293,7 @@ describe('AI knowledge indexer', () => {
     ).rejects.toThrow('No knowledge source matched --source-path docs/operator.md');
   });
 
-  it('fails when source-path matches no knowledge source', async () => {
+  it('source-path がナレッジソースに一致しない場合は失敗する', async () => {
     const repoRoot = await createTempDir();
     await writeFile(repoRoot, 'apps/docs/manual-a.md', '# A');
 
@@ -305,7 +305,7 @@ describe('AI knowledge indexer', () => {
     ).rejects.toThrow('No knowledge source matched --source-path apps/docs/missing.md');
   });
 
-  it('limits stale SQL to the target document for source-path apply', () => {
+  it('source-path apply では古い SQL を対象ドキュメントに限定する', () => {
     const plan = createKnowledgeIndexingPlan({
       documents: [createDocument({ sourcePath: 'apps/docs/manual-a.md' })],
     });
@@ -326,7 +326,7 @@ describe('AI knowledge indexer', () => {
     expect(sql).not.toContain("UPDATE ai_knowledge_document SET index_status = 'stale'");
   });
 
-  it('keeps global source-kind stale SQL for full apply', () => {
+  it('full apply では source-kind 全体の古い SQL を維持する', () => {
     const plan = createKnowledgeIndexingPlan({
       documents: [createDocument({ sourcePath: 'apps/docs/manual-a.md' })],
     });
@@ -346,7 +346,7 @@ describe('AI knowledge indexer', () => {
     expect(sql).toContain("UPDATE ai_knowledge_document SET index_status = 'stale'");
   });
 
-  it('limits stale SQL to the selected source root for source-root apply', () => {
+  it('source-root apply では古い SQL を選択されたソースルートに限定する', () => {
     const plan = createKnowledgeIndexingPlan({
       documents: [createDocument({ sourcePath: 'apps/docs/manual-a.md' })],
     });
@@ -372,7 +372,7 @@ describe('AI knowledge indexer', () => {
     expect(sql).toContain("UPDATE ai_knowledge_document SET index_status = 'stale'");
   });
 
-  it('stores and updates source visibility metadata in pending SQL and vector metadata', () => {
+  it('保留 SQL とベクトルメタデータにソース可視性メタデータを保存・更新する', () => {
     const plan = createKnowledgeIndexingPlan({
       documents: [
         createDocument({

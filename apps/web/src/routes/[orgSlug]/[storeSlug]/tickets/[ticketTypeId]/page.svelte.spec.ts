@@ -32,7 +32,7 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 	loadSession: mocks.loadSession
 }));
 
-describe('/[orgSlug]/[storeSlug]/tickets/[ticketTypeId]/+page.svelte', () => {
+describe('公開回数券詳細ページ', () => {
 	beforeEach(() => {
 		pageState.params = {
 			orgSlug: 'org-one',
@@ -57,7 +57,7 @@ describe('/[orgSlug]/[storeSlug]/tickets/[ticketTypeId]/+page.svelte', () => {
 		});
 	});
 
-	it('renders ticket detail and logged-out login CTA with the current detail URL as next', async () => {
+	it('回数券詳細と現在の詳細 URL を next にした未ログイン向けログイン CTA を表示する', async () => {
 		render(TicketDetailPage);
 
 		await expect
@@ -82,7 +82,7 @@ describe('/[orgSlug]/[storeSlug]/tickets/[ticketTypeId]/+page.svelte', () => {
 		});
 	});
 
-	it('renders logged-in CTA to participant bookings with ticketTypeId query', async () => {
+	it('ticketTypeId クエリ付き参加者予約へのログイン済み CTA を表示する', async () => {
 		mocks.loadSession.mockResolvedValueOnce({
 			session: { user: { id: 'user-1' } },
 			status: 200

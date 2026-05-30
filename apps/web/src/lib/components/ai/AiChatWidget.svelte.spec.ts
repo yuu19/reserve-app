@@ -17,14 +17,14 @@ vi.mock('$lib/ai-client', () => ({
 	})
 }));
 
-describe('AiChatWidget.svelte', () => {
+describe('AiChatWidget.svelte コンポーネント', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		mocks.askAi.mockReset();
 		mocks.submitAiFeedback.mockReset();
 	});
 
-	it('sends a message and renders the assistant answer with sources and suggested actions', async () => {
+	it('メッセージを送信しソースと提案アクション付きでアシスタント回答を表示する', async () => {
 		mocks.askAi.mockResolvedValue({
 			conversationId: 'conv-a',
 			messageId: 'assistant-a',
@@ -72,13 +72,13 @@ describe('AiChatWidget.svelte', () => {
 		});
 	});
 
-	it('renders nothing while the feature is disabled', async () => {
+	it('機能が無効な間は何も表示しない', async () => {
 		render(AiChatWidget, { enabled: false });
 
 		expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
 	});
 
-	it('disables input while a response is in flight', async () => {
+	it('回答待ち中は入力を無効化する', async () => {
 		let resolveResponse: (value: unknown) => void = () => {};
 		mocks.askAi.mockReturnValue(
 			new Promise((resolve) => {
@@ -110,7 +110,7 @@ describe('AiChatWidget.svelte', () => {
 		await expect.element(page.getByText('回答しました。')).toBeInTheDocument();
 	});
 
-	it('clears the stale conversation id when the active organization or store changes', async () => {
+	it('アクティブ組織または店舗が変わったら古い会話 ID をクリアする', async () => {
 		mocks.askAi
 			.mockResolvedValueOnce({
 				conversationId: 'conv-a',
@@ -169,7 +169,7 @@ describe('AiChatWidget.svelte', () => {
 		});
 	});
 
-	it('submits unhelpful feedback with an optional comment and shows human-support guidance', async () => {
+	it('任意コメント付きの低評価フィードバックを送信し人によるサポート案内を表示する', async () => {
 		mocks.askAi.mockResolvedValue({
 			conversationId: 'conv-a',
 			messageId: 'assistant-a',
@@ -207,7 +207,7 @@ describe('AiChatWidget.svelte', () => {
 		});
 	});
 
-	it('shows feedback failure state', async () => {
+	it('フィードバック失敗状態を表示する', async () => {
 		mocks.askAi.mockResolvedValue({
 			conversationId: 'conv-a',
 			messageId: 'assistant-a',

@@ -43,7 +43,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 	loadOrganizationBilling: mocks.loadOrganizationBilling
 }));
 
-describe('/admin/participants/+page.svelte', () => {
+describe('管理参加者ページ', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
@@ -73,14 +73,14 @@ describe('/admin/participants/+page.svelte', () => {
 		});
 	});
 
-	it('should render admin participants heading', async () => {
+	it('管理参加者の見出しを表示する', async () => {
 		render(AdminParticipantsPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '参加者管理' }))
 			.toBeInTheDocument();
 	});
 
-	it('does not render ticket management operations', async () => {
+	it('回数券管理操作を表示しない', async () => {
 		render(AdminParticipantsPage);
 
 		await expect.element(page.getByText('参加者一覧・参加者招待を行います。')).toBeInTheDocument();

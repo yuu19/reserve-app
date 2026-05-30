@@ -14,8 +14,8 @@ import {
 const responseStatuses = (route: { responses: Record<string | number, unknown> }) =>
   Object.keys(route.responses).sort((left, right) => Number(left) - Number(right));
 
-describe('billing route compatibility', () => {
-  it('keeps existing billing paths, methods and response status sets', () => {
+describe('課金ルート互換性', () => {
+  it('既存の課金パス・メソッド・レスポンスステータス集合を維持する', () => {
     expect(
       [
         getOrganizationBillingRoute,
@@ -69,7 +69,7 @@ describe('billing route compatibility', () => {
     ]);
   });
 
-  it('keeps checkout request and action response wire shape', () => {
+  it('Checkout リクエストとアクションレスポンスのワイヤー形状を維持する', () => {
     expect(
       organizationBillingCheckoutBodySchema.parse({
         organizationId: 'organization-1',

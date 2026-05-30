@@ -73,7 +73,7 @@ const createContext = (): BookingRouteContext =>
     })),
   }) as unknown as BookingRouteContext;
 
-describe('booking usecases', () => {
+describe('予約ユースケース', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authorizationMocks.findParticipantByUserAndOrganization.mockResolvedValue({
@@ -107,7 +107,7 @@ describe('booking usecases', () => {
     ticketStateMocks.restoreConsumedTicketPackBalance.mockResolvedValue(undefined);
   });
 
-  it('restores consumed ticket balance and reserved capacity when duplicate instant booking insert fails', async () => {
+  it('即時予約の重複 insert 失敗時に消費済み回数券残高と予約済み枠数を復元する', async () => {
     const ctx = createContext();
     repositoryMocks.insertBooking.mockRejectedValue(
       new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed: booking.slot_id'),
@@ -132,7 +132,7 @@ describe('booking usecases', () => {
     expect(repositoryMocks.consumeBookingTicketLedger).not.toHaveBeenCalled();
   });
 
-  it('does not consume ticket balance while creating pending approval bookings', async () => {
+  it('承認待ち予約の作成中は回数券残高を消費しない', async () => {
     const ctx = createContext();
     repositoryMocks.findServiceForBookingCreate.mockResolvedValue({
       id: 'service-1',
@@ -158,7 +158,7 @@ describe('booking usecases', () => {
     );
   });
 
-  it('restores slot capacity and ticket ledger state when participant cancels a confirmed booking', async () => {
+  it('参加者が確定予約をキャンセルした場合に枠数と回数券台帳状態を復元する', async () => {
     const ctx = createContext();
     repositoryMocks.findBookingForParticipantCancel.mockResolvedValue({
       id: 'booking-1',
@@ -224,7 +224,7 @@ describe('booking usecases', () => {
     );
   });
 
-  it('compensates reserved capacity and consumed ticket when approval state update conflicts', async () => {
+  it('承認状態更新が競合した場合に予約済み枠数と消費済み回数券を補償する', async () => {
     const ctx = createContext();
     repositoryMocks.findBookingScope.mockResolvedValue({
       id: 'booking-1',

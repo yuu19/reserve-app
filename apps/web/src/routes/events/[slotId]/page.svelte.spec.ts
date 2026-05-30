@@ -6,6 +6,7 @@ import EventDetailPage from './+page.svelte';
 const mocks = vi.hoisted(() => ({
 	loadPublicEventDetail: vi.fn(),
 	reservePublicEvent: vi.fn(),
+	createGuestPublicBooking: vi.fn(),
 	loadSession: vi.fn(),
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/events/slot-1')
@@ -23,7 +24,8 @@ vi.mock('$app/state', () => ({
 
 vi.mock('$lib/features/events.svelte', () => ({
 	loadPublicEventDetail: mocks.loadPublicEventDetail,
-	reservePublicEvent: mocks.reservePublicEvent
+	reservePublicEvent: mocks.reservePublicEvent,
+	createGuestPublicBooking: mocks.createGuestPublicBooking
 }));
 
 vi.mock('$lib/features/auth-session.svelte', () => ({
@@ -32,11 +34,12 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 	getCurrentPathWithSearch: mocks.getCurrentPathWithSearch
 }));
 
-describe('/events/[slotId]/+page.svelte', () => {
+describe('イベント詳細ページ', () => {
 	beforeEach(() => {
 		pageState.params = { slotId: 'slot-1' };
 		mocks.loadPublicEventDetail.mockReset();
 		mocks.reservePublicEvent.mockReset();
+		mocks.createGuestPublicBooking.mockReset();
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
@@ -52,7 +55,7 @@ describe('/events/[slotId]/+page.svelte', () => {
 			serviceImageUrl: null,
 			serviceKind: 'single',
 			bookingPolicy: 'instant',
-			requiresTicket: true,
+			requiresTicket: false,
 			slotId: 'slot-1',
 			startAt: '2026-06-01T01:00:00.000Z',
 			endAt: '2026-06-01T02:00:00.000Z',
@@ -104,17 +107,54 @@ describe('/events/[slotId]/+page.svelte', () => {
 		});
 	});
 
-	it('should render event detail heading and reserve button', async () => {
+	it('イベント詳細の見出しと予約ボタンを表示する', async () => {
 		render(EventDetailPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: 'イベント詳細' }))
 			.toBeInTheDocument();
-		await expect
-			.element(page.getByRole('button', { name: '参加登録して予約する' }))
-			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '予約する' })).toBeInTheDocument();
 	});
 
-	it('renders only ticket types usable for the current event service', async () => {
+	it('スコープ付きイベント詳細からゲスト公開予約を作成する', async () => {
+		pageState.params = { orgSlug: 'org-one', storeSlug: 'room-one', slotId: 'slot-1' };
+		mocks.createGuestPublicBooking.mockResolvedValue({
+			ok: true,
+			message: '予約を受け付けました。',
+			booking: {
+				bookingId: 'booking-1',
+				bookingPublicId: 'bk_public_1',
+				status: 'confirmed'
+			}
+		});
+
+		render(EventDetailPage);
+
+		await page.getByLabelText('氏名').fill('Public Guest');
+		await page.getByLabelText('メールアドレス').fill('guest@example.com');
+		await page.getByLabelText('電話番号').fill('090-0000-0000');
+		await page.getByLabelText('人数').fill('2');
+		await page.getByLabelText('同伴者').fill('Friend One');
+		await page.getByLabelText('備考').fill('窓際希望');
+		await page.getByRole('button', { name: '予約する' }).click();
+
+		await vi.waitFor(() => {
+			expect(mocks.createGuestPublicBooking).toHaveBeenCalledWith(
+				{ orgSlug: 'org-one', storeSlug: 'room-one' },
+				{
+					slotId: 'slot-1',
+					customerName: 'Public Guest',
+					customerEmail: 'guest@example.com',
+					customerPhone: '090-0000-0000',
+					participantsCount: 2,
+					companions: [{ name: 'Friend One' }],
+					note: '窓際希望'
+				}
+			);
+		});
+		await expect.element(page.getByText('bk_public_1')).toBeInTheDocument();
+	});
+
+	it('現在のイベントサービスで利用可能な回数券種別だけを表示する', async () => {
 		render(EventDetailPage);
 
 		await expect.element(page.getByText('全サービス回数券')).toBeInTheDocument();
@@ -126,7 +166,7 @@ describe('/events/[slotId]/+page.svelte', () => {
 			.toHaveAttribute('href', '/org-one/room-one/tickets/ticket-specific');
 	});
 
-	it('loads scoped public event detail from route params', async () => {
+	it('ルートパラメータからスコープ付き公開イベント詳細を読み込む', async () => {
 		pageState.params = { orgSlug: 'org2', storeSlug: 'world', slotId: 'slot-1' };
 		render(EventDetailPage);
 
@@ -142,7 +182,7 @@ describe('/events/[slotId]/+page.svelte', () => {
 			.toHaveAttribute('href', '/org-one/room-one/tickets/ticket-all');
 	});
 
-	it('renders empty message when no ticket type matches this event', async () => {
+	it('このイベントに一致する回数券種別がない場合は空メッセージを表示する', async () => {
 		mocks.loadPublicEventDetail.mockResolvedValueOnce({
 			organizationId: 'org-1',
 			organizationSlug: 'org-one',

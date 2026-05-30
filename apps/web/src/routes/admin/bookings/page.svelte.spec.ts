@@ -9,8 +9,8 @@ vi.mock('$env/dynamic/public', () => ({
 	}
 }));
 
-describe('/admin/bookings/+page.svelte', () => {
-	it('should render operations-only admin bookings page', async () => {
+describe('管理予約ページ', () => {
+	it('操作専用の管理予約ページを表示する', async () => {
 		render(AdminBookingsPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '予約管理' }))

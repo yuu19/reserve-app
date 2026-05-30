@@ -48,7 +48,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 	loadOrganizationBilling: mocks.loadOrganizationBilling
 }));
 
-describe('/participants/+page.svelte', () => {
+describe('参加者管理ページ', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
@@ -79,14 +79,14 @@ describe('/participants/+page.svelte', () => {
 		});
 	});
 
-	it('should render participants heading', async () => {
+	it('参加者の見出しを表示する', async () => {
 		render(ParticipantsPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '参加者管理' }))
 			.toBeInTheDocument();
 	});
 
-	it('does not render ticket management operations on the participants page', async () => {
+	it('参加者ページでは回数券管理操作を表示しない', async () => {
 		render(ParticipantsPage);
 
 		await expect.element(page.getByText('参加者一覧・参加者招待を行います。')).toBeInTheDocument();
@@ -96,7 +96,7 @@ describe('/participants/+page.svelte', () => {
 		await expect.element(page.getByText('Stripe 価格ID（販売時必須）')).not.toBeInTheDocument();
 	});
 
-	it('should show loading message and hide organization-required message during initial load', async () => {
+	it('初期読み込み中は読み込みメッセージを表示し組織必須メッセージを隠す', async () => {
 		mocks.loadParticipantsPageData.mockImplementation(() => new Promise(() => {}));
 
 		render(ParticipantsPage);
@@ -107,7 +107,7 @@ describe('/participants/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
-	it('should show organization-required message after load when no active organization', async () => {
+	it('読み込み後にアクティブ組織がない場合は組織必須メッセージを表示する', async () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
 			activeContext: null,
 			organizationId: null,
@@ -128,7 +128,7 @@ describe('/participants/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('shows participant operations for staff without ticket management', async () => {
+	it('スタッフには回数券管理なしで参加者操作を表示する', async () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',
@@ -162,7 +162,7 @@ describe('/participants/+page.svelte', () => {
 		await expect.element(page.getByText('回数券購入管理')).not.toBeInTheDocument();
 	});
 
-	it('shows read-only premium restriction guidance without owner CTA', async () => {
+	it('オーナー CTA なしで読み取り専用のプレミアム制限案内を表示する', async () => {
 		mocks.loadParticipantsPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',

@@ -42,8 +42,8 @@ const buildAccess = ({
   },
 });
 
-describe('AI answer generation', () => {
-  it('returns a low-confidence fallback when no grounding is available', async () => {
+describe('AI 回答生成', () => {
+  it('根拠がない場合は低信頼度フォールバックを返す', async () => {
     await expect(
       generateAnswer({
         env: {},
@@ -61,7 +61,7 @@ describe('AI answer generation', () => {
     });
   });
 
-  it('parses provider JSON, preserves sources, and uses AI Gateway cache for docs-only answers', async () => {
+  it('プロバイダー JSON を解析しソースを保持してドキュメント専用回答では AI Gateway キャッシュを使う', async () => {
     const ai = {
       aiGatewayLogId: '01JADMCQQQBWH3NXZ5GCRN98DP',
       run: vi.fn(async () => ({
@@ -132,7 +132,7 @@ describe('AI answer generation', () => {
     );
   });
 
-  it('marks low-confidence provider output as requiring human support', async () => {
+  it('低信頼度のプロバイダー出力を人によるサポートが必要として扱う', async () => {
     const run = vi.fn(async () => ({
       response: JSON.stringify({
         answer: '断定できません。',
@@ -165,7 +165,7 @@ describe('AI answer generation', () => {
     });
   });
 
-  it('returns a clear fallback when retrieval failed before answer generation', async () => {
+  it('回答生成前の検索失敗時は明確なフォールバックを返す', async () => {
     const run = vi.fn();
 
     await expect(
@@ -196,7 +196,7 @@ describe('AI answer generation', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('drops AI-generated action hrefs that are not internal paths', async () => {
+  it('内部パスでない AI 生成アクション href を除外する', async () => {
     const run = vi.fn(async () => ({
       response: JSON.stringify({
         answer: '該当画面を確認してください。',
@@ -236,7 +236,7 @@ describe('AI answer generation', () => {
     ]);
   });
 
-  it('includes a db_summary source when grounding comes only from business facts', async () => {
+  it('根拠が業務ファクトのみの場合は db_summary ソースを含める', async () => {
     await expect(
       generateAnswer({
         env: {},
@@ -264,7 +264,7 @@ describe('AI answer generation', () => {
     });
   });
 
-  it('returns a fallback when provider generation fails', async () => {
+  it('プロバイダー生成が失敗した場合はフォールバックを返す', async () => {
     const run = vi.fn(async () => {
       throw new Error('gateway not found');
     });
@@ -297,7 +297,7 @@ describe('AI answer generation', () => {
     });
   });
 
-  it('skips gateway cache when sensitive DB facts are included', async () => {
+  it('機密性のある DB ファクトを含む場合は Gateway キャッシュをスキップする', async () => {
     const run = vi.fn(async () => ({ response: '支払い状態は管理画面で確認してください。' }));
 
     await generateAnswer({

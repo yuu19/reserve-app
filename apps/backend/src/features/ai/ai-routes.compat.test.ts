@@ -17,8 +17,8 @@ const responseStatuses = (route: { responses: Record<string | number, unknown> }
     .map(Number)
     .sort((a, b) => a - b);
 
-describe('AI routes compatibility', () => {
-  it('keeps public chat route method, path, statuses, and body shapes stable', () => {
+describe('AI ルート互換性', () => {
+  it('公開チャットルートのメソッド・パス・ステータス・本文形状を安定させる', () => {
     expect(chatRoute.method).toBe('post');
     expect(chatRoute.path).toBe('/chat');
     expect(responseStatuses(chatRoute)).toEqual([200, 401, 403, 429]);
@@ -76,7 +76,7 @@ describe('AI routes compatibility', () => {
     });
   });
 
-  it('keeps feedback route method, path, statuses, and body shapes stable', () => {
+  it('フィードバックルートのメソッド・パス・ステータス・本文形状を安定させる', () => {
     expect(feedbackRoute.method).toBe('post');
     expect(feedbackRoute.path).toBe('/messages/{messageId}/feedback');
     expect(responseStatuses(feedbackRoute)).toEqual([200, 401, 403]);
@@ -101,7 +101,7 @@ describe('AI routes compatibility', () => {
     });
   });
 
-  it('keeps internal inspection route paths, statuses, and response item shapes stable', () => {
+  it('内部調査ルートのパス・ステータス・レスポンス項目形状を安定させる', () => {
     expect(internalKnowledgeRoute.method).toBe('get');
     expect(internalKnowledgeRoute.path).toBe('/knowledge');
     expect(responseStatuses(internalKnowledgeRoute)).toEqual([200, 401, 403]);

@@ -43,7 +43,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 	loadOrganizationBilling: mocks.loadOrganizationBilling
 }));
 
-describe('/admin/tickets/+page.svelte', () => {
+describe('回数券管理ページ', () => {
 	beforeEach(() => {
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
@@ -129,7 +129,7 @@ describe('/admin/tickets/+page.svelte', () => {
 		});
 	});
 
-	it('renders ticket management operations', async () => {
+	it('回数券管理操作を表示する', async () => {
 		render(AdminTicketsPage);
 
 		await expect
@@ -147,7 +147,7 @@ describe('/admin/tickets/+page.svelte', () => {
 		await expect.element(page.getByRole('button', { name: '却下' })).toBeInTheDocument();
 	});
 
-	it('keeps participant-only operations behind participant management permission', async () => {
+	it('参加者専用操作を参加者管理権限の内側に保つ', async () => {
 		mocks.loadTicketManagementPageData.mockResolvedValue({
 			activeContext: {
 				orgSlug: 'org-1',

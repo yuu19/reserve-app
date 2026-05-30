@@ -13,8 +13,16 @@ const mocks = vi.hoisted(() => ({
 	createTicketType: vi.fn()
 }));
 
+const pageState = vi.hoisted(() => ({
+	url: new URL('https://example.com/admin/tickets/new')
+}));
+
 vi.mock('$app/navigation', () => ({
 	goto: mocks.goto
+}));
+
+vi.mock('$app/state', () => ({
+	page: pageState
 }));
 
 vi.mock('$env/dynamic/public', () => ({
@@ -47,8 +55,9 @@ vi.mock('$lib/features/tickets.svelte', () => ({
 	createTicketType: mocks.createTicketType
 }));
 
-describe('/admin/tickets/new/+page.svelte', () => {
+describe('回数券種別作成ページ', () => {
 	beforeEach(() => {
+		pageState.url = new URL('https://example.com/admin/tickets/new');
 		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
@@ -117,7 +126,7 @@ describe('/admin/tickets/new/+page.svelte', () => {
 		});
 	});
 
-	it('renders ticket type creation form as a dedicated page', async () => {
+	it('回数券種別作成フォームを専用ページとして表示する', async () => {
 		render(AdminTicketsNewPage);
 
 		await expect
@@ -137,7 +146,7 @@ describe('/admin/tickets/new/+page.svelte', () => {
 		await expect.element(page.getByRole('button', { name: '作成する' })).toBeInTheDocument();
 	});
 
-	it('requires at least one service when specific service scope is selected', async () => {
+	it('特定サービススコープを選択した場合は 1 つ以上のサービスを要求する', async () => {
 		render(AdminTicketsNewPage);
 
 		await page.getByLabelText('サービスを個別指定').click();
@@ -148,7 +157,7 @@ describe('/admin/tickets/new/+page.svelte', () => {
 		await expect.element(page.getByRole('button', { name: '作成する' })).not.toBeDisabled();
 	});
 
-	it('creates ticket type and returns to ticket management page', async () => {
+	it('回数券種別を作成し回数券管理ページへ戻る', async () => {
 		render(AdminTicketsNewPage);
 
 		await page.getByLabelText('券種名').fill('平日5回券');
@@ -169,6 +178,20 @@ describe('/admin/tickets/new/+page.svelte', () => {
 				isForSale: true
 			});
 			expect(mocks.goto).toHaveBeenCalledWith('/admin/tickets');
+		});
+	});
+
+	it('スコープ付き URL から作成した後はスコープ付き回数券管理ページへ戻る', async () => {
+		pageState.url = new URL('https://example.com/org-one/room-a/admin/tickets/new');
+
+		render(AdminTicketsNewPage);
+
+		await page.getByLabelText('券種名').fill('平日5回券');
+		await page.getByLabelText('回数').fill('5');
+		await page.getByRole('button', { name: '作成する' }).click();
+
+		await vi.waitFor(() => {
+			expect(mocks.goto).toHaveBeenCalledWith('/org-one/room-a/admin/tickets');
 		});
 	});
 });

@@ -11,10 +11,10 @@ import {
 } from '../helpers/test-data';
 import { ScopedNavigationPage } from '../pages';
 
-test.describe('scoped navigation', () => {
+test.describe('スコープ付きナビゲーション', () => {
 	test.setTimeout(120_000);
 
-	test('keeps organization and store slugs in dashboard actions and sidebar links', async ({
+	test('ダッシュボード操作とサイドバーリンクで組織slugと店舗slugを維持する', async ({
 		page,
 		request,
 		context,

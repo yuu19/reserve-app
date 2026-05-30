@@ -56,7 +56,7 @@ vi.mock('$lib/features/invitations-admin.svelte', async () => {
 	};
 });
 
-describe('/admin-invitations/+page.svelte', () => {
+describe('管理者招待ページ', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.loadSession.mockReset();
@@ -83,12 +83,12 @@ describe('/admin-invitations/+page.svelte', () => {
 		});
 	});
 
-	it('should render admin invitations heading', async () => {
+	it('管理者招待の見出しを表示する', async () => {
 		render(AdminInvitationsPage);
 		await expect.element(page.getByRole('heading', { level: 1, name: '管理者招待' })).toBeInTheDocument();
 	});
 
-	it('should show loading message and hide organization-required message during initial load', async () => {
+	it('初期読み込み中は読み込みメッセージを表示し組織必須メッセージを隠す', async () => {
 		mocks.loadOrganizations.mockImplementation(() => new Promise(() => {}));
 
 		render(AdminInvitationsPage);
@@ -99,7 +99,7 @@ describe('/admin-invitations/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
-	it('should show organization-required message after load when no active organization', async () => {
+	it('読み込み後にアクティブ組織がない場合は組織必須メッセージを表示する', async () => {
 		mocks.loadOrganizations.mockResolvedValue({
 			organizations: [{ id: 'org-1', name: 'Org One', slug: 'org-one' }],
 			activeOrganization: null
@@ -118,7 +118,7 @@ describe('/admin-invitations/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('shows read-only premium restriction guidance without owner billing action for non-owners', async () => {
+	it('非オーナーにはオーナー向け課金アクションなしで読み取り専用のプレミアム制限案内を表示する', async () => {
 		mocks.loadAdminInvitations.mockResolvedValue({
 			sent: [],
 			received: [],

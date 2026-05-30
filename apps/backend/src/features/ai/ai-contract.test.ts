@@ -21,8 +21,8 @@ import {
   type AiFeedbackResponseBody,
 } from './ai.schemas.js';
 
-describe('AI web contract', () => {
-  it('keeps backend schemas aligned with @repo/saas-chatbot-core contracts', () => {
+describe('AI Web 契約', () => {
+  it('バックエンドスキーマを @repo/saas-chatbot-core 契約と一致させる', () => {
     expectTypeOf<AiChatRequestBody>().toEqualTypeOf<AiChatRequest>();
     expectTypeOf<AiChatRequest>().toEqualTypeOf<AiChatRequestBody>();
 

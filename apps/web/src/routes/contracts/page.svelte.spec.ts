@@ -159,7 +159,7 @@ const createPaymentIssueBillingFixture = (overrides: Record<string, unknown> = {
 		...overrides
 	});
 
-describe('/contracts/+page.svelte', () => {
+describe('契約ページ', () => {
 	beforeEach(() => {
 		mocks.goto.mockReset();
 		mocks.pageState.url = new URL('https://example.com/admin/contracts');
@@ -214,7 +214,7 @@ describe('/contracts/+page.svelte', () => {
 		});
 	});
 
-	it('should render free plan summary and premium comparison for owners', async () => {
+	it('オーナー向けに無料プラン概要とプレミアム比較を表示する', async () => {
 		render(ContractsPage);
 		await expect.element(page.getByRole('heading', { level: 1, name: '契約' })).toBeInTheDocument();
 		await expect
@@ -242,7 +242,7 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('should display the primary billing state within the 3-second success criterion', async () => {
+	it('3 秒以内の成功基準で主要な課金状態を表示する', async () => {
 		const startedAt = performance.now();
 
 		render(ContractsPage);
@@ -251,7 +251,7 @@ describe('/contracts/+page.svelte', () => {
 		expect(performance.now() - startedAt).toBeLessThan(3_000);
 	});
 
-	it('redirects non org-admin users away from contracts', async () => {
+	it('org-admin 以外のユーザーを契約ページからリダイレクトする', async () => {
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false
 		});
@@ -264,7 +264,7 @@ describe('/contracts/+page.svelte', () => {
 		});
 	});
 
-	it('should render plan change action for premium plan owners', async () => {
+	it('プレミアムプランのオーナーにプラン変更アクションを表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: {
@@ -300,7 +300,7 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('should render trial end guidance for premium trial state', async () => {
+	it('プレミアムトライアル状態ではトライアル終了案内を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: {
@@ -338,7 +338,7 @@ describe('/contracts/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
-	it('renders owner billing history entries when history is available', async () => {
+	it('履歴がある場合はオーナー向け課金履歴項目を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: {
@@ -390,7 +390,7 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('starts a premium trial for free-plan owners and refreshes the summary', async () => {
+	it('無料プランのオーナーがプレミアムトライアルを開始しサマリーを更新する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValueOnce({
 			ok: true,
 			billing: {
@@ -437,7 +437,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText('プレミアムトライアル')).toBeInTheDocument();
 	});
 
-	it('should hide owner-only billing controls for read-only admins', async () => {
+	it('読み取り専用管理者にはオーナー限定の課金操作を隠す', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: {
@@ -475,7 +475,7 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('should explain paid lifecycle without showing duplicate trial entry', async () => {
+	it('重複するトライアル導線を表示せず有料ライフサイクルを説明する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: {
@@ -507,7 +507,7 @@ describe('/contracts/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
-	it('should hide plan change action for read-only premium users', async () => {
+	it('読み取り専用プレミアムユーザーにはプラン変更アクションを隠す', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: {
@@ -546,7 +546,7 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('should show text-based loading and intermediate status messaging', async () => {
+	it('テキストベースの読み込み表示と中間ステータスメッセージを表示する', async () => {
 		mocks.pageState.url = new URL('https://example.com/admin/contracts?subscription=success');
 		mocks.loadOrganizations.mockImplementation(
 			() => new Promise(() => undefined) as ReturnType<typeof mocks.loadOrganizations>
@@ -562,7 +562,7 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('should keep payment method return messaging intermediate until billing summary confirms registration', async () => {
+	it('課金サマリーが登録を確認するまで支払い方法戻りメッセージを中間状態に保つ', async () => {
 		mocks.pageState.url = new URL('https://example.com/admin/contracts?paymentMethod=success');
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
@@ -595,7 +595,7 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('should let owners manually refresh pending payment method registration status', async () => {
+	it('オーナーが保留中の支払い方法登録状態を手動更新できるようにする', async () => {
 		mocks.pageState.url = new URL('https://example.com/admin/contracts?paymentMethod=success');
 		mocks.loadOrganizationBilling
 			.mockResolvedValueOnce({
@@ -631,7 +631,7 @@ describe('/contracts/+page.svelte', () => {
 		expect(mocks.loadOrganizationBilling).toHaveBeenCalledTimes(2);
 	});
 
-	it('should show registered payment method status without owner action once confirmed', async () => {
+	it('確認後はオーナー操作なしで登録済み支払い方法状態を表示する', async () => {
 		mocks.pageState.url = new URL('https://example.com/admin/contracts?paymentMethod=success');
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
@@ -658,7 +658,7 @@ describe('/contracts/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
-	it('renders owner payment issue guidance for failed state', async () => {
+	it('failed 状態のオーナー向け支払い問題案内を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture({
@@ -683,7 +683,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByRole('button', { name: 'プランを変更' })).toBeInTheDocument();
 	});
 
-	it('renders owner payment issue guidance for action-required state', async () => {
+	it('action-required 状態のオーナー向け支払い問題案内を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture({
@@ -698,7 +698,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText('支払い方法の認証が必要です')).toBeInTheDocument();
 	});
 
-	it('renders past-due grace payment issue state', async () => {
+	it('past-due 猶予の支払い問題状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture()
@@ -710,7 +710,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText(/猶予期限/)).toBeInTheDocument();
 	});
 
-	it('renders expired past-due grace payment issue state', async () => {
+	it('期限切れ past-due 猶予の支払い問題状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture({
@@ -727,7 +727,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText('支払い遅延の猶予期限を過ぎています')).toBeInTheDocument();
 	});
 
-	it('renders unpaid payment issue state', async () => {
+	it('unpaid の支払い問題状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture({
@@ -739,7 +739,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText(/未払い状態のため Premium 機能は停止/)).toBeInTheDocument();
 	});
 
-	it('renders incomplete payment issue state', async () => {
+	it('incomplete の支払い問題状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture({
@@ -751,7 +751,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText(/契約処理が未完了/)).toBeInTheDocument();
 	});
 
-	it('renders recovered payment issue state', async () => {
+	it('復旧済みの支払い問題状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture({
@@ -764,7 +764,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText('支払い問題は解消済みです')).toBeInTheDocument();
 	});
 
-	it('renders stale-history-only payment issue state', async () => {
+	it('履歴のみの古い支払い問題状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture({
@@ -779,7 +779,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText('支払いを完了できませんでした')).toBeInTheDocument();
 	});
 
-	it('should show payment method status to read-only admins without exposing owner action', async () => {
+	it('読み取り専用管理者にオーナー操作を公開せず支払い方法状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: {
@@ -805,7 +805,7 @@ describe('/contracts/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
-	it('renders owner payment issue states with portal recovery action', async () => {
+	it('ポータル復旧アクション付きでオーナー向け支払い問題状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createBillingFixture({
@@ -837,7 +837,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByRole('button', { name: 'プランを変更' })).toBeInTheDocument();
 	});
 
-	it('renders non-owner payment issue states without owner controls', async () => {
+	it('非オーナーにはオーナー操作なしで支払い問題状態を表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createBillingFixture({
@@ -880,7 +880,7 @@ describe('/contracts/+page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
-	it('does not expose payment issue notification recipient details on the contract page', async () => {
+	it('契約ページで支払い問題通知の受信者詳細を公開しない', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createPaymentIssueBillingFixture({
@@ -904,7 +904,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText('resend_delivery_failed')).not.toBeInTheDocument();
 	});
 
-	it('renders trial-used free checkout choices and hides duplicate trial entry', async () => {
+	it('トライアル使用済み無料 Checkout 選択肢を表示し重複するトライアル導線を隠す', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createBillingFixture({
@@ -939,7 +939,7 @@ describe('/contracts/+page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('renders owner-only payment documents and invoice events', async () => {
+	it('オーナー限定の支払いドキュメントと請求書イベントを表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createBillingFixture({
@@ -1023,7 +1023,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText('payment_failed')).toBeInTheDocument();
 	});
 
-	it('hides payment documents and invoice events for non-owners', async () => {
+	it('非オーナーには支払いドキュメントと請求書イベントを隠す', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createBillingFixture({
@@ -1050,7 +1050,7 @@ describe('/contracts/+page.svelte', () => {
 		await expect.element(page.getByText('payment_failed')).not.toBeInTheDocument();
 	});
 
-	it('renders unknown price and billing profile readiness guidance safely', async () => {
+	it('不明価格と課金プロフィール準備状態の案内を安全に表示する', async () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: createBillingFixture({

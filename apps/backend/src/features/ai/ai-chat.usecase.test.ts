@@ -152,8 +152,8 @@ const createContext = (overrides: Partial<AiRouteContext> = {}): AiRouteContext 
   ...overrides,
 });
 
-describe('askAiChat', () => {
-  it('returns 429 before creating a conversation when rate limit is exhausted', async () => {
+describe('askAiChat のユースケース', () => {
+  it('レート制限が枯渇している場合は会話作成前に 429 を返す', async () => {
     const ensureConversation = vi.fn();
     const ctx = createContext({
       conversationStore: createConversationStore({ ensureConversation }),
@@ -184,7 +184,7 @@ describe('askAiChat', () => {
     expect(ensureConversation).not.toHaveBeenCalled();
   });
 
-  it('returns 403 when a requested conversation is outside the current scope', async () => {
+  it('要求された会話が現在のスコープ外の場合は 403 を返す', async () => {
     const insertMessage = vi.fn();
     const retrieveKnowledge = vi.fn();
     const ctx = createContext({
@@ -214,7 +214,7 @@ describe('askAiChat', () => {
     expect(retrieveKnowledge).not.toHaveBeenCalled();
   });
 
-  it('keeps the conversation and stores fallback metadata when retrieval fails', async () => {
+  it('検索失敗時も会話を保持しフォールバックメタデータを保存する', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const insertMessage = vi.fn(
       async (input: { role: 'user' | 'assistant'; conversationId: string }) => ({
@@ -309,7 +309,7 @@ describe('askAiChat', () => {
     warn.mockRestore();
   });
 
-  it('returns only sanitized sources in the response and stored assistant message', async () => {
+  it('レスポンスと保存済みアシスタントメッセージにはサニタイズ済みソースだけを返す', async () => {
     const insertMessage = vi.fn(
       async (input: { role: 'user' | 'assistant'; conversationId: string }) => ({
         id: input.role === 'assistant' ? 'assistant-message-a' : 'user-message-a',

@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildScopedPath,
 	getRoutePathFromUrlPath,
+	preserveScopedRouteContext,
 	replacePortalPathWithScopedContext,
 	splitScopedPath
 } from './scoped-routing';
 
-describe('scoped-routing', () => {
-	it('extracts unscoped portal path from scoped URL path', () => {
+describe('スコープ付きルーティング', () => {
+	it('スコープ付き URL パスから非スコープのポータルパスを抽出する', () => {
 		expect(getRoutePathFromUrlPath('/org-a/room-b/admin/schedules/slots')).toBe(
 			'/admin/schedules/slots'
 		);
@@ -16,7 +17,7 @@ describe('scoped-routing', () => {
 		expect(getRoutePathFromUrlPath('/admin/login')).toBe('/admin/login');
 	});
 
-	it('replaces legacy portal path with scoped context', () => {
+	it('旧ポータルパスをスコープ付きコンテキストで置換する', () => {
 		expect(
 			replacePortalPathWithScopedContext('/admin/stores?tab=list', {
 				orgSlug: 'org-a',
@@ -25,7 +26,7 @@ describe('scoped-routing', () => {
 		).toBe('/org-a/room-b/admin/stores?tab=list');
 	});
 
-	it('replaces existing scoped context while preserving subpath and query', () => {
+	it('サブパスとクエリを保持しながら既存のスコープ付きコンテキストを置換する', () => {
 		expect(
 			replacePortalPathWithScopedContext('/org-a/room-a/admin/schedules/slots?month=2026-03', {
 				orgSlug: 'org-a',
@@ -34,7 +35,7 @@ describe('scoped-routing', () => {
 		).toBe('/org-a/room-b/admin/schedules/slots?month=2026-03');
 	});
 
-	it('keeps already matching scoped portal paths unchanged', () => {
+	it('すでに一致しているスコープ付きポータルパスは変更しない', () => {
 		expect(
 			replacePortalPathWithScopedContext('/org-a/room-b/admin/dashboard', {
 				orgSlug: 'org-a',
@@ -43,7 +44,22 @@ describe('scoped-routing', () => {
 		).toBe('/org-a/room-b/admin/dashboard');
 	});
 
-	it('builds scoped paths and splits them back into context and remainder', () => {
+	it('現在の URL パスからスコープ付きコンテキストを保持する', () => {
+		expect(
+			preserveScopedRouteContext(
+				'/admin/services/new?from=dashboard',
+				'/org-a/room-b/admin/dashboard'
+			)
+		).toBe('/org-a/room-b/admin/services/new?from=dashboard');
+	});
+
+	it('現在の URL にスコープ付きコンテキストがない場合はポータルパスを非スコープのままにする', () => {
+		expect(preserveScopedRouteContext('/admin/services/new', '/admin/dashboard')).toBe(
+			'/admin/services/new'
+		);
+	});
+
+	it('スコープ付きパスを組み立てコンテキストと残りのパスへ分解する', () => {
 		const scopedPath = buildScopedPath(
 			{
 				orgSlug: 'org-a',
@@ -59,7 +75,7 @@ describe('scoped-routing', () => {
 		});
 	});
 
-	it('builds scoped public ticket paths and splits them back into context and remainder', () => {
+	it('スコープ付き公開回数券パスを組み立てコンテキストと残りのパスへ分解する', () => {
 		const scopedPath = buildScopedPath(
 			{
 				orgSlug: 'org-a',

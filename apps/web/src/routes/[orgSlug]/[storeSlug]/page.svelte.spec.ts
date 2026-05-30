@@ -26,7 +26,7 @@ vi.mock('$lib/features/public-site.svelte', () => ({
 	loadPublicSitePage: mocks.loadPublicSitePage
 }));
 
-describe('/[orgSlug]/[storeSlug]/+page.svelte', () => {
+describe('スコープ付き公開店舗ページ', () => {
 	beforeEach(() => {
 		pageState.params = {
 			orgSlug: 'org-one',
@@ -81,7 +81,7 @@ describe('/[orgSlug]/[storeSlug]/+page.svelte', () => {
 		});
 	});
 
-	it('renders public site profile, booking pages, and ticket types', async () => {
+	it('公開サイトプロフィール・予約ページ・回数券種別を表示する', async () => {
 		render(PublicSiteTopPage);
 
 		await expect
@@ -105,7 +105,7 @@ describe('/[orgSlug]/[storeSlug]/+page.svelte', () => {
 		});
 	});
 
-	it('renders booking and ticket cards as detail links', async () => {
+	it('予約カードと回数券カードを詳細リンクとして表示する', async () => {
 		render(PublicSiteTopPage);
 
 		await expect

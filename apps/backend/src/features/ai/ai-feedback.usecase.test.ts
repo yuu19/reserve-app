@@ -113,8 +113,8 @@ const createContext = (overrides: Partial<AiRouteContext> = {}): AiRouteContext 
   ...overrides,
 });
 
-describe('submitAiMessageFeedback', () => {
-  it('returns 403 when the assistant message belongs to another user', async () => {
+describe('submitAiMessageFeedback のユースケース', () => {
+  it('アシスタントメッセージが別ユーザーに属する場合は 403 を返す', async () => {
     const submitFeedback = vi.fn();
     const ctx = createContext({
       conversationStore: createConversationStore({
@@ -139,7 +139,7 @@ describe('submitAiMessageFeedback', () => {
     expect(submitFeedback).not.toHaveBeenCalled();
   });
 
-  it('upserts feedback for the authenticated user message without requiring an active organization', async () => {
+  it('アクティブ組織を要求せず認証ユーザーのメッセージにフィードバックを upsert する', async () => {
     const submitFeedback = vi.fn(async () => ({
       id: 'feedback-a',
       messageId: 'message-a',

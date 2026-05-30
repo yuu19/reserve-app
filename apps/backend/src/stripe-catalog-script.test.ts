@@ -15,8 +15,8 @@ const jsonResponse = (payload: unknown, status = 200): Response =>
     },
   });
 
-describe('create-stripe-billing-catalog script', () => {
-  it('creates a product and both recurring prices when catalog is missing', async () => {
+describe('create-stripe-billing-catalog スクリプト', () => {
+  it('カタログがない場合に商品と 2 種類の継続価格を作成する', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ data: [] }))
@@ -52,7 +52,7 @@ describe('create-stripe-billing-catalog script', () => {
     expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 
-  it('reuses matching prices by lookup key without creating new ones', async () => {
+  it('lookup key で一致する価格を新規作成せず再利用する', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -120,7 +120,7 @@ describe('create-stripe-billing-catalog script', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('creates a replacement price when lookup key points to mismatched config', async () => {
+  it('lookup key が設定不一致の価格を指す場合は置換価格を作成する', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -189,11 +189,11 @@ describe('create-stripe-billing-catalog script', () => {
     expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
-  it('fails immediately when STRIPE_SECRET_KEY is missing', () => {
+  it('STRIPE_SECRET_KEY がない場合は即座に失敗する', () => {
     expect(() => readStripeCatalogConfig({})).toThrow('STRIPE_SECRET_KEY is required.');
   });
 
-  it('returns a non-zero style result and prints Stripe API errors', async () => {
+  it('非ゼロ相当の結果を返し Stripe API エラーを出力する', async () => {
     const stdout = vi.fn();
     const stderr = vi.fn();
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
@@ -224,7 +224,7 @@ describe('create-stripe-billing-catalog script', () => {
     expect(stderr).toHaveBeenCalledWith('Invalid API key provided.');
   });
 
-  it('formats env output for the resolved catalog ids', () => {
+  it('解決済みカタログ ID の env 出力を整形する', () => {
     const summary = formatBillingCatalogSummary({
       product: {
         id: 'prod_premium',

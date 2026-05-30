@@ -43,8 +43,8 @@ const createDatabase = ({
   };
 };
 
-describe('AI usage rate limits', () => {
-  it('increments user-hour and organization-day counters when both limits have capacity', async () => {
+describe('AI 使用量レート制限', () => {
+  it('ユーザー時間単位と組織日単位の上限に余裕がある場合は両方のカウンターを増やす', async () => {
     const { database, inserts, atomicUpdates } = createDatabase({
       incrementedRows: [
         { scopeKind: 'user', count: 4 },
@@ -84,7 +84,7 @@ describe('AI usage rate limits', () => {
     expect(atomicUpdates).toHaveLength(1);
   });
 
-  it('denies requests when the per-user hourly limit is exhausted', async () => {
+  it('ユーザーごとの時間単位上限を使い切った場合はリクエストを拒否する', async () => {
     const { database, inserts, atomicUpdates } = createDatabase({
       incrementedRows: [],
       readCounts: [20, 40],
@@ -108,7 +108,7 @@ describe('AI usage rate limits', () => {
     expect(atomicUpdates).toHaveLength(1);
   });
 
-  it('denies requests when the per-organization daily limit is exhausted', async () => {
+  it('組織ごとの日単位上限を使い切った場合はリクエストを拒否する', async () => {
     const { database, inserts, atomicUpdates } = createDatabase({
       incrementedRows: [],
       readCounts: [4, 200],

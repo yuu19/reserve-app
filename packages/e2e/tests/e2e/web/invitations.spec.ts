@@ -10,8 +10,8 @@ import {
 } from '../helpers/test-data';
 import { InvitationAcceptancePage } from '../pages';
 
-test.describe('organization invitation acceptance', () => {
-	test('allows only the addressed recipient to view and accept an organization invitation', async ({
+test.describe('組織招待の受諾', () => {
+	test('宛先の受信者だけが組織招待を表示して承諾できる', async ({
 		page,
 		request,
 		context,
@@ -46,7 +46,7 @@ test.describe('organization invitation acceptance', () => {
 		await invitationPage.acceptInvitation();
 	});
 
-	test('does not show invitation details to a different signed-in email', async ({
+	test('別のサインイン済みメールには招待詳細を表示しない', async ({
 		page,
 		request,
 		context,

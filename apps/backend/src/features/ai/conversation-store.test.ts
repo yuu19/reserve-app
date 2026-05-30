@@ -47,8 +47,8 @@ const createDatabase = (selectedRows: unknown[][] = []) => {
   };
 };
 
-describe('AI conversation store', () => {
-  it('creates conversations with scoped retention metadata', async () => {
+describe('AI 会話ストア', () => {
+  it('スコープ付き保持メタデータを持つ会話を作成する', async () => {
     const now = new Date('2026-05-13T00:00:00.000Z');
     const { database, inserts } = createDatabase();
 
@@ -81,7 +81,7 @@ describe('AI conversation store', () => {
     );
   });
 
-  it('rejects conversation continuation when the scoped row is not found', async () => {
+  it('スコープ付き行が見つからない場合は会話継続を拒否する', async () => {
     const { database, updates } = createDatabase([[]]);
 
     await expect(
@@ -98,7 +98,7 @@ describe('AI conversation store', () => {
     expect(updates).toHaveLength(0);
   });
 
-  it('persists assistant message metadata and retention timestamp', async () => {
+  it('アシスタントメッセージのメタデータと保持期限時刻を保存する', async () => {
     const now = new Date('2026-05-13T00:00:00.000Z');
     const { database, inserts, updates } = createDatabase();
 
@@ -154,7 +154,7 @@ describe('AI conversation store', () => {
     expect(updates[0]).toEqual({ updatedAt: now, lastMessageAt: now });
   });
 
-  it('records append-only generation usage events with subject and actor scope', async () => {
+  it('対象と実行者スコープを持つ追記専用の生成使用量イベントを記録する', async () => {
     const now = new Date('2026-05-13T00:00:00.000Z');
     const { database, inserts } = createDatabase();
 
@@ -199,7 +199,7 @@ describe('AI conversation store', () => {
     });
   });
 
-  it('anonymizes expired conversation content and deletes expired feedback aggregates', async () => {
+  it('期限切れ会話内容を匿名化し期限切れフィードバック集計を削除する', async () => {
     const now = new Date('2026-05-13T00:00:00.000Z');
     const { database, updates, deletes } = createDatabase();
 

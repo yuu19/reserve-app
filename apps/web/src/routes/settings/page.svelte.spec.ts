@@ -53,7 +53,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 	uploadOrganizationLogo: mocks.uploadOrganizationLogo
 }));
 
-describe('/settings/+page.svelte', () => {
+describe('設定ページ', () => {
 	beforeEach(() => {
 		pageState.url = new URL('https://example.com/admin/settings');
 		mocks.goto.mockReset();
@@ -103,7 +103,7 @@ describe('/settings/+page.svelte', () => {
 		mocks.createOrganization.mockResolvedValue({ ok: true, message: '組織を作成しました。' });
 	});
 
-	it('renders organization logos in membership list with fallback', async () => {
+	it('メンバーシップ一覧でフォールバック付き組織ロゴを表示する', async () => {
 		render(SettingsPage);
 
 		await expect.element(page.getByRole('heading', { level: 1, name: '設定' })).toBeInTheDocument();
@@ -120,7 +120,7 @@ describe('/settings/+page.svelte', () => {
 		expect(document.querySelector('[data-slot="organization-logo-fallback"]')).toBeTruthy();
 	});
 
-	it('redirects non org-admin users away from settings', async () => {
+	it('org-admin 以外のユーザーを設定ページからリダイレクトする', async () => {
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: false,
 			activeOrganizationRole: null
@@ -134,7 +134,7 @@ describe('/settings/+page.svelte', () => {
 		});
 	});
 
-	it('hides organization creation form for invited org admins', async () => {
+	it('招待された組織管理者には組織作成フォームを隠す', async () => {
 		mocks.loadPortalAccess.mockResolvedValue({
 			hasOrganizationAdminAccess: true,
 			activeOrganizationRole: 'admin'
@@ -148,7 +148,7 @@ describe('/settings/+page.svelte', () => {
 		expect(page.getByRole('button', { name: '組織を作成' }).query()).toBeNull();
 	});
 
-	it('creates an organization with an auto-generated URL identifier', async () => {
+	it('自動生成 URL 識別子付きで組織を作成する', async () => {
 		render(SettingsPage);
 
 		await expect.element(page.getByLabelText('組織名')).toBeInTheDocument();
@@ -164,7 +164,7 @@ describe('/settings/+page.svelte', () => {
 		});
 	});
 
-	it('links to scoped public site management page', async () => {
+	it('スコープ付き公開サイト管理ページへリンクする', async () => {
 		pageState.url = new URL('https://example.com/hoge/room-one/admin/settings');
 		render(SettingsPage);
 

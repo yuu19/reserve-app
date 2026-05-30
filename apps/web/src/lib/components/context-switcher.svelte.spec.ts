@@ -81,8 +81,8 @@ const renderContextSwitcher = (overrides: Partial<ContextSwitcherProps> = {}) =>
 		...overrides
 	});
 
-describe('context-switcher.svelte', () => {
-	it('shows active organization and store on one trigger', async () => {
+describe('コンテキスト切り替えコンポーネント', () => {
+	it('1 つのトリガーにアクティブ組織と店舗を表示する', async () => {
 		renderContextSwitcher();
 
 		await expect.element(page.getByText('Alpha Org')).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe('context-switcher.svelte', () => {
 		expect(triggerFallback).toBeTruthy();
 	});
 
-	it('calls onSelectOrganization with selected organization id', async () => {
+	it('選択した組織 ID で onSelectOrganization を呼び出す', async () => {
 		const onSelectOrganization = vi.fn();
 		renderContextSwitcher({ onSelectOrganization });
 
@@ -103,7 +103,7 @@ describe('context-switcher.svelte', () => {
 		expect(onSelectOrganization).toHaveBeenCalledWith('org-b');
 	});
 
-	it('calls onSelectStore with selected store slug', async () => {
+	it('選択した店舗 slug で onSelectStore を呼び出す', async () => {
 		const onSelectStore = vi.fn();
 		renderContextSwitcher({ onSelectStore });
 
@@ -113,7 +113,7 @@ describe('context-switcher.svelte', () => {
 		expect(onSelectStore).toHaveBeenCalledWith('room-b');
 	});
 
-	it('filters organization and store candidates by one keyword', async () => {
+	it('1 つのキーワードで組織と店舗候補を絞り込む', async () => {
 		renderContextSwitcher();
 
 		await page.getByRole('button', { name: '利用中の組織と店舗を切り替え' }).click();

@@ -120,7 +120,7 @@ const createParticipantBookingData = () => ({
 	myTicketPurchases: []
 });
 
-describe('/participant/bookings/+page.svelte', () => {
+describe('参加者予約ページ', () => {
 	beforeEach(() => {
 		pageState.url = new URL('http://localhost/participant/bookings');
 		mocks.loadSession.mockReset();
@@ -140,14 +140,14 @@ describe('/participant/bookings/+page.svelte', () => {
 		});
 	});
 
-	it('should render participant bookings heading', async () => {
+	it('参加者予約の見出しを表示する', async () => {
 		render(ParticipantBookingsPage);
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '予約確認' }))
 			.toBeInTheDocument();
 	});
 
-	it('uses ticketTypeId query as the initial purchase selection when purchasable', async () => {
+	it('購入可能な場合は ticketTypeId クエリを初期購入選択に使う', async () => {
 		pageState.url = new URL('http://localhost/participant/bookings?ticketTypeId=ticket-allowed');
 
 		render(ParticipantBookingsPage);
@@ -155,7 +155,7 @@ describe('/participant/bookings/+page.svelte', () => {
 		await expect.element(page.getByLabelText('回数券種別')).toHaveValue('ticket-allowed');
 	});
 
-	it('ignores ticketTypeId query when it is not purchasable', async () => {
+	it('購入不可の場合は ticketTypeId クエリを無視する', async () => {
 		pageState.url = new URL('http://localhost/participant/bookings?ticketTypeId=ticket-hidden');
 
 		render(ParticipantBookingsPage);

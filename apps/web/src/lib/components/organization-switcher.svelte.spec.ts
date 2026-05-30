@@ -3,14 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import OrganizationSwitcher from './organization-switcher.svelte';
 
-describe('organization-switcher.svelte', () => {
+describe('組織切り替えコンポーネント', () => {
 	const organizations = [
 		{ id: 'org-a', name: 'Alpha Org', slug: 'alpha', logo: null },
 		{ id: 'org-b', name: 'Beta Org', slug: 'beta', logo: 'https://cdn.example.com/beta.webp' },
 		{ id: 'org-c', name: 'Gamma Team', slug: 'gamma', logo: null }
 	];
 
-	it('shows active organization on trigger', async () => {
+	it('トリガーにアクティブ組織を表示する', async () => {
 		render(OrganizationSwitcher, {
 			organizations,
 			activeOrganizationId: 'org-b',
@@ -27,7 +27,7 @@ describe('organization-switcher.svelte', () => {
 		expect(triggerImage?.getAttribute('src')).toBe('https://cdn.example.com/beta.webp');
 	});
 
-	it('filters organization list by search keyword', async () => {
+	it('検索キーワードで組織一覧を絞り込む', async () => {
 		render(OrganizationSwitcher, {
 			organizations,
 			activeOrganizationId: 'org-b',
@@ -44,7 +44,7 @@ describe('organization-switcher.svelte', () => {
 		await expect.element(page.getByText('Alpha Org')).not.toBeInTheDocument();
 	});
 
-	it('calls onSelect with selected organization id', async () => {
+	it('選択した組織 ID で onSelect を呼び出す', async () => {
 		const onSelect = vi.fn();
 		render(OrganizationSwitcher, {
 			organizations,
@@ -61,7 +61,7 @@ describe('organization-switcher.svelte', () => {
 		expect(onSelect).toHaveBeenCalledWith('org-b');
 	});
 
-	it('shows empty message when no organizations match search', async () => {
+	it('検索に一致する組織がない場合は空状態メッセージを表示する', async () => {
 		render(OrganizationSwitcher, {
 			organizations,
 			activeOrganizationId: null,
@@ -77,7 +77,7 @@ describe('organization-switcher.svelte', () => {
 		await expect.element(page.getByText('一致する組織がありません。')).toBeInTheDocument();
 	});
 
-	it('shows logo image and fallback in dropdown list', async () => {
+	it('ドロップダウン一覧でロゴ画像とフォールバックを表示する', async () => {
 		render(OrganizationSwitcher, {
 			organizations,
 			activeOrganizationId: 'org-b',

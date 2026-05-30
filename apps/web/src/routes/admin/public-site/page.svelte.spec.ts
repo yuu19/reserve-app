@@ -47,7 +47,7 @@ vi.mock('$lib/features/public-site.svelte', () => ({
 	loadPublicSiteSettings: mocks.loadPublicSiteSettings
 }));
 
-describe('/admin/public-site/+page.svelte', () => {
+describe('公開サイト管理ページ', () => {
 	beforeEach(() => {
 		pageState.url = new URL('https://example.com/hoge/room-one/admin/public-site');
 		mocks.goto.mockReset();
@@ -84,7 +84,7 @@ describe('/admin/public-site/+page.svelte', () => {
 		});
 	});
 
-	it('renders scoped public site management actions', async () => {
+	it('スコープ付き公開サイト管理アクションを表示する', async () => {
 		render(PublicSitePage);
 
 		await expect
@@ -102,7 +102,7 @@ describe('/admin/public-site/+page.svelte', () => {
 			.toHaveAttribute('href', '/hoge/room-one/events');
 	});
 
-	it('asks for a store context on unscoped admin route', async () => {
+	it('非スコープ管理ルートでは店舗コンテキストを要求する', async () => {
 		pageState.url = new URL('https://example.com/admin/public-site');
 
 		render(PublicSitePage);

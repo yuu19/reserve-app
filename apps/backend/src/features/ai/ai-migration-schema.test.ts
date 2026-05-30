@@ -7,8 +7,8 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const backendRoot = path.resolve(currentDir, '../../..');
 const migrationDir = path.join(backendRoot, 'drizzle');
 
-describe('AI migration schema', () => {
-  it('keeps the rebuilt AI schema in 0018 without a dependent 0019 migration', async () => {
+describe('AI 移行スキーマ', () => {
+  it('再構築済み AI スキーマを 0019 依存マイグレーションなしで 0018 に保持する', async () => {
     const [migrationSql, migrationFiles] = await Promise.all([
       fs.readFile(path.join(migrationDir, '0018_ai_chatbot.sql'), 'utf8'),
       fs.readdir(migrationDir),

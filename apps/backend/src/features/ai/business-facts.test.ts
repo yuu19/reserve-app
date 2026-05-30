@@ -72,8 +72,8 @@ const createDatabase = (results: unknown[][]) => {
   } as unknown as AuthRuntimeDatabase;
 };
 
-describe('AI business facts', () => {
-  it('returns operational counts and owner-safe billing summary for owners', async () => {
+describe('AI 業務ファクト', () => {
+  it('オーナーには運用件数とオーナー向けに安全な課金サマリーを返す', async () => {
     const database = createDatabase([
       [{ count: 2 }],
       [{ count: 3 }],
@@ -117,7 +117,7 @@ describe('AI business facts', () => {
     expect(facts.sensitive).toBe(true);
   });
 
-  it('redacts billing details for non-owner users while keeping participant-safe facts', async () => {
+  it('非オーナーには参加者向けに安全なファクトを残しつつ課金詳細を伏せる', async () => {
     const database = createDatabase([
       [{ count: 1 }],
       [{ count: 1 }],
