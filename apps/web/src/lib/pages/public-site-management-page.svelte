@@ -39,6 +39,9 @@
 			? buildScopedPath(scopedContext, '/admin/public-site/new')
 			: '/admin/public-site/new'
 	);
+	const notificationSettingsPath = $derived(
+		scopedContext ? buildScopedPath(scopedContext, '/admin/notification-settings') : null
+	);
 	const toScopedRoute = (targetPath: string): ResolvablePath =>
 		preserveScopedRouteContext(targetPath, page.url.pathname) as ResolvablePath;
 
@@ -207,6 +210,16 @@
 							disabled={!publicEventsPath}
 						>
 							予約ページ一覧を開く
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							href={notificationSettingsPath
+								? resolve(notificationSettingsPath as ResolvablePath)
+								: undefined}
+							disabled={!notificationSettingsPath}
+						>
+							通知先設定へ移動
 						</Button>
 					</div>
 				</CardContent>

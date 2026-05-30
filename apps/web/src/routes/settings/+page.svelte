@@ -54,6 +54,9 @@
 	const publicSiteAdminPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/public-site') : null
 	);
+	const notificationSettingsPath = $derived(
+		scopedContext ? buildScopedPath(scopedContext, '/admin/notification-settings') : null
+	);
 	const toScopedRoute = (targetPath: string): Pathname =>
 		preserveScopedRouteContext(targetPath, page.url.pathname) as Pathname;
 
@@ -176,8 +179,7 @@
 					<Button
 						type="button"
 						variant="secondary"
-						onclick={() => goto(resolve(toScopedRoute('/admin/stores')))}
-						>店舗管理へ移動</Button
+						onclick={() => goto(resolve(toScopedRoute('/admin/stores')))}>店舗管理へ移動</Button
 					>
 				</div>
 
@@ -333,6 +335,16 @@
 							disabled={!publicSiteAdminPath}
 						>
 							予約サイト管理へ移動
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							href={notificationSettingsPath
+								? resolve(notificationSettingsPath as Pathname)
+								: undefined}
+							disabled={!notificationSettingsPath}
+						>
+							通知先設定へ移動
 						</Button>
 					</div>
 				{/if}

@@ -735,6 +735,21 @@ const selectStoreIdBySlug = async (organizationId: string, slug: string) => {
   return row?.id ?? null;
 };
 
+const selectPublicSiteNotificationSetting = async (organizationId: string, storeId: string) => {
+  return d1
+    .prepare(
+      'SELECT notify_owner as notifyOwner, notify_admins as notifyAdmins, notify_store_managers as notifyStoreManagers, notify_staff as notifyStaff, additional_emails_json as additionalEmailsJson FROM public_site_notification_setting WHERE organization_id = ? AND store_id = ? LIMIT 1',
+    )
+    .bind(organizationId, storeId)
+    .first<{
+      notifyOwner: number;
+      notifyAdmins: number;
+      notifyStoreManagers: number;
+      notifyStaff: number;
+      additionalEmailsJson: string | null;
+    }>();
+};
+
 const selectUserIdByEmail = async (email: string) => {
   const row = await d1
     .prepare('SELECT id FROM user WHERE email = ? LIMIT 1')
@@ -9382,6 +9397,115 @@ describe('バックエンドアプリ', () => {
     );
     expect(memberCreateResponse.status).toBe(403);
   });
+
+  it('店舗の通知先設定を既定値で取得し更新する', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Notification Settings Owner',
+      email: 'notification-settings-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Notification Settings Org',
+      slug: 'notification-settings-org',
+    });
+    const storeId = await selectStoreIdBySlug(organizationId, 'notification-settings-org');
+    expect(storeId).toBeTruthy();
+
+    const path =
+      '/api/v1/auth/orgs/notification-settings-org/stores/notification-settings-org/notification-settings';
+    const defaultsResponse = await owner.request(path);
+    expect(defaultsResponse.status).toBe(200);
+    expect(await toJson(defaultsResponse)).toEqual({
+      notifyOwner: true,
+      notifyAdmins: true,
+      notifyStoreManagers: true,
+      notifyStaff: false,
+      additionalEmails: [],
+    });
+    expect(await selectPublicSiteNotificationSetting(organizationId, storeId as string)).toBeNull();
+
+    const updateResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        notifyOwner: false,
+        notifyAdmins: true,
+        notifyStoreManagers: false,
+        notifyStaff: true,
+        additionalEmails: [
+          ' Ops@Example.com ',
+          'support@example.com',
+          'ops@example.com',
+          'SUPPORT@example.com',
+        ],
+      }),
+    });
+    expect(updateResponse.status).toBe(200);
+    expect(await toJson(updateResponse)).toEqual({
+      notifyOwner: false,
+      notifyAdmins: true,
+      notifyStoreManagers: false,
+      notifyStaff: true,
+      additionalEmails: ['ops@example.com', 'support@example.com'],
+    });
+
+    const row = await selectPublicSiteNotificationSetting(organizationId, storeId as string);
+    expect(row).toMatchObject({
+      notifyOwner: 0,
+      notifyAdmins: 1,
+      notifyStoreManagers: 0,
+      notifyStaff: 1,
+    });
+    expect(JSON.parse(row?.additionalEmailsJson ?? '[]')).toEqual([
+      'ops@example.com',
+      'support@example.com',
+    ]);
+
+    const invalidEmailResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        notifyOwner: true,
+        notifyAdmins: true,
+        notifyStoreManagers: true,
+        notifyStaff: false,
+        additionalEmails: ['not-an-email'],
+      }),
+    });
+    expect(invalidEmailResponse.status).toBe(400);
+
+    const outsider = createAuthAgent(app);
+    await signUpUser({
+      agent: outsider,
+      name: 'Notification Settings Outsider',
+      email: 'notification-settings-outsider@example.com',
+    });
+
+    const forbiddenGetResponse = await outsider.request(path);
+    expect(forbiddenGetResponse.status).toBe(403);
+    const forbiddenPatchResponse = await outsider.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        notifyOwner: true,
+        notifyAdmins: true,
+        notifyStoreManagers: true,
+        notifyStaff: true,
+        additionalEmails: [],
+      }),
+    });
+    expect(forbiddenPatchResponse.status).toBe(403);
+  });
+
   it('無料組織のプレミアム限定バックエンド操作を共通エンタイトルメントペイロードで拒否する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
@@ -15493,6 +15617,9 @@ describe('バックエンドアプリ', () => {
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/invitations']).toBeDefined();
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations']).toBeDefined();
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/public-site']).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/notification-settings'],
+    ).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/user']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}/accept']).toBeDefined();

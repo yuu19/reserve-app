@@ -431,6 +431,15 @@ export type PublicSiteProfilePayload = {
 	[key: string]: unknown;
 };
 
+export type NotificationSettingsPayload = {
+	notifyOwner: boolean;
+	notifyAdmins: boolean;
+	notifyStoreManagers: boolean;
+	notifyStaff: boolean;
+	additionalEmails: string[];
+	[key: string]: unknown;
+};
+
 export type PublicBookingPagePayload = {
 	id: string;
 	kind: 'event';
@@ -590,6 +599,14 @@ export type UpdatePublicSiteSettingsInput = {
 	status?: 'public' | 'private' | 'suspended';
 	acceptBookings?: boolean;
 	noindex?: boolean;
+};
+
+export type UpdateNotificationSettingsInput = {
+	notifyOwner: boolean;
+	notifyAdmins: boolean;
+	notifyStoreManagers: boolean;
+	notifyStaff: boolean;
+	additionalEmails: string[];
 };
 
 type CreateOrganizationInvitationInput = {
@@ -1423,6 +1440,13 @@ export const authRpc = {
 		authFetch(buildScopedAuthPath(context, '/public-site')),
 	updatePublicSiteSettings: (context: ScopedApiContext, json: UpdatePublicSiteSettingsInput) =>
 		authFetch(buildScopedAuthPath(context, '/public-site'), {
+			method: 'PATCH',
+			json
+		}),
+	getNotificationSettings: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/notification-settings')),
+	updateNotificationSettings: (context: ScopedApiContext, json: UpdateNotificationSettingsInput) =>
+		authFetch(buildScopedAuthPath(context, '/notification-settings'), {
 			method: 'PATCH',
 			json
 		}),

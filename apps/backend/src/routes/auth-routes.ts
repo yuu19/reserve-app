@@ -456,6 +456,32 @@ const publicSiteSettingBodySchema = z.object({
   noindex: z.boolean().optional(),
 });
 
+const emailAddressSchema = z.email();
+const notificationEmailInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(254)
+  .refine((value) => emailAddressSchema.safeParse(value).success, {
+    message: 'Invalid email address.',
+  });
+
+const notificationSettingsSchema = z.object({
+  notifyOwner: z.boolean(),
+  notifyAdmins: z.boolean(),
+  notifyStoreManagers: z.boolean(),
+  notifyStaff: z.boolean(),
+  additionalEmails: z.array(z.email()),
+});
+
+const notificationSettingsBodySchema = z.object({
+  notifyOwner: z.boolean(),
+  notifyAdmins: z.boolean(),
+  notifyStoreManagers: z.boolean(),
+  notifyStaff: z.boolean(),
+  additionalEmails: z.array(notificationEmailInputSchema),
+});
+
 const listOrganizationAccessTreeRoute = createRoute({
   method: 'get',
   path: '/orgs/access-tree',
@@ -648,6 +674,61 @@ const updatePublicSiteSettingRoute = createRoute({
     404: {
       description: 'Organization or store not found',
     },
+  },
+});
+
+const getNotificationSettingsRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/notification-settings',
+  tags: ['Notification Settings'],
+  summary: 'Get booking notification settings for a store',
+  request: {
+    params: organizationStoreRouteParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Notification settings',
+      content: {
+        'application/json': {
+          schema: notificationSettingsSchema,
+        },
+      },
+    },
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or store not found'),
+  },
+});
+
+const updateNotificationSettingsRoute = createRoute({
+  method: 'patch',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/notification-settings',
+  tags: ['Notification Settings'],
+  summary: 'Update booking notification settings for a store',
+  request: {
+    params: organizationStoreRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: notificationSettingsBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated notification settings',
+      content: {
+        'application/json': {
+          schema: notificationSettingsSchema,
+        },
+      },
+    },
+    400: messageResponse('Validation error'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or store not found'),
   },
 });
 
@@ -2025,6 +2106,66 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     };
   };
 
+  const normalizeNotificationEmails = (values: string[]): string[] => {
+    const emails = new Set<string>();
+    for (const value of values) {
+      const normalized = value.trim().toLowerCase();
+      if (normalized) {
+        emails.add(normalized);
+      }
+    }
+    return Array.from(emails);
+  };
+
+  const parseNotificationEmailsJson = (value: string | null): string[] => {
+    if (!value) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return normalizeNotificationEmails(
+        parsed.filter((entry): entry is string => typeof entry === 'string'),
+      );
+    } catch {
+      return [];
+    }
+  };
+
+  const serializeNotificationSettings = async ({
+    context,
+  }: {
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
+  }) => {
+    const rows = await database
+      .select({
+        notifyOwner: dbSchema.publicSiteNotificationSetting.notifyOwner,
+        notifyAdmins: dbSchema.publicSiteNotificationSetting.notifyAdmins,
+        notifyStoreManagers: dbSchema.publicSiteNotificationSetting.notifyStoreManagers,
+        notifyStaff: dbSchema.publicSiteNotificationSetting.notifyStaff,
+        additionalEmailsJson: dbSchema.publicSiteNotificationSetting.additionalEmailsJson,
+      })
+      .from(dbSchema.publicSiteNotificationSetting)
+      .where(
+        and(
+          eq(dbSchema.publicSiteNotificationSetting.organizationId, context.organizationId),
+          eq(dbSchema.publicSiteNotificationSetting.storeId, context.storeId),
+        ),
+      )
+      .limit(1);
+    const setting = rows[0] ?? null;
+
+    return {
+      notifyOwner: setting?.notifyOwner ?? true,
+      notifyAdmins: setting?.notifyAdmins ?? true,
+      notifyStoreManagers: setting?.notifyStoreManagers ?? true,
+      notifyStaff: setting?.notifyStaff ?? false,
+      additionalEmails: parseNotificationEmailsJson(setting?.additionalEmailsJson ?? null),
+    };
+  };
+
   const normalizePublicSiteText = (
     value: string | null | undefined,
     fallback: string | null,
@@ -2755,6 +2896,90 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         });
 
       return c.json(await serializePublicSiteSetting({ context: storeContext }), 200);
+    })();
+  });
+
+  authRoutes.openapi(getNotificationSettingsRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      return c.json(await serializeNotificationSettings({ context: storeContext }), 200);
+    })();
+  });
+
+  authRoutes.openapi(updateNotificationSettingsRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const now = new Date();
+      const additionalEmails = normalizeNotificationEmails(body.additionalEmails);
+      await database
+        .insert(dbSchema.publicSiteNotificationSetting)
+        .values({
+          id: crypto.randomUUID(),
+          organizationId: storeContext.organizationId,
+          storeId: storeContext.storeId,
+          notifyOwner: body.notifyOwner,
+          notifyAdmins: body.notifyAdmins,
+          notifyStoreManagers: body.notifyStoreManagers,
+          notifyStaff: body.notifyStaff,
+          additionalEmailsJson: JSON.stringify(additionalEmails),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            dbSchema.publicSiteNotificationSetting.organizationId,
+            dbSchema.publicSiteNotificationSetting.storeId,
+          ],
+          set: {
+            notifyOwner: body.notifyOwner,
+            notifyAdmins: body.notifyAdmins,
+            notifyStoreManagers: body.notifyStoreManagers,
+            notifyStaff: body.notifyStaff,
+            additionalEmailsJson: JSON.stringify(additionalEmails),
+            updatedAt: now,
+          },
+        });
+
+      return c.json(await serializeNotificationSettings({ context: storeContext }), 200);
     })();
   });
 
