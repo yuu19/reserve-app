@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { BOOKING_STATUS } from '../../domain/booking/constants.js';
+import { BOOKING_SOURCE, BOOKING_STATUS } from '../../domain/booking/constants.js';
 
 const isoDateTimeSchema = z
   .string()
@@ -73,6 +73,44 @@ export const bookingApproveBodySchema = z.object({
   storeId: z.string().min(1).optional(),
 });
 
+const bookingCompanionBodySchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  note: z.string().trim().max(500).nullable().optional(),
+});
+
+const bookingAnswerBodySchema = z.object({
+  fieldId: z.string().trim().min(1).max(120),
+  labelSnapshot: z.string().trim().min(1).max(200),
+  value: z.unknown(),
+});
+
+export const staffCreateBookingParamsSchema = z.object({
+  orgSlug: z.string().min(1),
+  storeSlug: z.string().min(1),
+});
+
+export const staffCreateBookingBodySchema = z.object({
+  slotId: z.string().min(1),
+  participantId: z.string().min(1).optional(),
+  customerName: z.string().trim().max(120).optional(),
+  customerEmail: z.email().max(320).optional(),
+  customerPhone: z.string().trim().max(80).optional(),
+  participantsCount: z.int().min(1).max(20).default(1),
+  source: z
+    .enum([
+      BOOKING_SOURCE.ADMIN,
+      BOOKING_SOURCE.PHONE,
+      BOOKING_SOURCE.LINE,
+      BOOKING_SOURCE.STOREFRONT,
+      BOOKING_SOURCE.OTHER,
+    ])
+    .default(BOOKING_SOURCE.ADMIN),
+  notifyCustomer: z.boolean().default(false),
+  companions: z.array(bookingCompanionBodySchema).max(19).optional(),
+  note: z.string().trim().max(1000).optional(),
+  answers: z.array(bookingAnswerBodySchema).max(50).optional(),
+});
+
 /**
  * 予約作成 usecase が受け取る検証済み body 型です。
  */
@@ -97,6 +135,8 @@ export type BookingNoShowBody = z.infer<typeof bookingNoShowBodySchema>;
  * 予約承認 usecase が受け取る検証済み body 型です。
  */
 export type BookingApproveBody = z.infer<typeof bookingApproveBodySchema>;
+export type StaffCreateBookingParams = z.infer<typeof staffCreateBookingParamsSchema>;
+export type StaffCreateBookingBody = z.infer<typeof staffCreateBookingBodySchema>;
 
 /**
  * participant が予約を作成する OpenAPI 定義です。
@@ -289,6 +329,31 @@ export const markNoShowRoute = createRoute({
   },
   responses: {
     200: { description: 'Booking marked as no-show' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+export const staffCreateBookingRoute = createRoute({
+  method: 'post',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/bookings/staff-create',
+  tags: ['Bookings'],
+  summary: 'Create a confirmed booking on behalf of a customer',
+  request: {
+    params: staffCreateBookingParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: staffCreateBookingBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Staff booking created' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },

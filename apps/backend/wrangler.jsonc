@@ -16,7 +16,7 @@
     },
   },
   "triggers": {
-    "crons": ["10 18 * * *"],
+    "crons": ["*/15 * * * *", "10 18 * * *"],
   },
   "images": {
     "binding": "IMAGES",

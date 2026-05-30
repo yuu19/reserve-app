@@ -74,11 +74,11 @@
 			const homePath = resolvePortalHomePath(portalAccess) ?? '/participant/home';
 
 			if (pathname === '/dashboard') {
-				await goto(resolve(homePath));
+				await goto(resolve(toResolvablePath(homePath)));
 				return;
 			}
 			if (pathname.startsWith('/admin') && homePath !== '/admin/dashboard') {
-				await goto(resolve(homePath));
+				await goto(resolve(toResolvablePath(homePath)));
 				return;
 			}
 

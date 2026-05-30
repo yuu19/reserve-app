@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -17,7 +18,8 @@
 	} from '$lib/features/invitations-admin.svelte';
 	import {
 		getRoutePathFromUrlPath,
-		readWindowScopedRouteContext
+		readWindowScopedRouteContext,
+		replacePortalPathWithScopedContext
 	} from '$lib/features/scoped-routing';
 	import {
 		getCurrentPathWithSearch,
@@ -73,7 +75,10 @@
 				: portalAccess.hasParticipantAccess || portalAccess.canUseParticipantBooking
 					? '/participant/admin-invitations'
 					: (resolvePortalHomePath(portalAccess) ?? '/participant/home');
-			await goto(resolve(nextPath));
+			const scopedNextPath = portalAccess.activeContext
+				? replacePortalPathWithScopedContext(nextPath, portalAccess.activeContext)
+				: nextPath;
+			await goto(resolve(scopedNextPath as Pathname));
 			return;
 		}
 		const scopedContext = readWindowScopedRouteContext();

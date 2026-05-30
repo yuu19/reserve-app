@@ -23,6 +23,7 @@ export type BookingNotificationEmailProps = {
   reason?: string | null;
   bookingId: string;
   bookingsUrl: string;
+  actionLabel?: string;
 };
 
 const styles = {
@@ -99,6 +100,7 @@ export const BookingNotificationEmail = ({
   reason,
   bookingId,
   bookingsUrl,
+  actionLabel = '予約一覧を確認する',
 }: BookingNotificationEmailProps) => {
   return (
     <Html lang="ja">
@@ -133,7 +135,7 @@ export const BookingNotificationEmail = ({
             ) : null}
           </Section>
           <Button href={bookingsUrl} style={styles.button}>
-            予約一覧を確認する
+            {actionLabel}
           </Button>
           <Hr style={styles.hr} />
           <Text style={styles.footer}>Booking ID: {bookingId}</Text>

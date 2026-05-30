@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -24,6 +26,7 @@
 		loadSession,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
+	import { preserveScopedRouteContext } from '$lib/features/scoped-routing';
 	import type { OrganizationPremiumRestrictionPayload } from '$lib/features/premium-restrictions';
 	import type {
 		OrganizationBillingPayload,
@@ -258,8 +261,10 @@
 		}
 		return fallback;
 	};
+	const toScopedRoute = (targetPath: string): Pathname =>
+		preserveScopedRouteContext(targetPath, page.url.pathname) as Pathname;
 	const navigateToTicketTypeCreate = () => {
-		void goto(resolve('/admin/tickets/new'));
+		void goto(resolve(toScopedRoute('/admin/tickets/new')));
 	};
 	const syncTicketTypeEditForms = (items: TicketTypePayload[]) => {
 		ticketTypeEditForms = Object.fromEntries(

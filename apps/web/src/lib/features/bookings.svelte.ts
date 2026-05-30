@@ -1,4 +1,9 @@
-import { authRpc, type BookingPayload, type ServiceImageUploadUrlPayload } from '$lib/rpc-client';
+import {
+	authRpc,
+	type BookingPayload,
+	type ServiceImageUploadUrlPayload,
+	type StaffCreateBookingInput
+} from '$lib/rpc-client';
 import { formatJaMonth, formatJaTime } from '$lib/date/format';
 import { getAdminBookingsOperationsPageData } from '$lib/remote/admin-bookings-operations.remote';
 import { getAdminRecurringPageData } from '$lib/remote/admin-recurring-page.remote';
@@ -275,6 +280,26 @@ export const loadParticipantBookingsData = async (from: string, to: string, serv
 		to,
 		serviceId: serviceId || undefined
 	});
+};
+
+export const createStaffBooking = async (input: StaffCreateBookingInput) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return {
+			ok: false,
+			booking: null,
+			message: 'URL に組織/店舗コンテキストがありません。'
+		};
+	}
+	const response = await authRpc.staffCreateBookingScoped(context, input);
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		booking: response.ok && isBooking(payload) ? payload : null,
+		message: response.ok
+			? '代理予約を作成しました。'
+			: toReservationErrorMessage(response.status, payload, '代理予約の作成に失敗しました。')
+	};
 };
 
 export const createService = async (input: {

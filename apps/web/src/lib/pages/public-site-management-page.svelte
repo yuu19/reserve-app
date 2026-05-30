@@ -9,7 +9,8 @@
 	import {
 		buildScopedPath,
 		extractScopedRouteContext,
-		getRoutePathFromUrlPath
+		getRoutePathFromUrlPath,
+		preserveScopedRouteContext
 	} from '$lib/features/scoped-routing';
 	import {
 		getCurrentPathWithSearch,
@@ -38,8 +39,19 @@
 			? buildScopedPath(scopedContext, '/admin/public-site/new')
 			: '/admin/public-site/new'
 	);
+	const toScopedRoute = (targetPath: string): ResolvablePath =>
+		preserveScopedRouteContext(targetPath, page.url.pathname) as ResolvablePath;
 
 	const displayValue = (value: string | null | undefined): string => value?.trim() || '-';
+	const publicSiteStatusLabel = (status: PublicSiteProfilePayload['status']): string => {
+		if (status === 'public') {
+			return '公開';
+		}
+		if (status === 'suspended') {
+			return '停止中';
+		}
+		return '非公開';
+	};
 
 	const refreshPublicSite = async () => {
 		const { session } = await loadSession();
@@ -71,7 +83,7 @@
 			errorMessage = null;
 			try {
 				if (pathname === '/public-site') {
-					await goto(resolve('/admin/public-site'));
+					await goto(resolve(toScopedRoute('/admin/public-site')));
 					return;
 				}
 				await refreshPublicSite();
@@ -106,7 +118,7 @@
 				<p class="text-sm text-muted-foreground">
 					店舗を選択した管理画面から予約サイトを作成・編集できます。
 				</p>
-				<Button type="button" variant="outline" href={resolve('/admin/stores' as ResolvablePath)}>
+				<Button type="button" variant="outline" href={resolve(toScopedRoute('/admin/stores'))}>
 					店舗管理へ移動
 				</Button>
 			</CardContent>
@@ -137,6 +149,22 @@
 						<div class="space-y-1">
 							<p class="text-xs text-muted-foreground">店舗</p>
 							<p class="text-sm text-foreground">{publicSite.storeName}</p>
+						</div>
+						<div class="space-y-1">
+							<p class="text-xs text-muted-foreground">公開状態</p>
+							<p class="text-sm text-foreground">{publicSiteStatusLabel(publicSite.status)}</p>
+						</div>
+						<div class="space-y-1">
+							<p class="text-xs text-muted-foreground">予約受付</p>
+							<p class="text-sm text-foreground">
+								{publicSite.acceptBookings ? '受付中' : '停止中'}
+							</p>
+						</div>
+						<div class="space-y-1 md:col-span-2">
+							<p class="text-xs text-muted-foreground">検索除外</p>
+							<p class="text-sm text-foreground">
+								{publicSite.noindex ? '検索エンジンに掲載しない' : '検索エンジン掲載を許可'}
+							</p>
 						</div>
 						<div class="space-y-1 md:col-span-2">
 							<p class="text-xs text-muted-foreground">説明</p>

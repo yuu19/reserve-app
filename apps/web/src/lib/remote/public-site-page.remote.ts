@@ -82,7 +82,10 @@ const isPublicSiteProfile = (value: unknown): value is PublicSiteProfilePayload 
 	typeof value.storeId === 'string' &&
 	typeof value.storeSlug === 'string' &&
 	typeof value.storeName === 'string' &&
-	typeof value.siteName === 'string';
+	typeof value.siteName === 'string' &&
+	(value.status === 'public' || value.status === 'private' || value.status === 'suspended') &&
+	typeof value.acceptBookings === 'boolean' &&
+	typeof value.noindex === 'boolean';
 
 const isPublicTicketType = (value: unknown): value is PublicTicketTypePayload =>
 	isRecord(value) &&

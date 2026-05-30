@@ -91,7 +91,11 @@ export const createBooking = async (
         slotId: slot.id,
         serviceId: slot.serviceId,
         participantId: participant.id,
+        source: 'participant',
         participantsCount,
+        customerName: participant.name,
+        customerEmail: participant.email,
+        createdByUserId: identity.userId,
         status: BOOKING_STATUS.PENDING_APPROVAL,
         ticketPackId: null,
       });
@@ -190,7 +194,11 @@ export const createBooking = async (
       slotId: slot.id,
       serviceId: slot.serviceId,
       participantId: participant.id,
+      source: 'participant',
       participantsCount,
+      customerName: participant.name,
+      customerEmail: participant.email,
+      createdByUserId: identity.userId,
       status: BOOKING_STATUS.CONFIRMED,
       ticketPackId: consumedTicketPackId,
     });

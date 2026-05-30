@@ -66,6 +66,7 @@
 		loadSession,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
+	import { preserveScopedRouteContext } from '$lib/features/scoped-routing';
 	import type {
 		BookingPayload,
 		OrganizationBillingPayload,
@@ -116,6 +117,8 @@
 	const isAdminRecurringCreatePage = $derived(bookingPageMode === 'admin-recurring-new');
 	const isAdminPage = $derived(!isParticipantPage);
 	const requestedTicketTypeId = $derived(page.url.searchParams.get('ticketTypeId')?.trim() ?? '');
+	const toScopedRoute = (targetPath: string): Pathname =>
+		preserveScopedRouteContext(targetPath, page.url.pathname) as Pathname;
 
 	let services = $state<ServicePayload[]>([]);
 	let slots = $state<SlotPayload[]>([]);
@@ -361,13 +364,13 @@
 	});
 	const createBackLink = $derived.by((): { href: Pathname; label: string } | null => {
 		if (isAdminServicesCreatePage) {
-			return { href: '/admin/services', label: 'サービス一覧へ戻る' };
+			return { href: toScopedRoute('/admin/services'), label: 'サービス一覧へ戻る' };
 		}
 		if (isAdminSlotsCreatePage) {
-			return { href: '/admin/schedules/slots', label: '単発予約枠一覧へ戻る' };
+			return { href: toScopedRoute('/admin/schedules/slots'), label: '単発予約枠一覧へ戻る' };
 		}
 		if (isAdminRecurringCreatePage) {
-			return { href: '/admin/schedules/recurring', label: '定期一覧へ戻る' };
+			return { href: toScopedRoute('/admin/schedules/recurring'), label: '定期一覧へ戻る' };
 		}
 		return null;
 	});
@@ -686,6 +689,15 @@
 		cancelled_by_staff: '運営キャンセル',
 		no_show: '不参加'
 	};
+	const bookingSourceLabelMap: Record<string, string> = {
+		participant: '参加者',
+		public_site: '公開予約',
+		admin: '管理画面',
+		phone: '電話',
+		line: 'LINE',
+		storefront: '店頭',
+		other: 'その他'
+	};
 	const ticketPackStatusLabelMap: Record<TicketPackPayload['status'], string> = {
 		active: '有効',
 		exhausted: '使い切り',
@@ -752,7 +764,9 @@
 			rows.push({
 				booking,
 				slot: slotMapById.get(booking.slotId),
-				participant: participantMapById.get(booking.participantId)
+				participant: booking.participantId
+					? participantMapById.get(booking.participantId)
+					: undefined
 			});
 		}
 		rows.sort((left, right) => {
@@ -1011,9 +1025,18 @@
 	};
 	const formatBookingIdShort = (bookingId: string): string => bookingId.slice(0, 8);
 	const getParticipantLabel = (row: OperationRow): string =>
-		row.participant
-			? `${row.participant.name} / ${row.participant.email}`
-			: row.booking.participantId;
+		row.booking.customerName?.trim() ||
+		row.participant?.name ||
+		row.booking.customerEmail?.trim() ||
+		row.booking.participantId ||
+		'ゲスト予約';
+	const getBookingContactLabel = (row: OperationRow): string => {
+		const email = row.booking.customerEmail?.trim() || row.participant?.email || '';
+		const phone = row.booking.customerPhone?.trim() || '';
+		return [email, phone].filter((value) => value.length > 0).join(' / ') || '-';
+	};
+	const getBookingSourceLabel = (booking: BookingPayload): string =>
+		bookingSourceLabelMap[booking.source ?? 'participant'] ?? booking.source ?? '-';
 	const isStaffActionInProgress = (
 		kind: 'approve' | 'reject' | 'cancel' | 'no_show',
 		bookingId: string
@@ -1400,7 +1423,7 @@
 			serviceCreateAttempted = false;
 			serviceCreateTouched = { name: false, durationMinutes: false, capacity: false };
 			if (isAdminServicesCreatePage) {
-				await goto(resolve('/admin/services'));
+				await goto(resolve(toScopedRoute('/admin/services')));
 			} else {
 				await refresh();
 			}
@@ -1448,7 +1471,7 @@
 				endDate: false
 			};
 			if (isAdminSlotsCreatePage) {
-				await goto(resolve('/admin/schedules/slots'));
+				await goto(resolve(toScopedRoute('/admin/schedules/slots')));
 			} else {
 				await refresh();
 			}
@@ -1504,7 +1527,7 @@
 				startTimeLocal: false
 			};
 			if (isAdminRecurringCreatePage) {
-				await goto(resolve('/admin/schedules/recurring'));
+				await goto(resolve(toScopedRoute('/admin/schedules/recurring')));
 			} else {
 				await refresh();
 			}
@@ -2045,28 +2068,28 @@
 					<Button
 						type="button"
 						variant={isAdminOperationsPage ? 'default' : 'outline'}
-						onclick={() => goto(resolve('/admin/bookings'))}
+						onclick={() => goto(resolve(toScopedRoute('/admin/bookings')))}
 					>
 						予約運用
 					</Button>
 					<Button
 						type="button"
 						variant={isAdminServicesPage || isAdminServicesCreatePage ? 'default' : 'outline'}
-						onclick={() => goto(resolve('/admin/services'))}
+						onclick={() => goto(resolve(toScopedRoute('/admin/services')))}
 					>
 						サービス一覧
 					</Button>
 					<Button
 						type="button"
 						variant={isAdminSlotsPage || isAdminSlotsCreatePage ? 'default' : 'outline'}
-						onclick={() => goto(resolve('/admin/schedules/slots'))}
+						onclick={() => goto(resolve(toScopedRoute('/admin/schedules/slots')))}
 					>
 						単発予約枠
 					</Button>
 					<Button
 						type="button"
 						variant={isAdminRecurringPage || isAdminRecurringCreatePage ? 'default' : 'outline'}
-						onclick={() => goto(resolve('/admin/schedules/recurring'))}
+						onclick={() => goto(resolve(toScopedRoute('/admin/schedules/recurring')))}
 					>
 						定期一覧
 					</Button>
@@ -2074,21 +2097,24 @@
 						<Button
 							type="button"
 							variant="outline"
-							onclick={() => goto(resolve('/admin/services/new'))}>サービス作成へ</Button
+							onclick={() => goto(resolve(toScopedRoute('/admin/services/new')))}
+							>サービス作成へ</Button
 						>
 					{/if}
 					{#if isAdminSlotsPage}
 						<Button
 							type="button"
 							variant="outline"
-							onclick={() => goto(resolve('/admin/schedules/slots/new'))}>単発予約枠作成へ</Button
+							onclick={() => goto(resolve(toScopedRoute('/admin/schedules/slots/new')))}
+							>単発予約枠作成へ</Button
 						>
 					{/if}
 					{#if isAdminRecurringPage}
 						<Button
 							type="button"
 							variant="outline"
-							onclick={() => goto(resolve('/admin/schedules/recurring/new'))}>定期作成へ</Button
+							onclick={() => goto(resolve(toScopedRoute('/admin/schedules/recurring/new')))}
+							>定期作成へ</Button
 						>
 					{/if}
 				</div>
@@ -2722,14 +2748,21 @@
 							<section>
 								<Card class="surface-panel border-border/80 shadow-lg">
 									<CardHeader>
-										<h2 class="text-lg font-semibold">運営予約一覧</h2>
-										<CardDescription>
-											表示月の枠に紐づく予約を一覧表示し、承認・却下・運営キャンセル・No-show
-											を実行できます。
-											{#if operationsFilter.selectedDate}
-												現在は {selectedOperationDateLabel} のみ表示しています。
-											{/if}
-										</CardDescription>
+										<div class="flex flex-wrap items-start justify-between gap-3">
+											<div class="space-y-1">
+												<h2 class="text-lg font-semibold">運営予約一覧</h2>
+												<CardDescription>
+													表示月の枠に紐づく予約を一覧表示し、承認・却下・運営キャンセル・No-show
+													を実行できます。
+													{#if operationsFilter.selectedDate}
+														現在は {selectedOperationDateLabel} のみ表示しています。
+													{/if}
+												</CardDescription>
+											</div>
+											<Button type="button" href={resolve(toScopedRoute('/admin/bookings/new'))}>
+												代理予約
+											</Button>
+										</div>
 									</CardHeader>
 									<CardContent class="space-y-4">
 										{#if !canManage}
@@ -2851,7 +2884,20 @@
 																		{/if}
 																	</td>
 																	<td class="px-3 py-3">{getServiceName(row.booking.serviceId)}</td>
-																	<td class="px-3 py-3">{getParticipantLabel(row)}</td>
+																	<td class="px-3 py-3">
+																		<p class="font-medium text-foreground">
+																			{getParticipantLabel(row)}
+																		</p>
+																		<p class="text-xs text-muted-foreground">
+																			{getBookingContactLabel(row)}
+																		</p>
+																		<p class="text-xs text-muted-foreground">
+																			{getBookingSourceLabel(row.booking)}
+																			{#if row.booking.note}
+																				/ {row.booking.note}
+																			{/if}
+																		</p>
+																	</td>
 																	<td class="px-3 py-3 text-right tabular-nums">
 																		{row.booking.participantsCount}
 																	</td>
@@ -3154,12 +3200,12 @@
 					{#if isAdminRecurringPage}
 						<section>
 							<Card class="surface-panel border-border/80 shadow-lg">
-									<CardHeader>
-										<h2 class="text-lg font-semibold">定期Schedule管理</h2>
-										<CardDescription>
-											定期スケジュールの更新・停止、例外登録、予約枠再生成を実行できます。
-										</CardDescription>
-									</CardHeader>
+								<CardHeader>
+									<h2 class="text-lg font-semibold">定期Schedule管理</h2>
+									<CardDescription>
+										定期スケジュールの更新・停止、例外登録、予約枠再生成を実行できます。
+									</CardDescription>
+								</CardHeader>
 								<CardContent class="space-y-4">
 									{#if staffRecurringRows.length === 0}
 										<p class="text-sm text-muted-foreground">

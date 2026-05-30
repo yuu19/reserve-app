@@ -19,6 +19,9 @@ export const findSlotForBookingCreate = async (database: AuthRuntimeDatabase, sl
       storeId: dbSchema.slot.storeId,
       serviceId: dbSchema.slot.serviceId,
       startAt: dbSchema.slot.startAt,
+      endAt: dbSchema.slot.endAt,
+      capacity: dbSchema.slot.capacity,
+      reservedCount: dbSchema.slot.reservedCount,
       status: dbSchema.slot.status,
       bookingOpenAt: dbSchema.slot.bookingOpenAt,
       bookingCloseAt: dbSchema.slot.bookingCloseAt,
@@ -41,6 +44,7 @@ export const findServiceForBookingCreate = async (
       id: dbSchema.service.id,
       bookingPolicy: dbSchema.service.bookingPolicy,
       requiresTicket: dbSchema.service.requiresTicket,
+      isActive: dbSchema.service.isActive,
     })
     .from(dbSchema.service)
     .where(eq(dbSchema.service.id, serviceId))
@@ -59,7 +63,14 @@ export const insertBooking = async ({
   slotId,
   serviceId,
   participantId,
+  publicId,
+  source,
   participantsCount,
+  customerName,
+  customerEmail,
+  customerPhone,
+  note,
+  createdByUserId,
   status,
   ticketPackId,
 }: {
@@ -69,8 +80,15 @@ export const insertBooking = async ({
   storeId: string;
   slotId: string;
   serviceId: string;
-  participantId: string;
+  participantId: string | null;
+  publicId?: string | null;
+  source?: string;
   participantsCount: number;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  note?: string | null;
+  createdByUserId?: string | null;
   status: string;
   ticketPackId: string | null;
 }) => {
@@ -81,10 +99,64 @@ export const insertBooking = async ({
     slotId,
     serviceId,
     participantId,
+    publicId: publicId ?? null,
+    source: source ?? 'participant',
     participantsCount,
+    customerName: customerName ?? null,
+    customerEmail: customerEmail ?? null,
+    customerPhone: customerPhone ?? null,
+    note: note ?? null,
+    createdByUserId: createdByUserId ?? null,
     status,
     ticketPackId,
   });
+};
+
+export const insertBookingCompanions = async ({
+  database,
+  bookingId,
+  companions,
+}: {
+  database: AuthRuntimeDatabase;
+  bookingId: string;
+  companions: Array<{ name: string; note?: string | null }>;
+}) => {
+  if (companions.length === 0) {
+    return;
+  }
+
+  await database.insert(dbSchema.bookingCompanion).values(
+    companions.map((companion) => ({
+      id: crypto.randomUUID(),
+      bookingId,
+      name: companion.name,
+      note: companion.note ?? null,
+    })),
+  );
+};
+
+export const insertBookingAnswers = async ({
+  database,
+  bookingId,
+  answers,
+}: {
+  database: AuthRuntimeDatabase;
+  bookingId: string;
+  answers: Array<{ fieldId: string; labelSnapshot: string; valueJson: string }>;
+}) => {
+  if (answers.length === 0) {
+    return;
+  }
+
+  await database.insert(dbSchema.bookingAnswer).values(
+    answers.map((answer) => ({
+      id: crypto.randomUUID(),
+      bookingId,
+      fieldId: answer.fieldId,
+      labelSnapshot: answer.labelSnapshot,
+      valueJson: answer.valueJson,
+    })),
+  );
 };
 
 /**

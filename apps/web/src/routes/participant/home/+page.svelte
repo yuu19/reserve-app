@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
@@ -11,9 +13,16 @@
 		resolvePortalHomePath,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
+	import {
+		preserveScopedRouteContext,
+		replacePortalPathWithScopedContext
+	} from '$lib/features/scoped-routing';
 
 	let loading = $state(true);
 	let canUseParticipantBooking = $state(false);
+
+	const toScopedRoute = (targetPath: string): Pathname =>
+		preserveScopedRouteContext(targetPath, page.url.pathname) as Pathname;
 
 	onMount(() => {
 		void (async () => {
@@ -27,7 +36,10 @@
 				const portalAccess = await loadPortalAccess();
 				const homePath = resolvePortalHomePath(portalAccess);
 				if (homePath?.startsWith('/admin')) {
-					await goto(resolve(homePath));
+					const nextPath = portalAccess.activeContext
+						? replacePortalPathWithScopedContext(homePath, portalAccess.activeContext)
+						: preserveScopedRouteContext(homePath, page.url.pathname);
+					await goto(resolve(nextPath as Pathname));
 					return;
 				}
 				canUseParticipantBooking = portalAccess.canUseParticipantBooking;
@@ -51,13 +63,13 @@
 				<CardDescription>公開イベントの確認と予約画面への移動。</CardDescription>
 			</CardHeader>
 			<CardContent class="flex flex-wrap gap-2">
-				<Button type="button" variant="outline" onclick={() => goto(resolve('/events'))}
+				<Button type="button" variant="outline" onclick={() => goto(resolve(toScopedRoute('/events')))}
 					>イベント一覧へ移動</Button
 				>
 				<Button
 					type="button"
 					variant="outline"
-					onclick={() => goto(resolve('/participant/bookings'))}
+					onclick={() => goto(resolve(toScopedRoute('/participant/bookings')))}
 					disabled={!canUseParticipantBooking}
 				>
 					予約確認へ移動
@@ -74,12 +86,13 @@
 				<Button
 					type="button"
 					variant="outline"
-					onclick={() => goto(resolve('/participant/invitations'))}>参加者招待へ移動</Button
+					onclick={() => goto(resolve(toScopedRoute('/participant/invitations')))}
+					>参加者招待へ移動</Button
 				>
 				<Button
 					type="button"
 					variant="outline"
-					onclick={() => goto(resolve('/participant/admin-invitations'))}
+					onclick={() => goto(resolve(toScopedRoute('/participant/admin-invitations')))}
 				>
 					運営招待へ移動
 				</Button>

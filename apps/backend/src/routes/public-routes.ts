@@ -1,9 +1,19 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { resolveOrganizationStoreContext } from '../domain/booking/authorization.js';
-import { SLOT_STATUS } from '../domain/booking/constants.js';
+import {
+  BOOKING_SOURCE,
+  BOOKING_STATUS,
+  DEFAULT_CANCELLATION_DEADLINE_MINUTES,
+  PUBLIC_SITE_STATUS,
+  SLOT_STATUS,
+} from '../domain/booking/constants.js';
 import { type AuthRuntimeDatabase, type AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../infra/db/schema.js';
+import {
+  notifyBookingEmailBestEffort,
+  notifyBookingOperationalEmailBestEffort,
+} from '../features/booking/booking.notifications.js';
 import {
   parseTicketServiceIds,
   resolveTicketServiceScope,
@@ -69,6 +79,13 @@ const publicSiteProfileSchema = z.object({
   phone: z.string().nullable(),
   businessHours: z.string().nullable(),
   imageUrl: z.string().nullable(),
+  status: z.enum([
+    PUBLIC_SITE_STATUS.PUBLIC,
+    PUBLIC_SITE_STATUS.PRIVATE,
+    PUBLIC_SITE_STATUS.SUSPENDED,
+  ]),
+  acceptBookings: z.boolean(),
+  noindex: z.boolean(),
 });
 
 const publicReservationPageSchema = z.object({
@@ -199,6 +216,96 @@ const getPublicTicketTypeDetailRoute = createRoute({
   },
 });
 
+const publicBookingCompanionSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  note: z.string().trim().max(500).nullable().optional(),
+});
+
+const publicBookingAnswerSchema = z.object({
+  fieldId: z.string().trim().min(1).max(120),
+  labelSnapshot: z.string().trim().min(1).max(200),
+  value: z.unknown(),
+});
+
+const createPublicBookingBodySchema = z.object({
+  slotId: z.string().min(1),
+  customerName: z.string().trim().min(1).max(120),
+  customerEmail: z.email().max(320),
+  customerPhone: z.string().trim().max(80).optional(),
+  participantsCount: z.int().min(1).max(20).default(1),
+  companions: z.array(publicBookingCompanionSchema).max(19).optional(),
+  note: z.string().trim().max(1000).optional(),
+  answers: z.array(publicBookingAnswerSchema).max(50).optional(),
+});
+
+const publicBookingResponseSchema = z.object({
+  bookingId: z.string(),
+  bookingPublicId: z.string(),
+  status: z.enum([BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.PENDING_APPROVAL]),
+});
+
+const publicCancelParamsSchema = publicEventRouteParamsSchema.extend({
+  bookingPublicId: z.string().min(1),
+});
+
+const publicCancelBodySchema = z.object({
+  token: z.string().min(1),
+  reason: z.string().trim().max(500).optional(),
+});
+
+const createPublicBookingRoute = createRoute({
+  method: 'post',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/bookings',
+  tags: ['Public Bookings'],
+  summary: 'Create a guest booking from a public reservation site',
+  request: {
+    params: publicEventRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: createPublicBookingBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Public booking created',
+      content: {
+        'application/json': {
+          schema: publicBookingResponseSchema,
+        },
+      },
+    },
+    404: { description: 'Public site or slot not found' },
+    409: { description: 'Public booking conflict' },
+  },
+});
+
+const cancelPublicBookingRoute = createRoute({
+  method: 'post',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/bookings/{bookingPublicId}/cancel',
+  tags: ['Public Bookings'],
+  summary: 'Cancel a guest booking with a one-time token',
+  request: {
+    params: publicCancelParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: publicCancelBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Public booking canceled' },
+    404: { description: 'Public booking not found' },
+    409: { description: 'Public booking cannot be canceled' },
+  },
+});
+
 const toIsoDate = (value: Date): string => value.toISOString();
 
 type PublicTicketType = {
@@ -254,6 +361,17 @@ type PublicContext = {
     slug: string;
     name: string;
   };
+  siteSetting: {
+    siteName: string | null;
+    description: string | null;
+    address: string | null;
+    phone: string | null;
+    businessHours: string | null;
+    imageUrl: string | null;
+    status: string;
+    acceptBookings: boolean;
+    noindex: boolean;
+  };
 };
 
 const isBookableSlot = ({
@@ -286,6 +404,7 @@ const formatPublicEvent = (
     storeSlug: string;
   },
   now: Date,
+  acceptBookings = true,
 ) => {
   const remainingCount = Math.max(row.capacity - row.reservedCount, 0);
   return {
@@ -309,14 +428,16 @@ const formatPublicEvent = (
     remainingCount,
     bookingOpenAt: toIsoDate(row.bookingOpenAt),
     bookingCloseAt: toIsoDate(row.bookingCloseAt),
-    isBookable: isBookableSlot({
-      slotStatus: row.slotStatus,
-      reservedCount: row.reservedCount,
-      capacity: row.capacity,
-      bookingOpenAt: row.bookingOpenAt,
-      bookingCloseAt: row.bookingCloseAt,
-      now,
-    }),
+    isBookable:
+      acceptBookings &&
+      isBookableSlot({
+        slotStatus: row.slotStatus,
+        reservedCount: row.reservedCount,
+        capacity: row.capacity,
+        bookingOpenAt: row.bookingOpenAt,
+        bookingCloseAt: row.bookingCloseAt,
+        now,
+      }),
     staffLabel: row.staffLabel,
     locationLabel: row.locationLabel,
   };
@@ -401,31 +522,8 @@ const buildPublicTicketTypeHref = ({
     ticketTypeId,
   )}`;
 
-const readPublicSiteProfile = async ({
-  database,
-  publicContext,
-}: {
-  database: AuthRuntimeDatabase;
-  publicContext: PublicContext;
-}) => {
-  const rows = await database
-    .select({
-      siteName: dbSchema.publicSiteSetting.siteName,
-      description: dbSchema.publicSiteSetting.description,
-      address: dbSchema.publicSiteSetting.address,
-      phone: dbSchema.publicSiteSetting.phone,
-      businessHours: dbSchema.publicSiteSetting.businessHours,
-      imageUrl: dbSchema.publicSiteSetting.imageUrl,
-    })
-    .from(dbSchema.publicSiteSetting)
-    .where(
-      and(
-        eq(dbSchema.publicSiteSetting.organizationId, publicContext.organization.id),
-        eq(dbSchema.publicSiteSetting.storeId, publicContext.store.id),
-      ),
-    )
-    .limit(1);
-  const setting = rows[0] ?? null;
+const readPublicSiteProfile = async ({ publicContext }: { publicContext: PublicContext }) => {
+  const setting = publicContext.siteSetting;
 
   return {
     organizationId: publicContext.organization.id,
@@ -441,6 +539,9 @@ const readPublicSiteProfile = async ({
     phone: setting?.phone ?? null,
     businessHours: setting?.businessHours ?? null,
     imageUrl: setting?.imageUrl ?? publicContext.organization.logo ?? null,
+    status: setting.status as 'public' | 'private' | 'suspended',
+    acceptBookings: setting.acceptBookings,
+    noindex: setting.noindex,
   };
 };
 
@@ -624,6 +725,38 @@ const resolvePublicOrganizationStore = async ({
     };
   }
 
+  const settingRows = await database
+    .select({
+      siteName: dbSchema.publicSiteSetting.siteName,
+      description: dbSchema.publicSiteSetting.description,
+      address: dbSchema.publicSiteSetting.address,
+      phone: dbSchema.publicSiteSetting.phone,
+      businessHours: dbSchema.publicSiteSetting.businessHours,
+      imageUrl: dbSchema.publicSiteSetting.imageUrl,
+      status: dbSchema.publicSiteSetting.status,
+      acceptBookings: dbSchema.publicSiteSetting.acceptBookings,
+      noindex: dbSchema.publicSiteSetting.noindex,
+    })
+    .from(dbSchema.publicSiteSetting)
+    .where(
+      and(
+        eq(dbSchema.publicSiteSetting.organizationId, context.organizationId),
+        eq(dbSchema.publicSiteSetting.storeId, context.storeId),
+      ),
+    )
+    .limit(1);
+  const siteSetting = settingRows[0] ?? null;
+  if (!siteSetting || siteSetting.status !== PUBLIC_SITE_STATUS.PUBLIC) {
+    return {
+      error: {
+        status: 404 as const,
+        message: 'Public reservation site was not found.',
+      },
+      organization: null,
+      store: null,
+    };
+  }
+
   return {
     error: null,
     organization: {
@@ -637,11 +770,155 @@ const resolvePublicOrganizationStore = async ({
       slug: context.storeSlug,
       name: context.storeName,
     },
+    siteSetting,
   };
+};
+
+const toHex = (bytes: Uint8Array): string =>
+  Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+
+const createRandomHex = (byteLength: number): string => {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return toHex(bytes);
+};
+
+const createBookingPublicId = (): string => `bk_${createRandomHex(12)}`;
+
+const sha256Hex = async (value: string): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return toHex(new Uint8Array(digest));
+};
+
+const normalizeOptionalText = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const createPublicCancelUrl = ({
+  env,
+  requestUrl,
+  publicContext,
+  bookingPublicId,
+  token,
+}: {
+  env: AuthRuntimeEnv;
+  requestUrl: string;
+  publicContext: PublicContext;
+  bookingPublicId: string;
+  token: string;
+}): string => {
+  const base = env.WEB_BASE_URL || new URL(requestUrl).origin;
+  const path = `/${encodeURIComponent(publicContext.organization.slug)}/${encodeURIComponent(
+    publicContext.store.slug,
+  )}/bookings/${encodeURIComponent(bookingPublicId)}/cancel`;
+  const url = new URL(path, base);
+  url.searchParams.set('token', token);
+  return url.toString();
+};
+
+const insertPublicBookingDetails = async ({
+  database,
+  bookingId,
+  companions,
+  answers,
+}: {
+  database: AuthRuntimeDatabase;
+  bookingId: string;
+  companions: z.infer<typeof publicBookingCompanionSchema>[] | undefined;
+  answers: z.infer<typeof publicBookingAnswerSchema>[] | undefined;
+}) => {
+  const normalizedCompanions =
+    companions
+      ?.map((companion) => ({
+        name: companion.name.trim(),
+        note: normalizeOptionalText(companion.note),
+      }))
+      .filter((companion) => companion.name.length > 0) ?? [];
+
+  if (normalizedCompanions.length > 0) {
+    await database.insert(dbSchema.bookingCompanion).values(
+      normalizedCompanions.map((companion) => ({
+        id: crypto.randomUUID(),
+        bookingId,
+        name: companion.name,
+        note: companion.note,
+      })),
+    );
+  }
+
+  if (answers && answers.length > 0) {
+    await database.insert(dbSchema.bookingAnswer).values(
+      answers.map((answer) => ({
+        id: crypto.randomUUID(),
+        bookingId,
+        fieldId: answer.fieldId.trim(),
+        labelSnapshot: answer.labelSnapshot.trim(),
+        valueJson: JSON.stringify(answer.value),
+      })),
+    );
+  }
+};
+
+const createPublicCancelToken = async ({
+  database,
+  bookingId,
+  emailSnapshot,
+  now,
+}: {
+  database: AuthRuntimeDatabase;
+  bookingId: string;
+  emailSnapshot: string;
+  now: Date;
+}) => {
+  const token = createRandomHex(32);
+  const tokenHash = await sha256Hex(token);
+  const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  await database.insert(dbSchema.bookingPublicActionToken).values({
+    id: crypto.randomUUID(),
+    bookingId,
+    purpose: 'cancel',
+    tokenHash,
+    emailSnapshot,
+    expiresAt,
+  });
+  return token;
+};
+
+const reservePublicSlotCapacity = async ({
+  database,
+  slotId,
+  participantsCount,
+  now,
+}: {
+  database: AuthRuntimeDatabase;
+  slotId: string;
+  participantsCount: number;
+  now: Date;
+}) => {
+  const rows = await database
+    .update(dbSchema.slot)
+    .set({
+      reservedCount: sql`${dbSchema.slot.reservedCount} + ${participantsCount}`,
+    })
+    .where(
+      and(
+        eq(dbSchema.slot.id, slotId),
+        eq(dbSchema.slot.status, SLOT_STATUS.OPEN),
+        lte(dbSchema.slot.bookingOpenAt, now),
+        gte(dbSchema.slot.bookingCloseAt, now),
+        sql`${dbSchema.slot.reservedCount} + ${participantsCount} <= ${dbSchema.slot.capacity}`,
+      ),
+    )
+    .returning({ id: dbSchema.slot.id });
+  return rows.length > 0;
 };
 
 export const createPublicRoutes = ({
   database,
+  env,
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
@@ -661,7 +938,7 @@ export const createPublicRoutes = ({
 
     const now = new Date();
     const [site, rows, ticketTypes] = await Promise.all([
-      readPublicSiteProfile({ database, publicContext }),
+      readPublicSiteProfile({ publicContext }),
       listPublicEventRows({
         database,
         publicContext,
@@ -682,6 +959,7 @@ export const createPublicRoutes = ({
           storeSlug: publicContext.store.slug,
         },
         now,
+        publicContext.siteSetting.acceptBookings,
       ),
     );
 
@@ -731,6 +1009,7 @@ export const createPublicRoutes = ({
               storeSlug: publicContext.store.slug,
             },
             now,
+            publicContext.siteSetting.acceptBookings,
           ),
         ),
         ticketTypes,
@@ -802,6 +1081,7 @@ export const createPublicRoutes = ({
             storeSlug: publicContext.store.slug,
           },
           new Date(),
+          publicContext.siteSetting.acceptBookings,
         ),
         ticketTypes,
       },
@@ -830,6 +1110,279 @@ export const createPublicRoutes = ({
     }
 
     return c.json(ticketType, 200);
+  });
+
+  publicRoutes.openapi(createPublicBookingRoute, async (c) => {
+    const { orgSlug, storeSlug } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const publicContext = await resolvePublicOrganizationStore({
+      database,
+      orgSlug,
+      storeSlug,
+    });
+    if (publicContext.error) {
+      return c.json({ message: publicContext.error.message }, publicContext.error.status);
+    }
+    if (!publicContext.siteSetting.acceptBookings) {
+      return c.json({ message: 'Public booking is not accepted for this store.' }, 409);
+    }
+
+    const slotRows = await database
+      .select({
+        slotId: dbSchema.slot.id,
+        organizationId: dbSchema.slot.organizationId,
+        storeId: dbSchema.slot.storeId,
+        serviceId: dbSchema.slot.serviceId,
+        startAt: dbSchema.slot.startAt,
+        status: dbSchema.slot.status,
+        capacity: dbSchema.slot.capacity,
+        reservedCount: dbSchema.slot.reservedCount,
+        bookingOpenAt: dbSchema.slot.bookingOpenAt,
+        bookingCloseAt: dbSchema.slot.bookingCloseAt,
+        serviceIsActive: dbSchema.service.isActive,
+        bookingPolicy: dbSchema.service.bookingPolicy,
+        requiresTicket: dbSchema.service.requiresTicket,
+      })
+      .from(dbSchema.slot)
+      .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.slot.serviceId))
+      .where(
+        and(
+          eq(dbSchema.slot.id, body.slotId),
+          eq(dbSchema.slot.organizationId, publicContext.organization.id),
+          eq(dbSchema.slot.storeId, publicContext.store.id),
+        ),
+      )
+      .limit(1);
+    const slot = slotRows[0] ?? null;
+    if (!slot || !slot.serviceIsActive) {
+      return c.json({ message: 'Public event not found.' }, 404);
+    }
+    if (slot.requiresTicket) {
+      return c.json({ message: 'Ticket-required services cannot be booked as a guest.' }, 409);
+    }
+
+    const now = new Date();
+    const isBookable = isBookableSlot({
+      slotStatus: slot.status,
+      reservedCount: slot.reservedCount,
+      capacity: slot.capacity,
+      bookingOpenAt: slot.bookingOpenAt,
+      bookingCloseAt: slot.bookingCloseAt,
+      now,
+    });
+    if (!isBookable || slot.capacity - slot.reservedCount < body.participantsCount) {
+      return c.json({ message: 'Slot is full or not bookable.' }, 409);
+    }
+
+    const status =
+      slot.bookingPolicy === 'approval'
+        ? BOOKING_STATUS.PENDING_APPROVAL
+        : BOOKING_STATUS.CONFIRMED;
+    if (status === BOOKING_STATUS.CONFIRMED) {
+      const reserved = await reservePublicSlotCapacity({
+        database,
+        slotId: slot.slotId,
+        participantsCount: body.participantsCount,
+        now,
+      });
+      if (!reserved) {
+        return c.json({ message: 'Slot is full or not bookable.' }, 409);
+      }
+    }
+
+    const bookingId = crypto.randomUUID();
+    const bookingPublicId = createBookingPublicId();
+    await database.insert(dbSchema.booking).values({
+      id: bookingId,
+      organizationId: slot.organizationId,
+      storeId: slot.storeId,
+      slotId: slot.slotId,
+      serviceId: slot.serviceId,
+      participantId: null,
+      publicId: bookingPublicId,
+      source: BOOKING_SOURCE.PUBLIC_SITE,
+      participantsCount: body.participantsCount,
+      customerName: body.customerName.trim(),
+      customerEmail: body.customerEmail.trim().toLowerCase(),
+      customerPhone: normalizeOptionalText(body.customerPhone),
+      note: normalizeOptionalText(body.note),
+      createdByUserId: null,
+      status,
+      ticketPackId: null,
+    });
+
+    await insertPublicBookingDetails({
+      database,
+      bookingId,
+      companions: body.companions,
+      answers: body.answers,
+    });
+
+    const cancelToken = await createPublicCancelToken({
+      database,
+      bookingId,
+      emailSnapshot: body.customerEmail.trim().toLowerCase(),
+      now,
+    });
+    const cancelUrl = createPublicCancelUrl({
+      env,
+      requestUrl: c.req.raw.url,
+      publicContext,
+      bookingPublicId,
+      token: cancelToken,
+    });
+
+    await Promise.all([
+      notifyBookingEmailBestEffort({
+        database,
+        env,
+        bookingId,
+        event:
+          status === BOOKING_STATUS.PENDING_APPROVAL
+            ? 'booking_application_received'
+            : 'booking_confirmed',
+        actionUrl: cancelUrl,
+        actionLabel: '予約をキャンセルする',
+      }),
+      notifyBookingOperationalEmailBestEffort({
+        database,
+        env,
+        bookingId,
+        event:
+          status === BOOKING_STATUS.PENDING_APPROVAL
+            ? 'booking_application_received'
+            : 'booking_confirmed',
+      }),
+    ]);
+
+    return c.json(
+      {
+        bookingId,
+        bookingPublicId,
+        status,
+      },
+      200,
+    );
+  });
+
+  publicRoutes.openapi(cancelPublicBookingRoute, async (c) => {
+    const { orgSlug, storeSlug, bookingPublicId } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const publicContext = await resolvePublicOrganizationStore({
+      database,
+      orgSlug,
+      storeSlug,
+    });
+    if (publicContext.error) {
+      return c.json({ message: publicContext.error.message }, publicContext.error.status);
+    }
+
+    const tokenHash = await sha256Hex(body.token);
+    const rows = await database
+      .select({
+        bookingId: dbSchema.booking.id,
+        organizationId: dbSchema.booking.organizationId,
+        storeId: dbSchema.booking.storeId,
+        slotId: dbSchema.booking.slotId,
+        serviceId: dbSchema.booking.serviceId,
+        status: dbSchema.booking.status,
+        participantsCount: dbSchema.booking.participantsCount,
+        tokenId: dbSchema.bookingPublicActionToken.id,
+        tokenExpiresAt: dbSchema.bookingPublicActionToken.expiresAt,
+        tokenUsedAt: dbSchema.bookingPublicActionToken.usedAt,
+        slotStartAt: dbSchema.slot.startAt,
+        cancellationDeadlineMinutes: dbSchema.service.cancellationDeadlineMinutes,
+      })
+      .from(dbSchema.booking)
+      .innerJoin(
+        dbSchema.bookingPublicActionToken,
+        and(
+          eq(dbSchema.bookingPublicActionToken.bookingId, dbSchema.booking.id),
+          eq(dbSchema.bookingPublicActionToken.purpose, 'cancel'),
+          eq(dbSchema.bookingPublicActionToken.tokenHash, tokenHash),
+        ),
+      )
+      .innerJoin(dbSchema.slot, eq(dbSchema.slot.id, dbSchema.booking.slotId))
+      .innerJoin(dbSchema.service, eq(dbSchema.service.id, dbSchema.booking.serviceId))
+      .where(
+        and(
+          eq(dbSchema.booking.publicId, bookingPublicId),
+          eq(dbSchema.booking.organizationId, publicContext.organization.id),
+          eq(dbSchema.booking.storeId, publicContext.store.id),
+        ),
+      )
+      .limit(1);
+    const booking = rows[0] ?? null;
+    if (!booking) {
+      return c.json({ message: 'Booking not found.' }, 404);
+    }
+    const now = new Date();
+    if (booking.tokenUsedAt || new Date(booking.tokenExpiresAt).getTime() < now.getTime()) {
+      return c.json({ message: 'Cancellation token is expired or already used.' }, 409);
+    }
+
+    const isPendingApproval = booking.status === BOOKING_STATUS.PENDING_APPROVAL;
+    if (!isPendingApproval && booking.status !== BOOKING_STATUS.CONFIRMED) {
+      return c.json({ message: 'Booking cannot be canceled.' }, 409);
+    }
+
+    if (!isPendingApproval) {
+      const cancellationDeadlineMinutes =
+        booking.cancellationDeadlineMinutes ?? DEFAULT_CANCELLATION_DEADLINE_MINUTES;
+      const deadlineAt = new Date(
+        new Date(booking.slotStartAt).getTime() - cancellationDeadlineMinutes * 60 * 1000,
+      );
+      if (now.getTime() > deadlineAt.getTime()) {
+        return c.json({ message: 'Cancellation deadline has passed.' }, 409);
+      }
+    }
+
+    await database
+      .update(dbSchema.booking)
+      .set({
+        status: BOOKING_STATUS.CANCELED_BY_PARTICIPANT,
+        cancelReason: normalizeOptionalText(body.reason),
+        cancelledAt: now,
+        cancelledByUserId: null,
+      })
+      .where(eq(dbSchema.booking.id, booking.bookingId));
+
+    if (!isPendingApproval) {
+      await database
+        .update(dbSchema.slot)
+        .set({
+          reservedCount: sql`case
+            when ${dbSchema.slot.reservedCount} >= ${booking.participantsCount}
+            then ${dbSchema.slot.reservedCount} - ${booking.participantsCount}
+            else 0
+          end`,
+        })
+        .where(eq(dbSchema.slot.id, booking.slotId));
+    }
+
+    await database
+      .update(dbSchema.bookingPublicActionToken)
+      .set({ usedAt: now })
+      .where(eq(dbSchema.bookingPublicActionToken.id, booking.tokenId));
+
+    await Promise.all([
+      notifyBookingEmailBestEffort({
+        database,
+        env,
+        bookingId: booking.bookingId,
+        event: 'booking_cancelled_by_participant',
+        reason: normalizeOptionalText(body.reason),
+      }),
+      notifyBookingOperationalEmailBestEffort({
+        database,
+        env,
+        bookingId: booking.bookingId,
+        event: 'booking_cancelled_by_participant',
+        reason: normalizeOptionalText(body.reason),
+      }),
+    ]);
+
+    return c.json({ ok: true }, 200);
   });
 
   return publicRoutes;

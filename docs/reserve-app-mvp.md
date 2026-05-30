@@ -6,6 +6,35 @@ reserve-app では、hacomono ほど大規模施設向けに広げず、**小規
 
 ---
 
+# 0. 実装状況サマリー
+
+2026-05-31 時点では、P0 として定義した公開予約の主要導線は実装済みです。
+公開ページは、公開状態の店舗だけが表示されます。
+予約者はログインせずに氏名・メール・電話番号・人数・同伴者・備考を入力して予約できます。
+スタッフは管理画面から電話・LINE・店頭などの代理予約を作成できます。
+
+凡例:
+
+- 実装済み: 利用できる状態です。
+- 一部実装: 基本導線は利用できますが、設定 UI や派生機能が残っています。
+- 未実装: 仕様案のままで、まだ利用できません。
+
+| 項目                         | 状態     | 実装済みの範囲                                                                 | 残り作業                                                               |
+| ---------------------------- | -------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 店舗ごとの公開予約成立       | 実装済み | `/{orgSlug}/{storeSlug}` と公開イベント詳細からログイン不要で予約できる          | 回数券必須サービスはゲスト予約不可。参加者画面の予約導線を使う         |
+| 予約者情報入力               | 一部実装 | 氏名、メール、電話番号、人数、同伴者、備考を保存する                             | 利用目的、同意チェック、店舗ごとのカスタム入力 UI                      |
+| 運営側通知                   | 一部実装 | 予約作成・キャンセル等で予約者向けメールと運営側メールを送る。送信ログも残す     | 通知先設定の管理 UI、LINE・Slack・Webhook                               |
+| 前日・当日リマインド         | 一部実装 | 15分間隔の scheduled handler で、開始24時間前の確認メールを一度だけ送る          | 複数タイミング、店舗/サービス別のリマインド設定 UI                     |
+| 管理者による代理予約         | 実装済み | `/admin/bookings/new` で電話・LINE・店頭・管理画面経由の確定予約を作成できる      | 代理予約専用の通知文面や、さらに細かい受付経路設定                     |
+| 日次運用ビュー               | 一部実装 | `/admin/bookings` で日付絞り込み、連絡先、人数、備考、経路、承認/却下/No-show を扱う | CSV出力、印刷用表示、出席/欠席チェックイン                             |
+| 公開/非公開制御              | 一部実装 | 店舗公開サイト単位で `public` / `private` / `suspended`、予約受付、noindex を設定 | `draft` / `unlisted`、停止理由表示、サービス単位・枠単位の細かい制御   |
+| 管理者による予約変更         | 未実装   | 既存の運営キャンセル、承認、却下、No-show は利用できる                           | 予約の日程変更、変更履歴、変更通知                                     |
+| オンライン決済               | 未実装   | 回数券購入は現地決済・銀行振込・承認運用が中心                                   | 予約時オンライン決済、返金、領収書                                     |
+| キャンセル待ち               | 未実装   | -                                                                                | キャンセル待ち登録、手動/自動昇格                                      |
+| スタッフ/設備の実体管理      | 未実装   | 店舗メンバーとスタッフ権限は利用できる                                           | スタッフ・設備を予約枠のリソースとして扱う衝突チェック                 |
+
+---
+
 # 1. MVP の到達点
 
 MVP の完成状態は以下です。
@@ -21,25 +50,29 @@ MVP の完成状態は以下です。
 
 # 2. 優先度
 
-| 優先度 | 機能                    | MVPでの扱い                                  |
-| ------ | ----------------------- | -------------------------------------------- |
-| P0     | 店舗ごとの公開予約成立  | 必須                                         |
-| P0     | 予約者情報入力          | 必須                                         |
-| P0     | 運営側通知              | 必須                                         |
-| P0     | 前日・当日リマインド    | 必須                                         |
-| P0     | 管理者による代理予約    | 必須                                         |
-| P0     | 日次運用ビュー          | 必須                                         |
-| P1     | 公開/非公開制御         | 早期に入れる                                 |
-| P1     | 管理者による予約変更    | 早期に入れる                                 |
-| P2     | オンライン決済          | 回数券/有料予約を本格運用する段階            |
-| P2     | キャンセル待ち          | 人気枠が出てから                             |
-| P2     | スタッフ/設備の実体管理 | 複数スタッフ・複数部屋運用が必要になってから |
+| 優先度 | 機能                    | MVPでの扱い                                  | 実装状況 |
+| ------ | ----------------------- | -------------------------------------------- | -------- |
+| P0     | 店舗ごとの公開予約成立  | 必須                                         | 実装済み |
+| P0     | 予約者情報入力          | 必須                                         | 一部実装 |
+| P0     | 運営側通知              | 必須                                         | 一部実装 |
+| P0     | 前日・当日リマインド    | 必須                                         | 一部実装 |
+| P0     | 管理者による代理予約    | 必須                                         | 実装済み |
+| P0     | 日次運用ビュー          | 必須                                         | 一部実装 |
+| P1     | 公開/非公開制御         | 早期に入れる                                 | 一部実装 |
+| P1     | 管理者による予約変更    | 早期に入れる                                 | 未実装   |
+| P2     | オンライン決済          | 回数券/有料予約を本格運用する段階            | 未実装   |
+| P2     | キャンセル待ち          | 人気枠が出てから                             | 未実装   |
+| P2     | スタッフ/設備の実体管理 | 複数スタッフ・複数部屋運用が必要になってから | 未実装   |
 
 ---
 
 # 3. 機能仕様
 
 ## 3.1 店舗ごとの公開予約成立
+
+実装状況: 実装済み。
+公開状態の店舗では、公開イベント詳細ページからログイン不要で予約できます。
+店舗が非公開、停止中、または公開サイト設定が未作成の場合、公開ページと公開予約 API は表示・実行できません。
 
 ### 目的
 
@@ -67,7 +100,8 @@ GET  /{orgSlug}/{storeSlug}/events/{slotId}
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/site
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events/{slotId}
-POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings
+POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings
+POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings/{bookingPublicId}/cancel
 ```
 
 ### 予約作成時の必須チェック
@@ -78,7 +112,8 @@ POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings
 - store が organization に属する
 - public_site_setting.status = public
 - public_site_setting.acceptBookings = true
-- service.status = public
+- service が有効
+- 回数券必須サービスではない
 - slot.status = open
 - slot.storeId が URL の storeId と一致する
 - 残席数 >= participantsCount
@@ -86,7 +121,8 @@ POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings
 - キャンセル/予約停止期間ではない
 ```
 
-`status` と `acceptBookings` は現行の `public_site_setting` には未追加のため、公開/非公開制御の実装時に migration で拡張します。
+`status`、`acceptBookings`、`noindex` は `public_site_setting` に追加済みです。
+実装済みの公開状態は `public`、`private`、`suspended` です。
 
 ### 予約番号
 
@@ -136,6 +172,10 @@ URL 例:
 
 ## 3.2 予約者情報入力
 
+実装状況: 一部実装。
+公開予約フォームでは、氏名、メールアドレス、電話番号、人数、同伴者、備考を入力できます。
+予約者情報は予約行にスナップショットとして保存され、ゲスト予約では参加者 ID を持たない予約として扱います。
+
 ### 目的
 
 Web から常に `participantsCount = 1` 固定だと、店舗運用では不足します。小規模スクール・教室・体験レッスンでは、電話番号、人数、同伴者名、備考、利用目的、経験有無などが必要になります。
@@ -154,6 +194,10 @@ Web から常に `participantsCount = 1` 固定だと、店舗運用では不足
 | 同意チェック   |         任意/設定可 | キャンセルポリシー等             |
 
 ### カスタム入力項目
+
+実装状況: 一部実装。
+回答保存用の `booking_answer` は追加済みです。
+ただし、管理画面でカスタム項目を作成する UI と、公開予約フォームで動的に表示する UI は未実装です。
 
 サービス単位または予約ページ単位で `intakeFormSchema` を持たせます。
 
@@ -210,6 +254,11 @@ booking_companion
 ---
 
 ## 3.3 運営側への予約通知
+
+実装状況: 一部実装。
+予約作成・承認・却下・キャンセルなどの予約ライフサイクルで、予約者向けメールと運営側メールを送ります。
+通知ログを作成し、同じ通知が重複送信されないようにしています。
+通知先設定の管理 UI は未実装です。
 
 ### 目的
 
@@ -268,6 +317,10 @@ notification_log
 
 ## 3.4 予約前日・当日リマインド
 
+実装状況: 一部実装。
+開始24時間前を過ぎた確定予約に対して、15分間隔の scheduled handler がリマインドメールを一度だけ送ります。
+`reminder_policy` と `reminder_log` は追加済みですが、店舗やサービスごとに複数タイミングを設定する管理 UI は未実装です。
+
 ### 目的
 
 No-show 対策として、前日または数時間前のリマインドは MVP に含めてよいです。STORES予約は前日のリマインドメールやLINE経由の来店前日メッセージを打ち出しており、SelectTypeも予約前日のリマインドメールを機能として掲げています。([STORES][1])
@@ -321,6 +374,11 @@ scheduled()
 
 ## 3.5 管理者による代理予約
 
+実装状況: 実装済み。
+スタッフは `/admin/bookings/new` から、既存参加者または顧客情報の直接入力で代理予約を作成できます。
+受付経路、人数、同伴者、備考、通知有無を保存できます。
+作成された予約は確定予約として扱われます。
+
 ### 目的
 
 スクール・教室系では、電話・LINE・店頭で受けた予約をスタッフが登録する導線が必須です。公開ページだけでは実運用に乗りません。
@@ -345,7 +403,7 @@ scheduled()
 - 備考
 - 受付経路: phone | line | storefront | admin | other
 - 通知を送る: true/false
-- 回数券を消費する: true/false
+- 回数券必須サービスの場合は、既存参加者の回数券残数から消費する
 ```
 
 ### 権限
@@ -360,7 +418,7 @@ store manager/staff
 ### 予約ソース
 
 ```ts
-type BookingSource = 'public_web' | 'admin' | 'phone' | 'line' | 'storefront' | 'import';
+type BookingSource = 'participant' | 'public_site' | 'admin' | 'phone' | 'line' | 'storefront' | 'other';
 ```
 
 ### 監査ログ
@@ -370,7 +428,7 @@ type BookingSource = 'public_web' | 'admin' | 'phone' | 'line' | 'storefront' | 
 ```txt
 audit_log
 - actorUserId
-- action: booking.create_by_staff
+- action: booking.staff_created
 - targetBookingId
 - organizationId
 - storeId
@@ -384,6 +442,11 @@ audit_log
 
 ## 4.1 公開/非公開の制御
 
+実装状況: 一部実装。
+店舗公開サイト単位で、公開状態、予約受付、検索除外を設定できます。
+実装済みの公開状態は `public`、`private`、`suspended` です。
+`draft`、`unlisted`、停止理由表示、サービス単位・枠単位の公開停止は未実装です。
+
 ### 目的
 
 URLを知っていれば常に見える状態は避けるべきです。公開予約ページには、最低限の公開状態と受付停止設定が必要です。
@@ -392,9 +455,7 @@ URLを知っていれば常に見える状態は避けるべきです。公開�
 
 ```ts
 type PublicStatus =
-  | 'draft' // 管理者のみ閲覧
   | 'public' // 一般公開
-  | 'unlisted' // URLを知っている人のみ、noindex
   | 'private' // 非公開
   | 'suspended'; // 受付停止・表示停止
 ```
@@ -420,6 +481,10 @@ MVPでは、まず「店舗公開サイト単位」と「サービス単位」�
 ---
 
 ## 4.2 予約変更・日程変更
+
+実装状況: 未実装。
+既存の運営キャンセル、承認、却下、No-show は利用できます。
+予約の日程変更、変更履歴、変更通知はまだ実装していません。
 
 ### MVPでは運営側の日程変更を優先
 
@@ -471,6 +536,12 @@ booking_change_request
 
 ## 4.3 日次運用ビュー
 
+実装状況: 一部実装。
+専用の `/admin/operations/day` ではなく、現在は `/admin/bookings` の運営予約一覧で日付を絞り込みます。
+予約者名、連絡先、人数、備考、予約経路、予約状態を確認できます。
+承認、却下、運営キャンセル、No-show も同じ画面から操作できます。
+CSV出力、印刷用表示、出席/欠席チェックインは未実装です。
+
 ### 目的
 
 当日の現場では、予約カレンダーよりも「今日誰が来るか」「電話番号は何か」「何人か」「支払い/回数券はどうなっているか」が重要です。SelectTypeもCSV出力を予約システム機能として出しているため、reserve-app でも日次一覧とCSVは早めに入れる価値があります。([SelectType(セレクトタイプ)][4])
@@ -478,10 +549,12 @@ booking_change_request
 ### URL
 
 ```txt
-/{orgSlug}/{storeSlug}/admin/operations/day?date=2026-05-30
+/{orgSlug}/{storeSlug}/admin/bookings
 ```
 
 ### 表示項目
+
+実装済みの表示項目:
 
 ```txt
 - 時刻
@@ -491,19 +564,24 @@ booking_change_request
 - 電話番号
 - メール
 - 備考
-- 回数券残数
-- 支払い状態
+- 予約経路
 - 予約状態
-- 出欠状態
 ```
 
 ### 操作
 
+実装済みの操作:
+
+```txt
+- 無断欠席にする
+- キャンセルする
+```
+
+未実装の候補:
+
 ```txt
 - 出席にする
 - 欠席にする
-- 無断欠席にする
-- キャンセルする
 - 日程変更する
 - 参加者にメール再送
 - CSV出力
@@ -511,6 +589,9 @@ booking_change_request
 ```
 
 ### 出欠ステータス
+
+実装状況: 未実装。
+現在は予約状態の `no_show` で無断欠席を記録できますが、出席・欠席を独立した出欠状態として管理するカラムはまだありません。
 
 ```ts
 type AttendanceStatus = 'not_checked' | 'checked_in' | 'absent' | 'no_show';
@@ -665,7 +746,7 @@ type BookingStatus =
 ### 即時確定フロー
 
 ```txt
-public_web booking
+public_site booking
 -> confirmed
 -> confirmation email to customer
 -> notification email to staff
@@ -676,7 +757,7 @@ public_web booking
 ### 承認制フロー
 
 ```txt
-public_web booking
+public_site booking
 -> pending_approval
 -> staff notification
 -> staff approve
@@ -689,7 +770,7 @@ public_web booking
 
 ```txt
 admin booking
--> confirmed or pending_approval
+-> confirmed
 -> optional customer email
 -> audit log
 ```
@@ -700,18 +781,21 @@ admin booking
 
 ## 7.1 公開サイト
 
+実装状況: 一部実装。
+`public_site_setting` は店舗単位で作成・更新できます。
+現在の実装では `status`、`acceptBookings`、`noindex` を持ちます。
+`orgSlugSnapshot`、`draft`、`unlisted`、停止理由表示は未実装です。
+
 ```txt
 public_site_setting
 - id
 - organizationId
 - storeId
-- orgSlugSnapshot
-- storeSlug
 - siteName
 - description
 - address
 - phone
-- status: draft | public | unlisted | private | suspended
+- status: public | private | suspended
 - acceptBookings
 - noindex
 - coverImageUrl
@@ -722,6 +806,10 @@ public_site_setting
 `orgSlugSnapshot` は必須ではありませんが、slug変更時の調査やログ確認に便利です。正規解決は `organization.slug` と `store.slug` で行います。
 
 ## 7.2 予約ページ/サービス
+
+実装状況: 未実装。
+現在は既存の `service` と `slot` を公開予約の対象として使っています。
+以下のような専用 `booking_page` モデルはまだ分離していません。
 
 既存の service に寄せてもよいですが、公開ページ設定を分離するなら以下です。
 
@@ -745,6 +833,11 @@ booking_page
 
 ## 7.3 予約
 
+実装状況: 一部実装。
+公開予約番号、予約経路、予約者情報、備考、作成者ユーザー ID は予約に保存します。
+ゲスト予約では参加者 ID を空にできます。
+支払い状態と出欠状態の専用カラムは未実装です。
+
 ```txt
 booking
 - id
@@ -753,7 +846,7 @@ booking
 - storeId
 - serviceId
 - slotId
-- customerId nullable
+- participantId nullable
 - status
 - source
 - participantsCount
@@ -761,15 +854,16 @@ booking
 - customerEmail
 - customerPhone
 - note
-- paymentRequirement
-- paymentStatus
-- attendanceStatus
 - createdByUserId nullable
 - createdAt
 - updatedAt
 ```
 
 ## 7.4 通知・リマインド
+
+実装状況: 一部実装。
+通知ログとリマインドログは追加済みです。
+リマインド設定テーブルも追加済みですが、現在の送信処理は既定の24時間前リマインドを使います。
 
 ```txt
 notification_log
@@ -802,9 +896,10 @@ reminder_log
 
 ## Public API
 
-現行の公開 API に合わせます。
-公開ページの閲覧はログイン不要です。
-予約作成・キャンセルは現行では認証済み API に寄せ、公開キャンセルを追加する場合だけ署名付きトークン API を増やします。
+実装状況: 一部実装。
+公開ページの閲覧、公開予約の作成、公開キャンセルはログイン不要の Public API で実装済みです。
+公開キャンセルでは `bookingPublicId` だけでは操作できず、メールで送った期限付きトークンを検証します。
+公開チケット種別の詳細取得もありますが、回数券必須サービスのゲスト予約は受け付けません。
 
 ```txt
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/site
@@ -812,10 +907,7 @@ GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events/{slotId}
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/ticket-types/{ticketTypeId}
 
-POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings
-POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/cancel
-
-追加候補:
+POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings
 POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings/{bookingPublicId}/cancel
 ```
 
@@ -823,7 +915,10 @@ POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings/{bookingPublicId}
 
 ### 予約作成リクエスト
 
-以下は予約者情報入力を追加した後のリクエスト案です。現行の予約作成 API は `slotId` と `participantsCount` を中心に受け取ります。
+実装状況: 一部実装。
+公開予約作成 API は以下の項目を受け取ります。
+`companions` は同伴者として保存します。
+`answers` の保存先はありますが、公開フォームで店舗ごとのカスタム項目を動的表示する UI は未実装です。
 
 ```json
 {
@@ -846,8 +941,9 @@ POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings/{bookingPublicId}
 
 ## Admin API
 
-現行の店舗スコープ付き API に合わせます。
-代理予約・日程変更・出欠確認は追加候補として扱います。
+実装状況: 一部実装。
+店舗スコープ付き API で、予約一覧、運営キャンセル、承認、却下、No-show、代理予約作成を利用できます。
+日程変更、出席/欠席チェックイン、専用の日次運用 API は未実装です。
 
 ```txt
 GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings
@@ -855,9 +951,9 @@ POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/cancel-by-staff
 POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/approve
 POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/reject
 POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/no-show
+POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/staff-create
 
 追加候補:
-POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/staff-create
 POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/reschedule
 POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/check-in
 GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/operations/day?date=YYYY-MM-DD
@@ -869,11 +965,18 @@ GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/operations/day?date=YYYY-MM-
 
 ## 公開予約ページ
 
+実装状況: 一部実装。
+公開サイト、イベント一覧、イベント詳細、予約フォーム、予約完了表示、公開キャンセルページは実装済みです。
+確認画面、店舗ごとのカスタム入力、同意チェックは未実装です。
+
 ```txt
 /{orgSlug}/{storeSlug}
+/{orgSlug}/{storeSlug}/events
+/{orgSlug}/{storeSlug}/events/{slotId}
+/{orgSlug}/{storeSlug}/bookings/{bookingPublicId}/cancel?token=...
 ```
 
-表示内容:
+実装済みの表示内容:
 
 ```txt
 - 店舗名
@@ -883,17 +986,30 @@ GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/operations/day?date=YYYY-MM-
 - サービス一覧
 - 予約可能日時
 - 予約者情報入力
-- 確認画面
 - 完了画面
+```
+
+未実装の候補:
+
+```txt
+- 確認画面
+- 店舗ごとのカスタム入力
+- キャンセルポリシー同意チェック
 ```
 
 ## 管理画面
 
+実装状況: 一部実装。
+予約一覧、代理予約作成、公開サイト設定は実装済みです。
+専用の日次運用ページと通知設定ページは未実装です。
+
 ```txt
 /{orgSlug}/{storeSlug}/admin/bookings
 /{orgSlug}/{storeSlug}/admin/bookings/new
-/{orgSlug}/{storeSlug}/admin/operations/day
 /{orgSlug}/{storeSlug}/admin/public-site
+
+未実装:
+/{orgSlug}/{storeSlug}/admin/operations/day
 /{orgSlug}/{storeSlug}/admin/notification-settings
 ```
 
@@ -936,6 +1052,7 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 
 ## Step 1: 公開予約 API の store 化
 
+実装状況: 実装済み。
 最初に直すべきです。
 
 ```txt
@@ -947,6 +1064,10 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 
 ## Step 2: 予約者情報入力
 
+実装状況: 一部実装。
+標準項目と人数による残席チェックは実装済みです。
+カスタム入力 UI は未実装です。
+
 ```txt
 - participantsCount をWebフォームから入力可能にする
 - phone/note/answers を追加
@@ -955,6 +1076,10 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 ```
 
 ## Step 3: 運営通知
+
+実装状況: 一部実装。
+メール送信、通知ログ、重複送信防止は実装済みです。
+通知先設定の管理 UI は未実装です。
 
 ```txt
 - booking.created イベントを発火
@@ -965,6 +1090,10 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 
 ## Step 4: リマインド
 
+実装状況: 一部実装。
+15分間隔の scheduled handler と24時間前リマインドの二重送信防止は実装済みです。
+複数タイミングや店舗/サービス別設定 UI は未実装です。
+
 ```txt
 - reminder_policy
 - reminder_log
@@ -973,6 +1102,8 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 ```
 
 ## Step 5: 管理者代理予約
+
+実装状況: 実装済み。
 
 ```txt
 - 管理画面から予約作成
@@ -983,49 +1114,57 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 
 ## Step 6: 日次運用ビュー
 
+実装状況: 一部実装。
+予約一覧で日付、連絡先、人数、備考、予約経路、No-show を扱えます。
+CSV出力と出席/欠席チェックインは未実装です。
+
 ```txt
 - 当日予約一覧
-- 連絡先/人数/備考/回数券/支払い状態
-- 出席/欠席/no-show
-- CSV出力
+- 連絡先/人数/備考/予約経路
+- no-show
 ```
 
 ---
 
 # 12. MVPの受け入れ条件
 
-以下を満たせば、予約 SaaS として最低限の実運用に乗ります。
+実装状況: 一部実装。
+予約 SaaS として最低限の実運用に必要な条件のうち、公開予約成立、代理予約、基本的な通知・リマインドは利用できる状態です。
+日次運用の出欠チェック、CSV出力、サービス単位の公開停止は残っています。
 
-```txt
-1. /{orgSlug}/{storeSlug} から店舗ごとの予約ページが表示できる
-2. 別 organization / 別 store の slot を予約できない
-3. 参加者が氏名・メール・電話・人数・備考を入力して予約できる
-4. participantsCount が残席計算に反映される
-5. 予約完了時に参加者へ確認メールが送られる
-6. 予約完了時に運営側へ通知メールが送られる
-7. 前日または数時間前にリマインドが一度だけ送られる
-8. スタッフが電話/LINE/店頭予約を代理登録できる
-9. 管理画面の日次ビューで当日の予約者・連絡先・人数・出欠を確認できる
-10. 公開停止中の店舗/サービスには予約できない
-```
+| 条件                                                              | 状態     | 補足                                                                 |
+| ----------------------------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| `/{orgSlug}/{storeSlug}` から店舗ごとの予約ページが表示できる     | 実装済み | 公開状態の店舗だけ表示される                                         |
+| 別 organization / 別 store の slot を予約できない                 | 実装済み | URL の organization/store と service/slot の所属を検証する           |
+| 予約者が氏名・メール・電話・人数・備考を入力して予約できる        | 実装済み | 同伴者も保存できる                                                   |
+| `participantsCount` が残席計算に反映される                        | 実装済み | 予約作成時に人数分の残席を確認する                                   |
+| 予約完了時に予約者へ確認メールが送られる                          | 一部実装 | メール設定がある環境で送信する。送信失敗はログに残る                 |
+| 予約完了時に運営側へ通知メールが送られる                          | 一部実装 | 既定宛先へ送信する。通知先設定 UI は未実装                           |
+| 前日または数時間前にリマインドが一度だけ送られる                  | 一部実装 | 24時間前のリマインドは実装済み。複数タイミング設定は未実装           |
+| スタッフが電話/LINE/店頭予約を代理登録できる                      | 実装済み | `/admin/bookings/new` で受付経路と通知有無を指定できる               |
+| 管理画面の日次ビューで当日の予約者・連絡先・人数・出欠を確認できる | 一部実装 | 日付絞り込み、連絡先、人数、No-show は実装済み。出席/欠席は未実装    |
+| 公開停止中の店舗/サービスには予約できない                         | 一部実装 | 店舗公開サイトの停止は実装済み。サービス単位の公開停止は未実装       |
 
 ---
 
 # 結論
 
-reserve-app の次実装は、次の順番が最も費用対効果が高いです。
+P0 のうち、公開予約成立と管理者代理予約は実装済みです。
+予約者情報入力、通知、リマインド、日次運用ビュー、公開/非公開制御は基本導線まで入っています。
+MVPとして残っている主な作業は、設定 UI と運用補助機能です。
 
 ```txt
-1. 店舗ごとの公開予約成立
-2. 予約者情報入力
-3. 運営通知
-4. リマインド
-5. 管理者代理予約
-6. 日次運用ビュー
-7. 公開/非公開制御
+1. 通知先設定 UI
+2. リマインド設定 UI
+3. 日次運用ビューの CSV出力・印刷用表示
+4. 出席/欠席チェックイン
+5. 店舗ごとのカスタム入力 UI
+6. 管理者による日程変更
+7. サービス単位・枠単位の公開停止
 ```
 
-オンライン決済、キャンセル待ち、スタッフ/設備の実体管理は重要ですが、最初から入れると MVP が重くなります。まずは「公開ページから予約が入り、店舗が気づき、当日対応できる」状態を完成させるのがよいです。
+オンライン決済、キャンセル待ち、スタッフ/設備の実体管理は重要ですが、MVP の次段階でよいです。
+まずは「公開ページから予約が入り、店舗が気づき、当日対応できる」状態を運用画面と設定 UI まで仕上げるのがよいです。
 
 [1]: https://stores.jp/reserve '予約システム 無料プランあり・24時間ネット予約受付｜STORES 予約（ストアーズ）'
 [2]: https://reserva.be/ '予約システム RESERVA(レゼルバ) | 無料で予約管理'

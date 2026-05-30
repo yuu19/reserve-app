@@ -41,7 +41,8 @@ export type BookingNotificationEvent =
   | 'booking_rejected'
   | 'booking_cancelled_by_participant'
   | 'booking_cancelled_by_staff'
-  | 'booking_no_show';
+  | 'booking_no_show'
+  | 'booking_reminder';
 
 export type SendBookingNotificationInput = {
   env: ResendEnv;
@@ -55,6 +56,8 @@ export type SendBookingNotificationInput = {
   event: BookingNotificationEvent;
   reason?: string | null;
   bookingId: string;
+  actionUrl?: string | null;
+  actionLabel?: string | null;
 };
 
 export type SendTrialEndingReminderEmailInput = {
@@ -315,6 +318,7 @@ const bookingNotificationSubjectMap: Record<BookingNotificationEvent, string> = 
   booking_cancelled_by_participant: '【予約通知】予約をキャンセルしました',
   booking_cancelled_by_staff: '【予約通知】運営により予約がキャンセルされました',
   booking_no_show: '【予約通知】予約がNo-showとして記録されました',
+  booking_reminder: '【予約通知】予約リマインド',
 };
 
 const bookingNotificationEventLabelMap: Record<BookingNotificationEvent, string> = {
@@ -325,6 +329,7 @@ const bookingNotificationEventLabelMap: Record<BookingNotificationEvent, string>
   booking_cancelled_by_participant: '予約をキャンセルしました',
   booking_cancelled_by_staff: '運営により予約がキャンセルされました',
   booking_no_show: '予約がNo-showとして記録されました',
+  booking_reminder: '予約日時が近づいています',
 };
 
 export const sendBookingNotificationEmail = async ({
@@ -339,6 +344,8 @@ export const sendBookingNotificationEmail = async ({
   event,
   reason,
   bookingId,
+  actionUrl,
+  actionLabel,
 }: SendBookingNotificationInput) => {
   const config = requireResendConfig(env);
   if (!config) {
@@ -347,7 +354,7 @@ export const sendBookingNotificationEmail = async ({
 
   const subject = bookingNotificationSubjectMap[event];
   const eventLabel = bookingNotificationEventLabelMap[event];
-  const bookingsUrl = createBookingsUrl({ env });
+  const bookingsUrl = actionUrl?.trim() || createBookingsUrl({ env });
   const html = await render(
     createElement(BookingNotificationEmail, {
       organizationName,
@@ -360,6 +367,7 @@ export const sendBookingNotificationEmail = async ({
       reason,
       bookingId,
       bookingsUrl,
+      actionLabel: actionLabel?.trim() || undefined,
     }),
   );
   const text = toPlainText(html);

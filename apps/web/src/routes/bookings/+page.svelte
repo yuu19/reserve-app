@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { readLastAuthPortal } from '$lib/features/auth-portal-preference';
+	import { replacePortalPathWithScopedContext } from '$lib/features/scoped-routing';
 	import {
 		getCurrentPathWithSearch,
 		loadPortalAccess,
@@ -31,7 +33,10 @@
 					: lastAuthPortal === 'participant' && portalAccess.hasParticipantAccess
 						? '/participant/bookings'
 						: defaultBookingPath;
-			await goto(resolve(bookingPath));
+			const scopedBookingPath = portalAccess.activeContext
+				? replacePortalPathWithScopedContext(bookingPath, portalAccess.activeContext)
+				: bookingPath;
+			await goto(resolve(scopedBookingPath as Pathname));
 		})();
 	});
 </script>

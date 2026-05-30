@@ -2,6 +2,7 @@ import type {
 	PublicSitePagePayload,
 	PublicSiteProfilePayload,
 	PublicTicketTypePayload,
+	CancelPublicBookingInput,
 	ScopedApiContext,
 	UpdatePublicSiteSettingsInput
 } from '$lib/rpc-client';
@@ -23,7 +24,10 @@ const asPublicSiteProfile = (value: unknown): PublicSiteProfilePayload | null =>
 		typeof value.storeId !== 'string' ||
 		typeof value.storeSlug !== 'string' ||
 		typeof value.storeName !== 'string' ||
-		typeof value.siteName !== 'string'
+		typeof value.siteName !== 'string' ||
+		(value.status !== 'public' && value.status !== 'private' && value.status !== 'suspended') ||
+		typeof value.acceptBookings !== 'boolean' ||
+		typeof value.noindex !== 'boolean'
 	) {
 		return null;
 	}
@@ -67,5 +71,20 @@ export const updatePublicSiteSettings = async (
 			? '予約サイトトップページを更新しました。'
 			: toErrorMessage(payload, '予約サイトトップページの更新に失敗しました。'),
 		publicSite
+	};
+};
+
+export const cancelPublicBooking = async (
+	context: ScopedApiContext & { bookingPublicId: string },
+	input: CancelPublicBookingInput
+) => {
+	const response = await authRpc.cancelPublicBooking(context, context.bookingPublicId, input);
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		status: response.status,
+		message: response.ok
+			? '予約をキャンセルしました。'
+			: toErrorMessage(payload, '予約キャンセルに失敗しました。')
 	};
 };

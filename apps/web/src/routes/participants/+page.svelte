@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -9,7 +10,10 @@
 	import PremiumRestrictionNotice from '$lib/components/premium-restriction-notice.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { getRoutePathFromUrlPath } from '$lib/features/scoped-routing';
+	import {
+		getRoutePathFromUrlPath,
+		replacePortalPathWithScopedContext
+	} from '$lib/features/scoped-routing';
 	import {
 		actParticipantInvitation,
 		createParticipantInvitation
@@ -87,7 +91,10 @@
 					: portalAccess.hasParticipantAccess || portalAccess.canUseParticipantBooking
 						? '/participant/invitations'
 						: (resolvePortalHomePath(portalAccess) ?? '/participant/home');
-			await goto(resolve(nextPath));
+			const scopedNextPath = portalAccess.activeContext
+				? replacePortalPathWithScopedContext(nextPath, portalAccess.activeContext)
+				: nextPath;
+			await goto(resolve(scopedNextPath as Pathname));
 			return;
 		}
 		try {

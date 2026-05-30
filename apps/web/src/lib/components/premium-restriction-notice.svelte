@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import type { OrganizationBillingPayload } from '$lib/rpc-client';
 	import {
 		buildPremiumRestrictionNoticeModel,
 		type OrganizationPremiumRestrictionPayload
 	} from '$lib/features/premium-restrictions';
+	import { preserveScopedRouteContext } from '$lib/features/scoped-routing';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 
@@ -30,7 +33,7 @@
 	);
 
 	const openContracts = async () => {
-		await goto(resolve(contractsPath));
+		await goto(resolve(preserveScopedRouteContext(contractsPath, page.url.pathname) as Pathname));
 	};
 </script>
 

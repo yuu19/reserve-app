@@ -439,6 +439,9 @@ const publicSiteSettingSchema = z.object({
   phone: z.string().nullable(),
   businessHours: z.string().nullable(),
   imageUrl: z.string().nullable(),
+  status: z.enum(['public', 'private', 'suspended']),
+  acceptBookings: z.boolean(),
+  noindex: z.boolean(),
 });
 
 const publicSiteSettingBodySchema = z.object({
@@ -448,6 +451,9 @@ const publicSiteSettingBodySchema = z.object({
   phone: z.string().trim().max(80).nullable().optional(),
   businessHours: z.string().trim().max(1000).nullable().optional(),
   imageUrl: z.string().trim().max(2048).nullable().optional(),
+  status: z.enum(['public', 'private', 'suspended']).optional(),
+  acceptBookings: z.boolean().optional(),
+  noindex: z.boolean().optional(),
 });
 
 const listOrganizationAccessTreeRoute = createRoute({
@@ -1983,6 +1989,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         phone: dbSchema.publicSiteSetting.phone,
         businessHours: dbSchema.publicSiteSetting.businessHours,
         imageUrl: dbSchema.publicSiteSetting.imageUrl,
+        status: dbSchema.publicSiteSetting.status,
+        acceptBookings: dbSchema.publicSiteSetting.acceptBookings,
+        noindex: dbSchema.publicSiteSetting.noindex,
       })
       .from(dbSchema.publicSiteSetting)
       .where(
@@ -2007,6 +2016,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       phone: setting?.phone ?? null,
       businessHours: setting?.businessHours ?? null,
       imageUrl: setting?.imageUrl ?? null,
+      status:
+        setting?.status === 'public' || setting?.status === 'suspended'
+          ? setting.status
+          : 'private',
+      acceptBookings: setting?.acceptBookings ?? true,
+      noindex: setting?.noindex ?? true,
     };
   };
 
@@ -2695,6 +2710,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           phone: dbSchema.publicSiteSetting.phone,
           businessHours: dbSchema.publicSiteSetting.businessHours,
           imageUrl: dbSchema.publicSiteSetting.imageUrl,
+          status: dbSchema.publicSiteSetting.status,
+          acceptBookings: dbSchema.publicSiteSetting.acceptBookings,
+          noindex: dbSchema.publicSiteSetting.noindex,
         })
         .from(dbSchema.publicSiteSetting)
         .where(
@@ -2713,6 +2731,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         phone: normalizePublicSiteText(body.phone, current?.phone ?? null),
         businessHours: normalizePublicSiteText(body.businessHours, current?.businessHours ?? null),
         imageUrl: normalizePublicSiteText(body.imageUrl, current?.imageUrl ?? null),
+        status: body.status ?? current?.status ?? 'public',
+        acceptBookings: body.acceptBookings ?? current?.acceptBookings ?? true,
+        noindex: body.noindex ?? current?.noindex ?? false,
       };
 
       await database

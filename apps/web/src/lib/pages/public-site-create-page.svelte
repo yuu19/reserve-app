@@ -11,7 +11,8 @@
 	import {
 		buildScopedPath,
 		extractScopedRouteContext,
-		getRoutePathFromUrlPath
+		getRoutePathFromUrlPath,
+		preserveScopedRouteContext
 	} from '$lib/features/scoped-routing';
 	import {
 		getCurrentPathWithSearch,
@@ -35,6 +36,9 @@
 		phone: string;
 		businessHours: string;
 		imageUrl: string;
+		status: 'public' | 'private' | 'suspended';
+		acceptBookings: boolean;
+		noindex: boolean;
 	};
 
 	let loading = $state(true);
@@ -46,7 +50,10 @@
 		address: '',
 		phone: '',
 		businessHours: '',
-		imageUrl: ''
+		imageUrl: '',
+		status: 'private',
+		acceptBookings: true,
+		noindex: true
 	});
 
 	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
@@ -55,6 +62,8 @@
 		scopedContext ? buildScopedPath(scopedContext, '/admin/public-site') : '/admin/public-site'
 	);
 	const publicSitePath = $derived(scopedContext ? buildScopedPath(scopedContext, '/') : null);
+	const toScopedRoute = (targetPath: string): ResolvablePath =>
+		preserveScopedRouteContext(targetPath, page.url.pathname) as ResolvablePath;
 
 	const syncPublicSiteForm = (site: {
 		siteName?: string | null;
@@ -63,6 +72,9 @@
 		phone?: string | null;
 		businessHours?: string | null;
 		imageUrl?: string | null;
+		status?: 'public' | 'private' | 'suspended';
+		acceptBookings?: boolean;
+		noindex?: boolean;
 	}) => {
 		publicSiteForm = {
 			siteName: site.siteName ?? '',
@@ -70,12 +82,29 @@
 			address: site.address ?? '',
 			phone: site.phone ?? '',
 			businessHours: site.businessHours ?? '',
-			imageUrl: site.imageUrl ?? ''
+			imageUrl: site.imageUrl ?? '',
+			status: site.status ?? 'private',
+			acceptBookings: site.acceptBookings ?? true,
+			noindex: site.noindex ?? true
 		};
 	};
 
-	const updatePublicSiteField = (field: keyof PublicSiteForm, event: Event) => {
+	const updatePublicSiteField = (
+		field: Exclude<keyof PublicSiteForm, 'status' | 'acceptBookings' | 'noindex'>,
+		event: Event
+	) => {
 		publicSiteForm[field] = (event.currentTarget as HTMLInputElement | HTMLTextAreaElement).value;
+	};
+
+	const updatePublicSiteStatus = (event: Event) => {
+		const value = (event.currentTarget as HTMLSelectElement).value;
+		if (value === 'public' || value === 'private' || value === 'suspended') {
+			publicSiteForm.status = value;
+		}
+	};
+
+	const updatePublicSiteBooleanField = (field: 'acceptBookings' | 'noindex', event: Event) => {
+		publicSiteForm[field] = (event.currentTarget as HTMLInputElement).checked;
 	};
 
 	const refreshPublicSite = async () => {
@@ -133,7 +162,7 @@
 			errorMessage = null;
 			try {
 				if (pathname === '/public-site/new') {
-					await goto(resolve('/admin/public-site/new'));
+					await goto(resolve(toScopedRoute('/admin/public-site/new')));
 					return;
 				}
 				await refreshPublicSite();
@@ -173,7 +202,7 @@
 				<p class="text-sm text-muted-foreground">
 					店舗を選択した管理画面から予約サイト作成ページを開いてください。
 				</p>
-				<Button type="button" variant="outline" href={resolve('/admin/stores' as ResolvablePath)}>
+				<Button type="button" variant="outline" href={resolve(toScopedRoute('/admin/stores'))}>
 					店舗管理へ移動
 				</Button>
 			</CardContent>
@@ -264,6 +293,41 @@
 							disabled={busy}
 							maxlength={2048}
 						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="public-site-status">公開状態</Label>
+						<select
+							id="public-site-status"
+							name="public_site_status"
+							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+							value={publicSiteForm.status}
+							onchange={updatePublicSiteStatus}
+							disabled={busy}
+						>
+							<option value="private">非公開</option>
+							<option value="public">公開</option>
+							<option value="suspended">停止中</option>
+						</select>
+					</div>
+					<div class="flex flex-col justify-end gap-2 rounded-md border border-border/80 p-3">
+						<label class="flex items-center gap-2 text-sm text-foreground">
+							<input
+								type="checkbox"
+								checked={publicSiteForm.acceptBookings}
+								onchange={(event) => updatePublicSiteBooleanField('acceptBookings', event)}
+								disabled={busy}
+							/>
+							予約受付
+						</label>
+						<label class="flex items-center gap-2 text-sm text-foreground">
+							<input
+								type="checkbox"
+								checked={publicSiteForm.noindex}
+								onchange={(event) => updatePublicSiteBooleanField('noindex', event)}
+								disabled={busy}
+							/>
+							検索エンジンに掲載しない
+						</label>
 					</div>
 					<div class="flex flex-wrap gap-2 md:col-span-2">
 						<Button type="submit" disabled={busy}>

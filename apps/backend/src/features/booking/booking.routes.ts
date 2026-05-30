@@ -9,6 +9,7 @@ import {
   listMyBookingsRoute,
   markNoShowRoute,
   rejectBookingByStaffRoute,
+  staffCreateBookingRoute,
 } from './booking.schemas.js';
 import {
   approveBookingByStaff,
@@ -20,6 +21,7 @@ import {
   markBookingNoShow,
   rejectBookingByStaff,
 } from './booking.usecases.js';
+import { createBookingByStaff } from './staff-create-booking.usecase.js';
 
 /**
  * 予約の申込から承認、キャンセル、無断欠席までの lifecycle route を登録します。
@@ -58,5 +60,12 @@ export const registerBookingLifecycleRoutes = (ctx: BookingRouteContext) => {
 
   ctx.authRoutes.openapi(markNoShowRoute, async (c) =>
     jsonRouteResult(c, await markBookingNoShow(ctx, c.req.valid('json'), c.req.raw.headers)),
+  );
+
+  ctx.authRoutes.openapi(staffCreateBookingRoute, async (c) =>
+    jsonRouteResult(
+      c,
+      await createBookingByStaff(ctx, c.req.valid('param'), c.req.valid('json'), c.req.raw.headers),
+    ),
   );
 };

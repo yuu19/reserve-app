@@ -13,7 +13,8 @@
 	import {
 		buildScopedPath,
 		extractScopedRouteContext,
-		getRoutePathFromUrlPath
+		getRoutePathFromUrlPath,
+		preserveScopedRouteContext
 	} from '$lib/features/scoped-routing';
 	import {
 		createOrganization,
@@ -53,6 +54,8 @@
 	const publicSiteAdminPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/public-site') : null
 	);
+	const toScopedRoute = (targetPath: string): Pathname =>
+		preserveScopedRouteContext(targetPath, page.url.pathname) as Pathname;
 
 	const updateOrganizationName = (event: Event) => {
 		const name = (event.currentTarget as HTMLInputElement).value;
@@ -170,7 +173,10 @@
 			</CardHeader>
 			<CardContent class="space-y-5">
 				<div class="flex flex-wrap gap-2 rounded-lg border border-border/80 bg-card/80 p-4">
-					<Button type="button" variant="secondary" onclick={() => goto(resolve('/admin/stores'))}
+					<Button
+						type="button"
+						variant="secondary"
+						onclick={() => goto(resolve(toScopedRoute('/admin/stores')))}
 						>店舗管理へ移動</Button
 					>
 				</div>

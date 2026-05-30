@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createWorkerAuthRuntime, type BackendWorkerEnv } from './auth-worker.js';
 import { cleanupExpiredAiConversationContent } from './features/ai/conversation-store.js';
+import { sendDueBookingReminders } from './features/booking/booking-reminders.js';
 import { runDailyBookingMaintenance } from './domain/booking/scheduler.js';
 import {
   completeExpiredOrganizationPremiumTrials,
@@ -43,37 +44,47 @@ const handler = {
     return getWorkerApp(env).fetch(request, env);
   },
   async scheduled(
-    _event: unknown,
+    event: unknown,
     env: BackendWorkerEnv,
     ctx: { waitUntil: (promise: Promise<unknown>) => void },
   ) {
     const runtime = getWorkerRuntime(env);
-    ctx.waitUntil(
-      Promise.all([
-        runDailyBookingMaintenance({
-          database: runtime.database,
-        }),
-        completeExpiredOrganizationPremiumTrials({
-          database: runtime.database,
-          env: runtime.env,
-        }),
-        sendPastDueGraceExpiryReminders({
-          database: runtime.database,
-          env: runtime.env,
-        }),
-        reconcileRiskyOrganizationBillingStates({
-          database: runtime.database,
-          env: runtime.env,
-        }),
-        reconcileProviderLinkedOrganizationBillingStates({
-          database: runtime.database,
-          env: runtime.env,
-        }),
-        cleanupExpiredAiConversationContent({
-          database: runtime.database,
-        }),
-      ]),
-    );
+    const cron =
+      typeof event === 'object' && event !== null ? (event as { cron?: string }).cron : null;
+    const reminderJobs = [
+      sendDueBookingReminders({
+        database: runtime.database,
+        env: runtime.env,
+      }),
+    ];
+    const dailyJobs =
+      cron === '10 18 * * *' || !cron
+        ? [
+            runDailyBookingMaintenance({
+              database: runtime.database,
+            }),
+            completeExpiredOrganizationPremiumTrials({
+              database: runtime.database,
+              env: runtime.env,
+            }),
+            sendPastDueGraceExpiryReminders({
+              database: runtime.database,
+              env: runtime.env,
+            }),
+            reconcileRiskyOrganizationBillingStates({
+              database: runtime.database,
+              env: runtime.env,
+            }),
+            reconcileProviderLinkedOrganizationBillingStates({
+              database: runtime.database,
+              env: runtime.env,
+            }),
+            cleanupExpiredAiConversationContent({
+              database: runtime.database,
+            }),
+          ]
+        : [];
+    ctx.waitUntil(Promise.all([...reminderJobs, ...dailyJobs]));
   },
 };
 

@@ -6,13 +6,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import { formatJaDateTime } from '$lib/date/format';
-	import { loadPublicEventDetail, reservePublicEvent } from '$lib/features/events.svelte';
-	import {
-		loadSession,
-		redirectToLoginWithNext,
-		getCurrentPathWithSearch
-	} from '$lib/features/auth-session.svelte';
+	import { createGuestPublicBooking, loadPublicEventDetail } from '$lib/features/events.svelte';
 	import type { ScopedRouteContext } from '$lib/features/scoped-routing';
 	import type { PublicEventDetailPayload, PublicTicketTypePayload } from '$lib/rpc-client';
 	import { toast } from 'svelte-sonner';
@@ -30,6 +27,15 @@
 	let busy = $state(false);
 	let detail = $state<PublicEventDetailPayload | null>(null);
 	let errorMessage = $state<string | null>(null);
+	let completedBookingPublicId = $state<string | null>(null);
+	let bookingForm = $state({
+		customerName: '',
+		customerEmail: '',
+		customerPhone: '',
+		participantsCount: '1',
+		companionNames: '',
+		note: ''
+	});
 
 	const applicableTicketTypes = $derived.by(() => {
 		const currentDetail = detail;
@@ -61,6 +67,22 @@
 	const getTicketExpirationLabel = (ticketType: PublicTicketTypePayload): string =>
 		ticketType.expiresInDays ? `${ticketType.expiresInDays}日` : '期限なし';
 
+	const parseParticipantsCount = (): number => {
+		const parsed = Number(bookingForm.participantsCount);
+		return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+	};
+
+	const updateBookingFormField = (field: keyof typeof bookingForm, event: Event) => {
+		bookingForm[field] = (event.currentTarget as HTMLInputElement | HTMLTextAreaElement).value;
+	};
+
+	const buildCompanions = () =>
+		bookingForm.companionNames
+			.split('\n')
+			.map((name) => name.trim())
+			.filter((name) => name.length > 0)
+			.map((name) => ({ name }));
+
 	const refresh = async () => {
 		if (!slotId) {
 			detail = null;
@@ -78,29 +100,36 @@
 	};
 
 	const submitReserve = async () => {
-		if (!detail || busy) {
+		if (!detail || busy || !publicEventsContext) {
 			return;
 		}
-
-		const { session } = await loadSession();
-		if (!session) {
-			redirectToLoginWithNext(getCurrentPathWithSearch());
+		if (detail.requiresTicket) {
+			toast.error('回数券が必要なサービスは、参加者画面から予約してください。');
+			return;
+		}
+		const participantsCount = parseParticipantsCount();
+		if (participantsCount > detail.remainingCount) {
+			toast.error('人数が残枠を超えています。');
 			return;
 		}
 
 		busy = true;
 		try {
-			const result = await reservePublicEvent({
-				organizationId: detail.organizationId,
-				storeId: detail.storeId,
-				slotId: detail.slotId
+			const result = await createGuestPublicBooking(publicEventsContext, {
+				slotId: detail.slotId,
+				customerName: bookingForm.customerName,
+				customerEmail: bookingForm.customerEmail,
+				customerPhone: bookingForm.customerPhone,
+				participantsCount,
+				companions: buildCompanions(),
+				note: bookingForm.note
 			});
 			if (!result.ok) {
 				toast.error(result.message);
 				return;
 			}
-			if (result.createdParticipant) {
-				toast.success('参加登録が完了しました。');
+			if (result.booking) {
+				completedBookingPublicId = result.booking.bookingPublicId;
 			}
 			toast.success(result.message);
 			await refresh();
@@ -124,9 +153,7 @@
 <main class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
 	<header class="space-y-2">
 		<h1 class="text-3xl font-semibold text-foreground">イベント詳細</h1>
-		<p class="text-sm text-muted-foreground">
-			閲覧はログイン不要です。参加登録・予約操作を行う場合はログインが必要です。
-		</p>
+		<p class="text-sm text-muted-foreground">公開予約ページから、ログインせずに予約できます。</p>
 	</header>
 
 	<Card class="surface-panel border-border/80 shadow-lg">
@@ -219,13 +246,110 @@
 				</section>
 			{/if}
 
-			<Button
-				type="button"
-				onclick={submitReserve}
-				disabled={busy || !detail || !detail.isBookable}
-			>
-				{busy ? '処理中…' : '参加登録して予約する'}
-			</Button>
+			{#if completedBookingPublicId}
+				<div class="rounded-md border border-primary/25 bg-primary/10 p-4">
+					<p class="text-sm font-semibold text-foreground">予約を受け付けました。</p>
+					<p class="mt-1 text-sm text-muted-foreground">
+						予約番号: <span class="font-mono text-foreground">{completedBookingPublicId}</span>
+					</p>
+				</div>
+			{:else if detail?.requiresTicket}
+				<div class="rounded-md border border-warning/45 bg-warning/15 p-4">
+					<p class="text-sm text-warning-foreground">
+						このサービスは回数券が必要です。参加者画面で回数券を確認して予約してください。
+					</p>
+				</div>
+			{:else if detail}
+				<form
+					class="grid gap-4 md:grid-cols-2"
+					onsubmit={(event) => {
+						event.preventDefault();
+						void submitReserve();
+					}}
+				>
+					<div class="space-y-2">
+						<Label for="public-booking-name">氏名</Label>
+						<Input
+							id="public-booking-name"
+							name="customer_name"
+							type="text"
+							value={bookingForm.customerName}
+							oninput={(event) => updateBookingFormField('customerName', event)}
+							disabled={busy || !detail.isBookable}
+							maxlength={120}
+							required
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="public-booking-email">メールアドレス</Label>
+						<Input
+							id="public-booking-email"
+							name="customer_email"
+							type="email"
+							value={bookingForm.customerEmail}
+							oninput={(event) => updateBookingFormField('customerEmail', event)}
+							disabled={busy || !detail.isBookable}
+							maxlength={320}
+							required
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="public-booking-phone">電話番号</Label>
+						<Input
+							id="public-booking-phone"
+							name="customer_phone"
+							type="tel"
+							value={bookingForm.customerPhone}
+							oninput={(event) => updateBookingFormField('customerPhone', event)}
+							disabled={busy || !detail.isBookable}
+							maxlength={80}
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="public-booking-count">人数</Label>
+						<Input
+							id="public-booking-count"
+							name="participants_count"
+							type="number"
+							min="1"
+							max={Math.max(detail.remainingCount, 1)}
+							value={bookingForm.participantsCount}
+							oninput={(event) => updateBookingFormField('participantsCount', event)}
+							disabled={busy || !detail.isBookable}
+							required
+						/>
+					</div>
+					<div class="space-y-2 md:col-span-2">
+						<Label for="public-booking-companions">同伴者</Label>
+						<textarea
+							id="public-booking-companions"
+							name="companions"
+							class="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+							value={bookingForm.companionNames}
+							oninput={(event) => updateBookingFormField('companionNames', event)}
+							disabled={busy || !detail.isBookable}
+							placeholder="1行に1名ずつ入力"
+						></textarea>
+					</div>
+					<div class="space-y-2 md:col-span-2">
+						<Label for="public-booking-note">備考</Label>
+						<textarea
+							id="public-booking-note"
+							name="note"
+							class="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+							value={bookingForm.note}
+							oninput={(event) => updateBookingFormField('note', event)}
+							disabled={busy || !detail.isBookable}
+							maxlength={1000}
+						></textarea>
+					</div>
+					<div class="md:col-span-2">
+						<Button type="submit" disabled={busy || !detail.isBookable}>
+							{busy ? '処理中…' : '予約する'}
+						</Button>
+					</div>
+				</form>
+			{/if}
 		</CardContent>
 	</Card>
 </main>

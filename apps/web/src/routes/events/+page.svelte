@@ -68,7 +68,7 @@
 	<header class="space-y-2">
 		<h1 class="text-3xl font-semibold text-foreground">公開イベント</h1>
 		<p class="text-sm text-muted-foreground">
-			イベント閲覧はログイン不要です。参加登録・予約操作はログイン後に行えます。
+			イベント閲覧と予約はログイン不要です。回数券が必要なサービスは参加者画面から予約してください。
 		</p>
 	</header>
 

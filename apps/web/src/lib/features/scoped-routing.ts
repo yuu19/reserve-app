@@ -126,6 +126,11 @@ export const replacePortalPathWithScopedContext = (
 	return `${buildScopedPath(context, portalPath)}${suffix}`;
 };
 
+export const preserveScopedRouteContext = (targetPath: string, currentPath: string): string => {
+	const context = extractScopedRouteContext(currentPath);
+	return context ? replacePortalPathWithScopedContext(targetPath, context) : targetPath;
+};
+
 export const readWindowScopedRouteContext = (): ScopedRouteContext | null => {
 	if (typeof window === 'undefined') {
 		return null;

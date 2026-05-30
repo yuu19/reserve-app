@@ -271,10 +271,18 @@ export type RecurringSchedulePayload = {
 export type BookingPayload = {
 	id: string;
 	organizationId: string;
+	storeId: string;
 	slotId: string;
 	serviceId: string;
-	participantId: string;
+	participantId: string | null;
+	publicId?: string | null;
+	source?: 'participant' | 'public_site' | 'admin' | 'phone' | 'line' | 'storefront' | 'other';
 	participantsCount: number;
+	customerName?: string | null;
+	customerEmail?: string | null;
+	customerPhone?: string | null;
+	note?: string | null;
+	createdByUserId?: string | null;
 	status:
 		| 'confirmed'
 		| 'pending_approval'
@@ -417,6 +425,9 @@ export type PublicSiteProfilePayload = {
 	phone?: string | null;
 	businessHours?: string | null;
 	imageUrl?: string | null;
+	status: 'public' | 'private' | 'suspended';
+	acceptBookings: boolean;
+	noindex: boolean;
 	[key: string]: unknown;
 };
 
@@ -576,6 +587,9 @@ export type UpdatePublicSiteSettingsInput = {
 	phone?: string | null;
 	businessHours?: string | null;
 	imageUrl?: string | null;
+	status?: 'public' | 'private' | 'suspended';
+	acceptBookings?: boolean;
+	noindex?: boolean;
 };
 
 type CreateOrganizationInvitationInput = {
@@ -755,6 +769,55 @@ type CreateBookingInput = {
 	slotId: string;
 	storeId?: string;
 	participantsCount?: number;
+};
+
+export type BookingSource = 'admin' | 'phone' | 'line' | 'storefront' | 'other';
+
+export type BookingCompanionInput = {
+	name: string;
+	note?: string | null;
+};
+
+export type BookingAnswerInput = {
+	fieldId: string;
+	labelSnapshot: string;
+	value: unknown;
+};
+
+export type CreatePublicBookingInput = {
+	slotId: string;
+	customerName: string;
+	customerEmail: string;
+	customerPhone?: string;
+	participantsCount?: number;
+	companions?: BookingCompanionInput[];
+	note?: string;
+	answers?: BookingAnswerInput[];
+};
+
+export type PublicBookingResultPayload = {
+	bookingId: string;
+	bookingPublicId: string;
+	status: 'confirmed' | 'pending_approval';
+};
+
+export type CancelPublicBookingInput = {
+	token: string;
+	reason?: string;
+};
+
+export type StaffCreateBookingInput = {
+	slotId: string;
+	participantId?: string;
+	customerName?: string;
+	customerEmail?: string;
+	customerPhone?: string;
+	participantsCount?: number;
+	source?: BookingSource;
+	notifyCustomer?: boolean;
+	companions?: BookingCompanionInput[];
+	note?: string;
+	answers?: BookingAnswerInput[];
 };
 
 type BookingActionInput = {
@@ -1119,6 +1182,28 @@ const authFetch = (
 	});
 };
 
+const publicFetch = (
+	path: string,
+	options: {
+		method?: 'GET' | 'POST';
+		query?: Record<string, QueryValue>;
+		json?: unknown;
+		headers?: HeadersInit;
+	} = {}
+) => {
+	const headers = new Headers(options.headers);
+	const shouldUseJson = options.json !== undefined;
+	if (shouldUseJson && !headers.has('content-type')) {
+		headers.set('content-type', 'application/json');
+	}
+	return fetch(buildApiUrl(path, options.query), {
+		method: options.method ?? (shouldUseJson ? 'POST' : 'GET'),
+		headers,
+		body: shouldUseJson ? JSON.stringify(options.json) : undefined,
+		credentials: 'omit'
+	});
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
 
@@ -1341,6 +1426,24 @@ export const authRpc = {
 			method: 'PATCH',
 			json
 		}),
+	createPublicBooking: (context: ScopedApiContext, json: CreatePublicBookingInput) =>
+		publicFetch(
+			`/api/v1/public/orgs/${encodeURIComponent(context.orgSlug)}/stores/${encodeURIComponent(
+				context.storeSlug
+			)}/bookings`,
+			{ json }
+		),
+	cancelPublicBooking: (
+		context: ScopedApiContext,
+		bookingPublicId: string,
+		json: CancelPublicBookingInput
+	) =>
+		publicFetch(
+			`/api/v1/public/orgs/${encodeURIComponent(context.orgSlug)}/stores/${encodeURIComponent(
+				context.storeSlug
+			)}/bookings/${encodeURIComponent(bookingPublicId)}/cancel`,
+			{ json }
+		),
 	createOrganization: (json: CreateOrganizationInput) =>
 		authFetch('/api/v1/auth/organizations', { json }),
 	setActiveOrganization: (json: SetActiveOrganizationInput) =>
@@ -1604,6 +1707,8 @@ export const authRpc = {
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/bookings/no-show', { json: resolvedJson })
 		),
+	staffCreateBookingScoped: (context: ScopedApiContext, json: StaffCreateBookingInput) =>
+		authFetch(buildScopedAuthPath(context, '/bookings/staff-create'), { json }),
 	createTicketTypeScoped: (context: ScopedApiContext, json: CreateTicketTypeInput) =>
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/ticket-types', { json: resolvedJson })

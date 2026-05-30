@@ -164,6 +164,9 @@ export const publicSiteSetting = sqliteTable(
     phone: text('phone'),
     businessHours: text('business_hours'),
     imageUrl: text('image_url'),
+    status: text('status').default('public').notNull(),
+    acceptBookings: integer('accept_bookings', { mode: 'boolean' }).default(true).notNull(),
+    noindex: integer('noindex', { mode: 'boolean' }).default(false).notNull(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -533,10 +536,19 @@ export const booking = sqliteTable(
     serviceId: text('service_id')
       .notNull()
       .references(() => service.id, { onDelete: 'cascade' }),
-    participantId: text('participant_id')
-      .notNull()
-      .references(() => participant.id, { onDelete: 'cascade' }),
+    participantId: text('participant_id').references(() => participant.id, {
+      onDelete: 'set null',
+    }),
+    publicId: text('public_id'),
+    source: text('source').default('participant').notNull(),
     participantsCount: integer('participants_count').default(1).notNull(),
+    customerName: text('customer_name'),
+    customerEmail: text('customer_email'),
+    customerPhone: text('customer_phone'),
+    note: text('note'),
+    createdByUserId: text('created_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     status: text('status').default('confirmed').notNull(),
     cancelReason: text('cancel_reason'),
     cancelledAt: integer('cancelled_at', { mode: 'timestamp_ms' }),
@@ -555,6 +567,7 @@ export const booking = sqliteTable(
   },
   (table) => [
     uniqueIndex('booking_slot_participant_uidx').on(table.slotId, table.participantId),
+    uniqueIndex('booking_public_id_uidx').on(table.publicId),
     index('booking_org_participant_created_idx').on(
       table.organizationId,
       table.participantId,
@@ -566,6 +579,170 @@ export const booking = sqliteTable(
       table.createdAt,
     ),
     index('booking_org_status_created_idx').on(table.organizationId, table.status, table.createdAt),
+    index('booking_org_source_created_idx').on(table.organizationId, table.source, table.createdAt),
+  ],
+);
+
+export const bookingAnswer = sqliteTable(
+  'booking_answer',
+  {
+    id: text('id').primaryKey(),
+    bookingId: text('booking_id')
+      .notNull()
+      .references(() => booking.id, { onDelete: 'cascade' }),
+    fieldId: text('field_id').notNull(),
+    labelSnapshot: text('label_snapshot').notNull(),
+    valueJson: text('value_json').notNull(),
+    createdAt: defaultTimestampMs(),
+  },
+  (table) => [index('booking_answer_booking_idx').on(table.bookingId)],
+);
+
+export const bookingCompanion = sqliteTable(
+  'booking_companion',
+  {
+    id: text('id').primaryKey(),
+    bookingId: text('booking_id')
+      .notNull()
+      .references(() => booking.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    note: text('note'),
+    createdAt: defaultTimestampMs(),
+  },
+  (table) => [index('booking_companion_booking_idx').on(table.bookingId)],
+);
+
+export const bookingPublicActionToken = sqliteTable(
+  'booking_public_action_token',
+  {
+    id: text('id').primaryKey(),
+    bookingId: text('booking_id')
+      .notNull()
+      .references(() => booking.id, { onDelete: 'cascade' }),
+    purpose: text('purpose').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    emailSnapshot: text('email_snapshot').notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    usedAt: integer('used_at', { mode: 'timestamp_ms' }),
+    createdAt: defaultTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('booking_public_action_token_hash_uidx').on(table.tokenHash),
+    index('booking_public_action_token_booking_purpose_idx').on(table.bookingId, table.purpose),
+  ],
+);
+
+export const publicSiteNotificationSetting = sqliteTable(
+  'public_site_notification_setting',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    notifyOwner: integer('notify_owner', { mode: 'boolean' }).default(true).notNull(),
+    notifyAdmins: integer('notify_admins', { mode: 'boolean' }).default(true).notNull(),
+    notifyStoreManagers: integer('notify_store_managers', { mode: 'boolean' })
+      .default(true)
+      .notNull(),
+    notifyStaff: integer('notify_staff', { mode: 'boolean' }).default(false).notNull(),
+    additionalEmailsJson: text('additional_emails_json'),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('public_site_notification_setting_store_uidx').on(
+      table.organizationId,
+      table.storeId,
+    ),
+  ],
+);
+
+export const notificationLog = sqliteTable(
+  'notification_log',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    bookingId: text('booking_id').references(() => booking.id, { onDelete: 'set null' }),
+    eventType: text('event_type').notNull(),
+    channel: text('channel').default('email').notNull(),
+    recipientEmail: text('recipient_email').notNull(),
+    status: text('status').default('pending').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    errorMessage: text('error_message'),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('notification_log_dedupe_uidx').on(table.dedupeKey),
+    index('notification_log_booking_event_idx').on(table.bookingId, table.eventType),
+    index('notification_log_org_created_idx').on(table.organizationId, table.createdAt),
+  ],
+);
+
+export const reminderPolicy = sqliteTable(
+  'reminder_policy',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    serviceId: text('service_id').references(() => service.id, { onDelete: 'cascade' }),
+    enabled: integer('enabled', { mode: 'boolean' }).default(true).notNull(),
+    minutesBefore: integer('minutes_before').default(1440).notNull(),
+    channel: text('channel').default('email').notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    index('reminder_policy_store_enabled_idx').on(
+      table.organizationId,
+      table.storeId,
+      table.enabled,
+    ),
+    index('reminder_policy_service_idx').on(table.serviceId),
+  ],
+);
+
+export const reminderLog = sqliteTable(
+  'reminder_log',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    bookingId: text('booking_id')
+      .notNull()
+      .references(() => booking.id, { onDelete: 'cascade' }),
+    reminderPolicyId: text('reminder_policy_id').references(() => reminderPolicy.id, {
+      onDelete: 'set null',
+    }),
+    channel: text('channel').default('email').notNull(),
+    recipientEmail: text('recipient_email').notNull(),
+    status: text('status').default('pending').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    errorMessage: text('error_message'),
+    scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }).notNull(),
+    sentAt: integer('sent_at', { mode: 'timestamp_ms' }),
+    createdAt: defaultTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('reminder_log_dedupe_uidx').on(table.dedupeKey),
+    index('reminder_log_booking_idx').on(table.bookingId),
+    index('reminder_log_scheduled_status_idx').on(table.scheduledFor, table.status),
   ],
 );
 

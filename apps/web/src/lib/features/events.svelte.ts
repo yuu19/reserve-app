@@ -1,4 +1,10 @@
-import type { PublicEventDetailPayload, PublicEventsPagePayload } from '$lib/rpc-client';
+import type {
+	CreatePublicBookingInput,
+	PublicBookingResultPayload,
+	PublicEventDetailPayload,
+	PublicEventsPagePayload,
+	ScopedApiContext
+} from '$lib/rpc-client';
 import { authRpc } from '$lib/rpc-client';
 import { getPublicEventDetail, getPublicEvents } from '$lib/remote/events-page.remote';
 import { createBooking } from './bookings.svelte';
@@ -91,5 +97,28 @@ export const reservePublicEvent = async ({
 		ok: bookingResult.ok,
 		createdParticipant: enrollmentResult.created,
 		message: bookingResult.message
+	};
+};
+
+const isPublicBookingResult = (value: unknown): value is PublicBookingResultPayload =>
+	isRecord(value) &&
+	typeof value.bookingId === 'string' &&
+	typeof value.bookingPublicId === 'string' &&
+	(value.status === 'confirmed' || value.status === 'pending_approval');
+
+export const createGuestPublicBooking = async (
+	context: ScopedApiContext,
+	input: CreatePublicBookingInput
+) => {
+	const response = await authRpc.createPublicBooking(context, input);
+	const payload = await parseResponseBody(response);
+	const booking = response.ok && isPublicBookingResult(payload) ? payload : null;
+	return {
+		ok: response.ok,
+		status: response.status,
+		message: response.ok
+			? '予約を受け付けました。'
+			: toErrorMessage(payload, '予約の作成に失敗しました。'),
+		booking
 	};
 };

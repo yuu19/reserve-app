@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
@@ -15,6 +17,7 @@
 		loadSession,
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
+	import { preserveScopedRouteContext } from '$lib/features/scoped-routing';
 	import type { OrganizationPremiumRestrictionPayload } from '$lib/features/premium-restrictions';
 	import type { OrganizationBillingPayload, ServicePayload } from '$lib/rpc-client';
 	import { toast } from 'svelte-sonner';
@@ -53,8 +56,10 @@
 		}
 		return fallback;
 	};
+	const toScopedRoute = (targetPath: string): Pathname =>
+		preserveScopedRouteContext(targetPath, page.url.pathname) as Pathname;
 	const navigateToTicketManagement = () => {
-		void goto(resolve('/admin/tickets'));
+		void goto(resolve(toScopedRoute('/admin/tickets')));
 	};
 	const resetTicketTypeCreateViewState = () => {
 		activeOrganizationId = null;
@@ -145,7 +150,7 @@
 				return;
 			}
 			toast.success(result.message);
-			await goto(resolve('/admin/tickets'));
+			await goto(resolve(toScopedRoute('/admin/tickets')));
 		} finally {
 			busy = false;
 		}

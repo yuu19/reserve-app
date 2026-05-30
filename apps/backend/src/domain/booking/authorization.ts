@@ -7,17 +7,26 @@ import {
 } from '../billing/reserve-app-billing-entitlement-policy.js';
 import * as dbSchema from '../../infra/db/schema.js';
 
+/** Route authorization に必要な Better Auth session の最小 identity。 */
 export type SessionIdentity = {
   userId: string;
   email: string | null;
   activeOrganizationId: string | null;
 };
 
+/** Better Auth organization member role を application authorization 向けに正規化した値。 */
 export type OrganizationRole = 'owner' | 'admin' | 'member' | null;
+
+/** 店舗 staff membership の role。 */
 export type StoreStaffRole = 'manager' | 'staff' | null;
+
+/** UI が表示する代表 role。organization、store、participant を横断して決める。 */
 export type AccessDisplayRole = 'owner' | 'admin' | 'manager' | 'staff' | 'participant' | null;
+
+/** Effective permission がどの所属情報から付与されたかを表す source。 */
 export type AccessSource = 'org_role' | 'store_member' | 'participant_record' | null;
 
+/** Scoped routing と authorization が共有する organization/store の表示 context。 */
 export type OrganizationStoreContext = {
   organizationId: string;
   organizationSlug: string;
@@ -27,6 +36,7 @@ export type OrganizationStoreContext = {
   storeName: string;
 };
 
+/** Organization/store context に、所属 facts、effective permissions、表示 role を合成した access 情報。 */
 export type OrganizationStoreAccess = OrganizationStoreContext & {
   facts: {
     orgRole: OrganizationRole;
@@ -53,14 +63,17 @@ export type OrganizationStoreAccess = OrganizationStoreContext & {
   };
 };
 
+/** unknown 値から空でない string だけを取り出す。 */
 export const getStringValue = (value: unknown): string | null => {
   return typeof value === 'string' && value.length > 0 ? value : null;
 };
 
+/** メールアドレス比較用に前後空白と大文字小文字を正規化する。 */
 export const normalizeEmail = (value: string): string => {
   return value.trim().toLowerCase();
 };
 
+/** Better Auth session payload から active organization id を読み取る。 */
 export const getActiveOrganizationId = (session: unknown): string | null => {
   if (typeof session !== 'object' || session === null) {
     return null;
@@ -90,6 +103,7 @@ export const getSessionIdentity = async (
   };
 };
 
+/** request が organization id を明示していない場合、session の active organization id を使う。 */
 export const resolveOrganizationId = (
   requestedOrganizationId: string | undefined,
   activeOrganizationId: string | null,
@@ -97,6 +111,7 @@ export const resolveOrganizationId = (
   return requestedOrganizationId ?? activeOrganizationId;
 };
 
+/** Legacy の organization slug と store slug が同一だった公開 URL 形状に合わせる。 */
 export const toStoreSlug = (organizationSlug: string): string => {
   return organizationSlug;
 };
@@ -115,41 +130,51 @@ const normalizeStoreStaffRole = (value: string | null): StoreStaffRole => {
   return null;
 };
 
+/** Organization role から組織管理権限を判定する。 */
 export const canManageOrganizationByRole = (role: OrganizationRole): boolean => {
   return role === 'owner' || role === 'admin';
 };
 
+/** Organization role から課金情報の閲覧権限を判定する。 */
 export const canViewOrganizationBillingByRole = (role: OrganizationRole): boolean => {
   return role === 'owner' || role === 'admin' || role === 'member';
 };
 
+/** Organization role から店舗管理権限を判定する。 */
 export const canManageStoreByRole = (role: OrganizationRole): boolean => {
   return role === 'owner' || role === 'admin';
 };
 
+/** Organization role から予約管理権限を判定する。 */
 export const canManageBookingsByRole = (role: OrganizationRole): boolean => {
   return role === 'owner' || role === 'admin';
 };
 
+/** Organization role から参加者管理権限を判定する。 */
 export const canManageParticipantsByRole = (role: OrganizationRole): boolean => {
   return role === 'owner' || role === 'admin';
 };
 
+/** Store staff role から店舗管理権限を判定する。 */
 export const canManageStoreByStoreRole = (role: StoreStaffRole): boolean => {
   return role === 'manager';
 };
 
+/** Store staff role から予約管理権限を判定する。 */
 export const canManageBookingsByStoreRole = (role: StoreStaffRole): boolean => {
   return role === 'manager' || role === 'staff';
 };
 
+/** Store staff role から参加者管理権限を判定する。 */
 export const canManageParticipantsByStoreRole = (role: StoreStaffRole): boolean => {
   return role === 'manager' || role === 'staff';
 };
 
+/** Premium entitlement がない機能で返す共通 error message。 */
 export const ORGANIZATION_PREMIUM_REQUIRED_MESSAGE =
   'Organization premium plan is required for this feature.';
 
+/** Premium 機能が拒否されたとき route が返す payload。 */
 export type OrganizationPremiumFeatureDeniedPayload = {
   message: typeof ORGANIZATION_PREMIUM_REQUIRED_MESSAGE;
   code: 'organization_premium_required';
@@ -160,6 +185,7 @@ export type OrganizationPremiumFeatureDeniedPayload = {
   trialEndsAt: ReserveAppPremiumEntitlementPolicyResult['trialEndsAt'];
 };
 
+/** Premium feature gate の許可/拒否結果。拒否時は route がそのまま返せる body を含む。 */
 export type OrganizationPremiumFeatureGate =
   | {
       allowed: true;
@@ -172,6 +198,7 @@ export type OrganizationPremiumFeatureGate =
       body: OrganizationPremiumFeatureDeniedPayload;
     };
 
+/** Organization entitlement gate を評価する入力。 */
 export type OrganizationEntitlementGateInput = {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
@@ -180,8 +207,10 @@ export type OrganizationEntitlementGateInput = {
   now?: Date;
 };
 
+/** Organization entitlement gate の評価結果。 */
 export type OrganizationEntitlementGate = OrganizationPremiumFeatureGate;
 
+/** Premium entitlement policy から route error payload を作る。 */
 export const buildOrganizationPremiumFeatureDeniedPayload = (
   policy: ReserveAppPremiumEntitlementPolicyResult,
 ): OrganizationPremiumFeatureDeniedPayload => {
@@ -237,6 +266,7 @@ const hasActiveBillingEntitlement = async ({
   return Boolean(rows[0]);
 };
 
+/** 指定 entitlement key が有効かを読み、Premium policy と合わせて route gate として返す。 */
 export const readOrganizationEntitlementGate = async ({
   database,
   env,
@@ -566,6 +596,7 @@ export const resolveOrganizationStoreAccess = async ({
   };
 };
 
+/** User が organization の owner/admin 権限を持つかを確認する。 */
 export const hasAdminOrOwnerAccess = async ({
   database,
   organizationId,
@@ -591,14 +622,17 @@ export const hasAdminOrOwnerAccess = async ({
   return access.effective.canManageOrganization;
 };
 
+/** ログインユーザーに紐づく participant record の最小識別情報。 */
 export type ParticipantAccessRecord = {
   id: string;
   organizationId: string;
   storeId: string;
   userId: string;
   email: string;
+  name: string;
 };
 
+/** User と organization/store scope に一致する participant record を 1 件返す。 */
 export const findParticipantByUserAndOrganization = async ({
   database,
   organizationId,
@@ -619,6 +653,7 @@ export const findParticipantByUserAndOrganization = async ({
   return rows[0] ?? null;
 };
 
+/** User と organization scope に一致する participant records を作成順で返す。 */
 export const findParticipantsByUserAndOrganization = async ({
   database,
   organizationId,
@@ -637,6 +672,7 @@ export const findParticipantsByUserAndOrganization = async ({
       storeId: dbSchema.participant.storeId,
       userId: dbSchema.participant.userId,
       email: dbSchema.participant.email,
+      name: dbSchema.participant.name,
     })
     .from(dbSchema.participant)
     .where(
