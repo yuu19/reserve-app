@@ -357,10 +357,10 @@ describe('契約ページ', () => {
 						id: 'history-1',
 						eventType: 'reconciliation',
 						occurredAt: '2026-04-20T03:00:00.000Z',
-						title: '契約状態の同期を確認しました',
-						summary: 'アプリ内の契約状態と決済サービスの状態が一致していることを確認しました。',
+						title: '契約状態に差分が見つかりました',
+						summary: '契約状態に差分が見つかったため、最新状態の確認を進めています。',
 						billingContext: '契約状態: Premiumプラン / ステータス: 有効 / 支払い方法: 登録済み',
-						tone: 'positive'
+						tone: 'attention'
 					},
 					{
 						id: 'history-2',
@@ -381,7 +381,15 @@ describe('契約ページ', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 2, name: '契約履歴' }))
 			.toBeInTheDocument();
-		await expect.element(page.getByText('契約状態の同期を確認しました')).toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'organization owner は、契約変更・通知・対応が必要な状態確認の履歴をこの画面から確認できます。'
+				)
+			)
+			.toBeInTheDocument();
+		await expect.element(page.getByText('契約状態に差分が見つかりました')).toBeInTheDocument();
+		await expect.element(page.getByText('契約状態の同期を確認しました')).not.toBeInTheDocument();
 		await expect
 			.element(page.getByText('トライアル終了前のお知らせを送信しました'))
 			.toBeInTheDocument();

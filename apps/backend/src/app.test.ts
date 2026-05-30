@@ -5546,6 +5546,24 @@ describe('バックエンドアプリ', () => {
       appEntitlementState: 'premium_enabled',
       createdAt: new Date(now - 100_000),
     });
+    for (let index = 0; index < 25; index += 1) {
+      await insertOrganizationBillingSignalRow({
+        organizationId,
+        sequenceNumber: index + 2,
+        signalKind: 'reconciliation',
+        signalStatus: 'resolved',
+        sourceKind: 'reconciliation_targeted',
+        reason: 'state_already_synced',
+        stripeEventId: `evt_owner_billing_history_resolved_${index}`,
+        stripeCustomerId: 'cus_owner_billing_history',
+        stripeSubscriptionId: 'sub_owner_billing_history',
+        appPlanState: 'premium_paid',
+        appSubscriptionStatus: 'active',
+        appPaymentMethodStatus: 'registered',
+        appEntitlementState: 'premium_enabled',
+        createdAt: new Date(now - 90_000 + index * 1_000),
+      });
+    }
 
     const ownerResponse = await owner.request(
       `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
@@ -5587,6 +5605,8 @@ describe('バックエンドアプリ', () => {
     expect(ownerHistory[0]?.billingContext).toBe(
       '契約状態: Premiumプラン / ステータス: 有効 / 支払い方法: 登録済み',
     );
+    expect(JSON.stringify(ownerHistory)).not.toContain('契約状態の同期を確認しました');
+    expect(JSON.stringify(ownerHistory)).not.toContain('state_already_synced');
     expect(JSON.stringify(ownerHistory)).not.toContain('owner_not_found');
     expect(JSON.stringify(ownerHistory)).not.toContain('provider_lookup_failed');
     expect(JSON.stringify(ownerHistory)).not.toContain('provider_reconciliation');

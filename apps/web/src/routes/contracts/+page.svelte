@@ -850,7 +850,8 @@
 			<CardHeader>
 				<h2 class="text-xl font-semibold text-foreground">契約履歴</h2>
 				<CardDescription>
-					organization owner は、契約変更・通知・状態確認の履歴をこの画面から確認できます。
+					organization owner
+					は、契約変更・通知・対応が必要な状態確認の履歴をこの画面から確認できます。
 				</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-4">
@@ -864,7 +865,7 @@
 					<p class="text-sm text-muted-foreground">{readOnlyHistoryNote}</p>
 				{:else if !billingHistoryEntries || billingHistoryEntries.length === 0}
 					<p class="text-sm text-muted-foreground">
-						まだ表示できる契約履歴はありません。トライアル開始や契約更新が記録されると、ここに反映されます。
+						まだ表示できる契約履歴はありません。トライアル開始、契約更新、通知、対応が必要な状態確認が記録されると、ここに反映されます。
 					</p>
 				{:else}
 					<ul class="space-y-3">

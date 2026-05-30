@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import type {
   ReserveAppBillingPaymentMethodStatus,
@@ -41,6 +41,15 @@ type SortableOwnerBillingHistoryEntry = ReserveAppOwnerBillingHistoryEntry & {
 };
 
 const OWNER_BILLING_HISTORY_ENTRY_LIMIT = 20;
+const ownerVisibleReconciliationSignalStatuses = ['pending', 'mismatch', 'unavailable'] as const;
+
+type OwnerVisibleReconciliationSignalStatus =
+  (typeof ownerVisibleReconciliationSignalStatuses)[number];
+
+const isOwnerVisibleReconciliationSignalStatus = (
+  value: unknown,
+): value is OwnerVisibleReconciliationSignalStatus =>
+  ownerVisibleReconciliationSignalStatuses.some((status) => status === value);
 
 const planStateLabelMap: Record<ReserveAppBillingPlanState, string> = {
   free: '無料プラン',
@@ -504,10 +513,16 @@ const buildNotificationEntry = (row: {
 };
 
 type OwnerBillingNotificationHistoryRow = Parameters<typeof buildNotificationEntry>[0];
+type OwnerBillingReconciliationSignalHistoryRow = {
+  sequenceNumber: number;
+  signalStatus: unknown;
+  appSnapshotJson: unknown;
+  createdAt: unknown;
+};
 
 const buildReconciliationEntry = (row: {
   sequenceNumber: number;
-  signalStatus: 'pending' | 'mismatch' | 'unavailable' | 'resolved';
+  signalStatus: OwnerVisibleReconciliationSignalStatus;
   appPlanState: unknown;
   appSubscriptionStatus: unknown;
   appPaymentMethodStatus: unknown;
@@ -705,6 +720,7 @@ export const readReserveAppOwnerBillingHistory = async ({
             eq(dbSchema.billingAccount.subjectType, 'organization'),
             eq(dbSchema.billingAccount.subjectId, organizationId),
             eq(dbSchema.billingSignal.signalKind, 'reconciliation'),
+            inArray(dbSchema.billingSignal.signalStatus, ownerVisibleReconciliationSignalStatuses),
           ),
         )
         .orderBy(desc(dbSchema.billingSignal.sequenceNumber))
@@ -756,23 +772,29 @@ export const readReserveAppOwnerBillingHistory = async ({
       ),
     ...reconciliationSignalRows
       .filter(
-        (row: { signalStatus: unknown }) =>
-          row.signalStatus === 'pending' ||
-          row.signalStatus === 'mismatch' ||
-          row.signalStatus === 'unavailable' ||
-          row.signalStatus === 'resolved',
+        (
+          row: OwnerBillingReconciliationSignalHistoryRow,
+        ): row is OwnerBillingReconciliationSignalHistoryRow & {
+          signalStatus: OwnerVisibleReconciliationSignalStatus;
+        } => isOwnerVisibleReconciliationSignalStatus(row.signalStatus),
       )
-      .map((row: (typeof reconciliationSignalRows)[number]) => {
-        const appSnapshot = parseSnapshotJson(row.appSnapshotJson);
-        return buildReconciliationEntry({
-          sequenceNumber: row.sequenceNumber,
-          signalStatus: row.signalStatus,
-          appPlanState: appSnapshot.planState,
-          appSubscriptionStatus: appSnapshot.subscriptionStatus,
-          appPaymentMethodStatus: appSnapshot.paymentMethodStatus,
-          createdAt: row.createdAt,
-        });
-      }),
+      .map(
+        (
+          row: OwnerBillingReconciliationSignalHistoryRow & {
+            signalStatus: OwnerVisibleReconciliationSignalStatus;
+          },
+        ) => {
+          const appSnapshot = parseSnapshotJson(row.appSnapshotJson);
+          return buildReconciliationEntry({
+            sequenceNumber: row.sequenceNumber,
+            signalStatus: row.signalStatus,
+            appPlanState: appSnapshot.planState,
+            appSubscriptionStatus: appSnapshot.subscriptionStatus,
+            appPaymentMethodStatus: appSnapshot.paymentMethodStatus,
+            createdAt: row.createdAt,
+          });
+        },
+      ),
     ...invoicePaymentEvents.map((event: ReserveAppBillingInvoiceEvent, index: number) =>
       buildInvoicePaymentHistoryEntry(event, index, invoicePaymentEvents),
     ),
