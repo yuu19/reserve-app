@@ -22,10 +22,6 @@
 		uploadOrganizationLogo
 	} from '$lib/features/organization-context.svelte';
 	import {
-		loadPublicSiteSettings,
-		updatePublicSiteSettings
-	} from '$lib/features/public-site.svelte';
-	import {
 		createSlugCandidate,
 		normalizeSlug,
 		SLUG_INPUT_HINT,
@@ -47,42 +43,16 @@
 	let organizations = $state<OrganizationPayload[]>([]);
 	let activeOrganization = $state<OrganizationPayload | null>(null);
 	let organizationForm = $state({ name: '', slug: '' });
-	let publicSiteForm = $state({
-		siteName: '',
-		description: '',
-		address: '',
-		phone: '',
-		businessHours: '',
-		imageUrl: ''
-	});
 	let organizationSlugManuallyEdited = $state(false);
 	let organizationLogoFiles = $state<FileList | undefined>(undefined);
-	let publicSiteLoading = $state(false);
-	let publicSiteBusy = $state(false);
 
 	const selectedOrganizationLogoFile = $derived(organizationLogoFiles?.item(0) ?? null);
 	const activeOrganizationId = $derived(activeOrganization?.id ?? null);
 	const pathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 	const scopedContext = $derived(extractScopedRouteContext(page.url.pathname));
-	const publicSitePath = $derived(scopedContext ? buildScopedPath(scopedContext, '/') : null);
-
-	const syncPublicSiteForm = (site: {
-		siteName?: string | null;
-		description?: string | null;
-		address?: string | null;
-		phone?: string | null;
-		businessHours?: string | null;
-		imageUrl?: string | null;
-	}) => {
-		publicSiteForm = {
-			siteName: site.siteName ?? '',
-			description: site.description ?? '',
-			address: site.address ?? '',
-			phone: site.phone ?? '',
-			businessHours: site.businessHours ?? '',
-			imageUrl: site.imageUrl ?? ''
-		};
-	};
+	const publicSiteAdminPath = $derived(
+		scopedContext ? buildScopedPath(scopedContext, '/admin/public-site') : null
+	);
 
 	const updateOrganizationName = (event: Event) => {
 		const name = (event.currentTarget as HTMLInputElement).value;
@@ -95,10 +65,6 @@
 	const updateOrganizationSlug = (event: Event) => {
 		organizationSlugManuallyEdited = true;
 		organizationForm.slug = normalizeSlug((event.currentTarget as HTMLInputElement).value);
-	};
-
-	const updatePublicSiteField = (field: keyof typeof publicSiteForm, event: Event) => {
-		publicSiteForm[field] = (event.currentTarget as HTMLInputElement | HTMLTextAreaElement).value;
 	};
 
 	const refreshSettings = async () => {
@@ -117,17 +83,6 @@
 			await loadOrganizations();
 		organizations = nextOrganizations;
 		activeOrganization = nextActiveOrganization;
-		if (scopedContext) {
-			publicSiteLoading = true;
-			try {
-				const publicSite = await loadPublicSiteSettings(scopedContext);
-				if (publicSite) {
-					syncPublicSiteForm(publicSite);
-				}
-			} finally {
-				publicSiteLoading = false;
-			}
-		}
 	};
 
 	const submitCreateOrganization = async (event: SubmitEvent) => {
@@ -176,29 +131,6 @@
 			await refreshSettings();
 		} finally {
 			busy = false;
-		}
-	};
-
-	const submitPublicSiteSettings = async (event: SubmitEvent) => {
-		event.preventDefault();
-		if (!scopedContext) {
-			toast.error('店舗別の管理画面から予約サイトトップページを編集してください。');
-			return;
-		}
-
-		publicSiteBusy = true;
-		try {
-			const result = await updatePublicSiteSettings(scopedContext, publicSiteForm);
-			if (!result.ok) {
-				toast.error(result.message);
-				return;
-			}
-			if (result.publicSite) {
-				syncPublicSiteForm(result.publicSite);
-			}
-			toast.success(result.message);
-		} finally {
-			publicSiteBusy = false;
 		}
 	};
 
@@ -376,14 +308,14 @@
 	<section>
 		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardHeader class="space-y-2">
-				<h2 class="text-xl font-semibold text-foreground">予約サイトトップページ</h2>
-				<CardDescription>公開ページに表示するサイト情報を管理します。</CardDescription>
+				<h2 class="text-xl font-semibold text-foreground">予約サイト</h2>
+				<CardDescription>店舗ごとの公開予約サイトは専用ページで管理します。</CardDescription>
 			</CardHeader>
-			<CardContent class="space-y-5">
+			<CardContent>
 				{#if !scopedContext}
 					<div class="rounded-lg border border-border/80 bg-card/80 p-4">
 						<p class="text-sm text-muted-foreground">
-							店舗を選択した管理画面で予約サイトトップページを編集できます。
+							店舗を選択した管理画面から予約サイトを作成・編集できます。
 						</p>
 					</div>
 				{:else}
@@ -391,102 +323,12 @@
 						<Button
 							type="button"
 							variant="secondary"
-							href={publicSitePath ? resolve(publicSitePath as Pathname) : undefined}
-							disabled={!publicSitePath}
+							href={publicSiteAdminPath ? resolve(publicSiteAdminPath as Pathname) : undefined}
+							disabled={!publicSiteAdminPath}
 						>
-							公開ページを開く
-						</Button>
-						<Button
-							type="button"
-							variant="outline"
-							href={resolve(buildScopedPath(scopedContext, '/events') as Pathname)}
-						>
-							予約ページ一覧を開く
+							予約サイト管理へ移動
 						</Button>
 					</div>
-
-					<form
-						class="grid gap-4 rounded-lg border border-border/80 bg-card/80 p-4 md:grid-cols-2"
-						onsubmit={submitPublicSiteSettings}
-					>
-						<div class="space-y-2 md:col-span-2">
-							<Label for="public-site-name">サイト名</Label>
-							<Input
-								id="public-site-name"
-								name="public_site_name"
-								type="text"
-								value={publicSiteForm.siteName}
-								oninput={(event) => updatePublicSiteField('siteName', event)}
-								disabled={publicSiteBusy || publicSiteLoading}
-								maxlength={120}
-							/>
-						</div>
-						<div class="space-y-2 md:col-span-2">
-							<Label for="public-site-description">説明</Label>
-							<textarea
-								id="public-site-description"
-								name="public_site_description"
-								class="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-								value={publicSiteForm.description}
-								oninput={(event) => updatePublicSiteField('description', event)}
-								disabled={publicSiteBusy || publicSiteLoading}
-								maxlength={2000}
-							></textarea>
-						</div>
-						<div class="space-y-2">
-							<Label for="public-site-address">住所</Label>
-							<Input
-								id="public-site-address"
-								name="public_site_address"
-								type="text"
-								value={publicSiteForm.address}
-								oninput={(event) => updatePublicSiteField('address', event)}
-								disabled={publicSiteBusy || publicSiteLoading}
-								maxlength={500}
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label for="public-site-phone">電話番号</Label>
-							<Input
-								id="public-site-phone"
-								name="public_site_phone"
-								type="tel"
-								value={publicSiteForm.phone}
-								oninput={(event) => updatePublicSiteField('phone', event)}
-								disabled={publicSiteBusy || publicSiteLoading}
-								maxlength={80}
-							/>
-						</div>
-						<div class="space-y-2 md:col-span-2">
-							<Label for="public-site-business-hours">営業時間</Label>
-							<textarea
-								id="public-site-business-hours"
-								name="public_site_business_hours"
-								class="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-								value={publicSiteForm.businessHours}
-								oninput={(event) => updatePublicSiteField('businessHours', event)}
-								disabled={publicSiteBusy || publicSiteLoading}
-								maxlength={1000}
-							></textarea>
-						</div>
-						<div class="space-y-2 md:col-span-2">
-							<Label for="public-site-image-url">メイン画像URL</Label>
-							<Input
-								id="public-site-image-url"
-								name="public_site_image_url"
-								type="url"
-								value={publicSiteForm.imageUrl}
-								oninput={(event) => updatePublicSiteField('imageUrl', event)}
-								disabled={publicSiteBusy || publicSiteLoading}
-								maxlength={2048}
-							/>
-						</div>
-						<div class="md:col-span-2">
-							<Button type="submit" disabled={publicSiteBusy || publicSiteLoading}>
-								{publicSiteBusy ? '保存中…' : '予約サイトトップページを保存'}
-							</Button>
-						</div>
-					</form>
 				{/if}
 			</CardContent>
 		</Card>

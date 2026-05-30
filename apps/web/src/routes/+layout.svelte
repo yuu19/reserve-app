@@ -50,6 +50,7 @@
 		CalendarDays,
 		ChevronDown,
 		ChevronRight,
+		Globe2,
 		LayoutDashboard,
 		LogOut,
 		Menu,
@@ -126,6 +127,7 @@
 			| '/admin/bookings'
 			| '/admin/stores'
 			| '/admin/services'
+			| '/admin/public-site'
 			| '/admin/schedules/slots'
 			| '/admin/schedules/recurring'
 			| '/admin/participants'
@@ -168,6 +170,7 @@
 				{ href: '/admin/bookings', label: '予約運用', icon: CalendarDays },
 				{ href: '/admin/stores', label: '店舗管理', icon: Building2 },
 				{ href: '/admin/services', label: 'サービス一覧', icon: CalendarDays },
+				{ href: '/admin/public-site', label: '予約サイト管理', icon: Globe2 },
 				{ href: '/admin/schedules/slots', label: '単発予約枠', icon: CalendarDays },
 				{ href: '/admin/schedules/recurring', label: '定期一覧', icon: CalendarDays },
 				{ href: '/admin/participants', label: '参加者管理', icon: Users },

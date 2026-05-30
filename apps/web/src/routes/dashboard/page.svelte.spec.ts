@@ -131,6 +131,9 @@ describe('/dashboard/+page.svelte', () => {
 		await expect
 			.element(page.getByRole('button', { name: '回数券管理へ移動' }))
 			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '予約サイト管理へ移動' }))
+			.toBeInTheDocument();
 		await expect.element(page.getByText('yusuke')).toBeInTheDocument();
 
 		const logoImage = document.querySelector(
@@ -200,5 +203,31 @@ describe('/dashboard/+page.svelte', () => {
 		await page.getByRole('button', { name: '回数券管理へ移動' }).click();
 
 		expect(mocks.goto).toHaveBeenCalledWith('/org-one/room-a/admin/tickets');
+	});
+
+	it('preserves scoped admin context for public site navigation', async () => {
+		pageState.url = new URL('https://example.com/org-one/room-a/admin/dashboard');
+		mocks.loadOrganizations.mockResolvedValue({
+			organizations: [
+				{
+					id: 'org-1',
+					name: 'Org One',
+					slug: 'org-one',
+					logo: null
+				}
+			],
+			activeOrganization: {
+				id: 'org-1',
+				name: 'Org One',
+				slug: 'org-one',
+				logo: null
+			}
+		});
+
+		render(DashboardPage);
+
+		await page.getByRole('button', { name: '予約サイト管理へ移動' }).click();
+
+		expect(mocks.goto).toHaveBeenCalledWith('/org-one/room-a/admin/public-site');
 	});
 });

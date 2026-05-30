@@ -13,9 +13,7 @@ const mocks = vi.hoisted(() => ({
 	loadOrganizations: vi.fn(),
 	createOrganization: vi.fn(),
 	setActiveOrganization: vi.fn(),
-	uploadOrganizationLogo: vi.fn(),
-	loadPublicSiteSettings: vi.fn(),
-	updatePublicSiteSettings: vi.fn()
+	uploadOrganizationLogo: vi.fn()
 }));
 
 const pageState = vi.hoisted(() => ({
@@ -55,11 +53,6 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 	uploadOrganizationLogo: mocks.uploadOrganizationLogo
 }));
 
-vi.mock('$lib/features/public-site.svelte', () => ({
-	loadPublicSiteSettings: mocks.loadPublicSiteSettings,
-	updatePublicSiteSettings: mocks.updatePublicSiteSettings
-}));
-
 describe('/settings/+page.svelte', () => {
 	beforeEach(() => {
 		pageState.url = new URL('https://example.com/admin/settings');
@@ -73,8 +66,6 @@ describe('/settings/+page.svelte', () => {
 		mocks.createOrganization.mockReset();
 		mocks.setActiveOrganization.mockReset();
 		mocks.uploadOrganizationLogo.mockReset();
-		mocks.loadPublicSiteSettings.mockReset();
-		mocks.updatePublicSiteSettings.mockReset();
 
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { id: 'user-1' }, session: { id: 'session-1' } },
@@ -110,32 +101,6 @@ describe('/settings/+page.svelte', () => {
 		});
 		mocks.setActiveOrganization.mockResolvedValue({ ok: true, message: '' });
 		mocks.createOrganization.mockResolvedValue({ ok: true, message: '組織を作成しました。' });
-		mocks.loadPublicSiteSettings.mockResolvedValue({
-			organizationId: 'org-1',
-			organizationSlug: 'hoge',
-			organizationName: 'yusuke',
-			storeId: 'room-1',
-			storeSlug: 'room-one',
-			storeName: 'Room One',
-			siteName: 'Room One',
-			description: '',
-			address: '',
-			phone: '',
-			businessHours: '',
-			imageUrl: ''
-		});
-		mocks.updatePublicSiteSettings.mockResolvedValue({
-			ok: true,
-			message: '予約サイトトップページを更新しました。',
-			publicSite: {
-				siteName: 'Tokyo Studio',
-				description: 'Public description',
-				address: 'Tokyo',
-				phone: '',
-				businessHours: '',
-				imageUrl: ''
-			}
-		});
 	});
 
 	it('renders organization logos in membership list with fallback', async () => {
@@ -199,32 +164,14 @@ describe('/settings/+page.svelte', () => {
 		});
 	});
 
-	it('updates scoped public site settings', async () => {
+	it('links to scoped public site management page', async () => {
 		pageState.url = new URL('https://example.com/hoge/room-one/admin/settings');
 		render(SettingsPage);
 
-		await expect.element(page.getByLabelText('サイト名')).toBeInTheDocument();
-		await page.getByLabelText('サイト名').fill('Tokyo Studio');
-		await page.getByLabelText('説明').fill('Public description');
-		await page.getByLabelText('住所').fill('Tokyo');
-		await page.getByRole('button', { name: '予約サイトトップページを保存' }).click();
-
-		await vi.waitFor(() => {
-			expect(mocks.loadPublicSiteSettings).toHaveBeenCalledWith({
-				orgSlug: 'hoge',
-				storeSlug: 'room-one'
-			});
-			expect(mocks.updatePublicSiteSettings).toHaveBeenCalledWith(
-				{
-					orgSlug: 'hoge',
-					storeSlug: 'room-one'
-				},
-				expect.objectContaining({
-					siteName: 'Tokyo Studio',
-					description: 'Public description',
-					address: 'Tokyo'
-				})
-			);
-		});
+		const publicSiteLink = page.getByRole('link', { name: '予約サイト管理へ移動' });
+		await expect.element(publicSiteLink).toBeInTheDocument();
+		await expect
+			.element(publicSiteLink)
+			.toHaveAttribute('href', '/hoge/room-one/admin/public-site');
 	});
 });
