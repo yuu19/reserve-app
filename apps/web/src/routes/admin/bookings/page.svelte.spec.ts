@@ -22,7 +22,7 @@ describe('/admin/bookings/+page.svelte', () => {
 			.element(page.getByRole('button', { name: 'サービス一覧' }))
 			.toBeInTheDocument();
 		await expect
-			.element(page.getByRole('button', { name: '単発一覧' }))
+			.element(page.getByRole('button', { name: '単発予約枠' }))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('button', { name: '定期一覧' }))
@@ -31,7 +31,7 @@ describe('/admin/bookings/+page.svelte', () => {
 			.element(page.getByRole('heading', { level: 2, name: 'サービス管理' }))
 			.not.toBeInTheDocument();
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '単発Slot管理' }))
+			.element(page.getByRole('heading', { level: 2, name: '単発予約枠管理' }))
 			.not.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('heading', { level: 2, name: '定期Schedule管理' }))

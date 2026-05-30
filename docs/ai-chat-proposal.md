@@ -542,7 +542,7 @@ V1ではこの設定で十分です。
 使うcontext:
 - docs chunk
 - service設定
-- slot設定
+- 予約枠設定
 - store role
 - canManageBookings
 ```

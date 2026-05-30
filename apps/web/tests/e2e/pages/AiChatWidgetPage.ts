@@ -23,9 +23,9 @@ export class AiChatWidgetPage extends BasePage {
 	}
 
 	async expectGroundedAnswer() {
-		await expect(this.page.getByText('単発Slot作成から予約枠を作成できます。')).toBeVisible();
+		await expect(this.page.getByText('単発予約枠作成から予約枠を作成できます。')).toBeVisible();
 		await expect(this.page.getByLabel('回答の参照元')).toContainText('予約枠作成ガイド');
-		await expect(this.page.getByLabel('次のアクション')).toContainText('単発Slot作成を開く');
+		await expect(this.page.getByLabel('次のアクション')).toContainText('単発予約枠作成を開く');
 		await expect(this.page.getByText('信頼度 86%')).toBeVisible();
 	}
 

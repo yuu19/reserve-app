@@ -82,7 +82,7 @@ const chooseAnyDate = async (buttonId: string, inputName: string) => {
 
 	await vi.waitFor(() => {
 		const dayButton = document.querySelector(
-			'[data-slot="popover-content"] [data-bits-day]'
+			'[data-slot="popover-content"] [data-bits-day]:not([data-outside-month]):not([data-disabled])'
 		) as HTMLElement | null;
 		expect(dayButton).toBeTruthy();
 		dayButton?.click();
@@ -99,7 +99,7 @@ const chooseAnyDate = async (buttonId: string, inputName: string) => {
 const renderSlotCreatePage = async () => {
 	render(AdminSlotCreatePage);
 	await expect
-		.element(page.getByRole('heading', { level: 2, name: '単発Slot作成' }))
+		.element(page.getByRole('heading', { level: 2, name: '単発予約枠作成' }))
 		.toBeInTheDocument();
 };
 
@@ -134,11 +134,13 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 	it('should render slots create page with single back link and concrete action label', async () => {
 		await renderSlotCreatePage();
 		await expect
-			.element(page.getByRole('heading', { level: 1, name: '単発Slot作成' }))
+			.element(page.getByRole('heading', { level: 1, name: '単発予約枠作成' }))
 			.toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: '単発一覧へ戻る' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '単発予約枠一覧へ戻る' }))
+			.toBeInTheDocument();
 		const createSection = Array.from(document.querySelectorAll('section')).find((section) =>
-			section.querySelector('h2')?.textContent?.includes('単発Slot作成')
+			section.querySelector('h2')?.textContent?.includes('単発予約枠作成')
 		);
 		expect(createSection).toBeTruthy();
 		expect(createSection?.className ?? '').toContain('max-w-4xl');
@@ -148,11 +150,11 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		expect(popoverTrigger).toBeTruthy();
 		expect(popoverTrigger?.className ?? '').toContain('w-full');
 		const backButtons = Array.from(document.querySelectorAll('button')).filter(
-			(button) => (button.textContent ?? '').trim() === '単発一覧へ戻る'
+			(button) => (button.textContent ?? '').trim() === '単発予約枠一覧へ戻る'
 		);
 		expect(backButtons).toHaveLength(1);
 		await expect
-			.element(page.getByRole('button', { name: '単発スロットを作成' }))
+			.element(page.getByRole('button', { name: '単発予約枠を作成' }))
 			.toBeInTheDocument();
 		expect(document.body.textContent ?? '').toContain('サービスを選択してください。');
 	});
@@ -203,7 +205,7 @@ describe('/admin/schedules/slots/new/+page.svelte', () => {
 		await vi.waitFor(() => {
 			expect(document.body.textContent ?? '').toContain('終了日時は開始日時より後にしてください。');
 		});
-		await expect.element(page.getByRole('button', { name: '単発スロットを作成' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: '単発予約枠を作成' })).toBeDisabled();
 	});
 
 	it('should auto-calculate end time from selected service duration', async () => {

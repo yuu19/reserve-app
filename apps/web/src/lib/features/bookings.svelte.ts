@@ -574,8 +574,8 @@ export const generateRecurringSlotsByStaff = async (input: {
 	return {
 		ok: response.ok,
 		message: response.ok
-			? '定期スロットを再生成しました。'
-			: toReservationErrorMessage(response.status, payload, '定期スロット再生成に失敗しました。')
+			? '定期予約枠を再生成しました。'
+			: toReservationErrorMessage(response.status, payload, '定期予約枠の再生成に失敗しました。')
 	};
 };
 

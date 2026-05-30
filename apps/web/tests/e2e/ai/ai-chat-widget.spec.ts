@@ -27,7 +27,7 @@ test.describe('AI chat widget', () => {
 				body: JSON.stringify({
 					conversationId: 'conversation-e2e',
 					messageId: 'assistant-message-e2e',
-					answer: '単発Slot作成から予約枠を作成できます。操作は実行せず、作成画面を案内します。',
+					answer: '単発予約枠作成から予約枠を作成できます。操作は実行せず、作成画面を案内します。',
 					sources: [
 						{
 							sourceKind: 'docs',
@@ -39,7 +39,7 @@ test.describe('AI chat widget', () => {
 					],
 					suggestedActions: [
 						{
-							label: '単発Slot作成を開く',
+							label: '単発予約枠作成を開く',
 							href: '/admin/schedules/slots/new',
 							actionKind: 'open_page'
 						}

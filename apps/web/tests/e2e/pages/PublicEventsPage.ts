@@ -80,7 +80,7 @@ export class ScopedAdminPages extends BasePage {
 		locationLabel: string;
 	}) {
 		await this.goto(`/${orgSlug}/${storeSlug}/admin/schedules/slots`);
-		await expect(this.page.getByRole('heading', { name: '単発Slot一覧' })).toBeVisible();
+		await expect(this.page.getByRole('heading', { name: '単発予約枠一覧' })).toBeVisible();
 		const slotRow = this.page.getByRole('row', { name: new RegExp(escapeRegex(serviceName)) });
 		await expect(slotRow).toBeVisible({ timeout: 15_000 });
 		await expect(slotRow).toContainText(locationLabel);

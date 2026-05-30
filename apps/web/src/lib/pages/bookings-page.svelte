@@ -328,9 +328,9 @@
 			case 'admin-services-new':
 				return 'サービス作成';
 			case 'admin-slots':
-				return '単発Slot一覧';
+				return '単発予約枠一覧';
 			case 'admin-slots-new':
-				return '単発Slot作成';
+				return '単発予約枠作成';
 			case 'admin-recurring':
 				return '定期Schedule一覧';
 			case 'admin-recurring-new':
@@ -348,11 +348,11 @@
 			case 'admin-services-new':
 				return '新しいサービスを作成します。';
 			case 'admin-slots':
-				return '単発スロット一覧の確認と停止を行います。';
+				return '単発予約枠の確認と停止を行います。';
 			case 'admin-slots-new':
-				return '単発スロットを新規作成します。';
+				return '新しい単発予約枠を作成します。';
 			case 'admin-recurring':
-				return '定期スケジュール一覧の更新、例外登録、枠再生成を行います。';
+				return '定期スケジュール一覧の更新、例外登録、予約枠再生成を行います。';
 			case 'admin-recurring-new':
 				return '定期スケジュールを新規作成します。';
 			default:
@@ -364,7 +364,7 @@
 			return { href: '/admin/services', label: 'サービス一覧へ戻る' };
 		}
 		if (isAdminSlotsCreatePage) {
-			return { href: '/admin/schedules/slots', label: '単発一覧へ戻る' };
+			return { href: '/admin/schedules/slots', label: '単発予約枠一覧へ戻る' };
 		}
 		if (isAdminRecurringCreatePage) {
 			return { href: '/admin/schedules/recurring', label: '定期一覧へ戻る' };
@@ -2061,7 +2061,7 @@
 						variant={isAdminSlotsPage || isAdminSlotsCreatePage ? 'default' : 'outline'}
 						onclick={() => goto(resolve('/admin/schedules/slots'))}
 					>
-						単発一覧
+						単発予約枠
 					</Button>
 					<Button
 						type="button"
@@ -2081,7 +2081,7 @@
 						<Button
 							type="button"
 							variant="outline"
-							onclick={() => goto(resolve('/admin/schedules/slots/new'))}>単発作成へ</Button
+							onclick={() => goto(resolve('/admin/schedules/slots/new'))}>単発予約枠作成へ</Button
 						>
 					{/if}
 					{#if isAdminRecurringPage}
@@ -2290,7 +2290,7 @@
 							{/if}
 							{#if isAdminSlotsCreatePage}
 								<Card class="surface-panel w-full border-border/80 shadow-lg">
-									<CardHeader><h2 class="text-lg font-semibold">単発Slot作成</h2></CardHeader>
+									<CardHeader><h2 class="text-lg font-semibold">単発予約枠作成</h2></CardHeader>
 									<CardContent>
 										<form class="grid gap-4 md:grid-cols-2" onsubmit={submitCreateSlot}>
 											<div class="space-y-2 md:col-span-2">
@@ -2413,7 +2413,7 @@
 													</p>
 												{/if}
 												<Button type="submit" disabled={!!slotCreateDisabledReason}
-													>単発スロットを作成</Button
+													>単発予約枠を作成</Button
 												>
 											</div>
 										</form>
@@ -3054,22 +3054,22 @@
 							<section>
 								<Card class="surface-panel border-border/80 shadow-lg">
 									<CardHeader>
-										<h2 class="text-lg font-semibold">単発Slot管理</h2>
+										<h2 class="text-lg font-semibold">単発予約枠管理</h2>
 										<CardDescription>
-											表示月に含まれる枠を表示します。open 状態の枠のみ停止できます。
+											表示月に含まれる予約枠を表示します。受付中の予約枠のみ停止できます。
 										</CardDescription>
 									</CardHeader>
 									<CardContent>
 										{#if slotManagementRows.length === 0}
 											<p class="text-sm text-muted-foreground">
-												表示月に管理対象の枠はありません。
+												表示月に管理対象の予約枠はありません。
 											</p>
 										{:else}
 											<div class="overflow-x-auto rounded-lg border border-border/80 bg-card/80">
 												<table class="w-full min-w-[1080px] text-sm">
 													<thead class="bg-secondary text-muted-foreground">
 														<tr>
-															<th class="px-3 py-2 text-left font-medium">枠ID</th>
+															<th class="px-3 py-2 text-left font-medium">予約枠ID</th>
 															<th class="px-3 py-2 text-left font-medium">日時</th>
 															<th class="px-3 py-2 text-left font-medium">サービス</th>
 															<th class="px-3 py-2 text-right font-medium">定員</th>
@@ -3154,12 +3154,12 @@
 					{#if isAdminRecurringPage}
 						<section>
 							<Card class="surface-panel border-border/80 shadow-lg">
-								<CardHeader>
-									<h2 class="text-lg font-semibold">定期Schedule管理</h2>
-									<CardDescription>
-										定期スケジュールの更新・停止、例外登録、枠再生成を実行できます。
-									</CardDescription>
-								</CardHeader>
+									<CardHeader>
+										<h2 class="text-lg font-semibold">定期Schedule管理</h2>
+										<CardDescription>
+											定期スケジュールの更新・停止、例外登録、予約枠再生成を実行できます。
+										</CardDescription>
+									</CardHeader>
 								<CardContent class="space-y-4">
 									{#if staffRecurringRows.length === 0}
 										<p class="text-sm text-muted-foreground">
@@ -3323,7 +3323,7 @@
 											</form>
 										</div>
 										<div class="space-y-3">
-											<h3 class="text-base font-semibold text-foreground">枠を再生成</h3>
+											<h3 class="text-base font-semibold text-foreground">予約枠を再生成</h3>
 											<form
 												class="grid gap-3 md:grid-cols-2"
 												onsubmit={submitGenerateRecurringSlotsByStaff}

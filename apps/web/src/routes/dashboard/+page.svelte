@@ -182,7 +182,7 @@
 						type="button"
 						variant="outline"
 						onclick={() => goto(resolve(toResolvablePath('/admin/schedules/slots')))}
-						>単発一覧へ移動</Button
+						>単発予約枠へ移動</Button
 					>
 					<Button
 						type="button"

@@ -168,7 +168,7 @@
 				{ href: '/admin/bookings', label: '予約運用', icon: CalendarDays },
 				{ href: '/admin/stores', label: '店舗管理', icon: Building2 },
 				{ href: '/admin/services', label: 'サービス一覧', icon: CalendarDays },
-				{ href: '/admin/schedules/slots', label: '単発一覧', icon: CalendarDays },
+				{ href: '/admin/schedules/slots', label: '単発予約枠', icon: CalendarDays },
 				{ href: '/admin/schedules/recurring', label: '定期一覧', icon: CalendarDays },
 				{ href: '/admin/participants', label: '参加者管理', icon: Users },
 				{ href: '/admin/tickets', label: '回数券管理', icon: TicketCheck },
