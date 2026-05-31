@@ -20,6 +20,7 @@ export const serializeBooking = (row: Record<string, unknown> | undefined) => ({
   ...row,
   cancelledAt: toIsoDate(row?.cancelledAt),
   noShowMarkedAt: toIsoDate(row?.noShowMarkedAt),
+  attendanceMarkedAt: toIsoDate(row?.attendanceMarkedAt),
   createdAt: toIsoDate(row?.createdAt),
   updatedAt: toIsoDate(row?.updatedAt),
 });

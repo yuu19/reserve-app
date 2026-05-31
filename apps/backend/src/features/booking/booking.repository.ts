@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import {
+  BOOKING_ATTENDANCE_STATUS,
   BOOKING_STATUS,
   SLOT_STATUS,
   TICKET_LEDGER_ACTION,
@@ -560,17 +561,58 @@ export const rejectPendingBooking = async ({
 export const markConfirmedBookingNoShow = async ({
   database,
   bookingId,
+  actorUserId,
 }: {
   database: AuthRuntimeDatabase;
   bookingId: string;
+  actorUserId: string;
 }) => {
+  const markedAt = new Date();
   await database
     .update(dbSchema.booking)
     .set({
       status: BOOKING_STATUS.NO_SHOW,
-      noShowMarkedAt: new Date(),
+      noShowMarkedAt: markedAt,
+      attendanceStatus: BOOKING_ATTENDANCE_STATUS.NO_SHOW,
+      attendanceMarkedAt: markedAt,
+      attendanceMarkedByUserId: actorUserId,
     })
     .where(eq(dbSchema.booking.id, bookingId));
+};
+
+/**
+ * 確定予約の出席・欠席状態を記録します。
+ */
+export const markConfirmedBookingAttendance = async ({
+  database,
+  bookingId,
+  attendanceStatus,
+  actorUserId,
+}: {
+  database: AuthRuntimeDatabase;
+  bookingId: string;
+  attendanceStatus:
+    | typeof BOOKING_ATTENDANCE_STATUS.NOT_CHECKED
+    | typeof BOOKING_ATTENDANCE_STATUS.CHECKED_IN
+    | typeof BOOKING_ATTENDANCE_STATUS.ABSENT;
+  actorUserId: string;
+}) => {
+  const shouldClearMark = attendanceStatus === BOOKING_ATTENDANCE_STATUS.NOT_CHECKED;
+  const updatedRows = await database
+    .update(dbSchema.booking)
+    .set({
+      attendanceStatus,
+      attendanceMarkedAt: shouldClearMark ? null : new Date(),
+      attendanceMarkedByUserId: shouldClearMark ? null : actorUserId,
+    })
+    .where(
+      and(
+        eq(dbSchema.booking.id, bookingId),
+        eq(dbSchema.booking.status, BOOKING_STATUS.CONFIRMED),
+      ),
+    )
+    .returning({ id: dbSchema.booking.id });
+  return updatedRows.length > 0;
 };
 
 /**

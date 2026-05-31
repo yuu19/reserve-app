@@ -1,5 +1,6 @@
 import {
 	authRpc,
+	type BookingAttendanceStatus,
 	type BookingPayload,
 	type ServiceImageUploadUrlPayload,
 	type StaffCreateBookingInput
@@ -95,6 +96,9 @@ export const toReservationErrorMessage = (status: number, payload: unknown, fall
 		}
 		if (message === 'Only confirmed booking can be marked as no-show.') {
 			return 'No-show にできるのは予約確定済みの予約のみです。';
+		}
+		if (message === 'Only confirmed booking can be marked attendance.') {
+			return '出欠を記録できるのは予約確定済みの予約のみです。';
 		}
 		if (message === 'Only pending approval booking can be approved.') {
 			return '承認できるのは承認待ち予約のみです。';
@@ -671,6 +675,33 @@ export const markBookingNoShow = async (bookingId: string) => {
 		message: response.ok
 			? '予約を No-show に更新しました。'
 			: toReservationErrorMessage(response.status, payload, 'No-show 更新に失敗しました。')
+	};
+};
+
+export const markBookingAttendance = async (
+	bookingId: string,
+	attendanceStatus: BookingAttendanceStatus
+) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
+	}
+	const response = await authRpc.markBookingAttendanceScoped(context, {
+		bookingId,
+		attendanceStatus
+	});
+	const payload = await parseResponseBody(response);
+	const successMessage =
+		attendanceStatus === 'checked_in'
+			? '予約を出席として記録しました。'
+			: attendanceStatus === 'absent'
+				? '予約を欠席として記録しました。'
+				: '予約の出欠を未確認に戻しました。';
+	return {
+		ok: response.ok,
+		message: response.ok
+			? successMessage
+			: toReservationErrorMessage(response.status, payload, '出欠の更新に失敗しました。')
 	};
 };
 

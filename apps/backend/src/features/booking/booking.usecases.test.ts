@@ -28,6 +28,7 @@ const repositoryMocks = vi.hoisted(() => ({
   getBookingById: vi.fn(),
   insertBooking: vi.fn(),
   listBookings: vi.fn(),
+  markConfirmedBookingAttendance: vi.fn(),
   markConfirmedBookingNoShow: vi.fn(),
   rejectPendingBooking: vi.fn(),
   releaseConfirmedBookingSlotCapacity: vi.fn(),

@@ -9,6 +9,7 @@ export type BookingOperationsExportRow = {
 	customerEmail: string;
 	note: string;
 	sourceLabel: string;
+	attendanceLabel: string;
 	statusLabel: string;
 	createdAt: string;
 };
@@ -24,6 +25,7 @@ export const bookingOperationsCsvHeaders = [
 	'メール',
 	'備考',
 	'予約経路',
+	'出欠',
 	'予約状態',
 	'予約作成日時'
 ] as const;
@@ -48,6 +50,7 @@ export const buildBookingOperationsCsv = (rows: BookingOperationsExportRow[]): s
 				row.customerEmail,
 				row.note,
 				row.sourceLabel,
+				row.attendanceLabel,
 				row.statusLabel,
 				row.createdAt
 			].map(toCsvCell)

@@ -21,12 +21,17 @@ import {
   findBookingScope,
   findServiceCancellationPolicy,
   findSlotStart,
+  markConfirmedBookingAttendance,
   markConfirmedBookingNoShow,
   releaseConfirmedBookingSlotCapacity,
   restoreTicketPackForBookingCancel,
 } from './booking.repository.js';
 import { notifyBookingEmailBestEffort } from './booking.notifications.js';
-import type { BookingActionBody, BookingNoShowBody } from './booking.schemas.js';
+import type {
+  BookingActionBody,
+  BookingAttendanceBody,
+  BookingNoShowBody,
+} from './booking.schemas.js';
 
 /**
  * participant 本人の予約をキャンセルし、確定予約では定員と ticket pack を復元します。
@@ -244,6 +249,7 @@ export const markBookingNoShow = async (
   await markConfirmedBookingNoShow({
     database: ctx.database,
     bookingId: booking.id,
+    actorUserId: identity.userId,
   });
 
   await writeBookingAuditLog({
@@ -261,6 +267,67 @@ export const markBookingNoShow = async (
     env: ctx.env,
     bookingId: booking.id,
     event: 'booking_no_show',
+  });
+
+  return jsonResult({ ok: true });
+};
+
+/**
+ * staff が確定予約の出席・欠席状態を記録します。
+ */
+export const markBookingAttendance = async (
+  ctx: BookingRouteContext,
+  body: BookingAttendanceBody,
+  headers: Headers,
+): Promise<JsonRouteResult> => {
+  const identity = await ctx.requireIdentity(headers);
+  if (!identity) {
+    return unauthorized();
+  }
+
+  const booking = await findBookingScope(ctx.database, body.bookingId);
+  if (!booking) {
+    return notFound('Booking not found.');
+  }
+
+  if (isRequestedStoreMismatch(body.storeId, booking.storeId)) {
+    return forbidden();
+  }
+
+  const hasAccess = await ctx.canManageBookingsScope({
+    organizationId: booking.organizationId,
+    storeId: booking.storeId,
+    userId: identity.userId,
+  });
+  if (!hasAccess) {
+    return forbidden();
+  }
+
+  if (booking.status !== BOOKING_STATUS.CONFIRMED) {
+    return conflict('Only confirmed booking can be marked attendance.');
+  }
+
+  const updated = await markConfirmedBookingAttendance({
+    database: ctx.database,
+    bookingId: booking.id,
+    attendanceStatus: body.attendanceStatus,
+    actorUserId: identity.userId,
+  });
+  if (!updated) {
+    return conflict('Only confirmed booking can be marked attendance.');
+  }
+
+  await writeBookingAuditLog({
+    database: ctx.database,
+    bookingId: booking.id,
+    organizationId: booking.organizationId,
+    storeId: booking.storeId,
+    actorUserId: identity.userId,
+    action: 'booking.attendance_marked',
+    metadata: {
+      attendanceStatus: body.attendanceStatus,
+    },
+    headers,
   });
 
   return jsonResult({ ok: true });

@@ -204,6 +204,21 @@ const selectBookingStatus = async (bookingId: string) => {
   return row?.status ?? null;
 };
 
+const selectBookingAttendance = async (bookingId: string) => {
+  const row = await d1
+    .prepare(
+      'SELECT attendance_status as attendanceStatus, attendance_marked_at as attendanceMarkedAt, attendance_marked_by_user_id as attendanceMarkedByUserId FROM booking WHERE id = ?',
+    )
+    .bind(bookingId)
+    .first<{
+      attendanceStatus: string;
+      attendanceMarkedAt: number | string | null;
+      attendanceMarkedByUserId: string | null;
+    }>();
+
+  return row ?? null;
+};
+
 const selectBookingByPublicId = async (publicId: string) => {
   return d1
     .prepare(
@@ -5145,32 +5160,37 @@ describe('バックエンドアプリ', () => {
         duplicateDetected: 1,
         attemptCount: 1,
       });
-      expect(await selectBillingPaymentIssueEventRowsBySubject(organizationId)).toEqual([
-        expect.objectContaining({
-          eventType: 'invoice_available',
-          providerEventId: 'evt_invoice_available_verified',
-          providerInvoiceId: 'in_invoice_available_verified',
-          providerPaymentIntentId: 'pi_invoice_available_verified',
-        }),
-        expect.objectContaining({
-          eventType: 'payment_succeeded',
-          providerEventId: 'evt_payment_succeeded_verified',
-          providerInvoiceId: 'in_payment_succeeded_verified',
-          providerPaymentIntentId: 'pi_payment_succeeded_verified',
-        }),
-        expect.objectContaining({
-          eventType: 'payment_failed',
-          providerEventId: 'evt_payment_failed_verified',
-          providerInvoiceId: 'in_payment_failed_verified',
-          providerPaymentIntentId: 'pi_payment_failed_verified',
-        }),
-        expect.objectContaining({
-          eventType: 'payment_action_required',
-          providerEventId: 'evt_payment_action_required_verified',
-          providerInvoiceId: 'in_payment_action_required_verified',
-          providerPaymentIntentId: 'pi_payment_action_required_verified',
-        }),
-      ]);
+      const paymentIssueEventRows =
+        await selectBillingPaymentIssueEventRowsBySubject(organizationId);
+      expect(paymentIssueEventRows).toHaveLength(4);
+      expect(paymentIssueEventRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            eventType: 'invoice_available',
+            providerEventId: 'evt_invoice_available_verified',
+            providerInvoiceId: 'in_invoice_available_verified',
+            providerPaymentIntentId: 'pi_invoice_available_verified',
+          }),
+          expect.objectContaining({
+            eventType: 'payment_succeeded',
+            providerEventId: 'evt_payment_succeeded_verified',
+            providerInvoiceId: 'in_payment_succeeded_verified',
+            providerPaymentIntentId: 'pi_payment_succeeded_verified',
+          }),
+          expect.objectContaining({
+            eventType: 'payment_failed',
+            providerEventId: 'evt_payment_failed_verified',
+            providerInvoiceId: 'in_payment_failed_verified',
+            providerPaymentIntentId: 'pi_payment_failed_verified',
+          }),
+          expect.objectContaining({
+            eventType: 'payment_action_required',
+            providerEventId: 'evt_payment_action_required_verified',
+            providerInvoiceId: 'in_payment_action_required_verified',
+            providerPaymentIntentId: 'pi_payment_action_required_verified',
+          }),
+        ]),
+      );
       expect(await selectBillingPaymentIssueRowBySubject(organizationId)).toMatchObject({
         state: 'payment_action_required',
         issueStartedAtSource: 'provider_issue_time',
@@ -5459,20 +5479,25 @@ describe('バックエンドアプリ', () => {
           providerEventId: 'evt_stale_payment_failed_after_recovery',
         }),
       ]);
-      expect(await selectBillingPaymentIssueEventRowsBySubject(organizationId)).toEqual([
-        expect.objectContaining({
-          eventType: 'payment_failed',
-          providerEventId: 'evt_stale_payment_failed_after_recovery',
-          providerInvoiceId: 'in_stale_payment_failed_after_recovery',
-          providerPaymentIntentId: 'pi_stale_payment_failed_after_recovery',
-        }),
-        expect.objectContaining({
-          eventType: 'stale_failure',
-          providerEventId: 'evt_stale_payment_failed_after_recovery',
-          providerInvoiceId: 'in_stale_payment_failed_after_recovery',
-          providerPaymentIntentId: 'pi_stale_payment_failed_after_recovery',
-        }),
-      ]);
+      const stalePaymentIssueEventRows =
+        await selectBillingPaymentIssueEventRowsBySubject(organizationId);
+      expect(stalePaymentIssueEventRows).toHaveLength(2);
+      expect(stalePaymentIssueEventRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            eventType: 'payment_failed',
+            providerEventId: 'evt_stale_payment_failed_after_recovery',
+            providerInvoiceId: 'in_stale_payment_failed_after_recovery',
+            providerPaymentIntentId: 'pi_stale_payment_failed_after_recovery',
+          }),
+          expect.objectContaining({
+            eventType: 'stale_failure',
+            providerEventId: 'evt_stale_payment_failed_after_recovery',
+            providerInvoiceId: 'in_stale_payment_failed_after_recovery',
+            providerPaymentIntentId: 'pi_stale_payment_failed_after_recovery',
+          }),
+        ]),
+      );
       expect(await selectBillingPaymentIssueRowBySubject(organizationId)).toMatchObject({
         state: 'stale_failure_history_only',
         latestProviderEventId: 'evt_stale_payment_failed_after_recovery',
@@ -11025,6 +11050,14 @@ describe('バックエンドアプリ', () => {
           bookingId: 'dummy-booking',
         },
       },
+      {
+        path: '/api/v1/auth/organizations/bookings/check-in',
+        method: 'POST',
+        body: {
+          bookingId: 'dummy-booking',
+          attendanceStatus: 'checked_in',
+        },
+      },
       { path: '/api/v1/auth/organizations/ticket-types', method: 'GET' },
       {
         path: '/api/v1/auth/organizations/ticket-types/update',
@@ -12235,6 +12268,7 @@ describe('バックエンドアプリ', () => {
     expect(bookingCreateResponse.status, JSON.stringify(bookingCreatePayload)).toBe(200);
     const bookingPayload = bookingCreatePayload;
     const bookingId = bookingPayload.id as string;
+    expect(bookingPayload.attendanceStatus).toBe('not_checked');
     expect(await selectSlotReservedCount(slotId)).toBe(1);
     expect(await selectTicketPackRemaining(ticketPackId)).toBe(2);
     expect(await selectTicketLedgerActionCount(ticketPackId, 'consume')).toBe(1);
@@ -12361,6 +12395,55 @@ describe('バックエンドアプリ', () => {
     const thirdBookingPayload = (await toJson(thirdBookingResponse)) as Record<string, unknown>;
     const thirdBookingId = thirdBookingPayload.id as string;
 
+    const checkInResponse = await admin.request('/api/v1/auth/organizations/bookings/check-in', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: thirdBookingId,
+        attendanceStatus: 'checked_in',
+      }),
+    });
+    expect(checkInResponse.status).toBe(200);
+    expect(await selectBookingStatus(thirdBookingId)).toBe('confirmed');
+    const checkedInAttendance = await selectBookingAttendance(thirdBookingId);
+    expect(checkedInAttendance?.attendanceStatus).toBe('checked_in');
+    expect(checkedInAttendance?.attendanceMarkedAt).toBeTruthy();
+    expect(checkedInAttendance?.attendanceMarkedByUserId).toBeTruthy();
+    expect(await selectBookingAuditActionCount(thirdBookingId, 'booking.attendance_marked')).toBe(
+      1,
+    );
+
+    const absentResponse = await admin.request('/api/v1/auth/organizations/bookings/check-in', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: thirdBookingId,
+        attendanceStatus: 'absent',
+      }),
+    });
+    expect(absentResponse.status).toBe(200);
+    expect((await selectBookingAttendance(thirdBookingId))?.attendanceStatus).toBe('absent');
+
+    const resetAttendanceResponse = await admin.request(
+      '/api/v1/auth/organizations/bookings/check-in',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: thirdBookingId,
+          attendanceStatus: 'not_checked',
+        }),
+      },
+    );
+    expect(resetAttendanceResponse.status).toBe(200);
+    const resetAttendance = await selectBookingAttendance(thirdBookingId);
+    expect(resetAttendance?.attendanceStatus).toBe('not_checked');
+    expect(resetAttendance?.attendanceMarkedAt).toBeNull();
+    expect(resetAttendance?.attendanceMarkedByUserId).toBeNull();
+    expect(await selectBookingAuditActionCount(thirdBookingId, 'booking.attendance_marked')).toBe(
+      3,
+    );
+
     const noShowResponse = await admin.request('/api/v1/auth/organizations/bookings/no-show', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -12370,7 +12453,21 @@ describe('バックエンドアプリ', () => {
     });
     expect(noShowResponse.status).toBe(200);
     expect(await selectBookingStatus(thirdBookingId)).toBe('no_show');
+    expect((await selectBookingAttendance(thirdBookingId))?.attendanceStatus).toBe('no_show');
     expect(await selectBookingAuditActionCount(thirdBookingId, 'booking.no_show')).toBe(1);
+
+    const checkInNoShowResponse = await admin.request(
+      '/api/v1/auth/organizations/bookings/check-in',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: thirdBookingId,
+          attendanceStatus: 'checked_in',
+        }),
+      },
+    );
+    expect(checkInNoShowResponse.status).toBe(409);
 
     const noShowTwiceResponse = await admin.request('/api/v1/auth/organizations/bookings/no-show', {
       method: 'POST',
@@ -16167,6 +16264,7 @@ describe('バックエンドアプリ', () => {
     expect(body.paths['/api/v1/auth/organizations/bookings/approve']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/reject']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/no-show']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/bookings/check-in']).toBeDefined();
     expect(
       body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/staff-create'],
     ).toBeDefined();

@@ -72,6 +72,7 @@ vi.mock('$lib/features/bookings.svelte', () => ({
 	loadAdminServicesData: vi.fn(),
 	loadAdminSlotsData: vi.fn(),
 	loadParticipantBookingsData: vi.fn(),
+	markBookingAttendance: vi.fn(),
 	markBookingNoShow: vi.fn(),
 	parseNumberInput: vi.fn((value: string) => Number(value) || null),
 	rejectBooking: vi.fn(),
@@ -142,6 +143,9 @@ const createAdminBookingsOperationsData = () => ({
 			customerEmail: 'taro@example.com',
 			customerPhone: '090-0000-0000',
 			note: '初回体験',
+			attendanceStatus: 'not_checked',
+			attendanceMarkedAt: null,
+			attendanceMarkedByUserId: null,
 			status: 'confirmed',
 			createdAt: '2026-06-01T09:00:00.000Z',
 			updatedAt: '2026-06-01T09:00:00.000Z'
@@ -198,5 +202,8 @@ describe('管理予約ページ', () => {
 		await expect.element(page.getByRole('button', { name: '印刷用表示' })).toBeEnabled();
 		await expect.element(page.getByRole('cell', { name: '朝ヨガ' })).toBeInTheDocument();
 		await expect.element(page.getByRole('cell', { name: '2', exact: true })).toBeInTheDocument();
+		await expect.element(page.getByRole('cell', { name: '未確認' })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: '出席' })).toBeEnabled();
+		await expect.element(page.getByRole('button', { name: '欠席' })).toBeEnabled();
 	});
 });

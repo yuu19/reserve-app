@@ -24,6 +24,14 @@ export const BOOKING_STATUS = {
   NO_SHOW: 'no_show',
 } as const;
 
+/** 予約来店時に staff が記録する出欠 status 値。 */
+export const BOOKING_ATTENDANCE_STATUS = {
+  NOT_CHECKED: 'not_checked',
+  CHECKED_IN: 'checked_in',
+  ABSENT: 'absent',
+  NO_SHOW: 'no_show',
+} as const;
+
 /** 公開予約サイトの公開状態。 */
 export const PUBLIC_SITE_STATUS = {
   PUBLIC: 'public',

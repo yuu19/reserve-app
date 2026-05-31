@@ -7,6 +7,7 @@ import {
   createBookingRoute,
   listBookingsRoute,
   listMyBookingsRoute,
+  markAttendanceRoute,
   markNoShowRoute,
   rejectBookingByStaffRoute,
   staffCreateBookingRoute,
@@ -18,6 +19,7 @@ import {
   createBooking,
   listMyBookings,
   listStaffBookings,
+  markBookingAttendance,
   markBookingNoShow,
   rejectBookingByStaff,
 } from './booking.usecases.js';
@@ -60,6 +62,10 @@ export const registerBookingLifecycleRoutes = (ctx: BookingRouteContext) => {
 
   ctx.authRoutes.openapi(markNoShowRoute, async (c) =>
     jsonRouteResult(c, await markBookingNoShow(ctx, c.req.valid('json'), c.req.raw.headers)),
+  );
+
+  ctx.authRoutes.openapi(markAttendanceRoute, async (c) =>
+    jsonRouteResult(c, await markBookingAttendance(ctx, c.req.valid('json'), c.req.raw.headers)),
   );
 
   ctx.authRoutes.openapi(staffCreateBookingRoute, async (c) =>

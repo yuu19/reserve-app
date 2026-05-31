@@ -71,6 +71,7 @@ vi.mock('$lib/features/bookings.svelte', () => ({
 	loadAdminServicesData: vi.fn(),
 	loadAdminSlotsData: vi.fn(),
 	loadParticipantBookingsData: mocks.loadParticipantBookingsData,
+	markBookingAttendance: vi.fn(),
 	markBookingNoShow: vi.fn(),
 	parseNumberInput: vi.fn((value: string) => Number(value) || null),
 	rejectBooking: vi.fn(),

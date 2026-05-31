@@ -1,5 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { BOOKING_SOURCE, BOOKING_STATUS } from '../../domain/booking/constants.js';
+import {
+  BOOKING_ATTENDANCE_STATUS,
+  BOOKING_SOURCE,
+  BOOKING_STATUS,
+} from '../../domain/booking/constants.js';
 
 const isoDateTimeSchema = z
   .string()
@@ -13,6 +17,12 @@ const bookingStatusSchema = z.enum([
   BOOKING_STATUS.CANCELED_BY_STAFF,
   BOOKING_STATUS.REJECTED_BY_STAFF,
   BOOKING_STATUS.NO_SHOW,
+]);
+
+const bookingAttendanceStatusSchema = z.enum([
+  BOOKING_ATTENDANCE_STATUS.NOT_CHECKED,
+  BOOKING_ATTENDANCE_STATUS.CHECKED_IN,
+  BOOKING_ATTENDANCE_STATUS.ABSENT,
 ]);
 
 /**
@@ -63,6 +73,15 @@ export const bookingActionBodySchema = z.object({
 export const bookingNoShowBodySchema = z.object({
   bookingId: z.string().min(1),
   storeId: z.string().min(1).optional(),
+});
+
+/**
+ * staff が予約の出席・欠席を記録する入力を検証します。
+ */
+export const bookingAttendanceBodySchema = z.object({
+  bookingId: z.string().min(1),
+  storeId: z.string().min(1).optional(),
+  attendanceStatus: bookingAttendanceStatusSchema,
 });
 
 /**
@@ -131,6 +150,10 @@ export type BookingActionBody = z.infer<typeof bookingActionBodySchema>;
  * no-show 登録 usecase が受け取る検証済み body 型です。
  */
 export type BookingNoShowBody = z.infer<typeof bookingNoShowBodySchema>;
+/**
+ * 出席・欠席記録 usecase が受け取る検証済み body 型です。
+ */
+export type BookingAttendanceBody = z.infer<typeof bookingAttendanceBodySchema>;
 /**
  * 予約承認 usecase が受け取る検証済み body 型です。
  */
@@ -329,6 +352,33 @@ export const markNoShowRoute = createRoute({
   },
   responses: {
     200: { description: 'Booking marked as no-show' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+/**
+ * staff が確定予約の出席・欠席を記録する OpenAPI 定義です。
+ */
+export const markAttendanceRoute = createRoute({
+  method: 'post',
+  path: '/organizations/bookings/check-in',
+  tags: ['Bookings'],
+  summary: 'Mark booking attendance',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: bookingAttendanceBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Booking attendance marked' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },

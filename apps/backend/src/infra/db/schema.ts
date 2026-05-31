@@ -556,6 +556,11 @@ export const booking = sqliteTable(
       onDelete: 'set null',
     }),
     noShowMarkedAt: integer('no_show_marked_at', { mode: 'timestamp_ms' }),
+    attendanceStatus: text('attendance_status').default('not_checked').notNull(),
+    attendanceMarkedAt: integer('attendance_marked_at', { mode: 'timestamp_ms' }),
+    attendanceMarkedByUserId: text('attendance_marked_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
     ticketPackId: text('ticket_pack_id').references(() => ticketPack.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)

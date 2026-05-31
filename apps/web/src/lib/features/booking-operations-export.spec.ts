@@ -18,15 +18,18 @@ describe('日次運用ビュー出力', () => {
 				customerEmail: 'taro@example.com',
 				note: '初回\n体験',
 				sourceLabel: '公開予約',
+				attendanceLabel: '出席',
 				statusLabel: '予約確定',
 				createdAt: '2026/06/01 09:00'
 			}
 		]);
 
 		expect(csv).toContain('"予約番号","開始日時","終了時刻"');
+		expect(csv).toContain('"予約経路","出欠","予約状態"');
 		expect(csv).toContain('"体験, レッスン"');
 		expect(csv).toContain('"山田 ""太郎"""');
 		expect(csv).toContain('"初回\n体験"');
+		expect(csv).toContain('"公開予約","出席","予約確定"');
 		expect(csv.endsWith('\r\n')).toBe(true);
 	});
 

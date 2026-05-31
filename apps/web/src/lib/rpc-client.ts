@@ -294,6 +294,9 @@ export type BookingPayload = {
 	cancelledAt?: string | null;
 	cancelledByUserId?: string | null;
 	noShowMarkedAt?: string | null;
+	attendanceStatus?: 'not_checked' | 'checked_in' | 'absent' | 'no_show';
+	attendanceMarkedAt?: string | null;
+	attendanceMarkedByUserId?: string | null;
 	ticketPackId?: string | null;
 	createdAt: string;
 	updatedAt: string;
@@ -859,6 +862,14 @@ type BookingNoShowInput = {
 	storeId?: string;
 };
 
+export type BookingAttendanceStatus = 'not_checked' | 'checked_in' | 'absent';
+
+type BookingAttendanceInput = {
+	bookingId: string;
+	storeId?: string;
+	attendanceStatus: BookingAttendanceStatus;
+};
+
 type ListBookingsQuery = {
 	organizationId?: string;
 	storeId?: string;
@@ -1110,6 +1121,9 @@ type AuthRpcClient = {
 						};
 						'no-show': {
 							$post: (args: { json: BookingNoShowInput }) => Promise<Response>;
+						};
+						'check-in': {
+							$post: (args: { json: BookingAttendanceInput }) => Promise<Response>;
 						};
 					};
 					'ticket-types': {
@@ -1576,6 +1590,8 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations.bookings.reject.$post({ json }),
 	markBookingNoShow: (json: BookingNoShowInput) =>
 		rpcClient.api.v1.auth.organizations.bookings['no-show'].$post({ json }),
+	markBookingAttendance: (json: BookingAttendanceInput) =>
+		rpcClient.api.v1.auth.organizations.bookings['check-in'].$post({ json }),
 	createTicketType: (json: CreateTicketTypeInput) =>
 		rpcClient.api.v1.auth.organizations['ticket-types'].$post({ json }),
 	updateTicketType: (json: UpdateTicketTypeInput) =>
@@ -1748,6 +1764,10 @@ export const authRpc = {
 	markBookingNoShowScoped: (context: ScopedApiContext, json: BookingNoShowInput) =>
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/bookings/no-show', { json: resolvedJson })
+		),
+	markBookingAttendanceScoped: (context: ScopedApiContext, json: BookingAttendanceInput) =>
+		withScopedJson(context, json, (resolvedJson) =>
+			authFetch('/api/v1/auth/organizations/bookings/check-in', { json: resolvedJson })
 		),
 	staffCreateBookingScoped: (context: ScopedApiContext, json: StaffCreateBookingInput) =>
 		authFetch(buildScopedAuthPath(context, '/bookings/staff-create'), { json }),

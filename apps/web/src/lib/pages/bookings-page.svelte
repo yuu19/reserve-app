@@ -47,6 +47,7 @@
 		loadAdminServicesData,
 		loadAdminSlotsData,
 		loadParticipantBookingsData,
+		markBookingAttendance,
 		markBookingNoShow,
 		parseNumberInput,
 		rejectBooking,
@@ -73,6 +74,7 @@
 	} from '$lib/features/auth-session.svelte';
 	import { preserveScopedRouteContext } from '$lib/features/scoped-routing';
 	import type {
+		BookingAttendanceStatus,
 		BookingPayload,
 		OrganizationBillingPayload,
 		ParticipantPayload,
@@ -138,7 +140,7 @@
 	let staffServices = $state<ServicePayload[]>([]);
 	let staffRecurringSchedules = $state<RecurringSchedulePayload[]>([]);
 	let staffAction = $state<{
-		kind: 'approve' | 'reject' | 'cancel' | 'no_show';
+		kind: 'approve' | 'reject' | 'cancel' | 'no_show' | 'attendance';
 		id: string;
 	} | null>(null);
 	type ResourceActionKind =
@@ -670,6 +672,7 @@
 		slot?: SlotPayload;
 		participant?: ParticipantPayload;
 	};
+	type BookingAttendanceDisplayStatus = NonNullable<BookingPayload['attendanceStatus']>;
 	type AdminCalendarSummary = {
 		slotCount: number;
 		openSlotCount: number;
@@ -693,6 +696,12 @@
 		cancelled_by_participant: 'キャンセル済み',
 		cancelled_by_staff: '運営キャンセル',
 		no_show: '不参加'
+	};
+	const bookingAttendanceLabelMap: Record<BookingAttendanceDisplayStatus, string> = {
+		not_checked: '未確認',
+		checked_in: '出席',
+		absent: '欠席',
+		no_show: 'No-show'
 	};
 	const bookingSourceLabelMap: Record<string, string> = {
 		participant: '参加者',
@@ -1042,6 +1051,14 @@
 	};
 	const getBookingSourceLabel = (booking: BookingPayload): string =>
 		bookingSourceLabelMap[booking.source ?? 'participant'] ?? booking.source ?? '-';
+	const getBookingAttendanceStatus = (booking: BookingPayload): BookingAttendanceDisplayStatus => {
+		if (booking.status === 'no_show') {
+			return 'no_show';
+		}
+		return booking.attendanceStatus ?? 'not_checked';
+	};
+	const getBookingAttendanceLabel = (booking: BookingPayload): string =>
+		bookingAttendanceLabelMap[getBookingAttendanceStatus(booking)];
 	const getBookingReservationId = (booking: BookingPayload): string =>
 		booking.publicId?.trim() || booking.id;
 	const getBookingCustomerEmail = (row: OperationRow): string =>
@@ -1059,6 +1076,7 @@
 		customerEmail: getBookingCustomerEmail(row),
 		note: row.booking.note?.trim() ?? '',
 		sourceLabel: getBookingSourceLabel(row.booking),
+		attendanceLabel: getBookingAttendanceLabel(row.booking),
 		statusLabel: bookingStatusLabelMap[row.booking.status],
 		createdAt: formatDateTime(row.booking.createdAt)
 	});
@@ -1126,7 +1144,7 @@
 		}
 	};
 	const isStaffActionInProgress = (
-		kind: 'approve' | 'reject' | 'cancel' | 'no_show',
+		kind: 'approve' | 'reject' | 'cancel' | 'no_show' | 'attendance',
 		bookingId: string
 	): boolean => staffAction?.kind === kind && staffAction.id === bookingId;
 	const formatTicketTypeShort = (ticketTypeId: string): string => ticketTypeId.slice(0, 8);
@@ -2133,6 +2151,35 @@
 			staffAction = null;
 		}
 	};
+	const submitMarkBookingAttendance = async (
+		bookingId: string,
+		attendanceStatus: BookingAttendanceStatus
+	) => {
+		if (!canManage || staffAction) {
+			return;
+		}
+		const message =
+			attendanceStatus === 'checked_in'
+				? 'この予約を出席として記録しますか？'
+				: attendanceStatus === 'absent'
+					? 'この予約を欠席として記録しますか？'
+					: 'この予約の出欠を未確認に戻しますか？';
+		if (!confirm(message)) {
+			return;
+		}
+		staffAction = { kind: 'attendance', id: bookingId };
+		try {
+			const result = await markBookingAttendance(bookingId, attendanceStatus);
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			staffAction = null;
+		}
+	};
 
 	onMount(() => {
 		void (async () => {
@@ -2840,7 +2887,7 @@
 											<div class="space-y-1">
 												<h2 class="text-lg font-semibold">運営予約一覧</h2>
 												<CardDescription>
-													表示月の枠に紐づく予約を一覧表示し、承認・却下・運営キャンセル・No-show
+													表示月の枠に紐づく予約を一覧表示し、承認・却下・出欠記録・運営キャンセル・No-show
 													を実行できます。
 													{#if operationsFilter.selectedDate}
 														現在は {selectedOperationDateLabel} のみ表示しています。
@@ -2943,7 +2990,7 @@
 												</div>
 											{/if}
 											<p class="text-xs text-muted-foreground">
-												承認待ちは「承認 / 却下」、予約確定は「運営キャンセル /
+												承認待ちは「承認 / 却下」、予約確定は「出席 / 欠席 / 運営キャンセル /
 												No-show」を実行できます。
 											</p>
 
@@ -2968,6 +3015,7 @@
 																<th>メール</th>
 																<th>備考</th>
 																<th>予約経路</th>
+																<th>出欠</th>
 																<th>状態</th>
 															</tr>
 														</thead>
@@ -2987,6 +3035,7 @@
 																	<td>{row.customerEmail || '-'}</td>
 																	<td>{row.note || '-'}</td>
 																	<td>{row.sourceLabel}</td>
+																	<td>{row.attendanceLabel}</td>
 																	<td>{row.statusLabel}</td>
 																</tr>
 															{/each}
@@ -3001,7 +3050,7 @@
 												</p>
 											{:else}
 												<div class="overflow-x-auto rounded-lg border border-border/80 bg-card/80">
-													<table class="w-full min-w-[1040px] text-sm">
+													<table class="w-full min-w-[1120px] text-sm">
 														<thead class="bg-secondary text-muted-foreground">
 															<tr>
 																<th class="px-3 py-2 text-left font-medium">予約ID</th>
@@ -3009,6 +3058,7 @@
 																<th class="px-3 py-2 text-left font-medium">サービス</th>
 																<th class="px-3 py-2 text-left font-medium">参加者</th>
 																<th class="px-3 py-2 text-right font-medium">人数</th>
+																<th class="px-3 py-2 text-left font-medium">出欠</th>
 																<th class="px-3 py-2 text-left font-medium">ステータス</th>
 																<th class="px-3 py-2 text-left font-medium">予約作成日時</th>
 																<th class="px-3 py-2 text-left font-medium">操作</th>
@@ -3019,6 +3069,7 @@
 																{@const isConfirmed = row.booking.status === 'confirmed'}
 																{@const isPendingApproval =
 																	row.booking.status === 'pending_approval'}
+																{@const attendanceStatus = getBookingAttendanceStatus(row.booking)}
 																<tr class="border-t border-border/70 align-top">
 																	<td class="px-3 py-3">
 																		<span class="font-mono text-xs text-secondary-foreground">
@@ -3056,6 +3107,17 @@
 																	</td>
 																	<td class="px-3 py-3 text-right tabular-nums">
 																		{row.booking.participantsCount}
+																	</td>
+																	<td class="px-3 py-3">
+																		<Badge
+																			variant={attendanceStatus === 'no_show'
+																				? 'destructive'
+																				: attendanceStatus === 'not_checked'
+																					? 'secondary'
+																					: 'outline'}
+																		>
+																			{bookingAttendanceLabelMap[attendanceStatus]}
+																		</Badge>
 																	</td>
 																	<td class="px-3 py-3">
 																		<Badge
@@ -3098,6 +3160,53 @@
 																			</div>
 																		{:else if isConfirmed}
 																			<div class="flex flex-wrap items-center gap-2">
+																				{#if attendanceStatus !== 'checked_in'}
+																					<Button
+																						type="button"
+																						size="sm"
+																						onclick={() =>
+																							submitMarkBookingAttendance(
+																								row.booking.id,
+																								'checked_in'
+																							)}
+																						disabled={busy || !!staffAction}
+																					>
+																						{isStaffActionInProgress('attendance', row.booking.id)
+																							? '処理中…'
+																							: '出席'}
+																					</Button>
+																				{/if}
+																				{#if attendanceStatus !== 'absent'}
+																					<Button
+																						type="button"
+																						variant="outline"
+																						size="sm"
+																						onclick={() =>
+																							submitMarkBookingAttendance(row.booking.id, 'absent')}
+																						disabled={busy || !!staffAction}
+																					>
+																						{isStaffActionInProgress('attendance', row.booking.id)
+																							? '処理中…'
+																							: '欠席'}
+																					</Button>
+																				{/if}
+																				{#if attendanceStatus !== 'not_checked'}
+																					<Button
+																						type="button"
+																						variant="outline"
+																						size="sm"
+																						onclick={() =>
+																							submitMarkBookingAttendance(
+																								row.booking.id,
+																								'not_checked'
+																							)}
+																						disabled={busy || !!staffAction}
+																					>
+																						{isStaffActionInProgress('attendance', row.booking.id)
+																							? '処理中…'
+																							: '未確認'}
+																					</Button>
+																				{/if}
 																				<Button
 																					type="button"
 																					variant="destructive"

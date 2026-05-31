@@ -2,6 +2,7 @@ export { approveBookingByStaff, rejectBookingByStaff } from './approve-booking.u
 export {
   cancelBookingByParticipant,
   cancelBookingByStaff,
+  markBookingAttendance,
   markBookingNoShow,
 } from './cancel-booking.usecase.js';
 export { createBooking } from './create-booking.usecase.js';
