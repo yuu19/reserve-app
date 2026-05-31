@@ -11,6 +11,7 @@ import {
   reconcileProviderLinkedOrganizationBillingStates,
   reconcileRiskyOrganizationBillingStates,
 } from './domain/billing/organization-billing-maintenance.js';
+import { sendDueBookingReminders } from './features/booking/booking-reminders.js';
 import {
   syncReserveAppBillingV2DerivedState,
   upsertReserveAppBillingV2SubscriptionState,
@@ -748,6 +749,118 @@ const selectPublicSiteNotificationSetting = async (organizationId: string, store
       notifyStaff: number;
       additionalEmailsJson: string | null;
     }>();
+};
+
+const selectReminderPolicyRows = async (organizationId: string, storeId: string) => {
+  const rows = await d1
+    .prepare(
+      'SELECT id, enabled, minutes_before as minutesBefore, service_id as serviceId FROM reminder_policy WHERE organization_id = ? AND store_id = ? ORDER BY minutes_before DESC',
+    )
+    .bind(organizationId, storeId)
+    .all<{
+      id: string;
+      enabled: number;
+      minutesBefore: number;
+      serviceId: string | null;
+    }>();
+
+  return rows.results ?? [];
+};
+
+const selectReminderLogRowsByBooking = async (bookingId: string) => {
+  const rows = await d1
+    .prepare(
+      'SELECT reminder_policy_id as reminderPolicyId, dedupe_key as dedupeKey, recipient_email as recipientEmail, status, scheduled_for as scheduledFor FROM reminder_log WHERE booking_id = ? ORDER BY created_at ASC',
+    )
+    .bind(bookingId)
+    .all<{
+      reminderPolicyId: string | null;
+      dedupeKey: string;
+      recipientEmail: string;
+      status: string;
+      scheduledFor: number;
+    }>();
+
+  return rows.results ?? [];
+};
+
+const insertReminderBookingFixture = async ({
+  organizationId,
+  storeId,
+  startAt,
+  customerEmail,
+}: {
+  organizationId: string;
+  storeId: string;
+  startAt: Date;
+  customerEmail: string;
+}) => {
+  const serviceId = crypto.randomUUID();
+  const slotId = crypto.randomUUID();
+  const bookingId = crypto.randomUUID();
+  const endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
+  const bookingOpenAt = new Date(startAt.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const bookingCloseAt = new Date(startAt.getTime() - 5 * 60 * 1000);
+
+  await d1
+    .prepare(
+      'INSERT INTO service (id, organization_id, store_id, name, kind, duration_minutes, capacity, booking_policy, requires_ticket, is_active, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      serviceId,
+      organizationId,
+      storeId,
+      `Reminder Fixture ${serviceId.slice(0, 8)}`,
+      'single',
+      60,
+      10,
+      'instant',
+      0,
+      1,
+      'Asia/Tokyo',
+    )
+    .run();
+  await d1
+    .prepare(
+      'INSERT INTO slot (id, organization_id, store_id, service_id, start_at, end_at, capacity, reserved_count, status, booking_open_at, booking_close_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      slotId,
+      organizationId,
+      storeId,
+      serviceId,
+      startAt.getTime(),
+      endAt.getTime(),
+      10,
+      1,
+      'open',
+      bookingOpenAt.getTime(),
+      bookingCloseAt.getTime(),
+    )
+    .run();
+  await d1
+    .prepare(
+      'INSERT INTO booking (id, organization_id, store_id, slot_id, service_id, source, participants_count, customer_name, customer_email, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      bookingId,
+      organizationId,
+      storeId,
+      slotId,
+      serviceId,
+      'public',
+      1,
+      'Reminder Customer',
+      customerEmail,
+      'confirmed',
+    )
+    .run();
+
+  return {
+    serviceId,
+    slotId,
+    bookingId,
+  };
 };
 
 const selectUserIdByEmail = async (email: string) => {
@@ -9506,6 +9619,332 @@ describe('バックエンドアプリ', () => {
     expect(forbiddenPatchResponse.status).toBe(403);
   });
 
+  it('店舗のリマインド設定を既定値で取得し更新する', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Reminder Settings Owner',
+      email: 'reminder-settings-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Reminder Settings Org',
+      slug: 'reminder-settings-org',
+    });
+    const storeId = await selectStoreIdBySlug(organizationId, 'reminder-settings-org');
+    expect(storeId).toBeTruthy();
+
+    const path =
+      '/api/v1/auth/orgs/reminder-settings-org/stores/reminder-settings-org/reminder-settings';
+    const defaultsResponse = await owner.request(path);
+    expect(defaultsResponse.status).toBe(200);
+    expect(await toJson(defaultsResponse)).toEqual({
+      enabled: true,
+      timingsMinutes: [1440],
+    });
+    expect(await selectReminderPolicyRows(organizationId, storeId as string)).toEqual([]);
+
+    const updateResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        enabled: false,
+        timingsMinutes: [180, 1440],
+      }),
+    });
+    expect(updateResponse.status).toBe(200);
+    expect(await toJson(updateResponse)).toEqual({
+      enabled: false,
+      timingsMinutes: [1440, 180],
+    });
+    expect(await selectReminderPolicyRows(organizationId, storeId as string)).toEqual([
+      expect.objectContaining({
+        enabled: 0,
+        minutesBefore: 1440,
+        serviceId: null,
+      }),
+      expect.objectContaining({
+        enabled: 0,
+        minutesBefore: 180,
+        serviceId: null,
+      }),
+    ]);
+
+    for (const timingsMinutes of [[], [180, 180], [60]]) {
+      const invalidResponse = await owner.request(path, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          enabled: true,
+          timingsMinutes,
+        }),
+      });
+      expect(invalidResponse.status).toBe(400);
+    }
+
+    const outsider = createAuthAgent(app);
+    await signUpUser({
+      agent: outsider,
+      name: 'Reminder Settings Outsider',
+      email: 'reminder-settings-outsider@example.com',
+    });
+
+    const forbiddenGetResponse = await outsider.request(path);
+    expect(forbiddenGetResponse.status).toBe(403);
+    const forbiddenPatchResponse = await outsider.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        enabled: true,
+        timingsMinutes: [1440],
+      }),
+    });
+    expect(forbiddenPatchResponse.status).toBe(403);
+  });
+
+  it('予約リマインド送信は店舗設定の3時間前だけを対象にする', async () => {
+    const authRuntimeWithEmail = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithEmail = createApp(authRuntimeWithEmail);
+
+    const resendRequests: Array<{ to: string[]; subject: string }> = [];
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url === 'https://api.resend.com/emails') {
+        const payloadText =
+          typeof init?.body === 'string' ? init.body : init?.body ? String(init.body) : '{}';
+        const payload = JSON.parse(payloadText) as { to?: unknown; subject?: unknown };
+        const to = Array.isArray(payload.to)
+          ? payload.to.filter((value): value is string => typeof value === 'string')
+          : [];
+        const subject = typeof payload.subject === 'string' ? payload.subject : '';
+        resendRequests.push({ to, subject });
+
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithEmail);
+      await signUpUser({
+        agent: owner,
+        name: 'Reminder Three Hour Owner',
+        email: 'reminder-three-hour-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Reminder Three Hour Org',
+        slug: 'reminder-three-hour-org',
+      });
+      const storeId = await selectStoreIdBySlug(organizationId, 'reminder-three-hour-org');
+      expect(storeId).toBeTruthy();
+
+      const updateResponse = await owner.request(
+        '/api/v1/auth/orgs/reminder-three-hour-org/stores/reminder-three-hour-org/reminder-settings',
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            enabled: true,
+            timingsMinutes: [180],
+          }),
+        },
+      );
+      expect(updateResponse.status).toBe(200);
+
+      const baseNow = new Date('2026-06-01T00:00:00.000Z');
+      const startAt = new Date(baseNow.getTime() + 4 * 60 * 60 * 1000);
+      const { bookingId } = await insertReminderBookingFixture({
+        organizationId,
+        storeId: storeId as string,
+        startAt,
+        customerEmail: 'three-hour-reminder@example.com',
+      });
+
+      await sendDueBookingReminders({
+        database: drizzle(d1),
+        env: authRuntimeWithEmail.env,
+        now: baseNow,
+      });
+      expect(resendRequests).toHaveLength(0);
+      expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([]);
+
+      const dueNow = new Date(startAt.getTime() - 150 * 60 * 1000);
+      await sendDueBookingReminders({
+        database: drizzle(d1),
+        env: authRuntimeWithEmail.env,
+        now: dueNow,
+      });
+      expect(resendRequests).toHaveLength(1);
+      expect(resendRequests[0]).toMatchObject({
+        to: ['three-hour-reminder@example.com'],
+        subject: '【予約通知】予約リマインド',
+      });
+      expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([
+        expect.objectContaining({
+          reminderPolicyId: expect.any(String),
+          dedupeKey: `booking-reminder:${bookingId}:180:three-hour-reminder@example.com`,
+          recipientEmail: 'three-hour-reminder@example.com',
+          status: 'sent',
+        }),
+      ]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('予約リマインド送信は無効設定を除外し同時 due では近い timing だけ送る', async () => {
+    const authRuntimeWithEmail = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithEmail = createApp(authRuntimeWithEmail);
+
+    const resendRequests: Array<{ to: string[]; subject: string }> = [];
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url === 'https://api.resend.com/emails') {
+        const payloadText =
+          typeof init?.body === 'string' ? init.body : init?.body ? String(init.body) : '{}';
+        const payload = JSON.parse(payloadText) as { to?: unknown; subject?: unknown };
+        const to = Array.isArray(payload.to)
+          ? payload.to.filter((value): value is string => typeof value === 'string')
+          : [];
+        const subject = typeof payload.subject === 'string' ? payload.subject : '';
+        resendRequests.push({ to, subject });
+
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithEmail);
+      await signUpUser({
+        agent: owner,
+        name: 'Reminder Disabled Owner',
+        email: 'reminder-disabled-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Reminder Disabled Org',
+        slug: 'reminder-disabled-org',
+      });
+      const storeId = await selectStoreIdBySlug(organizationId, 'reminder-disabled-org');
+      expect(storeId).toBeTruthy();
+
+      const settingsPath =
+        '/api/v1/auth/orgs/reminder-disabled-org/stores/reminder-disabled-org/reminder-settings';
+      const disableResponse = await owner.request(settingsPath, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          enabled: false,
+          timingsMinutes: [1440, 180],
+        }),
+      });
+      expect(disableResponse.status).toBe(200);
+
+      const baseNow = new Date('2026-06-02T00:00:00.000Z');
+      const disabledStartAt = new Date(baseNow.getTime() + 2 * 60 * 60 * 1000);
+      const disabledBooking = await insertReminderBookingFixture({
+        organizationId,
+        storeId: storeId as string,
+        startAt: disabledStartAt,
+        customerEmail: 'disabled-reminder@example.com',
+      });
+      await sendDueBookingReminders({
+        database: drizzle(d1),
+        env: authRuntimeWithEmail.env,
+        now: baseNow,
+      });
+      expect(resendRequests).toHaveLength(0);
+      expect(await selectReminderLogRowsByBooking(disabledBooking.bookingId)).toEqual([]);
+
+      const enableResponse = await owner.request(settingsPath, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          enabled: true,
+          timingsMinutes: [1440, 180],
+        }),
+      });
+      expect(enableResponse.status).toBe(200);
+
+      const simultaneousStartAt = new Date(baseNow.getTime() + 2 * 60 * 60 * 1000);
+      const simultaneousBooking = await insertReminderBookingFixture({
+        organizationId,
+        storeId: storeId as string,
+        startAt: simultaneousStartAt,
+        customerEmail: 'closest-reminder@example.com',
+      });
+      await sendDueBookingReminders({
+        database: drizzle(d1),
+        env: authRuntimeWithEmail.env,
+        now: baseNow,
+      });
+
+      expect(resendRequests).toHaveLength(2);
+      expect(await selectReminderLogRowsByBooking(simultaneousBooking.bookingId)).toEqual([
+        expect.objectContaining({
+          reminderPolicyId: expect.any(String),
+          dedupeKey: `booking-reminder:${simultaneousBooking.bookingId}:180:closest-reminder@example.com`,
+          recipientEmail: 'closest-reminder@example.com',
+          status: 'sent',
+        }),
+      ]);
+      expect(
+        (await selectReminderLogRowsByBooking(simultaneousBooking.bookingId)).some((row) =>
+          row.dedupeKey.includes(':1440:'),
+        ),
+      ).toBe(false);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('無料組織のプレミアム限定バックエンド操作を共通エンタイトルメントペイロードで拒否する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
@@ -15619,6 +16058,9 @@ describe('バックエンドアプリ', () => {
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/public-site']).toBeDefined();
     expect(
       body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/notification-settings'],
+    ).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/reminder-settings'],
     ).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/user']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}']).toBeDefined();

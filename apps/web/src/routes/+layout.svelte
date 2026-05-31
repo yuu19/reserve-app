@@ -51,6 +51,7 @@
 		CalendarDays,
 		ChevronDown,
 		ChevronRight,
+		Clock3,
 		Globe2,
 		LayoutDashboard,
 		LogOut,
@@ -130,6 +131,7 @@
 			| '/admin/services'
 			| '/admin/public-site'
 			| '/admin/notification-settings'
+			| '/admin/reminder-settings'
 			| '/admin/schedules/slots'
 			| '/admin/schedules/recurring'
 			| '/admin/participants'
@@ -174,6 +176,7 @@
 				{ href: '/admin/services', label: 'サービス一覧', icon: CalendarDays },
 				{ href: '/admin/public-site', label: '予約サイト管理', icon: Globe2 },
 				{ href: '/admin/notification-settings', label: '通知先設定', icon: BellRing },
+				{ href: '/admin/reminder-settings', label: 'リマインド設定', icon: Clock3 },
 				{ href: '/admin/schedules/slots', label: '単発予約枠', icon: CalendarDays },
 				{ href: '/admin/schedules/recurring', label: '定期一覧', icon: CalendarDays },
 				{ href: '/admin/participants', label: '参加者管理', icon: Users },
@@ -225,6 +228,7 @@
 				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageBookings;
 			case '/admin/services':
 			case '/admin/notification-settings':
+			case '/admin/reminder-settings':
 			case '/admin/schedules/slots':
 			case '/admin/schedules/recurring':
 				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageStore;
@@ -436,6 +440,9 @@
 			return '/admin/settings';
 		}
 		if (pathname.startsWith('/admin/notification-settings')) {
+			return '/admin/settings';
+		}
+		if (pathname.startsWith('/admin/reminder-settings')) {
 			return '/admin/settings';
 		}
 		if (pathname.startsWith('/admin/contracts')) {

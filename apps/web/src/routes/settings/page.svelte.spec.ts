@@ -173,5 +173,10 @@ describe('設定ページ', () => {
 		await expect
 			.element(publicSiteLink)
 			.toHaveAttribute('href', '/hoge/room-one/admin/public-site');
+		const reminderSettingsLink = page.getByRole('link', { name: 'リマインド設定へ移動' });
+		await expect.element(reminderSettingsLink).toBeInTheDocument();
+		await expect
+			.element(reminderSettingsLink)
+			.toHaveAttribute('href', '/hoge/room-one/admin/reminder-settings');
 	});
 });

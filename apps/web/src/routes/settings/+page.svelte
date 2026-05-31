@@ -57,6 +57,9 @@
 	const notificationSettingsPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/notification-settings') : null
 	);
+	const reminderSettingsPath = $derived(
+		scopedContext ? buildScopedPath(scopedContext, '/admin/reminder-settings') : null
+	);
 	const toScopedRoute = (targetPath: string): Pathname =>
 		preserveScopedRouteContext(targetPath, page.url.pathname) as Pathname;
 
@@ -345,6 +348,16 @@
 							disabled={!notificationSettingsPath}
 						>
 							通知先設定へ移動
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							href={reminderSettingsPath
+								? resolve(reminderSettingsPath as Pathname)
+								: undefined}
+							disabled={!reminderSettingsPath}
+						>
+							リマインド設定へ移動
 						</Button>
 					</div>
 				{/if}

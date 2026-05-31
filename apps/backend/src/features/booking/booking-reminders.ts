@@ -1,4 +1,4 @@
-import { and, eq, gt, lte } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lte } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import { DEFAULT_TIMEZONE, BOOKING_STATUS } from '../../domain/booking/constants.js';
 import * as dbSchema from '../../infra/db/schema.js';
@@ -6,6 +6,13 @@ import { sendBookingNotificationEmail } from '../../infra/email/resend.js';
 import { assertSupportedTimezone, formatDateTimeLabel } from '../../shared/date.js';
 
 const DEFAULT_REMINDER_MINUTES_BEFORE = 24 * 60;
+const SUPPORTED_REMINDER_MINUTES_BEFORE = [DEFAULT_REMINDER_MINUTES_BEFORE, 3 * 60] as const;
+
+type ReminderPolicyCandidate = {
+  id: string | null;
+  enabled: boolean;
+  minutesBefore: number;
+};
 
 const normalizeEmail = (value: string | null | undefined): string | null => {
   const trimmed = value?.trim().toLowerCase() ?? '';
@@ -17,6 +24,7 @@ const createReminderLog = async ({
   organizationId,
   storeId,
   bookingId,
+  reminderPolicyId,
   recipientEmail,
   scheduledFor,
   dedupeKey,
@@ -25,6 +33,7 @@ const createReminderLog = async ({
   organizationId: string;
   storeId: string;
   bookingId: string;
+  reminderPolicyId: string | null;
   recipientEmail: string;
   scheduledFor: Date;
   dedupeKey: string;
@@ -44,7 +53,7 @@ const createReminderLog = async ({
     organizationId,
     storeId,
     bookingId,
-    reminderPolicyId: null,
+    reminderPolicyId,
     channel: 'email',
     recipientEmail,
     status: 'pending',
@@ -52,6 +61,80 @@ const createReminderLog = async ({
     scheduledFor,
   });
   return id;
+};
+
+const getStoreReminderPolicies = async ({
+  database,
+  storeIds,
+}: {
+  database: AuthRuntimeDatabase;
+  storeIds: string[];
+}) => {
+  if (storeIds.length === 0) {
+    return new Map<string, ReminderPolicyCandidate[]>();
+  }
+
+  const rows = await database
+    .select({
+      id: dbSchema.reminderPolicy.id,
+      storeId: dbSchema.reminderPolicy.storeId,
+      enabled: dbSchema.reminderPolicy.enabled,
+      minutesBefore: dbSchema.reminderPolicy.minutesBefore,
+    })
+    .from(dbSchema.reminderPolicy)
+    .where(
+      and(
+        inArray(dbSchema.reminderPolicy.storeId, storeIds),
+        isNull(dbSchema.reminderPolicy.serviceId),
+      ),
+    );
+
+  const policiesByStore = new Map<string, ReminderPolicyCandidate[]>();
+  for (const row of rows) {
+    const policies = policiesByStore.get(row.storeId) ?? [];
+    policies.push({
+      id: row.id,
+      enabled: row.enabled,
+      minutesBefore: row.minutesBefore,
+    });
+    policiesByStore.set(row.storeId, policies);
+  }
+  return policiesByStore;
+};
+
+const resolveReminderPolicyCandidates = (
+  policies: ReminderPolicyCandidate[] | undefined,
+): ReminderPolicyCandidate[] => {
+  if (!policies || policies.length === 0) {
+    return [
+      {
+        id: null,
+        enabled: true,
+        minutesBefore: DEFAULT_REMINDER_MINUTES_BEFORE,
+      },
+    ];
+  }
+
+  return policies.filter((policy) => policy.enabled);
+};
+
+const pickDueReminderPolicy = ({
+  policies,
+  now,
+  slotStartAt,
+}: {
+  policies: ReminderPolicyCandidate[];
+  now: Date;
+  slotStartAt: Date;
+}): ReminderPolicyCandidate | null => {
+  const duePolicies = policies
+    .filter((policy) => policy.minutesBefore > 0)
+    .filter(
+      (policy) => slotStartAt.getTime() <= now.getTime() + policy.minutesBefore * 60 * 1000,
+    )
+    .sort((a, b) => a.minutesBefore - b.minutesBefore);
+
+  return duePolicies[0] ?? null;
 };
 
 const updateReminderLog = async ({
@@ -76,7 +159,7 @@ const updateReminderLog = async ({
 };
 
 /**
- * 予約開始 24 時間前を過ぎた confirmed 予約へ、一度だけ reminder を送ります。
+ * 店舗の reminder policy に従い、開始前の confirmed 予約へ reminder を一度だけ送ります。
  */
 export const sendDueBookingReminders = async ({
   database,
@@ -87,7 +170,9 @@ export const sendDueBookingReminders = async ({
   env: AuthRuntimeEnv;
   now?: Date;
 }) => {
-  const dueUntil = new Date(now.getTime() + DEFAULT_REMINDER_MINUTES_BEFORE * 60 * 1000);
+  const dueUntil = new Date(
+    now.getTime() + Math.max(...SUPPORTED_REMINDER_MINUTES_BEFORE) * 60 * 1000,
+  );
   const rows = await database
     .select({
       bookingId: dbSchema.booking.id,
@@ -117,6 +202,10 @@ export const sendDueBookingReminders = async ({
       ),
     )
     .limit(200);
+  const policiesByStore = await getStoreReminderPolicies({
+    database,
+    storeIds: Array.from(new Set(rows.map((row: { storeId: string }) => row.storeId))),
+  });
 
   for (const row of rows) {
     const recipientEmail = normalizeEmail(row.customerEmail ?? row.participantEmail);
@@ -124,14 +213,24 @@ export const sendDueBookingReminders = async ({
       continue;
     }
 
-    const dedupeKey = `booking-reminder:${row.bookingId}:${DEFAULT_REMINDER_MINUTES_BEFORE}:${recipientEmail}`;
+    const duePolicy = pickDueReminderPolicy({
+      policies: resolveReminderPolicyCandidates(policiesByStore.get(row.storeId)),
+      now,
+      slotStartAt: row.slotStartAt,
+    });
+    if (!duePolicy) {
+      continue;
+    }
+
+    const dedupeKey = `booking-reminder:${row.bookingId}:${duePolicy.minutesBefore}:${recipientEmail}`;
     const logId = await createReminderLog({
       database,
       organizationId: row.organizationId,
       storeId: row.storeId,
       bookingId: row.bookingId,
+      reminderPolicyId: duePolicy.id,
       recipientEmail,
-      scheduledFor: now,
+      scheduledFor: new Date(row.slotStartAt.getTime() - duePolicy.minutesBefore * 60 * 1000),
       dedupeKey,
     });
     if (!logId) {

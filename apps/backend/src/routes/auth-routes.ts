@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import { and, desc, eq, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   canManageParticipantsByRole,
   listOrganizationStoreContexts,
@@ -482,6 +482,29 @@ const notificationSettingsBodySchema = z.object({
   additionalEmails: z.array(notificationEmailInputSchema),
 });
 
+const REMINDER_SETTINGS_SUPPORTED_TIMINGS_MINUTES = [1440, 180] as const;
+const REMINDER_SETTINGS_DEFAULT_TIMINGS_MINUTES = [1440] as const;
+const reminderSettingsSupportedTimings = new Set<number>(
+  REMINDER_SETTINGS_SUPPORTED_TIMINGS_MINUTES,
+);
+
+const reminderSettingsTimingsSchema = z
+  .array(z.number().int())
+  .min(1)
+  .refine((values) => values.every((value) => reminderSettingsSupportedTimings.has(value)), {
+    message: 'Unsupported reminder timing.',
+  })
+  .refine((values) => new Set(values).size === values.length, {
+    message: 'Duplicate reminder timing.',
+  });
+
+const reminderSettingsSchema = z.object({
+  enabled: z.boolean(),
+  timingsMinutes: reminderSettingsTimingsSchema,
+});
+
+const reminderSettingsBodySchema = reminderSettingsSchema;
+
 const listOrganizationAccessTreeRoute = createRoute({
   method: 'get',
   path: '/orgs/access-tree',
@@ -722,6 +745,61 @@ const updateNotificationSettingsRoute = createRoute({
       content: {
         'application/json': {
           schema: notificationSettingsSchema,
+        },
+      },
+    },
+    400: messageResponse('Validation error'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or store not found'),
+  },
+});
+
+const getReminderSettingsRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/reminder-settings',
+  tags: ['Reminder Settings'],
+  summary: 'Get booking reminder settings for a store',
+  request: {
+    params: organizationStoreRouteParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Reminder settings',
+      content: {
+        'application/json': {
+          schema: reminderSettingsSchema,
+        },
+      },
+    },
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or store not found'),
+  },
+});
+
+const updateReminderSettingsRoute = createRoute({
+  method: 'patch',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/reminder-settings',
+  tags: ['Reminder Settings'],
+  summary: 'Update booking reminder settings for a store',
+  request: {
+    params: organizationStoreRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: reminderSettingsBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated reminder settings',
+      content: {
+        'application/json': {
+          schema: reminderSettingsSchema,
         },
       },
     },
@@ -2166,6 +2244,47 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     };
   };
 
+  const normalizeReminderTimings = (values: number[]): number[] => {
+    const uniqueValues = new Set(values);
+    return REMINDER_SETTINGS_SUPPORTED_TIMINGS_MINUTES.filter((value) => uniqueValues.has(value));
+  };
+
+  const serializeReminderSettings = async ({
+    context,
+  }: {
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
+  }) => {
+    const rows = await database
+      .select({
+        enabled: dbSchema.reminderPolicy.enabled,
+        minutesBefore: dbSchema.reminderPolicy.minutesBefore,
+      })
+      .from(dbSchema.reminderPolicy)
+      .where(
+        and(
+          eq(dbSchema.reminderPolicy.organizationId, context.organizationId),
+          eq(dbSchema.reminderPolicy.storeId, context.storeId),
+          isNull(dbSchema.reminderPolicy.serviceId),
+        ),
+      );
+
+    if (rows.length === 0) {
+      return {
+        enabled: true,
+        timingsMinutes: [...REMINDER_SETTINGS_DEFAULT_TIMINGS_MINUTES],
+      };
+    }
+
+    const timingsMinutes = normalizeReminderTimings(
+      rows.map((row: { minutesBefore: number }) => row.minutesBefore),
+    );
+    return {
+      enabled: rows.some((row: { enabled: boolean }) => row.enabled),
+      timingsMinutes:
+        timingsMinutes.length > 0 ? timingsMinutes : [...REMINDER_SETTINGS_DEFAULT_TIMINGS_MINUTES],
+    };
+  };
+
   const normalizePublicSiteText = (
     value: string | null | undefined,
     fallback: string | null,
@@ -2980,6 +3099,85 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         });
 
       return c.json(await serializeNotificationSettings({ context: storeContext }), 200);
+    })();
+  });
+
+  authRoutes.openapi(getReminderSettingsRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      return c.json(await serializeReminderSettings({ context: storeContext }), 200);
+    })();
+  });
+
+  authRoutes.openapi(updateReminderSettingsRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const now = new Date();
+      const timingsMinutes = normalizeReminderTimings(body.timingsMinutes);
+      await database
+        .delete(dbSchema.reminderPolicy)
+        .where(
+          and(
+            eq(dbSchema.reminderPolicy.organizationId, storeContext.organizationId),
+            eq(dbSchema.reminderPolicy.storeId, storeContext.storeId),
+            isNull(dbSchema.reminderPolicy.serviceId),
+          ),
+        );
+
+      await database.insert(dbSchema.reminderPolicy).values(
+        timingsMinutes.map((minutesBefore) => ({
+          id: crypto.randomUUID(),
+          organizationId: storeContext.organizationId,
+          storeId: storeContext.storeId,
+          serviceId: null,
+          enabled: body.enabled,
+          minutesBefore,
+          channel: 'email',
+          createdAt: now,
+          updatedAt: now,
+        })),
+      );
+
+      return c.json(await serializeReminderSettings({ context: storeContext }), 200);
     })();
   });
 

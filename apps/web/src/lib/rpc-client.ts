@@ -440,6 +440,12 @@ export type NotificationSettingsPayload = {
 	[key: string]: unknown;
 };
 
+export type ReminderSettingsPayload = {
+	enabled: boolean;
+	timingsMinutes: number[];
+	[key: string]: unknown;
+};
+
 export type PublicBookingPagePayload = {
 	id: string;
 	kind: 'event';
@@ -607,6 +613,11 @@ export type UpdateNotificationSettingsInput = {
 	notifyStoreManagers: boolean;
 	notifyStaff: boolean;
 	additionalEmails: string[];
+};
+
+export type UpdateReminderSettingsInput = {
+	enabled: boolean;
+	timingsMinutes: number[];
 };
 
 type CreateOrganizationInvitationInput = {
@@ -1447,6 +1458,13 @@ export const authRpc = {
 		authFetch(buildScopedAuthPath(context, '/notification-settings')),
 	updateNotificationSettings: (context: ScopedApiContext, json: UpdateNotificationSettingsInput) =>
 		authFetch(buildScopedAuthPath(context, '/notification-settings'), {
+			method: 'PATCH',
+			json
+		}),
+	getReminderSettings: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/reminder-settings')),
+	updateReminderSettings: (context: ScopedApiContext, json: UpdateReminderSettingsInput) =>
+		authFetch(buildScopedAuthPath(context, '/reminder-settings'), {
 			method: 'PATCH',
 			json
 		}),
