@@ -181,6 +181,42 @@ export const publicSiteSetting = sqliteTable(
   ],
 );
 
+export const publicSiteIntakeField = sqliteTable(
+  'public_site_intake_field',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    fieldKey: text('field_key').notNull(),
+    label: text('label').notNull(),
+    fieldType: text('field_type').notNull(),
+    required: integer('required', { mode: 'boolean' }).default(false).notNull(),
+    optionsJson: text('options_json'),
+    helpText: text('help_text'),
+    placeholder: text('placeholder'),
+    visibleOnPublic: integer('visible_on_public', { mode: 'boolean' }).default(true).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    index('public_site_intake_field_store_order_idx').on(
+      table.organizationId,
+      table.storeId,
+      table.sortOrder,
+    ),
+    uniqueIndex('public_site_intake_field_store_key_uidx').on(
+      table.organizationId,
+      table.storeId,
+      table.fieldKey,
+    ),
+  ],
+);
+
 export const storeMember = sqliteTable(
   'store_member',
   {

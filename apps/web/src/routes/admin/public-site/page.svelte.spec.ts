@@ -100,6 +100,9 @@ describe('公開サイト管理ページ', () => {
 		await expect
 			.element(page.getByRole('link', { name: '予約ページ一覧を開く' }))
 			.toHaveAttribute('href', '/hoge/room-one/events');
+		await expect
+			.element(page.getByRole('link', { name: 'カスタム入力へ移動' }))
+			.toHaveAttribute('href', '/hoge/room-one/admin/intake-fields');
 	});
 
 	it('非スコープ管理ルートでは店舗コンテキストを要求する', async () => {

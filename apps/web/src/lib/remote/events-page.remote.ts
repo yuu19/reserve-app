@@ -4,6 +4,7 @@ import type {
 	PublicEventDetailPayload,
 	PublicEventListItemPayload,
 	PublicEventsPagePayload,
+	PublicSiteIntakeFieldPayload,
 	PublicTicketTypePayload
 } from '$lib/rpc-client';
 import { z } from 'zod';
@@ -122,6 +123,21 @@ const isPublicTicketType = (value: unknown): value is PublicTicketTypePayload =>
 const asPublicTicketTypes = (value: unknown): PublicTicketTypePayload[] =>
 	Array.isArray(value) ? value.filter(isPublicTicketType) : [];
 
+const isPublicSiteIntakeField = (value: unknown): value is PublicSiteIntakeFieldPayload =>
+	isRecord(value) &&
+	typeof value.fieldId === 'string' &&
+	typeof value.label === 'string' &&
+	(value.fieldType === 'text' ||
+		value.fieldType === 'textarea' ||
+		value.fieldType === 'select' ||
+		value.fieldType === 'checkbox') &&
+	typeof value.required === 'boolean' &&
+	Array.isArray(value.options) &&
+	value.options.every((option) => typeof option === 'string');
+
+const asPublicSiteIntakeFields = (value: unknown): PublicSiteIntakeFieldPayload[] =>
+	Array.isArray(value) ? value.filter(isPublicSiteIntakeField) : [];
+
 const asPublicEventsPage = (value: unknown): PublicEventsPagePayload => {
 	if (Array.isArray(value)) {
 		return {
@@ -141,7 +157,8 @@ const asPublicEventDetail = (value: unknown): PublicEventDetailPayload | null =>
 	}
 	return {
 		...value,
-		ticketTypes: isRecord(value) ? asPublicTicketTypes(value.ticketTypes) : []
+		ticketTypes: isRecord(value) ? asPublicTicketTypes(value.ticketTypes) : [],
+		intakeFields: isRecord(value) ? asPublicSiteIntakeFields(value.intakeFields) : []
 	};
 };
 

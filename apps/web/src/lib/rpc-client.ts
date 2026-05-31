@@ -269,6 +269,14 @@ export type RecurringSchedulePayload = {
 	[key: string]: unknown;
 };
 
+export type BookingAnswerPayload = {
+	id?: string;
+	fieldId: string;
+	labelSnapshot: string;
+	value: unknown;
+	[key: string]: unknown;
+};
+
 export type BookingPayload = {
 	id: string;
 	organizationId: string;
@@ -299,6 +307,7 @@ export type BookingPayload = {
 	attendanceMarkedAt?: string | null;
 	attendanceMarkedByUserId?: string | null;
 	ticketPackId?: string | null;
+	answers?: BookingAnswerPayload[];
 	createdAt: string;
 	updatedAt: string;
 	[key: string]: unknown;
@@ -412,8 +421,23 @@ export type PublicEventsPagePayload = {
 	ticketTypes: PublicTicketTypePayload[];
 };
 
+export type PublicSiteIntakeFieldPayload = {
+	id?: string;
+	fieldId: string;
+	label: string;
+	fieldType: 'text' | 'textarea' | 'select' | 'checkbox';
+	required: boolean;
+	options: string[];
+	helpText?: string | null;
+	placeholder?: string | null;
+	visibleOnPublic?: boolean;
+	sortOrder?: number;
+	[key: string]: unknown;
+};
+
 export type PublicEventDetailPayload = PublicEventListItemPayload & {
 	ticketTypes: PublicTicketTypePayload[];
+	intakeFields: PublicSiteIntakeFieldPayload[];
 };
 
 export type PublicSiteProfilePayload = {
@@ -444,9 +468,24 @@ export type NotificationSettingsPayload = {
 	[key: string]: unknown;
 };
 
+export type ReminderServiceOverridePayload = {
+	serviceId: string;
+	serviceName: string;
+	enabled: boolean;
+	timingsMinutes: number[];
+	inheritsStoreDefault: boolean;
+	[key: string]: unknown;
+};
+
 export type ReminderSettingsPayload = {
 	enabled: boolean;
 	timingsMinutes: number[];
+	serviceOverrides: ReminderServiceOverridePayload[];
+	[key: string]: unknown;
+};
+
+export type PublicSiteIntakeFieldsPayload = {
+	fields: PublicSiteIntakeFieldPayload[];
 	[key: string]: unknown;
 };
 
@@ -611,6 +650,19 @@ export type UpdatePublicSiteSettingsInput = {
 	noindex?: boolean;
 };
 
+export type UpdatePublicSiteIntakeFieldsInput = {
+	fields: Array<{
+		fieldId: string;
+		label: string;
+		fieldType: 'text' | 'textarea' | 'select' | 'checkbox';
+		required: boolean;
+		options?: string[];
+		helpText?: string | null;
+		placeholder?: string | null;
+		visibleOnPublic: boolean;
+	}>;
+};
+
 export type UpdateNotificationSettingsInput = {
 	notifyOwner: boolean;
 	notifyAdmins: boolean;
@@ -622,6 +674,12 @@ export type UpdateNotificationSettingsInput = {
 export type UpdateReminderSettingsInput = {
 	enabled: boolean;
 	timingsMinutes: number[];
+	serviceOverrides?: Array<{
+		serviceId: string;
+		enabled: boolean;
+		timingsMinutes: number[];
+		inheritsStoreDefault: boolean;
+	}>;
 };
 
 type CreateOrganizationInvitationInput = {
@@ -1476,6 +1534,16 @@ export const authRpc = {
 		authFetch(buildScopedAuthPath(context, '/public-site')),
 	updatePublicSiteSettings: (context: ScopedApiContext, json: UpdatePublicSiteSettingsInput) =>
 		authFetch(buildScopedAuthPath(context, '/public-site'), {
+			method: 'PATCH',
+			json
+		}),
+	getPublicSiteIntakeFields: (context: ScopedApiContext) =>
+		authFetch(buildScopedAuthPath(context, '/intake-fields')),
+	updatePublicSiteIntakeFields: (
+		context: ScopedApiContext,
+		json: UpdatePublicSiteIntakeFieldsInput
+	) =>
+		authFetch(buildScopedAuthPath(context, '/intake-fields'), {
 			method: 'PATCH',
 			json
 		}),

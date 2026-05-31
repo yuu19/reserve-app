@@ -99,7 +99,8 @@ describe('イベント詳細ページ', () => {
 					serviceNames: ['別サービス'],
 					href: '/org-one/room-one/tickets/ticket-other'
 				}
-			]
+			],
+			intakeFields: []
 		});
 		mocks.loadSession.mockResolvedValue({
 			session: null,
@@ -152,6 +153,94 @@ describe('イベント詳細ページ', () => {
 			);
 		});
 		await expect.element(page.getByText('bk_public_1')).toBeInTheDocument();
+	});
+
+	it('公開予約フォームのカスタム入力回答を送信する', async () => {
+		pageState.params = { orgSlug: 'org-one', storeSlug: 'room-one', slotId: 'slot-1' };
+		mocks.loadPublicEventDetail.mockResolvedValueOnce({
+			organizationId: 'org-1',
+			organizationSlug: 'org-one',
+			storeId: 'room-1',
+			storeSlug: 'room-one',
+			serviceId: 'service-1',
+			serviceName: '公開ヨガ',
+			serviceDescription: '公開イベント説明',
+			serviceImageUrl: null,
+			serviceKind: 'single',
+			bookingPolicy: 'instant',
+			requiresTicket: false,
+			slotId: 'slot-1',
+			startAt: '2026-06-01T01:00:00.000Z',
+			endAt: '2026-06-01T02:00:00.000Z',
+			slotStatus: 'open',
+			capacity: 8,
+			reservedCount: 1,
+			remainingCount: 7,
+			bookingOpenAt: '2026-05-01T00:00:00.000Z',
+			bookingCloseAt: '2026-06-01T00:00:00.000Z',
+			isBookable: true,
+			staffLabel: null,
+			locationLabel: '第1スタジオ',
+			ticketTypes: [],
+			intakeFields: [
+				{
+					fieldId: 'experience',
+					label: '経験年数',
+					fieldType: 'select',
+					required: true,
+					options: ['未経験', '1年以上'],
+					helpText: null,
+					placeholder: '選択してください'
+				},
+				{
+					fieldId: 'request',
+					label: '希望内容',
+					fieldType: 'textarea',
+					required: false,
+					options: [],
+					helpText: null,
+					placeholder: null
+				}
+			]
+		});
+		mocks.createGuestPublicBooking.mockResolvedValue({
+			ok: true,
+			message: '予約を受け付けました。',
+			booking: {
+				bookingId: 'booking-1',
+				bookingPublicId: 'bk_public_1',
+				status: 'confirmed'
+			}
+		});
+
+		render(EventDetailPage);
+
+		await page.getByLabelText('氏名').fill('Public Guest');
+		await page.getByLabelText('メールアドレス').fill('guest@example.com');
+		await page.getByLabelText('人数').fill('1');
+		await page.getByLabelText('経験年数 *').selectOptions('1年以上');
+		await page.getByLabelText('希望内容').fill('初回なのでゆっくり進めたい');
+		await page.getByRole('button', { name: '予約する' }).click();
+
+		await vi.waitFor(() => {
+			expect(mocks.createGuestPublicBooking).toHaveBeenCalledWith(
+				{ orgSlug: 'org-one', storeSlug: 'room-one' },
+				expect.objectContaining({
+					answers: [
+						{
+							fieldId: 'experience',
+							labelSnapshot: '経験年数',
+							value: '1年以上'
+						},
+						{
+							fieldId: 'request',
+							labelSnapshot: '希望内容',
+							value: '初回なのでゆっくり進めたい'
+						}
+					]
+				})
+			);
+		});
 	});
 
 	it('現在のイベントサービスで利用可能な回数券種別だけを表示する', async () => {
@@ -218,7 +307,8 @@ describe('イベント詳細ページ', () => {
 					serviceNames: ['別サービス'],
 					href: '/org-one/room-one/tickets/ticket-other'
 				}
-			]
+			],
+			intakeFields: []
 		});
 		render(EventDetailPage);
 

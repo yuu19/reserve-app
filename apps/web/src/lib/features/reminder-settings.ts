@@ -12,10 +12,29 @@ const isRecord = (value: unknown): value is JsonRecord =>
 	typeof value === 'object' && value !== null;
 
 const isReminderSettingsPayload = (value: unknown): value is ReminderSettingsPayload => {
-	if (!isRecord(value) || typeof value.enabled !== 'boolean' || !Array.isArray(value.timingsMinutes)) {
+	if (
+		!isRecord(value) ||
+		typeof value.enabled !== 'boolean' ||
+		!Array.isArray(value.timingsMinutes)
+	) {
 		return false;
 	}
-	return value.timingsMinutes.every((entry) => typeof entry === 'number');
+	if (!value.timingsMinutes.every((entry) => typeof entry === 'number')) {
+		return false;
+	}
+	if (!Array.isArray(value.serviceOverrides)) {
+		return false;
+	}
+	return value.serviceOverrides.every(
+		(entry) =>
+			isRecord(entry) &&
+			typeof entry.serviceId === 'string' &&
+			typeof entry.serviceName === 'string' &&
+			typeof entry.enabled === 'boolean' &&
+			typeof entry.inheritsStoreDefault === 'boolean' &&
+			Array.isArray(entry.timingsMinutes) &&
+			entry.timingsMinutes.every((timing) => typeof timing === 'number')
+	);
 };
 
 export const loadReminderSettings = async (

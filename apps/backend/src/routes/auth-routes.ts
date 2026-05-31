@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import { and, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   canManageParticipantsByRole,
   listOrganizationStoreContexts,
@@ -41,6 +41,25 @@ type CreateAuthRoutesOptions = {
   organizationLogoService?: OrganizationLogoService | null;
   serviceImageUploadService?: ServiceImageUploadService | null;
 };
+
+type PublicSiteIntakeFieldType = 'text' | 'textarea' | 'select' | 'checkbox';
+
+type PublicSiteIntakeFieldRow = {
+  id: string;
+  fieldKey: string;
+  label: string;
+  fieldType: string;
+  required: boolean;
+  optionsJson: string | null;
+  helpText: string | null;
+  placeholder: string | null;
+  visibleOnPublic: boolean;
+  sortOrder: number;
+  createdAt: Date;
+};
+
+const normalizePublicSiteIntakeFieldType = (value: string): PublicSiteIntakeFieldType =>
+  value === 'textarea' || value === 'select' || value === 'checkbox' ? value : 'text';
 
 const LOGO_KEY_PATTERN = /^[a-zA-Z0-9._-]+$/;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -456,6 +475,78 @@ const publicSiteSettingBodySchema = z.object({
   noindex: z.boolean().optional(),
 });
 
+const publicSiteIntakeFieldTypeSchema = z.enum(['text', 'textarea', 'select', 'checkbox']);
+const publicSiteIntakeFieldKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z0-9][a-z0-9_-]*$/, {
+    message: 'Field id must start with a lowercase letter or number and use lowercase letters, numbers, hyphens, or underscores.',
+  });
+const publicSiteIntakeOptionSchema = z.string().trim().min(1).max(80);
+
+const publicSiteIntakeFieldSchema = z.object({
+  id: z.string().min(1),
+  fieldId: publicSiteIntakeFieldKeySchema,
+  label: z.string().min(1).max(120),
+  fieldType: publicSiteIntakeFieldTypeSchema,
+  required: z.boolean(),
+  options: z.array(publicSiteIntakeOptionSchema),
+  helpText: z.string().nullable(),
+  placeholder: z.string().nullable(),
+  visibleOnPublic: z.boolean(),
+  sortOrder: z.number().int().min(0),
+});
+
+const publicSiteIntakeFieldsSchema = z.object({
+  fields: z.array(publicSiteIntakeFieldSchema),
+});
+
+const publicSiteIntakeFieldBodySchema = z
+  .object({
+    fieldId: publicSiteIntakeFieldKeySchema,
+    label: z.string().trim().min(1).max(120),
+    fieldType: publicSiteIntakeFieldTypeSchema,
+    required: z.boolean().default(false),
+    options: z.array(publicSiteIntakeOptionSchema).max(20).optional().default([]),
+    helpText: z.string().trim().max(500).nullable().optional(),
+    placeholder: z.string().trim().max(200).nullable().optional(),
+    visibleOnPublic: z.boolean().default(true),
+  })
+  .superRefine((value, ctx) => {
+    const normalizedOptions = value.options.map((option) => option.trim()).filter(Boolean);
+    if (value.fieldType === 'select' && normalizedOptions.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['options'],
+        message: 'Select field requires at least one option.',
+      });
+    }
+    if (new Set(normalizedOptions).size !== normalizedOptions.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['options'],
+        message: 'Duplicate intake field option.',
+      });
+    }
+  });
+
+const publicSiteIntakeFieldsBodySchema = z
+  .object({
+    fields: z.array(publicSiteIntakeFieldBodySchema).max(20),
+  })
+  .superRefine((value, ctx) => {
+    const fieldIds = value.fields.map((field) => field.fieldId.trim());
+    if (new Set(fieldIds).size !== fieldIds.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['fields'],
+        message: 'Duplicate intake field id.',
+      });
+    }
+  });
+
 const emailAddressSchema = z.email();
 const notificationEmailInputSchema = z
   .string()
@@ -498,12 +589,46 @@ const reminderSettingsTimingsSchema = z
     message: 'Duplicate reminder timing.',
   });
 
+const reminderServiceOverrideSchema = z.object({
+  serviceId: z.string().min(1),
+  serviceName: z.string().min(1),
+  enabled: z.boolean(),
+  timingsMinutes: reminderSettingsTimingsSchema,
+  inheritsStoreDefault: z.boolean(),
+});
+
 const reminderSettingsSchema = z.object({
   enabled: z.boolean(),
   timingsMinutes: reminderSettingsTimingsSchema,
+  serviceOverrides: z.array(reminderServiceOverrideSchema),
 });
 
-const reminderSettingsBodySchema = reminderSettingsSchema;
+const reminderServiceOverrideBodySchema = z.object({
+  serviceId: z.string().min(1),
+  enabled: z.boolean(),
+  timingsMinutes: reminderSettingsTimingsSchema,
+  inheritsStoreDefault: z.boolean(),
+});
+
+const reminderSettingsBodySchema = z
+  .object({
+    enabled: z.boolean(),
+    timingsMinutes: reminderSettingsTimingsSchema,
+    serviceOverrides: z.array(reminderServiceOverrideBodySchema).max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.serviceOverrides) {
+      return;
+    }
+    const serviceIds = value.serviceOverrides.map((override) => override.serviceId);
+    if (new Set(serviceIds).size !== serviceIds.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['serviceOverrides'],
+        message: 'Duplicate service reminder override.',
+      });
+    }
+  });
 
 const listOrganizationAccessTreeRoute = createRoute({
   method: 'get',
@@ -697,6 +822,61 @@ const updatePublicSiteSettingRoute = createRoute({
     404: {
       description: 'Organization or store not found',
     },
+  },
+});
+
+const getPublicSiteIntakeFieldsRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/intake-fields',
+  tags: ['Public Site'],
+  summary: 'Get public booking custom input fields for a store',
+  request: {
+    params: organizationStoreRouteParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Public booking custom input fields',
+      content: {
+        'application/json': {
+          schema: publicSiteIntakeFieldsSchema,
+        },
+      },
+    },
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or store not found'),
+  },
+});
+
+const updatePublicSiteIntakeFieldsRoute = createRoute({
+  method: 'patch',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/intake-fields',
+  tags: ['Public Site'],
+  summary: 'Update public booking custom input fields for a store',
+  request: {
+    params: organizationStoreRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: publicSiteIntakeFieldsBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated public booking custom input fields',
+      content: {
+        'application/json': {
+          schema: publicSiteIntakeFieldsSchema,
+        },
+      },
+    },
+    400: messageResponse('Validation error'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or store not found'),
   },
 });
 
@@ -2184,6 +2364,84 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     };
   };
 
+  const normalizePublicSiteIntakeOptions = (values: string[]): string[] => {
+    const options: string[] = [];
+    const seenOptions = new Set<string>();
+    for (const value of values) {
+      const option = value.trim();
+      if (!option || seenOptions.has(option)) {
+        continue;
+      }
+      seenOptions.add(option);
+      options.push(option);
+    }
+    return options;
+  };
+
+  const parsePublicSiteIntakeOptionsJson = (value: string | null): string[] => {
+    if (!value) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return normalizePublicSiteIntakeOptions(
+        parsed.filter((entry): entry is string => typeof entry === 'string'),
+      );
+    } catch {
+      return [];
+    }
+  };
+
+  const serializePublicSiteIntakeFields = async ({
+    context,
+  }: {
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
+  }) => {
+    const rows = (await database
+      .select({
+        id: dbSchema.publicSiteIntakeField.id,
+        fieldKey: dbSchema.publicSiteIntakeField.fieldKey,
+        label: dbSchema.publicSiteIntakeField.label,
+        fieldType: dbSchema.publicSiteIntakeField.fieldType,
+        required: dbSchema.publicSiteIntakeField.required,
+        optionsJson: dbSchema.publicSiteIntakeField.optionsJson,
+        helpText: dbSchema.publicSiteIntakeField.helpText,
+        placeholder: dbSchema.publicSiteIntakeField.placeholder,
+        visibleOnPublic: dbSchema.publicSiteIntakeField.visibleOnPublic,
+        sortOrder: dbSchema.publicSiteIntakeField.sortOrder,
+        createdAt: dbSchema.publicSiteIntakeField.createdAt,
+      })
+      .from(dbSchema.publicSiteIntakeField)
+      .where(
+        and(
+          eq(dbSchema.publicSiteIntakeField.organizationId, context.organizationId),
+          eq(dbSchema.publicSiteIntakeField.storeId, context.storeId),
+        ),
+      )
+      .orderBy(
+        asc(dbSchema.publicSiteIntakeField.sortOrder),
+        asc(dbSchema.publicSiteIntakeField.createdAt),
+      )) as PublicSiteIntakeFieldRow[];
+
+    return {
+      fields: rows.map((row) => ({
+        id: row.id,
+        fieldId: row.fieldKey,
+        label: row.label,
+        fieldType: normalizePublicSiteIntakeFieldType(row.fieldType),
+        required: row.required,
+        options: parsePublicSiteIntakeOptionsJson(row.optionsJson),
+        helpText: row.helpText ?? null,
+        placeholder: row.placeholder ?? null,
+        visibleOnPublic: row.visibleOnPublic,
+        sortOrder: row.sortOrder,
+      })),
+    };
+  };
+
   const normalizeNotificationEmails = (values: string[]): string[] => {
     const emails = new Set<string>();
     for (const value of values) {
@@ -2249,25 +2507,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     return REMINDER_SETTINGS_SUPPORTED_TIMINGS_MINUTES.filter((value) => uniqueValues.has(value));
   };
 
-  const serializeReminderSettings = async ({
-    context,
-  }: {
-    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
-  }) => {
-    const rows = await database
-      .select({
-        enabled: dbSchema.reminderPolicy.enabled,
-        minutesBefore: dbSchema.reminderPolicy.minutesBefore,
-      })
-      .from(dbSchema.reminderPolicy)
-      .where(
-        and(
-          eq(dbSchema.reminderPolicy.organizationId, context.organizationId),
-          eq(dbSchema.reminderPolicy.storeId, context.storeId),
-          isNull(dbSchema.reminderPolicy.serviceId),
-        ),
-      );
-
+  const resolveReminderSettingsFromPolicies = (
+    rows: Array<{ enabled: boolean; minutesBefore: number }>,
+  ) => {
     if (rows.length === 0) {
       return {
         enabled: true,
@@ -2275,13 +2517,91 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       };
     }
 
-    const timingsMinutes = normalizeReminderTimings(
-      rows.map((row: { minutesBefore: number }) => row.minutesBefore),
-    );
+    const timingsMinutes = normalizeReminderTimings(rows.map((row) => row.minutesBefore));
     return {
-      enabled: rows.some((row: { enabled: boolean }) => row.enabled),
+      enabled: rows.some((row) => row.enabled),
       timingsMinutes:
         timingsMinutes.length > 0 ? timingsMinutes : [...REMINDER_SETTINGS_DEFAULT_TIMINGS_MINUTES],
+    };
+  };
+
+  const serializeReminderSettings = async ({
+    context,
+  }: {
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
+  }) => {
+    const [policyRows, serviceRows] = (await Promise.all([
+      database
+        .select({
+          serviceId: dbSchema.reminderPolicy.serviceId,
+          enabled: dbSchema.reminderPolicy.enabled,
+          minutesBefore: dbSchema.reminderPolicy.minutesBefore,
+        })
+        .from(dbSchema.reminderPolicy)
+        .where(
+          and(
+            eq(dbSchema.reminderPolicy.organizationId, context.organizationId),
+            eq(dbSchema.reminderPolicy.storeId, context.storeId),
+          ),
+        ),
+      database
+        .select({
+          id: dbSchema.service.id,
+          name: dbSchema.service.name,
+        })
+        .from(dbSchema.service)
+        .where(
+          and(
+            eq(dbSchema.service.organizationId, context.organizationId),
+            eq(dbSchema.service.storeId, context.storeId),
+            eq(dbSchema.service.isActive, true),
+          ),
+        )
+        .orderBy(asc(dbSchema.service.name)),
+    ])) as [
+      Array<{ serviceId: string | null; enabled: boolean; minutesBefore: number }>,
+      Array<{ id: string; name: string }>,
+    ];
+
+    const storePolicyRows = policyRows.filter((row) => row.serviceId === null);
+    const storeSettings = resolveReminderSettingsFromPolicies(storePolicyRows);
+    const servicePoliciesByServiceId = new Map<
+      string,
+      Array<{ enabled: boolean; minutesBefore: number }>
+    >();
+    for (const row of policyRows) {
+      if (!row.serviceId) {
+        continue;
+      }
+      const servicePolicies = servicePoliciesByServiceId.get(row.serviceId) ?? [];
+      servicePolicies.push({
+        enabled: row.enabled,
+        minutesBefore: row.minutesBefore,
+      });
+      servicePoliciesByServiceId.set(row.serviceId, servicePolicies);
+    }
+
+    return {
+      ...storeSettings,
+      serviceOverrides: serviceRows.map((serviceRow) => {
+        const servicePolicyRows = servicePoliciesByServiceId.get(serviceRow.id);
+        if (!servicePolicyRows) {
+          return {
+            serviceId: serviceRow.id,
+            serviceName: serviceRow.name,
+            enabled: storeSettings.enabled,
+            timingsMinutes: [...storeSettings.timingsMinutes],
+            inheritsStoreDefault: true,
+          };
+        }
+
+        return {
+          serviceId: serviceRow.id,
+          serviceName: serviceRow.name,
+          ...resolveReminderSettingsFromPolicies(servicePolicyRows),
+          inheritsStoreDefault: false,
+        };
+      }),
     };
   };
 
@@ -3018,6 +3338,98 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     })();
   });
 
+  authRoutes.openapi(getPublicSiteIntakeFieldsRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      return c.json(await serializePublicSiteIntakeFields({ context: storeContext }), 200);
+    })();
+  });
+
+  authRoutes.openapi(updatePublicSiteIntakeFieldsRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const now = new Date();
+      await database
+        .delete(dbSchema.publicSiteIntakeField)
+        .where(
+          and(
+            eq(dbSchema.publicSiteIntakeField.organizationId, storeContext.organizationId),
+            eq(dbSchema.publicSiteIntakeField.storeId, storeContext.storeId),
+          ),
+        );
+
+      if (body.fields.length > 0) {
+        await database.insert(dbSchema.publicSiteIntakeField).values(
+          body.fields.map((field, index) => {
+            const fieldType = field.fieldType;
+            const options =
+              fieldType === 'select' ? normalizePublicSiteIntakeOptions(field.options) : [];
+            const helpText = normalizePublicSiteText(field.helpText, null);
+            const placeholder =
+              fieldType === 'checkbox' ? null : normalizePublicSiteText(field.placeholder, null);
+            return {
+              id: crypto.randomUUID(),
+              organizationId: storeContext.organizationId,
+              storeId: storeContext.storeId,
+              fieldKey: field.fieldId.trim(),
+              label: field.label.trim(),
+              fieldType,
+              required: field.required,
+              optionsJson: options.length > 0 ? JSON.stringify(options) : null,
+              helpText,
+              placeholder,
+              visibleOnPublic: field.visibleOnPublic,
+              sortOrder: index,
+              createdAt: now,
+              updatedAt: now,
+            };
+          }),
+        );
+      }
+
+      return c.json(await serializePublicSiteIntakeFields({ context: storeContext }), 200);
+    })();
+  });
+
   authRoutes.openapi(getNotificationSettingsRoute, (c) => {
     return (async () => {
       const { orgSlug, storeSlug } = c.req.valid('param');
@@ -3153,6 +3565,26 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
       const now = new Date();
       const timingsMinutes = normalizeReminderTimings(body.timingsMinutes);
+      const serviceOverrideInputs = body.serviceOverrides ?? null;
+      if (serviceOverrideInputs) {
+        const serviceIds = serviceOverrideInputs.map((override) => override.serviceId);
+        if (serviceIds.length > 0) {
+          const serviceRows = (await database
+            .select({ id: dbSchema.service.id })
+            .from(dbSchema.service)
+            .where(
+              and(
+                eq(dbSchema.service.organizationId, storeContext.organizationId),
+                eq(dbSchema.service.storeId, storeContext.storeId),
+                inArray(dbSchema.service.id, serviceIds),
+              ),
+            )) as Array<{ id: string }>;
+          if (new Set(serviceRows.map((row) => row.id)).size !== new Set(serviceIds).size) {
+            return c.json({ message: 'Reminder service override contains unknown service.' }, 400);
+          }
+        }
+      }
+
       await database
         .delete(dbSchema.reminderPolicy)
         .where(
@@ -3176,6 +3608,37 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           updatedAt: now,
         })),
       );
+
+      if (serviceOverrideInputs) {
+        await database
+          .delete(dbSchema.reminderPolicy)
+          .where(
+            and(
+              eq(dbSchema.reminderPolicy.organizationId, storeContext.organizationId),
+              eq(dbSchema.reminderPolicy.storeId, storeContext.storeId),
+              isNotNull(dbSchema.reminderPolicy.serviceId),
+            ),
+          );
+
+        const servicePolicyRows = serviceOverrideInputs
+          .filter((override) => !override.inheritsStoreDefault)
+          .flatMap((override) =>
+            normalizeReminderTimings(override.timingsMinutes).map((minutesBefore) => ({
+              id: crypto.randomUUID(),
+              organizationId: storeContext.organizationId,
+              storeId: storeContext.storeId,
+              serviceId: override.serviceId,
+              enabled: override.enabled,
+              minutesBefore,
+              channel: 'email',
+              createdAt: now,
+              updatedAt: now,
+            })),
+          );
+        if (servicePolicyRows.length > 0) {
+          await database.insert(dbSchema.reminderPolicy).values(servicePolicyRows);
+        }
+      }
 
       return c.json(await serializeReminderSettings({ context: storeContext }), 200);
     })();

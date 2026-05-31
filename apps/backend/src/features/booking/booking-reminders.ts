@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, lte } from 'drizzle-orm';
+import { and, eq, gt, inArray, lte } from 'drizzle-orm';
 import type { AuthRuntimeDatabase, AuthRuntimeEnv } from '../../auth-runtime.js';
 import { DEFAULT_TIMEZONE, BOOKING_STATUS } from '../../domain/booking/constants.js';
 import * as dbSchema from '../../infra/db/schema.js';
@@ -71,41 +71,54 @@ const getStoreReminderPolicies = async ({
   storeIds: string[];
 }) => {
   if (storeIds.length === 0) {
-    return new Map<string, ReminderPolicyCandidate[]>();
+    return {
+      storePoliciesByStore: new Map<string, ReminderPolicyCandidate[]>(),
+      servicePoliciesByStore: new Map<string, Map<string, ReminderPolicyCandidate[]>>(),
+    };
   }
 
   const rows = await database
     .select({
       id: dbSchema.reminderPolicy.id,
       storeId: dbSchema.reminderPolicy.storeId,
+      serviceId: dbSchema.reminderPolicy.serviceId,
       enabled: dbSchema.reminderPolicy.enabled,
       minutesBefore: dbSchema.reminderPolicy.minutesBefore,
     })
     .from(dbSchema.reminderPolicy)
-    .where(
-      and(
-        inArray(dbSchema.reminderPolicy.storeId, storeIds),
-        isNull(dbSchema.reminderPolicy.serviceId),
-      ),
-    );
+    .where(inArray(dbSchema.reminderPolicy.storeId, storeIds));
 
-  const policiesByStore = new Map<string, ReminderPolicyCandidate[]>();
+  const storePoliciesByStore = new Map<string, ReminderPolicyCandidate[]>();
+  const servicePoliciesByStore = new Map<string, Map<string, ReminderPolicyCandidate[]>>();
   for (const row of rows) {
-    const policies = policiesByStore.get(row.storeId) ?? [];
-    policies.push({
+    const policy = {
       id: row.id,
       enabled: row.enabled,
       minutesBefore: row.minutesBefore,
-    });
-    policiesByStore.set(row.storeId, policies);
+    };
+    if (row.serviceId) {
+      const servicePolicies = servicePoliciesByStore.get(row.storeId) ?? new Map();
+      const policies = servicePolicies.get(row.serviceId) ?? [];
+      policies.push(policy);
+      servicePolicies.set(row.serviceId, policies);
+      servicePoliciesByStore.set(row.storeId, servicePolicies);
+      continue;
+    }
+
+    const policies = storePoliciesByStore.get(row.storeId) ?? [];
+    policies.push(policy);
+    storePoliciesByStore.set(row.storeId, policies);
   }
-  return policiesByStore;
+  return {
+    storePoliciesByStore,
+    servicePoliciesByStore,
+  };
 };
 
 const resolveReminderPolicyCandidates = (
   policies: ReminderPolicyCandidate[] | undefined,
 ): ReminderPolicyCandidate[] => {
-  if (!policies || policies.length === 0) {
+  if (!policies) {
     return [
       {
         id: null,
@@ -129,9 +142,7 @@ const pickDueReminderPolicy = ({
 }): ReminderPolicyCandidate | null => {
   const duePolicies = policies
     .filter((policy) => policy.minutesBefore > 0)
-    .filter(
-      (policy) => slotStartAt.getTime() <= now.getTime() + policy.minutesBefore * 60 * 1000,
-    )
+    .filter((policy) => slotStartAt.getTime() <= now.getTime() + policy.minutesBefore * 60 * 1000)
     .sort((a, b) => a.minutesBefore - b.minutesBefore);
 
   return duePolicies[0] ?? null;
@@ -178,6 +189,7 @@ export const sendDueBookingReminders = async ({
       bookingId: dbSchema.booking.id,
       organizationId: dbSchema.booking.organizationId,
       storeId: dbSchema.booking.storeId,
+      serviceId: dbSchema.booking.serviceId,
       organizationName: dbSchema.organization.name,
       participantEmail: dbSchema.participant.email,
       participantName: dbSchema.participant.name,
@@ -214,7 +226,10 @@ export const sendDueBookingReminders = async ({
     }
 
     const duePolicy = pickDueReminderPolicy({
-      policies: resolveReminderPolicyCandidates(policiesByStore.get(row.storeId)),
+      policies: resolveReminderPolicyCandidates(
+        policiesByStore.servicePoliciesByStore.get(row.storeId)?.get(row.serviceId) ??
+          policiesByStore.storePoliciesByStore.get(row.storeId),
+      ),
       now,
       slotStartAt: row.slotStartAt,
     });

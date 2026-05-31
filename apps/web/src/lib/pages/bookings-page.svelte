@@ -1059,6 +1059,33 @@
 		const phone = row.booking.customerPhone?.trim() || '';
 		return [email, phone].filter((value) => value.length > 0).join(' / ') || '-';
 	};
+	const formatBookingAnswerValue = (value: unknown): string => {
+		if (typeof value === 'string') {
+			return value.trim();
+		}
+		if (typeof value === 'boolean') {
+			return value ? 'はい' : 'いいえ';
+		}
+		if (value === null || value === undefined) {
+			return '';
+		}
+		if (typeof value === 'number') {
+			return String(value);
+		}
+		try {
+			return JSON.stringify(value);
+		} catch {
+			return String(value);
+		}
+	};
+	const getBookingAnswersLabel = (booking: BookingPayload): string =>
+		(booking.answers ?? [])
+			.map((answer) => {
+				const value = formatBookingAnswerValue(answer.value);
+				return value ? `${answer.labelSnapshot}: ${value}` : '';
+			})
+			.filter(Boolean)
+			.join(' / ');
 	const getBookingSourceLabel = (booking: BookingPayload): string =>
 		bookingSourceLabelMap[booking.source ?? 'participant'] ?? booking.source ?? '-';
 	const getBookingAttendanceStatus = (booking: BookingPayload): BookingAttendanceDisplayStatus => {
@@ -1075,21 +1102,25 @@
 		row.booking.customerEmail?.trim() || row.participant?.email || '';
 	const getBookingCustomerPhone = (row: OperationRow): string =>
 		row.booking.customerPhone?.trim() || '';
-	const toOperationExportRow = (row: OperationRow): BookingOperationsExportRow => ({
-		reservationId: getBookingReservationId(row.booking),
-		startAt: row.slot ? formatDateTime(row.slot.startAt) : '',
-		endAt: row.slot ? formatTimeLabel(row.slot.endAt) : '',
-		serviceName: getServiceName(row.booking.serviceId),
-		customerName: getParticipantLabel(row),
-		participantsCount: row.booking.participantsCount,
-		customerPhone: getBookingCustomerPhone(row),
-		customerEmail: getBookingCustomerEmail(row),
-		note: row.booking.note?.trim() ?? '',
-		sourceLabel: getBookingSourceLabel(row.booking),
-		attendanceLabel: getBookingAttendanceLabel(row.booking),
-		statusLabel: bookingStatusLabelMap[row.booking.status],
-		createdAt: formatDateTime(row.booking.createdAt)
-	});
+	const toOperationExportRow = (row: OperationRow): BookingOperationsExportRow => {
+		const note = row.booking.note?.trim() ?? '';
+		const answersLabel = getBookingAnswersLabel(row.booking);
+		return {
+			reservationId: getBookingReservationId(row.booking),
+			startAt: row.slot ? formatDateTime(row.slot.startAt) : '',
+			endAt: row.slot ? formatTimeLabel(row.slot.endAt) : '',
+			serviceName: getServiceName(row.booking.serviceId),
+			customerName: getParticipantLabel(row),
+			participantsCount: row.booking.participantsCount,
+			customerPhone: getBookingCustomerPhone(row),
+			customerEmail: getBookingCustomerEmail(row),
+			note: [note, answersLabel].filter(Boolean).join('\n'),
+			sourceLabel: getBookingSourceLabel(row.booking),
+			attendanceLabel: getBookingAttendanceLabel(row.booking),
+			statusLabel: bookingStatusLabelMap[row.booking.status],
+			createdAt: formatDateTime(row.booking.createdAt)
+		};
+	};
 	const operationExportRows = $derived(filteredOperationRows.map(toOperationExportRow));
 	const operationExportFilename = $derived(
 		createBookingOperationsExportFilename({
@@ -3142,6 +3173,7 @@
 																{@const isPendingApproval =
 																	row.booking.status === 'pending_approval'}
 																{@const attendanceStatus = getBookingAttendanceStatus(row.booking)}
+																{@const answersLabel = getBookingAnswersLabel(row.booking)}
 																<tr class="border-t border-border/70 align-top">
 																	<td class="px-3 py-3">
 																		<span class="font-mono text-xs text-secondary-foreground">
@@ -3176,6 +3208,11 @@
 																				/ {row.booking.note}
 																			{/if}
 																		</p>
+																		{#if answersLabel}
+																			<p class="mt-1 text-xs text-muted-foreground">
+																				追加回答: {answersLabel}
+																			</p>
+																		{/if}
 																	</td>
 																	<td class="px-3 py-3 text-right tabular-nums">
 																		{row.booking.participantsCount}

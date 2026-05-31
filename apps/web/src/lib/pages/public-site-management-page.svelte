@@ -42,6 +42,9 @@
 	const notificationSettingsPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/notification-settings') : null
 	);
+	const intakeFieldsPath = $derived(
+		scopedContext ? buildScopedPath(scopedContext, '/admin/intake-fields') : null
+	);
 	const toScopedRoute = (targetPath: string): ResolvablePath =>
 		preserveScopedRouteContext(targetPath, page.url.pathname) as ResolvablePath;
 
@@ -210,6 +213,14 @@
 							disabled={!publicEventsPath}
 						>
 							予約ページ一覧を開く
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							href={intakeFieldsPath ? resolve(intakeFieldsPath as ResolvablePath) : undefined}
+							disabled={!intakeFieldsPath}
+						>
+							カスタム入力へ移動
 						</Button>
 						<Button
 							type="button"

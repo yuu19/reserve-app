@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import {
   BOOKING_ATTENDANCE_STATUS,
@@ -816,4 +816,29 @@ export const listBookings = async ({
     .from(dbSchema.booking)
     .where(and(...filters))
     .orderBy(desc(dbSchema.booking.createdAt));
+};
+
+export const listBookingAnswersByBookingIds = async ({
+  database,
+  bookingIds,
+}: {
+  database: AuthRuntimeDatabase;
+  bookingIds: string[];
+}) => {
+  if (bookingIds.length === 0) {
+    return [];
+  }
+
+  return database
+    .select({
+      id: dbSchema.bookingAnswer.id,
+      bookingId: dbSchema.bookingAnswer.bookingId,
+      fieldId: dbSchema.bookingAnswer.fieldId,
+      labelSnapshot: dbSchema.bookingAnswer.labelSnapshot,
+      valueJson: dbSchema.bookingAnswer.valueJson,
+      createdAt: dbSchema.bookingAnswer.createdAt,
+    })
+    .from(dbSchema.bookingAnswer)
+    .where(inArray(dbSchema.bookingAnswer.bookingId, bookingIds))
+    .orderBy(asc(dbSchema.bookingAnswer.createdAt));
 };

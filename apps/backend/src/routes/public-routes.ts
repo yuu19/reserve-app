@@ -31,6 +31,16 @@ const publicTicketTypeSchema = z.object({
   href: z.string(),
 });
 
+const publicSiteIntakeFieldSchema = z.object({
+  fieldId: z.string(),
+  label: z.string(),
+  fieldType: z.enum(['text', 'textarea', 'select', 'checkbox']),
+  required: z.boolean(),
+  options: z.array(z.string()),
+  helpText: z.string().nullable(),
+  placeholder: z.string().nullable(),
+});
+
 const publicEventSchema = z.object({
   organizationId: z.string(),
   organizationSlug: z.string(),
@@ -64,6 +74,7 @@ const publicEventsPageSchema = z.object({
 
 const publicEventDetailSchema = publicEventSchema.extend({
   ticketTypes: z.array(publicTicketTypeSchema),
+  intakeFields: z.array(publicSiteIntakeFieldSchema),
 });
 
 const publicSiteProfileSchema = z.object({
@@ -319,6 +330,10 @@ type PublicTicketType = {
   href: string;
 };
 
+type PublicSiteIntakeField = z.infer<typeof publicSiteIntakeFieldSchema>;
+
+type PublicSiteIntakeFieldType = PublicSiteIntakeField['fieldType'];
+
 type PublicTicketTypeRow = {
   id: string;
   name: string;
@@ -348,6 +363,18 @@ type PublicEventQueryRow = {
   locationLabel: string | null;
 };
 
+type PublicSiteIntakeFieldRow = {
+  fieldKey: string;
+  label: string;
+  fieldType: string;
+  required: boolean;
+  optionsJson: string | null;
+  helpText: string | null;
+  placeholder: string | null;
+  sortOrder: number;
+  createdAt: Date;
+};
+
 type PublicContext = {
   error: null;
   organization: {
@@ -373,6 +400,9 @@ type PublicContext = {
     noindex: boolean;
   };
 };
+
+const normalizePublicSiteIntakeFieldType = (value: string): PublicSiteIntakeFieldType =>
+  value === 'textarea' || value === 'select' || value === 'checkbox' ? value : 'text';
 
 const isBookableSlot = ({
   slotStatus,
@@ -441,6 +471,80 @@ const formatPublicEvent = (
     staffLabel: row.staffLabel,
     locationLabel: row.locationLabel,
   };
+};
+
+const normalizePublicSiteIntakeOptions = (values: string[]): string[] => {
+  const options: string[] = [];
+  const seenOptions = new Set<string>();
+  for (const value of values) {
+    const option = value.trim();
+    if (!option || seenOptions.has(option)) {
+      continue;
+    }
+    seenOptions.add(option);
+    options.push(option);
+  }
+  return options;
+};
+
+const parsePublicSiteIntakeOptionsJson = (value: string | null): string[] => {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return normalizePublicSiteIntakeOptions(
+      parsed.filter((entry): entry is string => typeof entry === 'string'),
+    );
+  } catch {
+    return [];
+  }
+};
+
+const listPublicSiteIntakeFields = async ({
+  database,
+  publicContext,
+}: {
+  database: AuthRuntimeDatabase;
+  publicContext: PublicContext;
+}): Promise<PublicSiteIntakeField[]> => {
+  const rows = (await database
+    .select({
+      fieldKey: dbSchema.publicSiteIntakeField.fieldKey,
+      label: dbSchema.publicSiteIntakeField.label,
+      fieldType: dbSchema.publicSiteIntakeField.fieldType,
+      required: dbSchema.publicSiteIntakeField.required,
+      optionsJson: dbSchema.publicSiteIntakeField.optionsJson,
+      helpText: dbSchema.publicSiteIntakeField.helpText,
+      placeholder: dbSchema.publicSiteIntakeField.placeholder,
+      sortOrder: dbSchema.publicSiteIntakeField.sortOrder,
+      createdAt: dbSchema.publicSiteIntakeField.createdAt,
+    })
+    .from(dbSchema.publicSiteIntakeField)
+    .where(
+      and(
+        eq(dbSchema.publicSiteIntakeField.organizationId, publicContext.organization.id),
+        eq(dbSchema.publicSiteIntakeField.storeId, publicContext.store.id),
+        eq(dbSchema.publicSiteIntakeField.visibleOnPublic, true),
+      ),
+    )
+    .orderBy(
+      asc(dbSchema.publicSiteIntakeField.sortOrder),
+      asc(dbSchema.publicSiteIntakeField.createdAt),
+    )) as PublicSiteIntakeFieldRow[];
+
+  return rows.map((row) => ({
+    fieldId: row.fieldKey,
+    label: row.label,
+    fieldType: normalizePublicSiteIntakeFieldType(row.fieldType),
+    required: row.required,
+    options: parsePublicSiteIntakeOptionsJson(row.optionsJson),
+    helpText: row.helpText ?? null,
+    placeholder: row.placeholder ?? null,
+  }));
 };
 
 const listPublicEventRows = async ({
@@ -862,6 +966,87 @@ const insertPublicBookingDetails = async ({
   }
 };
 
+const normalizePublicBookingAnswerValue = (
+  field: PublicSiteIntakeField,
+  value: unknown,
+): { ok: true; value: unknown; hasValue: boolean } | { ok: false; message: string } => {
+  if (field.fieldType === 'checkbox') {
+    if (value === true) {
+      return { ok: true, value: true, hasValue: true };
+    }
+    if (value === false || value === null || value === undefined || value === '') {
+      return { ok: true, value: false, hasValue: false };
+    }
+    return { ok: false, message: 'Checkbox booking answer must be boolean.' };
+  }
+
+  if (typeof value !== 'string') {
+    if (value === null || value === undefined) {
+      return { ok: true, value: '', hasValue: false };
+    }
+    return { ok: false, message: 'Booking answer must be a string.' };
+  }
+
+  const trimmed = value.trim();
+  if (field.fieldType === 'select') {
+    if (!trimmed) {
+      return { ok: true, value: '', hasValue: false };
+    }
+    if (!field.options.includes(trimmed)) {
+      return { ok: false, message: 'Booking answer option is invalid.' };
+    }
+  }
+
+  return { ok: true, value: trimmed, hasValue: trimmed.length > 0 };
+};
+
+const buildCanonicalPublicBookingAnswers = ({
+  fields,
+  answers,
+}: {
+  fields: PublicSiteIntakeField[];
+  answers: z.infer<typeof publicBookingAnswerSchema>[] | undefined;
+}):
+  | { ok: true; answers: z.infer<typeof publicBookingAnswerSchema>[] | undefined }
+  | { ok: false; status: 400; message: string } => {
+  if (fields.length === 0) {
+    return { ok: true, answers };
+  }
+
+  const fieldById = new Map(fields.map((field) => [field.fieldId, field]));
+  const submittedValues = new Map<string, unknown>();
+  for (const answer of answers ?? []) {
+    const fieldId = answer.fieldId.trim();
+    if (!fieldById.has(fieldId)) {
+      return { ok: false, status: 400, message: 'Unknown booking answer field.' };
+    }
+    if (submittedValues.has(fieldId)) {
+      return { ok: false, status: 400, message: 'Duplicate booking answer field.' };
+    }
+    submittedValues.set(fieldId, answer.value);
+  }
+
+  const canonicalAnswers: z.infer<typeof publicBookingAnswerSchema>[] = [];
+  for (const field of fields) {
+    const normalized = normalizePublicBookingAnswerValue(field, submittedValues.get(field.fieldId));
+    if (!normalized.ok) {
+      return { ok: false, status: 400, message: normalized.message };
+    }
+    if (field.required && !normalized.hasValue) {
+      return { ok: false, status: 400, message: 'Required booking answer is missing.' };
+    }
+    if (normalized.hasValue) {
+      canonicalAnswers.push({
+        fieldId: field.fieldId,
+        labelSnapshot: field.label,
+        value: normalized.value,
+      });
+    }
+  }
+
+  return { ok: true, answers: canonicalAnswers };
+};
+
 const createPublicCancelToken = async ({
   database,
   bookingId,
@@ -1070,6 +1255,10 @@ export const createPublicRoutes = ({
       database,
       publicContext,
     });
+    const intakeFields = await listPublicSiteIntakeFields({
+      database,
+      publicContext,
+    });
 
     return c.json(
       {
@@ -1084,6 +1273,7 @@ export const createPublicRoutes = ({
           publicContext.siteSetting.acceptBookings,
         ),
         ticketTypes,
+        intakeFields,
       },
       200,
     );
@@ -1174,6 +1364,18 @@ export const createPublicRoutes = ({
       return c.json({ message: 'Slot is full or not bookable.' }, 409);
     }
 
+    const intakeFields = await listPublicSiteIntakeFields({
+      database,
+      publicContext,
+    });
+    const answerValidation = buildCanonicalPublicBookingAnswers({
+      fields: intakeFields,
+      answers: body.answers,
+    });
+    if (!answerValidation.ok) {
+      return c.json({ message: answerValidation.message }, answerValidation.status);
+    }
+
     const status =
       slot.bookingPolicy === 'approval'
         ? BOOKING_STATUS.PENDING_APPROVAL
@@ -1215,7 +1417,7 @@ export const createPublicRoutes = ({
       database,
       bookingId,
       companions: body.companions,
-      answers: body.answers,
+      answers: answerValidation.answers,
     });
 
     const cancelToken = await createPublicCancelToken({

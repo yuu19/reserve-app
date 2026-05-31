@@ -87,7 +87,16 @@ describe('リマインド設定ページ', () => {
 		mocks.getCurrentPathWithSearch.mockReturnValue('/org-one/room-a/admin/reminder-settings');
 		mocks.loadReminderSettings.mockResolvedValue({
 			enabled: true,
-			timingsMinutes: [1440]
+			timingsMinutes: [1440],
+			serviceOverrides: [
+				{
+					serviceId: 'service-1',
+					serviceName: '体験レッスン',
+					enabled: false,
+					timingsMinutes: [180],
+					inheritsStoreDefault: false
+				}
+			]
 		});
 		mocks.updateReminderSettings.mockResolvedValue({
 			ok: true,
@@ -95,7 +104,16 @@ describe('リマインド設定ページ', () => {
 			message: 'リマインド設定を保存しました。',
 			settings: {
 				enabled: false,
-				timingsMinutes: [180]
+				timingsMinutes: [180],
+				serviceOverrides: [
+					{
+						serviceId: 'service-1',
+						serviceName: '体験レッスン',
+						enabled: false,
+						timingsMinutes: [180],
+						inheritsStoreDefault: false
+					}
+				]
 			}
 		});
 	});
@@ -106,13 +124,24 @@ describe('リマインド設定ページ', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: 'リマインド設定' }))
 			.toBeInTheDocument();
-		await expect.element(page.getByLabelText('リマインドメールを送信する')).toBeChecked();
-		await expect.element(page.getByLabelText('開始24時間前')).toBeChecked();
-		await expect.element(page.getByLabelText('開始3時間前')).not.toBeChecked();
+		await expect
+			.element(page.getByLabelText('リマインドメールを送信する', { exact: true }))
+			.toBeChecked();
+		await expect.element(page.getByLabelText('開始24時間前', { exact: true })).toBeChecked();
+		await expect.element(page.getByLabelText('開始3時間前', { exact: true })).not.toBeChecked();
+		await expect
+			.element(page.getByRole('heading', { level: 3, name: '体験レッスン' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByLabelText('体験レッスンは店舗全体の設定を使う'))
+			.not.toBeChecked();
+		await expect
+			.element(page.getByLabelText('体験レッスンのリマインドメールを送信する'))
+			.not.toBeChecked();
 
-		await page.getByLabelText('リマインドメールを送信する').click();
-		await page.getByLabelText('開始24時間前').click();
-		await page.getByLabelText('開始3時間前').click();
+		await page.getByLabelText('リマインドメールを送信する', { exact: true }).click();
+		await page.getByLabelText('開始24時間前', { exact: true }).click();
+		await page.getByLabelText('開始3時間前', { exact: true }).click();
 		await page.getByRole('button', { name: '保存' }).click();
 
 		await vi.waitFor(() => {
@@ -120,7 +149,15 @@ describe('リマインド設定ページ', () => {
 				{ orgSlug: 'org-one', storeSlug: 'room-a' },
 				{
 					enabled: false,
-					timingsMinutes: [180]
+					timingsMinutes: [180],
+					serviceOverrides: [
+						{
+							serviceId: 'service-1',
+							enabled: false,
+							timingsMinutes: [180],
+							inheritsStoreDefault: false
+						}
+					]
 				}
 			);
 		});
@@ -131,8 +168,8 @@ describe('リマインド設定ページ', () => {
 	it('送信タイミング未選択では保存しない', async () => {
 		render(ReminderSettingsRoute);
 
-		await expect.element(page.getByLabelText('開始24時間前')).toBeChecked();
-		await page.getByLabelText('開始24時間前').click();
+		await expect.element(page.getByLabelText('開始24時間前', { exact: true })).toBeChecked();
+		await page.getByLabelText('開始24時間前', { exact: true }).click();
 		await page.getByRole('button', { name: '保存' }).click();
 
 		expect(mocks.updateReminderSettings).not.toHaveBeenCalled();

@@ -57,6 +57,9 @@
 	const notificationSettingsPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/notification-settings') : null
 	);
+	const intakeFieldsPath = $derived(
+		scopedContext ? buildScopedPath(scopedContext, '/admin/intake-fields') : null
+	);
 	const reminderSettingsPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/reminder-settings') : null
 	);
@@ -338,6 +341,14 @@
 							disabled={!publicSiteAdminPath}
 						>
 							予約サイト管理へ移動
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							href={intakeFieldsPath ? resolve(intakeFieldsPath as Pathname) : undefined}
+							disabled={!intakeFieldsPath}
+						>
+							カスタム入力へ移動
 						</Button>
 						<Button
 							type="button"

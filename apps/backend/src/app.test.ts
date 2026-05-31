@@ -267,6 +267,21 @@ const selectBookingByPublicId = async (publicId: string) => {
     }>();
 };
 
+const selectBookingAnswerRows = async (bookingId: string) => {
+  const rows = await d1
+    .prepare(
+      'SELECT field_id as fieldId, label_snapshot as labelSnapshot, value_json as valueJson FROM booking_answer WHERE booking_id = ? ORDER BY created_at ASC',
+    )
+    .bind(bookingId)
+    .all<{
+      fieldId: string;
+      labelSnapshot: string;
+      valueJson: string;
+    }>();
+
+  return rows.results ?? [];
+};
+
 const hashPublicActionTokenForTest = async (token: string): Promise<string> => {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return toHex(digest);
@@ -795,6 +810,25 @@ const selectPublicSiteNotificationSetting = async (organizationId: string, store
     }>();
 };
 
+const selectPublicSiteIntakeFieldRows = async (organizationId: string, storeId: string) => {
+  const rows = await d1
+    .prepare(
+      'SELECT field_key as fieldId, label, field_type as fieldType, required, options_json as optionsJson, visible_on_public as visibleOnPublic, sort_order as sortOrder FROM public_site_intake_field WHERE organization_id = ? AND store_id = ? ORDER BY sort_order ASC',
+    )
+    .bind(organizationId, storeId)
+    .all<{
+      fieldId: string;
+      label: string;
+      fieldType: string;
+      required: number;
+      optionsJson: string | null;
+      visibleOnPublic: number;
+      sortOrder: number;
+    }>();
+
+  return rows.results ?? [];
+};
+
 const selectReminderPolicyRows = async (organizationId: string, storeId: string) => {
   const rows = await d1
     .prepare(
@@ -826,6 +860,26 @@ const selectReminderLogRowsByBooking = async (bookingId: string) => {
     }>();
 
   return rows.results ?? [];
+};
+
+const insertServiceFixture = async ({
+  organizationId,
+  storeId,
+  name,
+}: {
+  organizationId: string;
+  storeId: string;
+  name: string;
+}) => {
+  const serviceId = crypto.randomUUID();
+  await d1
+    .prepare(
+      'INSERT INTO service (id, organization_id, store_id, name, kind, duration_minutes, capacity, booking_policy, requires_ticket, is_active, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(serviceId, organizationId, storeId, name, 'single', 60, 10, 'instant', 0, 1, 'Asia/Tokyo')
+    .run();
+
+  return serviceId;
 };
 
 const insertReminderBookingFixture = async ({
@@ -9753,6 +9807,130 @@ describe('バックエンドアプリ', () => {
     expect(forbiddenPatchResponse.status).toBe(403);
   });
 
+  it('店舗の公開予約カスタム入力を取得し更新する', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Intake Fields Owner',
+      email: 'intake-fields-owner@example.com',
+    });
+
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Intake Fields Org',
+      slug: 'intake-fields-org',
+    });
+    const storeId = await selectStoreIdBySlug(organizationId, 'intake-fields-org');
+    expect(storeId).toBeTruthy();
+
+    const path = '/api/v1/auth/orgs/intake-fields-org/stores/intake-fields-org/intake-fields';
+    const defaultsResponse = await owner.request(path);
+    expect(defaultsResponse.status).toBe(200);
+    expect(await toJson(defaultsResponse)).toEqual({ fields: [] });
+
+    const updateResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        fields: [
+          {
+            fieldId: 'experience',
+            label: '経験年数',
+            fieldType: 'select',
+            required: true,
+            options: ['未経験', '1年以上'],
+            helpText: '該当するものを選択してください。',
+            placeholder: '選択してください',
+            visibleOnPublic: true,
+          },
+          {
+            fieldId: 'internal_note',
+            label: '内部確認',
+            fieldType: 'text',
+            required: false,
+            options: ['ignored'],
+            visibleOnPublic: false,
+          },
+        ],
+      }),
+    });
+    expect(updateResponse.status).toBe(200);
+    expect(await toJson(updateResponse)).toMatchObject({
+      fields: [
+        {
+          fieldId: 'experience',
+          label: '経験年数',
+          fieldType: 'select',
+          required: true,
+          options: ['未経験', '1年以上'],
+          helpText: '該当するものを選択してください。',
+          placeholder: '選択してください',
+          visibleOnPublic: true,
+          sortOrder: 0,
+        },
+        {
+          fieldId: 'internal_note',
+          label: '内部確認',
+          fieldType: 'text',
+          required: false,
+          options: [],
+          visibleOnPublic: false,
+          sortOrder: 1,
+        },
+      ],
+    });
+
+    const rows = await selectPublicSiteIntakeFieldRows(organizationId, storeId as string);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        fieldId: 'experience',
+        fieldType: 'select',
+        required: 1,
+        optionsJson: JSON.stringify(['未経験', '1年以上']),
+        visibleOnPublic: 1,
+        sortOrder: 0,
+      }),
+      expect.objectContaining({
+        fieldId: 'internal_note',
+        fieldType: 'text',
+        required: 0,
+        optionsJson: null,
+        visibleOnPublic: 0,
+        sortOrder: 1,
+      }),
+    ]);
+
+    const invalidSelectResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        fields: [
+          {
+            fieldId: 'invalid_select',
+            label: '未設定の選択式',
+            fieldType: 'select',
+            required: true,
+            options: [],
+            visibleOnPublic: true,
+          },
+        ],
+      }),
+    });
+    expect(invalidSelectResponse.status).toBe(400);
+
+    const outsider = createAuthAgent(app);
+    await signUpUser({
+      agent: outsider,
+      name: 'Intake Fields Outsider',
+      email: 'intake-fields-outsider@example.com',
+    });
+    expect((await outsider.request(path)).status).toBe(403);
+  });
+
   it('店舗のリマインド設定を既定値で取得し更新する', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
@@ -9768,6 +9946,11 @@ describe('バックエンドアプリ', () => {
     });
     const storeId = await selectStoreIdBySlug(organizationId, 'reminder-settings-org');
     expect(storeId).toBeTruthy();
+    const serviceId = await insertServiceFixture({
+      organizationId,
+      storeId: storeId as string,
+      name: 'Reminder Settings Service',
+    });
 
     const path =
       '/api/v1/auth/orgs/reminder-settings-org/stores/reminder-settings-org/reminder-settings';
@@ -9776,6 +9959,15 @@ describe('バックエンドアプリ', () => {
     expect(await toJson(defaultsResponse)).toEqual({
       enabled: true,
       timingsMinutes: [1440],
+      serviceOverrides: [
+        {
+          serviceId,
+          serviceName: 'Reminder Settings Service',
+          enabled: true,
+          timingsMinutes: [1440],
+          inheritsStoreDefault: true,
+        },
+      ],
     });
     expect(await selectReminderPolicyRows(organizationId, storeId as string)).toEqual([]);
 
@@ -9787,22 +9979,75 @@ describe('バックエンドアプリ', () => {
       body: JSON.stringify({
         enabled: false,
         timingsMinutes: [180, 1440],
+        serviceOverrides: [
+          {
+            serviceId,
+            enabled: true,
+            timingsMinutes: [180],
+            inheritsStoreDefault: false,
+          },
+        ],
       }),
     });
     expect(updateResponse.status).toBe(200);
     expect(await toJson(updateResponse)).toEqual({
       enabled: false,
       timingsMinutes: [1440, 180],
+      serviceOverrides: [
+        {
+          serviceId,
+          serviceName: 'Reminder Settings Service',
+          enabled: true,
+          timingsMinutes: [180],
+          inheritsStoreDefault: false,
+        },
+      ],
     });
+    const reminderPolicyRows = await selectReminderPolicyRows(organizationId, storeId as string);
+    expect(reminderPolicyRows).toHaveLength(3);
+    expect(reminderPolicyRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          enabled: 0,
+          minutesBefore: 1440,
+          serviceId: null,
+        }),
+        expect.objectContaining({
+          enabled: 0,
+          minutesBefore: 180,
+          serviceId: null,
+        }),
+        expect.objectContaining({
+          enabled: 1,
+          minutesBefore: 180,
+          serviceId,
+        }),
+      ]),
+    );
+
+    const inheritResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        enabled: true,
+        timingsMinutes: [1440],
+        serviceOverrides: [
+          {
+            serviceId,
+            enabled: true,
+            timingsMinutes: [180],
+            inheritsStoreDefault: true,
+          },
+        ],
+      }),
+    });
+    expect(inheritResponse.status).toBe(200);
     expect(await selectReminderPolicyRows(organizationId, storeId as string)).toEqual([
       expect.objectContaining({
-        enabled: 0,
+        enabled: 1,
         minutesBefore: 1440,
-        serviceId: null,
-      }),
-      expect.objectContaining({
-        enabled: 0,
-        minutesBefore: 180,
         serviceId: null,
       }),
     ]);
@@ -9820,6 +10065,26 @@ describe('バックエンドアプリ', () => {
       });
       expect(invalidResponse.status).toBe(400);
     }
+
+    const invalidServiceResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        enabled: true,
+        timingsMinutes: [1440],
+        serviceOverrides: [
+          {
+            serviceId: crypto.randomUUID(),
+            enabled: true,
+            timingsMinutes: [1440],
+            inheritsStoreDefault: false,
+          },
+        ],
+      }),
+    });
+    expect(invalidServiceResponse.status).toBe(400);
 
     const outsider = createAuthAgent(app);
     await signUpUser({
@@ -9945,6 +10210,124 @@ describe('バックエンドアプリ', () => {
           reminderPolicyId: expect.any(String),
           dedupeKey: `booking-reminder:${bookingId}:180:three-hour-reminder@example.com`,
           recipientEmail: 'three-hour-reminder@example.com',
+          status: 'sent',
+        }),
+      ]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('予約リマインド送信はサービス別設定を店舗設定より優先する', async () => {
+    const authRuntimeWithEmail = createAuthRuntime({
+      database: drizzle(d1),
+      env: {
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
+        BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
+        GOOGLE_CLIENT_ID: 'test-google-client-id',
+        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+        RESEND_API_KEY: 'test-resend-api-key',
+        RESEND_FROM_EMAIL: 'no-reply@example.com',
+        WEB_BASE_URL: 'http://localhost:5173',
+      },
+    });
+    const appWithEmail = createApp(authRuntimeWithEmail);
+
+    const resendRequests: Array<{ to: string[]; subject: string }> = [];
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+      if (url === 'https://api.resend.com/emails') {
+        const payloadText =
+          typeof init?.body === 'string' ? init.body : init?.body ? String(init.body) : '{}';
+        const payload = JSON.parse(payloadText) as { to?: unknown; subject?: unknown };
+        const to = Array.isArray(payload.to)
+          ? payload.to.filter((value): value is string => typeof value === 'string')
+          : [];
+        const subject = typeof payload.subject === 'string' ? payload.subject : '';
+        resendRequests.push({ to, subject });
+
+        return new Response(JSON.stringify({ id: crypto.randomUUID() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return originalFetch(input, init);
+    });
+
+    try {
+      const owner = createAuthAgent(appWithEmail);
+      await signUpUser({
+        agent: owner,
+        name: 'Reminder Service Override Owner',
+        email: 'reminder-service-override-owner@example.com',
+      });
+      const organizationId = await createOrganization({
+        agent: owner,
+        name: 'Reminder Service Override Org',
+        slug: 'reminder-service-override-org',
+      });
+      const storeId = await selectStoreIdBySlug(organizationId, 'reminder-service-override-org');
+      expect(storeId).toBeTruthy();
+
+      const baseNow = new Date('2026-06-03T00:00:00.000Z');
+      const startAt = new Date(baseNow.getTime() + 4 * 60 * 60 * 1000);
+      const { bookingId, serviceId } = await insertReminderBookingFixture({
+        organizationId,
+        storeId: storeId as string,
+        startAt,
+        customerEmail: 'service-override-reminder@example.com',
+      });
+
+      const updateResponse = await owner.request(
+        '/api/v1/auth/orgs/reminder-service-override-org/stores/reminder-service-override-org/reminder-settings',
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            enabled: true,
+            timingsMinutes: [1440],
+            serviceOverrides: [
+              {
+                serviceId,
+                enabled: true,
+                timingsMinutes: [180],
+                inheritsStoreDefault: false,
+              },
+            ],
+          }),
+        },
+      );
+      expect(updateResponse.status).toBe(200);
+
+      await sendDueBookingReminders({
+        database: drizzle(d1),
+        env: authRuntimeWithEmail.env,
+        now: baseNow,
+      });
+      expect(resendRequests).toHaveLength(0);
+      expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([]);
+
+      const dueNow = new Date(startAt.getTime() - 150 * 60 * 1000);
+      await sendDueBookingReminders({
+        database: drizzle(d1),
+        env: authRuntimeWithEmail.env,
+        now: dueNow,
+      });
+      expect(resendRequests).toHaveLength(1);
+      expect(resendRequests[0]).toMatchObject({
+        to: ['service-override-reminder@example.com'],
+        subject: '【予約通知】予約リマインド',
+      });
+      expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([
+        expect.objectContaining({
+          reminderPolicyId: expect.any(String),
+          dedupeKey: `booking-reminder:${bookingId}:180:service-override-reminder@example.com`,
+          recipientEmail: 'service-override-reminder@example.com',
           status: 'sent',
         }),
       ]);
@@ -11367,6 +11750,37 @@ describe('バックエンドアプリ', () => {
       address: '東京都千代田区1-1-1',
     });
 
+    const publicIntakeFieldsResponse = await owner.request(
+      '/api/v1/auth/orgs/public-events-org/stores/public-events-org/intake-fields',
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          fields: [
+            {
+              fieldId: 'experience',
+              label: '経験年数',
+              fieldType: 'select',
+              required: true,
+              options: ['未経験', '1年以上'],
+              placeholder: '選択してください',
+              visibleOnPublic: true,
+            },
+            {
+              fieldId: 'private_memo',
+              label: '管理メモ',
+              fieldType: 'text',
+              required: false,
+              visibleOnPublic: false,
+            },
+          ],
+        }),
+      },
+    );
+    expect(publicIntakeFieldsResponse.status).toBe(200);
+
     const publicEventsResponse = await app.request(
       '/api/v1/public/orgs/public-events-org/stores/public-events-org/events',
     );
@@ -11454,6 +11868,16 @@ describe('バックエンドアプリ', () => {
         (ticketType) => ticketType.name,
       ),
     ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
+    expect(publicEventDetail.intakeFields).toEqual([
+      expect.objectContaining({
+        fieldId: 'experience',
+        label: '経験年数',
+        fieldType: 'select',
+        required: true,
+        options: ['未経験', '1年以上'],
+        placeholder: '選択してください',
+      }),
+    ]);
 
     const publicSiteResponse = await app.request(
       '/api/v1/public/orgs/public-events-org/stores/public-events-org/site',
@@ -11481,6 +11905,21 @@ describe('バックエンドアプリ', () => {
       ),
     ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
 
+    const missingAnswerBookingResponse = await app.request(
+      '/api/v1/public/orgs/public-events-org/stores/public-events-org/bookings',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId,
+          customerName: 'Missing Intake Guest',
+          customerEmail: 'missing-intake@example.com',
+          participantsCount: 1,
+        }),
+      },
+    );
+    expect(missingAnswerBookingResponse.status).toBe(400);
+
     const publicBookingResponse = await app.request(
       '/api/v1/public/orgs/public-events-org/stores/public-events-org/bookings',
       {
@@ -11494,6 +11933,13 @@ describe('バックエンドアプリ', () => {
           participantsCount: 2,
           companions: [{ name: 'Guest Companion' }],
           note: '公開予約の備考',
+          answers: [
+            {
+              fieldId: 'experience',
+              labelSnapshot: '改ざんされたラベル',
+              value: '1年以上',
+            },
+          ],
         }),
       },
     );
@@ -11513,6 +11959,13 @@ describe('バックエンドアプリ', () => {
     });
     expect(Number(publicBookingRow?.participantsCount ?? 0)).toBe(2);
     expect(await selectSlotReservedCount(slotId)).toBe(2);
+    expect(await selectBookingAnswerRows(publicBookingRow?.id ?? '')).toEqual([
+      {
+        fieldId: 'experience',
+        labelSnapshot: '経験年数',
+        valueJson: JSON.stringify('1年以上'),
+      },
+    ]);
 
     const publicCancelToken = 'test-public-cancel-token';
     await insertPublicCancelTokenForTest({
@@ -16325,6 +16778,9 @@ describe('バックエンドアプリ', () => {
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/invitations']).toBeDefined();
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations']).toBeDefined();
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/public-site']).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/intake-fields'],
+    ).toBeDefined();
     expect(
       body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/notification-settings'],
     ).toBeDefined();
