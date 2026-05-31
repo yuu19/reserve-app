@@ -21,7 +21,12 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
-	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight, Download, Printer } from '@lucide/svelte';
+	import {
+		buildBookingOperationsCsv,
+		createBookingOperationsExportFilename,
+		type BookingOperationsExportRow
+	} from '$lib/features/booking-operations-export';
 	import {
 		approveBooking,
 		archiveServiceByStaff,
@@ -1037,6 +1042,89 @@
 	};
 	const getBookingSourceLabel = (booking: BookingPayload): string =>
 		bookingSourceLabelMap[booking.source ?? 'participant'] ?? booking.source ?? '-';
+	const getBookingReservationId = (booking: BookingPayload): string =>
+		booking.publicId?.trim() || booking.id;
+	const getBookingCustomerEmail = (row: OperationRow): string =>
+		row.booking.customerEmail?.trim() || row.participant?.email || '';
+	const getBookingCustomerPhone = (row: OperationRow): string =>
+		row.booking.customerPhone?.trim() || '';
+	const toOperationExportRow = (row: OperationRow): BookingOperationsExportRow => ({
+		reservationId: getBookingReservationId(row.booking),
+		startAt: row.slot ? formatDateTime(row.slot.startAt) : '',
+		endAt: row.slot ? formatTimeLabel(row.slot.endAt) : '',
+		serviceName: getServiceName(row.booking.serviceId),
+		customerName: getParticipantLabel(row),
+		participantsCount: row.booking.participantsCount,
+		customerPhone: getBookingCustomerPhone(row),
+		customerEmail: getBookingCustomerEmail(row),
+		note: row.booking.note?.trim() ?? '',
+		sourceLabel: getBookingSourceLabel(row.booking),
+		statusLabel: bookingStatusLabelMap[row.booking.status],
+		createdAt: formatDateTime(row.booking.createdAt)
+	});
+	const operationExportRows = $derived(filteredOperationRows.map(toOperationExportRow));
+	const operationExportFilename = $derived(
+		createBookingOperationsExportFilename({
+			selectedDate: operationsFilter.selectedDate,
+			fromDate: slotSearchForm.fromDate,
+			toDate: slotSearchForm.toDate
+		})
+	);
+	const operationExportRangeLabel = $derived.by(() => {
+		if (operationsFilter.selectedDate) {
+			return selectedOperationDateLabel;
+		}
+		const fromLabel = slotSearchForm.fromDate
+			? formatScheduleDateLabel(slotSearchForm.fromDate)
+			: '';
+		const toLabel = slotSearchForm.toDate ? formatScheduleDateLabel(slotSearchForm.toDate) : '';
+		return [fromLabel, toLabel].filter((value) => value.length > 0).join(' - ') || '表示中の期間';
+	});
+	const operationExportFilterLabel = $derived.by(() => {
+		const labels: string[] = [];
+		if (operationsFilter.status !== 'all') {
+			labels.push(`状態: ${bookingStatusLabelMap[operationsFilter.status]}`);
+		}
+		if (operationsFilter.serviceId) {
+			labels.push(`サービス: ${getServiceName(operationsFilter.serviceId)}`);
+		}
+		if (operationsFilter.participantId) {
+			const participant = participantMapById.get(operationsFilter.participantId);
+			labels.push(`参加者: ${participant?.name ?? operationsFilter.participantId}`);
+		}
+		return labels.length > 0 ? labels.join(' / ') : 'フィルターなし';
+	});
+	const downloadOperationRowsCsv = () => {
+		if (operationExportRows.length === 0) {
+			toast.error('出力できる予約がありません。');
+			return;
+		}
+		if (typeof document === 'undefined' || typeof URL === 'undefined') {
+			return;
+		}
+		const blob = new Blob(['\uFEFF', buildBookingOperationsCsv(operationExportRows)], {
+			type: 'text/csv;charset=utf-8'
+		});
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = operationExportFilename;
+		anchor.rel = 'noopener';
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		setTimeout(() => URL.revokeObjectURL(url), 0);
+		toast.success('CSVをダウンロードしました。');
+	};
+	const printOperationRows = () => {
+		if (operationExportRows.length === 0) {
+			toast.error('印刷できる予約がありません。');
+			return;
+		}
+		if (typeof window !== 'undefined') {
+			window.print();
+		}
+	};
 	const isStaffActionInProgress = (
 		kind: 'approve' | 'reject' | 'cancel' | 'no_show',
 		bookingId: string
@@ -2759,9 +2847,29 @@
 													{/if}
 												</CardDescription>
 											</div>
-											<Button type="button" href={resolve(toScopedRoute('/admin/bookings/new'))}>
-												代理予約
-											</Button>
+											<div class="flex flex-wrap items-center gap-2">
+												<Button
+													type="button"
+													variant="outline"
+													onclick={downloadOperationRowsCsv}
+													disabled={filteredOperationRows.length === 0}
+												>
+													<Download class="mr-2 size-4" />
+													CSV出力
+												</Button>
+												<Button
+													type="button"
+													variant="outline"
+													onclick={printOperationRows}
+													disabled={filteredOperationRows.length === 0}
+												>
+													<Printer class="mr-2 size-4" />
+													印刷用表示
+												</Button>
+												<Button type="button" href={resolve(toScopedRoute('/admin/bookings/new'))}>
+													代理予約
+												</Button>
+											</div>
 										</div>
 									</CardHeader>
 									<CardContent class="space-y-4">
@@ -2838,6 +2946,54 @@
 												承認待ちは「承認 / 却下」、予約確定は「運営キャンセル /
 												No-show」を実行できます。
 											</p>
+
+											<section class="printable-operations">
+												<header class="print-header">
+													<h1>日次運用 予約一覧</h1>
+													<p>{operationExportRangeLabel}</p>
+													<p>{operationExportFilterLabel}</p>
+													<p>出力件数: {operationExportRows.length}件</p>
+												</header>
+												{#if operationExportRows.length === 0}
+													<p>該当する予約はありません。</p>
+												{:else}
+													<table>
+														<thead>
+															<tr>
+																<th>開始日時</th>
+																<th>サービス</th>
+																<th>予約者名</th>
+																<th>人数</th>
+																<th>電話番号</th>
+																<th>メール</th>
+																<th>備考</th>
+																<th>予約経路</th>
+																<th>状態</th>
+															</tr>
+														</thead>
+														<tbody>
+															{#each operationExportRows as row (row.reservationId)}
+																<tr>
+																	<td>
+																		{row.startAt}
+																		{#if row.endAt}
+																			<br />〜 {row.endAt}
+																		{/if}
+																	</td>
+																	<td>{row.serviceName}</td>
+																	<td>{row.customerName}</td>
+																	<td>{row.participantsCount}</td>
+																	<td>{row.customerPhone || '-'}</td>
+																	<td>{row.customerEmail || '-'}</td>
+																	<td>{row.note || '-'}</td>
+																	<td>{row.sourceLabel}</td>
+																	<td>{row.statusLabel}</td>
+																</tr>
+															{/each}
+														</tbody>
+													</table>
+												{/if}
+											</section>
 
 											{#if filteredOperationRows.length === 0}
 												<p class="text-sm text-muted-foreground">
@@ -4304,3 +4460,72 @@
 		</Dialog>
 	{/if}
 </main>
+
+<style>
+	@media screen {
+		.printable-operations {
+			display: none;
+		}
+	}
+
+	@media print {
+		:global(body) {
+			background: white !important;
+			color: #111827 !important;
+		}
+
+		:global(body *) {
+			visibility: hidden !important;
+		}
+
+		.printable-operations,
+		.printable-operations * {
+			visibility: visible !important;
+		}
+
+		.printable-operations {
+			display: block;
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			background: white;
+			color: #111827;
+			padding: 24px;
+			font-size: 12px;
+		}
+
+		.print-header {
+			margin-bottom: 16px;
+		}
+
+		.print-header h1 {
+			margin: 0 0 8px;
+			font-size: 20px;
+			font-weight: 700;
+		}
+
+		.print-header p {
+			margin: 2px 0;
+			color: #374151;
+		}
+
+		.printable-operations table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		.printable-operations th,
+		.printable-operations td {
+			border: 1px solid #d1d5db;
+			padding: 6px;
+			text-align: left;
+			vertical-align: top;
+		}
+
+		.printable-operations th {
+			background: #f3f4f6;
+			font-weight: 700;
+		}
+	}
+</style>
