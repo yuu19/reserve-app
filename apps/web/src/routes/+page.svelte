@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { Pathname } from '$app/types';
 	import { Button } from '$lib/components/ui/button';
 	import {
 		Card,
@@ -177,10 +178,14 @@
 		},
 		{
 			name: 'Premium',
-			price: '¥9,800 / 月',
+			price: '月額 1,500円',
 			description: '日常運用を安定化したい組織向け',
 			recommended: true,
-			highlights: ['管理者 / 予約者導線分離', '単発 / 定期スケジュール運用', '契約管理'],
+			highlights: [
+				'管理者 / 予約者導線分離',
+				'単発 / 定期スケジュール運用',
+				'年額 15,800円も選択可'
+			],
 			ctaLabel: 'Premium を始める',
 			ctaVariant: 'default'
 		}
@@ -204,11 +209,10 @@
 		}
 	];
 
-	const footerLinks = [
-		{ label: 'サービス紹介', href: 'https://wakureserve.com' },
-		{ label: '開発者情報', href: 'https://wakureserve.com/developer' },
-		{ label: '利用規約', href: 'https://wakureserve.com/terms' },
-		{ label: 'プライバシーポリシー', href: 'https://wakureserve.com/privacy' }
+	const legalFooterLinks = [
+		{ label: '利用規約', href: '/terms' },
+		{ label: 'プライバシーポリシー', href: '/privacy' },
+		{ label: '特定商取引法に基づく表記', href: '/commerce' }
 	];
 
 	const sectionEyebrowClass = 'text-xs font-bold text-muted-foreground';
@@ -349,7 +353,9 @@
 				{#each portalCards as portal (portal.key)}
 					<a
 						class={`${panelClass} group block p-5 text-foreground no-underline transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
-						href={portal.key === 'admin' ? adminLoginHref : participantLoginHref}
+						href={resolve(
+							(portal.key === 'admin' ? adminLoginHref : participantLoginHref) as Pathname
+						)}
 					>
 						<div class="flex items-start justify-between gap-4">
 							<div class="space-y-2">
@@ -361,10 +367,7 @@
 									{portal.description}
 								</p>
 							</div>
-							<ArrowRight
-								class="mt-1 size-4 shrink-0 text-primary"
-								aria-hidden="true"
-							/>
+							<ArrowRight class="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
 						</div>
 						<p class="mt-4 text-sm font-bold text-link">{portal.ctaLabel}</p>
 					</a>
@@ -574,10 +577,22 @@
 				<p class="text-sm text-secondary-foreground">© WakuReserve. 個人開発プロジェクト</p>
 
 				<div class="flex flex-wrap items-center gap-x-5 gap-y-3">
-					{#each footerLinks as link (link.href)}
-						<a class={linkClass} href={link.href} target="_blank" rel="noreferrer">
+					<a class={linkClass} href="https://wakureserve.com" target="_blank" rel="noreferrer">
+						サービス紹介
+						<ExternalLink class="size-3.5" aria-hidden="true" />
+					</a>
+					<a
+						class={linkClass}
+						href="https://wakureserve.com/developer"
+						target="_blank"
+						rel="noreferrer"
+					>
+						開発者情報
+						<ExternalLink class="size-3.5" aria-hidden="true" />
+					</a>
+					{#each legalFooterLinks as link (link.href)}
+						<a class={linkClass} href={resolve(link.href as Pathname)}>
 							{link.label}
-							<ExternalLink class="size-3.5" aria-hidden="true" />
 						</a>
 					{/each}
 

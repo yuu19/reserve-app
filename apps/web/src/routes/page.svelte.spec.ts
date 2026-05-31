@@ -33,6 +33,9 @@ describe('トップページ', () => {
 			.toBeInTheDocument();
 		expect(document.body.textContent ?? '').toContain('Free');
 		expect(document.body.textContent ?? '').toContain('Premium');
+		expect(document.body.textContent ?? '').toContain('1,500円');
+		expect(document.body.textContent ?? '').toContain('15,800円');
+		expect(document.body.textContent ?? '').not.toContain('9,800');
 		expect(document.body.textContent ?? '').toContain('開発者情報');
 
 		const adminLinks = Array.from(document.querySelectorAll('a')).filter(
@@ -44,9 +47,24 @@ describe('トップページ', () => {
 		const footerLoginLink = Array.from(document.querySelectorAll('a')).find(
 			(element) => element.textContent?.trim() === 'ログイン入口へ'
 		);
+		const termsLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === '利用規約'
+		);
+		const privacyLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === 'プライバシーポリシー'
+		);
+		const commerceLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === '特定商取引法に基づく表記'
+		);
 		expect(adminLinks.length).toBeGreaterThan(0);
 		expect(participantLinks.length).toBeGreaterThan(0);
 		expect(footerLoginLink?.getAttribute('href')).toBe('#portal-entry');
+		expect(termsLink?.getAttribute('href')).toBe('/terms');
+		expect(termsLink?.getAttribute('target')).toBeNull();
+		expect(privacyLink?.getAttribute('href')).toBe('/privacy');
+		expect(privacyLink?.getAttribute('target')).toBeNull();
+		expect(commerceLink?.getAttribute('href')).toBe('/commerce');
+		expect(commerceLink?.getAttribute('target')).toBeNull();
 	});
 
 	it('ログインリンクへ next クエリを引き継ぐ', async () => {

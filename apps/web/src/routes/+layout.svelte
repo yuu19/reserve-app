@@ -77,6 +77,9 @@
 	const brandAppleTouchHref = '/brand/reservation-logo-180x180.svg';
 	const shouldShowAiChatWidget = (featureFlag: string | undefined, loggedIn: boolean) =>
 		featureFlag !== 'false' && loggedIn;
+	const publicLegalPaths = ['/terms', '/privacy', '/commerce'] as const;
+	const isPublicLegalPath = (value: string): boolean =>
+		publicLegalPaths.some((legalPath) => value === legalPath);
 
 	let loadingSession = $state(true);
 	let isLoggedIn = $state(false);
@@ -201,17 +204,19 @@
 
 	const rawPathname = $derived(page.url.pathname);
 	const pathname = $derived(getRoutePathFromUrlPath(rawPathname));
+	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
+	const isPublicLegalRoute = $derived(isPublicLegalPath(pathname));
+	const isPublicStandaloneRoute = $derived(isPublicAuthRoute || isPublicLegalRoute);
 	const aiChatWidgetEnabled = $derived(
-		shouldShowAiChatWidget(env.PUBLIC_AI_CHAT_ENABLED, isLoggedIn)
+		shouldShowAiChatWidget(env.PUBLIC_AI_CHAT_ENABLED, isLoggedIn) && !isPublicStandaloneRoute
 	);
 	const aiChatContext: AiChatContext = $derived({
 		organizationId: activeOrganization?.id ?? null,
 		storeId: activeStore?.id ?? null,
 		currentPage: pathname
 	});
-	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
 	const showSidebarLayout = $derived(
-		!isPublicAuthRoute && pathname !== '/admin/onboarding' && isLoggedIn
+		!isPublicStandaloneRoute && pathname !== '/admin/onboarding' && isLoggedIn
 	);
 	const showAdminSectionTabs = $derived(
 		activePortal === 'admin' && portalAccess.hasOrganizationAdminAccess
@@ -799,7 +804,7 @@
 	});
 
 	$effect(() => {
-		if (loadingSession || !isLoggedIn || isPublicAuthRoute) {
+		if (loadingSession || !isLoggedIn || isPublicStandaloneRoute) {
 			syncingPathContext = '';
 			return;
 		}
@@ -827,7 +832,7 @@
 	});
 
 	$effect(() => {
-		if (loadingSession || !isLoggedIn || isPublicAuthRoute) {
+		if (loadingSession || !isLoggedIn || isPublicStandaloneRoute) {
 			canonicalizingPath = '';
 			return;
 		}
@@ -858,7 +863,7 @@
 	});
 
 	$effect(() => {
-		if (isPublicAuthRoute || isLoggedIn || loadingSession) {
+		if (isPublicStandaloneRoute || isLoggedIn || loadingSession) {
 			fallbackRefreshPath = '';
 			return;
 		}

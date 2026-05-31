@@ -318,6 +318,21 @@ describe('共通レイアウト', () => {
 		expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
 	});
 
+	it.each(['/terms', '/privacy', '/commerce'])(
+		'ログイン中でも公開法務ページ %s ではサイドバーと AI ウィジェットを隠す',
+		async (path) => {
+			pageState.url = new URL(`https://example.com${path}`);
+			renderLayout();
+
+			await vi.waitFor(() => {
+				expect(mocks.loadSession).toHaveBeenCalled();
+				expect(document.body.textContent).toContain('WakuReserve');
+				expect(document.querySelector('a[href="/admin/dashboard"]')).toBeNull();
+				expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
+			});
+		}
+	);
+
 	it('ログイン前は AI ウィジェットを隠す', async () => {
 		mocks.loadSession.mockResolvedValue({
 			session: null,
