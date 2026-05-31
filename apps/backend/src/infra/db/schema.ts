@@ -637,6 +637,33 @@ export const bookingPublicActionToken = sqliteTable(
   ],
 );
 
+export const bookingChangeLog = sqliteTable(
+  'booking_change_log',
+  {
+    id: text('id').primaryKey(),
+    bookingId: text('booking_id')
+      .notNull()
+      .references(() => booking.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    beforeJson: text('before_json').notNull(),
+    afterJson: text('after_json').notNull(),
+    reason: text('reason'),
+    changedByUserId: text('changed_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: defaultTimestampMs(),
+  },
+  (table) => [
+    index('booking_change_log_booking_created_idx').on(table.bookingId, table.createdAt),
+    index('booking_change_log_org_created_idx').on(table.organizationId, table.createdAt),
+  ],
+);
+
 export const publicSiteNotificationSetting = sqliteTable(
   'public_site_notification_setting',
   {
@@ -1524,6 +1551,26 @@ export const bookingRelations = relations(booking, ({ one, many }) => ({
   }),
   ticketLedgers: many(ticketLedger),
   auditLogs: many(bookingAuditLog),
+  changeLogs: many(bookingChangeLog),
+}));
+
+export const bookingChangeLogRelations = relations(bookingChangeLog, ({ one }) => ({
+  booking: one(booking, {
+    fields: [bookingChangeLog.bookingId],
+    references: [booking.id],
+  }),
+  organization: one(organization, {
+    fields: [bookingChangeLog.organizationId],
+    references: [organization.id],
+  }),
+  store: one(store, {
+    fields: [bookingChangeLog.storeId],
+    references: [store.id],
+  }),
+  changedByUser: one(user, {
+    fields: [bookingChangeLog.changedByUserId],
+    references: [user.id],
+  }),
 }));
 
 export const ticketTypeRelations = relations(ticketType, ({ one, many }) => ({

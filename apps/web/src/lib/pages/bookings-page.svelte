@@ -21,7 +21,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
-	import { ChevronLeft, ChevronRight, Download, Printer } from '@lucide/svelte';
+	import { CalendarClock, ChevronLeft, ChevronRight, Download, Printer } from '@lucide/svelte';
 	import {
 		buildBookingOperationsCsv,
 		createBookingOperationsExportFilename,
@@ -51,6 +51,7 @@
 		markBookingNoShow,
 		parseNumberInput,
 		rejectBooking,
+		rescheduleBookingByStaff,
 		resumeServiceByStaff,
 		toDateKey,
 		toDateKeyFromIso,
@@ -140,7 +141,7 @@
 	let staffServices = $state<ServicePayload[]>([]);
 	let staffRecurringSchedules = $state<RecurringSchedulePayload[]>([]);
 	let staffAction = $state<{
-		kind: 'approve' | 'reject' | 'cancel' | 'no_show' | 'attendance';
+		kind: 'approve' | 'reject' | 'cancel' | 'no_show' | 'attendance' | 'reschedule';
 		id: string;
 	} | null>(null);
 	type ResourceActionKind =
@@ -159,6 +160,12 @@
 		serviceId: '',
 		participantId: '',
 		selectedDate: ''
+	});
+	let bookingRescheduleDialogOpen = $state(false);
+	let bookingRescheduleTargetId = $state('');
+	let bookingRescheduleForm = $state({
+		targetSlotId: '',
+		reason: ''
 	});
 
 	let serviceForm = $state({
@@ -1024,6 +1031,9 @@
 		staffParticipants = [];
 		staffServices = [];
 		staffRecurringSchedules = [];
+		bookingRescheduleTargetId = '';
+		bookingRescheduleDialogOpen = false;
+		bookingRescheduleForm = { targetSlotId: '', reason: '' };
 		serviceEditTargetId = '';
 		serviceEditDialogOpen = false;
 		serviceImageFiles = undefined;
@@ -1112,6 +1122,30 @@
 		}
 		return labels.length > 0 ? labels.join(' / ') : 'フィルターなし';
 	});
+	const getSlotRemainingCount = (slot: SlotPayload): number =>
+		Math.max(slot.capacity - slot.reservedCount, 0);
+	const isRescheduleCandidateSlot = (slot: SlotPayload, row: OperationRow): boolean =>
+		slot.id !== row.booking.slotId &&
+		slot.serviceId === row.booking.serviceId &&
+		slot.storeId === row.booking.storeId &&
+		slot.status === 'open' &&
+		new Date(slot.startAt).getTime() > Date.now() &&
+		getSlotRemainingCount(slot) >= row.booking.participantsCount;
+	const getRescheduleCandidateSlots = (row: OperationRow): SlotPayload[] =>
+		[...slots]
+			.filter((slot) => isRescheduleCandidateSlot(slot, row))
+			.sort((left, right) => left.startAt.localeCompare(right.startAt));
+	const bookingRescheduleTargetRow = $derived(
+		operationRows.find((row) => row.booking.id === bookingRescheduleTargetId) ?? null
+	);
+	const bookingRescheduleCandidateSlots = $derived(
+		bookingRescheduleTargetRow ? getRescheduleCandidateSlots(bookingRescheduleTargetRow) : []
+	);
+	const selectedRescheduleTargetSlot = $derived(
+		bookingRescheduleCandidateSlots.find(
+			(slot) => slot.id === bookingRescheduleForm.targetSlotId
+		) ?? null
+	);
 	const downloadOperationRowsCsv = () => {
 		if (operationExportRows.length === 0) {
 			toast.error('出力できる予約がありません。');
@@ -1144,7 +1178,7 @@
 		}
 	};
 	const isStaffActionInProgress = (
-		kind: 'approve' | 'reject' | 'cancel' | 'no_show' | 'attendance',
+		kind: 'approve' | 'reject' | 'cancel' | 'no_show' | 'attendance' | 'reschedule',
 		bookingId: string
 	): boolean => staffAction?.kind === kind && staffAction.id === bookingId;
 	const formatTicketTypeShort = (ticketTypeId: string): string => ticketTypeId.slice(0, 8);
@@ -1194,6 +1228,15 @@
 	};
 	const clearSelectedOperationDate = () => {
 		operationsFilter.selectedDate = '';
+	};
+	const selectBookingForReschedule = (row: OperationRow) => {
+		bookingRescheduleTargetId = row.booking.id;
+		const candidates = getRescheduleCandidateSlots(row);
+		bookingRescheduleForm = {
+			targetSlotId: candidates[0]?.id ?? '',
+			reason: ''
+		};
+		bookingRescheduleDialogOpen = true;
 	};
 	const selectServiceForEdit = (service: ServicePayload) => {
 		serviceEditTargetId = service.id;
@@ -2180,6 +2223,35 @@
 			staffAction = null;
 		}
 	};
+	const submitRescheduleBookingByStaff = async (event: SubmitEvent) => {
+		event.preventDefault();
+		if (!canManage || staffAction || !bookingRescheduleTargetId) {
+			return;
+		}
+		if (!bookingRescheduleForm.targetSlotId) {
+			toast.error('変更先の予約枠を選択してください。');
+			return;
+		}
+		staffAction = { kind: 'reschedule', id: bookingRescheduleTargetId };
+		try {
+			const result = await rescheduleBookingByStaff(
+				bookingRescheduleTargetId,
+				bookingRescheduleForm.targetSlotId,
+				bookingRescheduleForm.reason
+			);
+			if (!result.ok) {
+				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			bookingRescheduleDialogOpen = false;
+			bookingRescheduleTargetId = '';
+			bookingRescheduleForm = { targetSlotId: '', reason: '' };
+			await refresh();
+		} finally {
+			staffAction = null;
+		}
+	};
 
 	onMount(() => {
 		void (async () => {
@@ -2990,8 +3062,8 @@
 												</div>
 											{/if}
 											<p class="text-xs text-muted-foreground">
-												承認待ちは「承認 / 却下」、予約確定は「出席 / 欠席 / 運営キャンセル /
-												No-show」を実行できます。
+												承認待ちは「承認 / 却下」、予約確定は「出席 / 欠席 / 日程変更 /
+												運営キャンセル / No-show」を実行できます。
 											</p>
 
 											<section class="printable-operations">
@@ -3207,6 +3279,18 @@
 																							: '未確認'}
 																					</Button>
 																				{/if}
+																				<Button
+																					type="button"
+																					variant="outline"
+																					size="sm"
+																					onclick={() => selectBookingForReschedule(row)}
+																					disabled={busy || !!staffAction}
+																				>
+																					<CalendarClock class="mr-1 size-4" />
+																					{isStaffActionInProgress('reschedule', row.booking.id)
+																						? '処理中…'
+																						: '日程変更'}
+																				</Button>
 																				<Button
 																					type="button"
 																					variant="destructive"
@@ -4164,6 +4248,110 @@
 	{/if}
 
 	{#if canManage}
+		<Dialog bind:open={bookingRescheduleDialogOpen}>
+			<DialogContent aria-describedby="booking-reschedule-dialog-description" class="sm:max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>予約の日程を変更</DialogTitle>
+					<DialogDescription id="booking-reschedule-dialog-description">
+						同じサービスの将来 open 枠へ予約を移動します。保存後は一覧を再読込します。
+					</DialogDescription>
+				</DialogHeader>
+				{#if bookingRescheduleTargetRow}
+					<form class="grid gap-4" onsubmit={submitRescheduleBookingByStaff}>
+						<div class="rounded-md border border-border/80 bg-secondary/60 px-3 py-2 text-sm">
+							<p class="font-medium text-foreground">
+								{getParticipantLabel(bookingRescheduleTargetRow)}
+							</p>
+							<p class="text-muted-foreground">
+								現在:
+								{#if bookingRescheduleTargetRow.slot}
+									{formatDateTime(bookingRescheduleTargetRow.slot.startAt)} 〜
+									{formatTimeLabel(bookingRescheduleTargetRow.slot.endAt)}
+								{:else}
+									{bookingRescheduleTargetRow.booking.slotId}
+								{/if}
+							</p>
+							<p class="text-muted-foreground">
+								サービス: {getServiceName(bookingRescheduleTargetRow.booking.serviceId)} / 人数:
+								{bookingRescheduleTargetRow.booking.participantsCount}
+							</p>
+						</div>
+
+						{#if bookingRescheduleCandidateSlots.length === 0}
+							<p
+								class="rounded-md border border-warning/45 bg-warning/15 px-3 py-2 text-sm text-warning-foreground"
+							>
+								表示月内に変更できる空き枠がありません。月を移動するか、単発予約枠を追加してください。
+							</p>
+						{:else}
+							<div class="space-y-2">
+								<Label for="booking-reschedule-target-slot">変更先の予約枠</Label>
+								<select
+									id="booking-reschedule-target-slot"
+									name="booking_reschedule_target_slot"
+									class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+									bind:value={bookingRescheduleForm.targetSlotId}
+									required
+								>
+									{#each bookingRescheduleCandidateSlots as slot (slot.id)}
+										<option value={slot.id}>
+											{formatDateTime(slot.startAt)} 〜 {formatTimeLabel(slot.endAt)} / 残
+											{getSlotRemainingCount(slot)}
+										</option>
+									{/each}
+								</select>
+							</div>
+							{#if selectedRescheduleTargetSlot}
+								<p class="text-xs text-muted-foreground">
+									変更後:
+									{formatDateTime(selectedRescheduleTargetSlot.startAt)} 〜
+									{formatTimeLabel(selectedRescheduleTargetSlot.endAt)}
+								</p>
+							{/if}
+							<div class="space-y-2">
+								<Label for="booking-reschedule-reason">変更理由（任意）</Label>
+								<textarea
+									id="booking-reschedule-reason"
+									name="booking_reschedule_reason"
+									class="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+									maxlength={500}
+									bind:value={bookingRescheduleForm.reason}
+								></textarea>
+							</div>
+						{/if}
+
+						<DialogFooter>
+							<Button
+								type="button"
+								variant="outline"
+								disabled={busy || !!staffAction}
+								onclick={() => {
+									bookingRescheduleDialogOpen = false;
+									bookingRescheduleTargetId = '';
+									bookingRescheduleForm = { targetSlotId: '', reason: '' };
+								}}
+							>
+								キャンセル
+							</Button>
+							<Button
+								type="submit"
+								disabled={busy ||
+									!!staffAction ||
+									!bookingRescheduleForm.targetSlotId ||
+									bookingRescheduleCandidateSlots.length === 0}
+							>
+								{isStaffActionInProgress('reschedule', bookingRescheduleTargetId)
+									? '変更中…'
+									: '変更を保存'}
+							</Button>
+						</DialogFooter>
+					</form>
+				{:else}
+					<p class="text-sm text-muted-foreground">日程変更対象の予約が見つかりません。</p>
+				{/if}
+			</DialogContent>
+		</Dialog>
+
 		<Dialog bind:open={serviceEditDialogOpen}>
 			<DialogContent aria-describedby="service-edit-dialog-description" class="sm:max-w-2xl">
 				<DialogHeader>

@@ -92,6 +92,16 @@ export const bookingApproveBodySchema = z.object({
   storeId: z.string().min(1).optional(),
 });
 
+/**
+ * staff が確定予約の日程を変更する入力を検証します。
+ */
+export const bookingRescheduleBodySchema = z.object({
+  bookingId: z.string().min(1),
+  targetSlotId: z.string().min(1),
+  storeId: z.string().min(1).optional(),
+  reason: z.string().trim().max(500).optional(),
+});
+
 const bookingCompanionBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
   note: z.string().trim().max(500).nullable().optional(),
@@ -158,6 +168,10 @@ export type BookingAttendanceBody = z.infer<typeof bookingAttendanceBodySchema>;
  * 予約承認 usecase が受け取る検証済み body 型です。
  */
 export type BookingApproveBody = z.infer<typeof bookingApproveBodySchema>;
+/**
+ * 予約日程変更 usecase が受け取る検証済み body 型です。
+ */
+export type BookingRescheduleBody = z.infer<typeof bookingRescheduleBodySchema>;
 export type StaffCreateBookingParams = z.infer<typeof staffCreateBookingParamsSchema>;
 export type StaffCreateBookingBody = z.infer<typeof staffCreateBookingBodySchema>;
 
@@ -325,6 +339,33 @@ export const rejectBookingByStaffRoute = createRoute({
   },
   responses: {
     200: { description: 'Booking rejected' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+  },
+});
+
+/**
+ * staff が確定予約の日程を変更する OpenAPI 定義です。
+ */
+export const rescheduleBookingByStaffRoute = createRoute({
+  method: 'post',
+  path: '/organizations/bookings/reschedule',
+  tags: ['Bookings'],
+  summary: 'Reschedule booking by staff',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: bookingRescheduleBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Booking rescheduled' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },

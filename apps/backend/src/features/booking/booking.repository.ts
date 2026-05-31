@@ -341,6 +341,58 @@ export const findBookingScope = async (database: AuthRuntimeDatabase, bookingId:
 };
 
 /**
+ * staff 日程変更で現在の予約 scope と変更前 slot snapshot を取得します。
+ */
+export const findBookingForReschedule = async (
+  database: AuthRuntimeDatabase,
+  bookingId: string,
+) => {
+  const bookingRows = await database
+    .select({
+      id: dbSchema.booking.id,
+      organizationId: dbSchema.booking.organizationId,
+      storeId: dbSchema.booking.storeId,
+      slotId: dbSchema.booking.slotId,
+      serviceId: dbSchema.booking.serviceId,
+      participantId: dbSchema.booking.participantId,
+      participantsCount: dbSchema.booking.participantsCount,
+      status: dbSchema.booking.status,
+      currentSlotStartAt: dbSchema.slot.startAt,
+      currentSlotEndAt: dbSchema.slot.endAt,
+    })
+    .from(dbSchema.booking)
+    .innerJoin(dbSchema.slot, eq(dbSchema.slot.id, dbSchema.booking.slotId))
+    .where(eq(dbSchema.booking.id, bookingId))
+    .limit(1);
+  return bookingRows[0] ?? null;
+};
+
+/**
+ * 日程変更先として指定された slot の所属・状態・定員 snapshot を取得します。
+ */
+export const findSlotForBookingReschedule = async (
+  database: AuthRuntimeDatabase,
+  slotId: string,
+) => {
+  const slotRows = await database
+    .select({
+      id: dbSchema.slot.id,
+      organizationId: dbSchema.slot.organizationId,
+      storeId: dbSchema.slot.storeId,
+      serviceId: dbSchema.slot.serviceId,
+      startAt: dbSchema.slot.startAt,
+      endAt: dbSchema.slot.endAt,
+      capacity: dbSchema.slot.capacity,
+      reservedCount: dbSchema.slot.reservedCount,
+      status: dbSchema.slot.status,
+    })
+    .from(dbSchema.slot)
+    .where(eq(dbSchema.slot.id, slotId))
+    .limit(1);
+  return slotRows[0] ?? null;
+};
+
+/**
  * キャンセル期限判定に使う slot 開始日時を取得します。
  */
 export const findSlotStart = async (database: AuthRuntimeDatabase, slotId: string) => {
@@ -440,6 +492,103 @@ export const releaseConfirmedBookingSlotCapacity = async ({
       reservedCount: sql`${dbSchema.slot.reservedCount} - ${participantsCount}`,
     })
     .where(and(eq(dbSchema.slot.id, slotId), gte(dbSchema.slot.reservedCount, participantsCount)));
+};
+
+/**
+ * 日程変更先の open/future slot で定員が足りる場合だけ定員を確保します。
+ */
+export const reserveSlotCapacityForReschedule = async ({
+  database,
+  slotId,
+  participantsCount,
+  now,
+}: {
+  database: AuthRuntimeDatabase;
+  slotId: string;
+  participantsCount: number;
+  now: Date;
+}) => {
+  const capacityRows = await database
+    .update(dbSchema.slot)
+    .set({
+      reservedCount: sql`${dbSchema.slot.reservedCount} + ${participantsCount}`,
+    })
+    .where(
+      and(
+        eq(dbSchema.slot.id, slotId),
+        eq(dbSchema.slot.status, SLOT_STATUS.OPEN),
+        gte(dbSchema.slot.startAt, now),
+        sql`${dbSchema.slot.reservedCount} + ${participantsCount} <= ${dbSchema.slot.capacity}`,
+      ),
+    )
+    .returning({ id: dbSchema.slot.id });
+  return capacityRows.length > 0;
+};
+
+/**
+ * 確定予約の slot 参照を、現在 slot から変更先 slot へ更新します。
+ */
+export const updateConfirmedBookingSlot = async ({
+  database,
+  bookingId,
+  currentSlotId,
+  targetSlotId,
+}: {
+  database: AuthRuntimeDatabase;
+  bookingId: string;
+  currentSlotId: string;
+  targetSlotId: string;
+}) => {
+  const updatedRows = await database
+    .update(dbSchema.booking)
+    .set({
+      slotId: targetSlotId,
+    })
+    .where(
+      and(
+        eq(dbSchema.booking.id, bookingId),
+        eq(dbSchema.booking.slotId, currentSlotId),
+        eq(dbSchema.booking.status, BOOKING_STATUS.CONFIRMED),
+      ),
+    )
+    .returning({ id: dbSchema.booking.id });
+  return updatedRows.length > 0;
+};
+
+/**
+ * 日程変更の前後 snapshot と理由を append-only に記録します。
+ */
+export const insertBookingChangeLog = async ({
+  database,
+  bookingId,
+  organizationId,
+  storeId,
+  beforeJson,
+  afterJson,
+  reason,
+  changedByUserId,
+}: {
+  database: AuthRuntimeDatabase;
+  bookingId: string;
+  organizationId: string;
+  storeId: string;
+  beforeJson: string;
+  afterJson: string;
+  reason?: string | null;
+  changedByUserId: string;
+}) => {
+  const id = crypto.randomUUID();
+  await database.insert(dbSchema.bookingChangeLog).values({
+    id,
+    bookingId,
+    organizationId,
+    storeId,
+    beforeJson,
+    afterJson,
+    reason: reason ?? null,
+    changedByUserId,
+  });
+  return id;
 };
 
 /**

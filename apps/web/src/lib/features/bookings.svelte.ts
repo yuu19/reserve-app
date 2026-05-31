@@ -100,6 +100,21 @@ export const toReservationErrorMessage = (status: number, payload: unknown, fall
 		if (message === 'Only confirmed booking can be marked attendance.') {
 			return '出欠を記録できるのは予約確定済みの予約のみです。';
 		}
+		if (message === 'Only confirmed booking can be rescheduled.') {
+			return '日程変更できるのは予約確定済みの予約のみです。';
+		}
+		if (message === 'Target slot must be for same service.') {
+			return '同じサービスの予約枠だけに日程変更できます。';
+		}
+		if (
+			message === 'Target slot is full or not bookable.' ||
+			message === 'Target slot is not bookable.'
+		) {
+			return '変更先の枠は満席、停止済み、または開始済みです。別の枠を選択してください。';
+		}
+		if (message === 'Target slot must be different from current slot.') {
+			return '現在とは別の予約枠を選択してください。';
+		}
 		if (message === 'Only pending approval booking can be approved.') {
 			return '承認できるのは承認待ち予約のみです。';
 		}
@@ -702,6 +717,30 @@ export const markBookingAttendance = async (
 		message: response.ok
 			? successMessage
 			: toReservationErrorMessage(response.status, payload, '出欠の更新に失敗しました。')
+	};
+};
+
+export const rescheduleBookingByStaff = async (
+	bookingId: string,
+	targetSlotId: string,
+	reason?: string
+) => {
+	const normalizedReason = reason?.trim() ? reason.trim() : undefined;
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
+	}
+	const response = await authRpc.rescheduleBookingScoped(context, {
+		bookingId,
+		targetSlotId,
+		reason: normalizedReason
+	});
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? '予約の日程を変更しました。'
+			: toReservationErrorMessage(response.status, payload, '日程変更に失敗しました。')
 	};
 };
 

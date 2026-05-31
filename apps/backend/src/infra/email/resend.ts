@@ -41,6 +41,7 @@ export type BookingNotificationEvent =
   | 'booking_rejected'
   | 'booking_cancelled_by_participant'
   | 'booking_cancelled_by_staff'
+  | 'booking_rescheduled'
   | 'booking_no_show'
   | 'booking_reminder';
 
@@ -317,6 +318,7 @@ const bookingNotificationSubjectMap: Record<BookingNotificationEvent, string> = 
   booking_rejected: '【予約通知】予約が却下されました',
   booking_cancelled_by_participant: '【予約通知】予約をキャンセルしました',
   booking_cancelled_by_staff: '【予約通知】運営により予約がキャンセルされました',
+  booking_rescheduled: '【予約通知】予約日時が変更されました',
   booking_no_show: '【予約通知】予約がNo-showとして記録されました',
   booking_reminder: '【予約通知】予約リマインド',
 };
@@ -328,6 +330,7 @@ const bookingNotificationEventLabelMap: Record<BookingNotificationEvent, string>
   booking_rejected: '予約が却下されました',
   booking_cancelled_by_participant: '予約をキャンセルしました',
   booking_cancelled_by_staff: '運営により予約がキャンセルされました',
+  booking_rescheduled: '予約日時が変更されました',
   booking_no_show: '予約がNo-showとして記録されました',
   booking_reminder: '予約日時が近づいています',
 };

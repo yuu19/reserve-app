@@ -303,6 +303,7 @@ export const notifyBookingEmailBestEffort = async ({
   reason,
   actionUrl,
   actionLabel,
+  dedupeKeyExtra,
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
@@ -311,6 +312,7 @@ export const notifyBookingEmailBestEffort = async ({
   reason?: string | null;
   actionUrl?: string | null;
   actionLabel?: string | null;
+  dedupeKeyExtra?: string | null;
 }) => {
   try {
     const context = await getBookingNotificationContext({ database, bookingId });
@@ -345,7 +347,9 @@ export const notifyBookingEmailBestEffort = async ({
       reason,
       actionUrl,
       actionLabel,
-      dedupeKey: `${event}:booking:${bookingId}:customer:${recipientEmail}`,
+      dedupeKey: `${event}:booking:${bookingId}${
+        dedupeKeyExtra ? `:${dedupeKeyExtra}` : ''
+      }:customer:${recipientEmail}`,
     });
   } catch (error) {
     console.warn(
@@ -364,12 +368,14 @@ export const notifyBookingOperationalEmailBestEffort = async ({
   bookingId,
   event,
   reason,
+  dedupeKeyExtra,
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
   bookingId: string;
   event: BookingNotificationEvent;
   reason?: string | null;
+  dedupeKeyExtra?: string | null;
 }) => {
   try {
     const context = await getBookingNotificationContext({ database, bookingId });
@@ -405,7 +411,9 @@ export const notifyBookingOperationalEmailBestEffort = async ({
           slotEndLabel: formatDateTimeLabel(context.slotEndAt, timezone),
           event,
           reason,
-          dedupeKey: `${event}:booking:${bookingId}:ops:${recipientEmail}`,
+          dedupeKey: `${event}:booking:${bookingId}${
+            dedupeKeyExtra ? `:${dedupeKeyExtra}` : ''
+          }:ops:${recipientEmail}`,
         }),
       ),
     );

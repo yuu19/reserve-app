@@ -231,6 +231,7 @@ export type ServicePayload = {
 export type SlotPayload = {
 	id: string;
 	organizationId: string;
+	storeId: string;
 	serviceId: string;
 	recurringScheduleId?: string | null;
 	startAt: string;
@@ -870,6 +871,13 @@ type BookingAttendanceInput = {
 	attendanceStatus: BookingAttendanceStatus;
 };
 
+type BookingRescheduleInput = {
+	bookingId: string;
+	targetSlotId: string;
+	storeId?: string;
+	reason?: string;
+};
+
 type ListBookingsQuery = {
 	organizationId?: string;
 	storeId?: string;
@@ -1118,6 +1126,9 @@ type AuthRpcClient = {
 						};
 						reject: {
 							$post: (args: { json: BookingActionInput }) => Promise<Response>;
+						};
+						reschedule: {
+							$post: (args: { json: BookingRescheduleInput }) => Promise<Response>;
 						};
 						'no-show': {
 							$post: (args: { json: BookingNoShowInput }) => Promise<Response>;
@@ -1588,6 +1599,8 @@ export const authRpc = {
 		rpcClient.api.v1.auth.organizations.bookings.approve.$post({ json: { bookingId } }),
 	rejectBooking: (json: BookingActionInput) =>
 		rpcClient.api.v1.auth.organizations.bookings.reject.$post({ json }),
+	rescheduleBooking: (json: BookingRescheduleInput) =>
+		rpcClient.api.v1.auth.organizations.bookings.reschedule.$post({ json }),
 	markBookingNoShow: (json: BookingNoShowInput) =>
 		rpcClient.api.v1.auth.organizations.bookings['no-show'].$post({ json }),
 	markBookingAttendance: (json: BookingAttendanceInput) =>
@@ -1760,6 +1773,10 @@ export const authRpc = {
 	rejectBookingScoped: (context: ScopedApiContext, json: BookingActionInput) =>
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/bookings/reject', { json: resolvedJson })
+		),
+	rescheduleBookingScoped: (context: ScopedApiContext, json: BookingRescheduleInput) =>
+		withScopedJson(context, json, (resolvedJson) =>
+			authFetch('/api/v1/auth/organizations/bookings/reschedule', { json: resolvedJson })
 		),
 	markBookingNoShowScoped: (context: ScopedApiContext, json: BookingNoShowInput) =>
 		withScopedJson(context, json, (resolvedJson) =>

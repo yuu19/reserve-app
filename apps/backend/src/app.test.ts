@@ -204,6 +204,15 @@ const selectBookingStatus = async (bookingId: string) => {
   return row?.status ?? null;
 };
 
+const selectBookingSlotId = async (bookingId: string) => {
+  const row = await d1
+    .prepare('SELECT slot_id as slotId FROM booking WHERE id = ?')
+    .bind(bookingId)
+    .first<{ slotId: string }>();
+
+  return row?.slotId ?? null;
+};
+
 const selectBookingAttendance = async (bookingId: string) => {
   const row = await d1
     .prepare(
@@ -217,6 +226,26 @@ const selectBookingAttendance = async (bookingId: string) => {
     }>();
 
   return row ?? null;
+};
+
+const selectBookingChangeLogCount = async (bookingId: string) => {
+  const row = await d1
+    .prepare('SELECT COUNT(*) as count FROM booking_change_log WHERE booking_id = ?')
+    .bind(bookingId)
+    .first<{ count: number | string }>();
+
+  return Number(row?.count ?? 0);
+};
+
+const selectNotificationLogEventCount = async (bookingId: string, eventType: string) => {
+  const row = await d1
+    .prepare(
+      'SELECT COUNT(*) as count FROM notification_log WHERE booking_id = ? AND event_type = ?',
+    )
+    .bind(bookingId, eventType)
+    .first<{ count: number | string }>();
+
+  return Number(row?.count ?? 0);
 };
 
 const selectBookingByPublicId = async (publicId: string) => {
@@ -11044,6 +11073,14 @@ describe('バックエンドアプリ', () => {
         },
       },
       {
+        path: '/api/v1/auth/organizations/bookings/reschedule',
+        method: 'POST',
+        body: {
+          bookingId: 'dummy-booking',
+          targetSlotId: 'dummy-slot',
+        },
+      },
+      {
         path: '/api/v1/auth/organizations/bookings/no-show',
         method: 'POST',
         body: {
@@ -12395,6 +12432,48 @@ describe('バックエンドアプリ', () => {
     const thirdBookingPayload = (await toJson(thirdBookingResponse)) as Record<string, unknown>;
     const thirdBookingId = thirdBookingPayload.id as string;
 
+    const rescheduleStart = new Date(Date.now() + 72 * 60 * 60 * 1000);
+    const rescheduleEnd = new Date(rescheduleStart.getTime() + 60 * 60 * 1000);
+    const rescheduleSlotCreateResponse = await admin.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organizationId,
+        serviceId,
+        startAt: rescheduleStart.toISOString(),
+        endAt: rescheduleEnd.toISOString(),
+      }),
+    });
+    expect(rescheduleSlotCreateResponse.status).toBe(200);
+    const rescheduleSlotPayload = (await toJson(rescheduleSlotCreateResponse)) as Record<
+      string,
+      unknown
+    >;
+    const rescheduleSlotId = rescheduleSlotPayload.id as string;
+
+    const rescheduleResponse = await admin.request(
+      '/api/v1/auth/organizations/bookings/reschedule',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: thirdBookingId,
+          targetSlotId: rescheduleSlotId,
+          reason: '参加者希望',
+        }),
+      },
+    );
+    expect(rescheduleResponse.status).toBe(200);
+    expect(await selectBookingStatus(thirdBookingId)).toBe('confirmed');
+    expect(await selectBookingSlotId(thirdBookingId)).toBe(rescheduleSlotId);
+    expect(await selectSlotReservedCount(thirdSlotId)).toBe(0);
+    expect(await selectSlotReservedCount(rescheduleSlotId)).toBe(1);
+    expect(await selectBookingChangeLogCount(thirdBookingId)).toBe(1);
+    expect(await selectBookingAuditActionCount(thirdBookingId, 'booking.rescheduled')).toBe(1);
+    expect(
+      await selectNotificationLogEventCount(thirdBookingId, 'booking_rescheduled'),
+    ).toBeGreaterThan(0);
+
     const checkInResponse = await admin.request('/api/v1/auth/organizations/bookings/check-in', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -12477,6 +12556,19 @@ describe('バックエンドアプリ', () => {
       }),
     });
     expect(noShowTwiceResponse.status).toBe(409);
+
+    const rescheduleNoShowResponse = await admin.request(
+      '/api/v1/auth/organizations/bookings/reschedule',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: thirdBookingId,
+          targetSlotId: thirdSlotId,
+        }),
+      },
+    );
+    expect(rescheduleNoShowResponse.status).toBe(409);
   });
 
   it('回数券消費時に発行済み回数券パックのサービススコープを適用する', async () => {
@@ -16263,6 +16355,7 @@ describe('バックエンドアプリ', () => {
     expect(body.paths['/api/v1/auth/organizations/bookings/cancel-by-staff']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/approve']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/reject']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/bookings/reschedule']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/no-show']).toBeDefined();
     expect(body.paths['/api/v1/auth/organizations/bookings/check-in']).toBeDefined();
     expect(

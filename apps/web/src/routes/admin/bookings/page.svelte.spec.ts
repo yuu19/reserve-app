@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
 	redirectToLoginWithNext: vi.fn(),
 	getCurrentPathWithSearch: vi.fn(() => '/org-one/room-a/admin/bookings'),
 	loadAdminBookingsOperationsData: vi.fn(),
-	loadOrganizationBilling: vi.fn()
+	loadOrganizationBilling: vi.fn(),
+	rescheduleBookingByStaff: vi.fn()
 }));
 
 const pageState = vi.hoisted(() => ({
@@ -76,6 +77,7 @@ vi.mock('$lib/features/bookings.svelte', () => ({
 	markBookingNoShow: vi.fn(),
 	parseNumberInput: vi.fn((value: string) => Number(value) || null),
 	rejectBooking: vi.fn(),
+	rescheduleBookingByStaff: mocks.rescheduleBookingByStaff,
 	resumeServiceByStaff: vi.fn(),
 	toDateKey: vi.fn(() => '2026-06-15'),
 	toDateKeyFromIso: vi.fn(() => '2026-06-15'),
@@ -126,6 +128,19 @@ const createAdminBookingsOperationsData = () => ({
 			status: 'open',
 			createdAt: '2026-06-01T00:00:00.000Z',
 			updatedAt: '2026-06-01T00:00:00.000Z'
+		},
+		{
+			id: 'slot-2',
+			organizationId: 'org-1',
+			storeId: 'store-1',
+			serviceId: 'service-1',
+			startAt: '2099-06-16T10:00:00.000Z',
+			endAt: '2099-06-16T11:00:00.000Z',
+			capacity: 8,
+			reservedCount: 1,
+			status: 'open',
+			createdAt: '2026-06-01T00:00:00.000Z',
+			updatedAt: '2026-06-01T00:00:00.000Z'
 		}
 	],
 	staffBookings: [
@@ -163,6 +178,7 @@ describe('管理予約ページ', () => {
 		mocks.getCurrentPathWithSearch.mockReset();
 		mocks.loadAdminBookingsOperationsData.mockReset();
 		mocks.loadOrganizationBilling.mockReset();
+		mocks.rescheduleBookingByStaff.mockReset();
 		mocks.getCurrentPathWithSearch.mockReturnValue('/org-one/room-a/admin/bookings');
 		mocks.loadSession.mockResolvedValue({
 			session: { user: { id: 'user-1' } },
@@ -172,6 +188,10 @@ describe('管理予約ページ', () => {
 		mocks.loadOrganizationBilling.mockResolvedValue({
 			ok: true,
 			billing: null
+		});
+		mocks.rescheduleBookingByStaff.mockResolvedValue({
+			ok: true,
+			message: '予約の日程を変更しました。'
 		});
 	});
 
@@ -205,5 +225,23 @@ describe('管理予約ページ', () => {
 		await expect.element(page.getByRole('cell', { name: '未確認' })).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '出席' })).toBeEnabled();
 		await expect.element(page.getByRole('button', { name: '欠席' })).toBeEnabled();
+		await expect.element(page.getByRole('button', { name: '日程変更' })).toBeEnabled();
+	});
+
+	it('日程変更ダイアログから変更先枠を送信する', async () => {
+		render(AdminBookingsPage);
+
+		await page.getByRole('button', { name: '日程変更' }).click();
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '予約の日程を変更' }))
+			.toBeInTheDocument();
+		await page.getByLabelText('変更理由（任意）').fill('参加者希望');
+		await page.getByRole('button', { name: '変更を保存' }).click();
+
+		expect(mocks.rescheduleBookingByStaff).toHaveBeenCalledWith(
+			'booking-1',
+			'slot-2',
+			'参加者希望'
+		);
 	});
 });
