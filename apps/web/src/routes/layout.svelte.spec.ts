@@ -330,6 +330,15 @@ describe('共通レイアウト', () => {
 				expect(document.querySelector('a[href="/admin/dashboard"]')).toBeNull();
 				expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
 			});
+			expect(document.querySelector('footer a[href="/terms"]')?.textContent?.trim()).toBe(
+				'利用規約'
+			);
+			expect(document.querySelector('footer a[href="/privacy"]')?.textContent?.trim()).toBe(
+				'プライバシーポリシー'
+			);
+			expect(document.querySelector('footer a[href="/commerce"]')?.textContent?.trim()).toBe(
+				'特定商取引法に基づく表記'
+			);
 		}
 	);
 

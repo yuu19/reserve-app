@@ -75,6 +75,11 @@
 	const brandIcon16Href = '/brand/reservation-logo-16x16.svg';
 	const brandIcon32Href = '/brand/reservation-logo-32x32.svg';
 	const brandAppleTouchHref = '/brand/reservation-logo-180x180.svg';
+	const legalFooterLinks: Array<{ label: string; href: ResolvablePath }> = [
+		{ label: '利用規約', href: '/terms' },
+		{ label: 'プライバシーポリシー', href: '/privacy' },
+		{ label: '特定商取引法に基づく表記', href: '/commerce' }
+	];
 	const shouldShowAiChatWidget = (featureFlag: string | undefined, loggedIn: boolean) =>
 		featureFlag !== 'false' && loggedIn;
 	const publicLegalPaths = ['/terms', '/privacy', '/commerce'] as const;
@@ -1326,5 +1331,24 @@
 			</div>
 		</header>
 		{@render children()}
+		{#if pathname !== '/'}
+			<footer class="border-t border-border/80 bg-card">
+				<div
+					class="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-5 text-sm text-secondary-foreground md:flex-row md:items-center md:justify-between md:px-8"
+				>
+					<p>© WakuReserve. 個人開発プロジェクト</p>
+					<nav class="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="フッターリンク">
+						{#each legalFooterLinks as link (link.href)}
+							<a
+								class="text-link underline-offset-4 transition-colors hover:text-primary hover:underline"
+								href={resolve(link.href)}
+							>
+								{link.label}
+							</a>
+						{/each}
+					</nav>
+				</div>
+			</footer>
+		{/if}
 	</div>
 {/if}
