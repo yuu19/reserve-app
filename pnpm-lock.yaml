@@ -37,7 +37,10 @@ importers:
     dependencies:
       '@better-auth/expo':
         specifier: ^1.4.18
-        version: 1.4.18(81e546e32a3a24ee4d005f53a8914058)
+        version: 1.4.18(f348e3093a4102f034660af516917261)
+      '@better-auth/i18n':
+        specifier: 1.6.2
+        version: 1.6.2(8d6b75851f287f56553802615fb40fea)
       '@hono/swagger-ui':
         specifier: ^0.5.3
         version: 0.5.3(hono@4.12.18)
@@ -64,7 +67,7 @@ importers:
         version: 10.39.0(@cloudflare/workers-types@4.20260203.0)
       better-auth:
         specifier: ^1.4.18
-        version: 1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
+        version: 1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0)
@@ -83,7 +86,7 @@ importers:
     devDependencies:
       '@better-auth/cli':
         specifier: ^1.4.18
-        version: 1.4.18(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(@types/better-sqlite3@7.6.13)(better-call@1.3.5(zod@4.3.6))(drizzle-kit@0.31.8)(jose@6.2.3)(kysely@0.28.17)(magicast@0.5.3)(nanostores@1.3.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
+        version: 1.4.18(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(@types/better-sqlite3@7.6.13)(better-call@1.3.5(zod@4.3.6))(drizzle-kit@0.31.8)(jose@6.2.3)(kysely@0.28.17)(magicast@0.5.3)(nanostores@1.3.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
       '@cloudflare/workers-types':
         specifier: ^4.20260203.0
         version: 4.20260203.0
@@ -98,7 +101,7 @@ importers:
         version: 19.2.3(@types/react@19.2.13)
       '@vitest/coverage-v8':
         specifier: ^4.0.18
-        version: 4.0.18(@vitest/browser@4.0.18(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18))(vitest@4.0.18)
+        version: 4.0.18(@vitest/browser@4.0.18(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18))(vitest@4.0.18)
       drizzle-kit:
         specifier: ^0.31.8
         version: 0.31.8
@@ -1101,6 +1104,12 @@ packages:
         optional: true
       expo-web-browser:
         optional: true
+
+  '@better-auth/i18n@1.6.2':
+    resolution: {integrity: sha512-hbQ3a9Z0dnp9b5tV3e9VQ1De5Oshzop6af6i/b7WolDZYDMdr9jtiCZDEL8ng2FQN4BUKEAaoBeJxRgWoOrszw==}
+    peerDependencies:
+      '@better-auth/core': ^1.6.2
+      better-auth: ^1.6.2
 
   '@better-auth/kysely-adapter@1.6.2':
     resolution: {integrity: sha512-YMMm75jek/MNCAFWTAaq/U3VPmFnrwZW4NhBjjAwruHQJEIrSZZaOaUEXuUpFRRBhWqg7OOltQcHMwU/45CkuA==}
@@ -9880,7 +9889,7 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@better-auth/cli@1.4.18(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(@types/better-sqlite3@7.6.13)(better-call@1.3.5(zod@4.3.6))(drizzle-kit@0.31.8)(jose@6.2.3)(kysely@0.28.17)(magicast@0.5.3)(nanostores@1.3.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)':
+  '@better-auth/cli@1.4.18(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(@types/better-sqlite3@7.6.13)(better-call@1.3.5(zod@4.3.6))(drizzle-kit@0.31.8)(jose@6.2.3)(kysely@0.28.17)(magicast@0.5.3)(nanostores@1.3.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)':
     dependencies:
       '@babel/core': 7.29.0
       '@babel/preset-react': 7.28.5(@babel/core@7.29.0)
@@ -9892,7 +9901,7 @@ snapshots:
       '@mrleebo/prisma-ast': 0.13.1
       '@prisma/client': 5.22.0
       '@types/pg': 8.16.0
-      better-auth: 1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.41.0(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
+      better-auth: 1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.41.0(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
       better-sqlite3: 12.6.2
       c12: 3.3.3(magicast@0.5.3)
       chalk: 5.6.2
@@ -10014,19 +10023,6 @@ snapshots:
     optionalDependencies:
       drizzle-orm: 0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0)
 
-  '@better-auth/expo@1.4.18(81e546e32a3a24ee4d005f53a8914058)':
-    dependencies:
-      '@better-auth/core': 1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@4.3.6))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
-      '@better-fetch/fetch': 1.1.21
-      better-auth: 1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
-      better-call: 1.1.8(zod@4.3.6)
-      zod: 4.3.6
-    optionalDependencies:
-      expo-constants: 18.0.13(expo@54.0.12)(react-native@0.81.4(@babel/core@7.29.0)(@types/react@19.2.13)(react@19.1.0))
-      expo-linking: 8.0.11(expo@54.0.12)(react-native@0.81.4(@babel/core@7.29.0)(@types/react@19.2.13)(react@19.1.0))(react@19.1.0)
-      expo-network: 8.0.8(expo@54.0.12)(react@19.1.0)
-      expo-web-browser: 15.0.10(expo@54.0.12)(react-native@0.81.4(@babel/core@7.29.0)(@types/react@19.2.13)(react@19.1.0))
-
   '@better-auth/expo@1.4.18(eb34b45af584183c0ded4d34774adf61)':
     dependencies:
       '@better-auth/core': 1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@3.25.76))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
@@ -10039,6 +10035,24 @@ snapshots:
       expo-linking: 8.0.11(expo@54.0.12)(react-native@0.81.4(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       expo-network: 8.0.8(expo@54.0.12)(react@19.1.0)
       expo-web-browser: 15.0.10(expo@54.0.12)(react-native@0.81.4(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))
+
+  '@better-auth/expo@1.4.18(f348e3093a4102f034660af516917261)':
+    dependencies:
+      '@better-auth/core': 1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@4.3.6))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
+      '@better-fetch/fetch': 1.1.21
+      better-auth: 1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
+      better-call: 1.1.8(zod@4.3.6)
+      zod: 4.3.6
+    optionalDependencies:
+      expo-constants: 18.0.13(expo@54.0.12)(react-native@0.81.4(@babel/core@7.29.0)(@types/react@19.2.13)(react@19.1.0))
+      expo-linking: 8.0.11(expo@54.0.12)(react-native@0.81.4(@babel/core@7.29.0)(@types/react@19.2.13)(react@19.1.0))(react@19.1.0)
+      expo-network: 8.0.8(expo@54.0.12)(react@19.1.0)
+      expo-web-browser: 15.0.10(expo@54.0.12)(react-native@0.81.4(@babel/core@7.29.0)(@types/react@19.2.13)(react@19.1.0))
+
+  '@better-auth/i18n@1.6.2(8d6b75851f287f56553802615fb40fea)':
+    dependencies:
+      '@better-auth/core': 1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@4.3.6))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
+      better-auth: 1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18)
 
   '@better-auth/kysely-adapter@1.6.2(@better-auth/core@1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@3.25.76))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(kysely@0.28.17)':
     dependencies:
@@ -13118,11 +13132,11 @@ snapshots:
       '@opentelemetry/api': 1.9.0
       typescript: 5.9.3
 
-  '@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))':
+  '@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@sveltejs/acorn-typescript': 1.0.8(acorn@8.15.0)
-      '@sveltejs/vite-plugin-svelte': 7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      '@sveltejs/vite-plugin-svelte': 7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
       '@types/cookie': 0.6.0
       acorn: 8.15.0
       cookie: 0.6.0
@@ -13134,7 +13148,7 @@ snapshots:
       set-cookie-parser: 3.0.1
       sirv: 3.0.2
       svelte: 5.55.4(@typescript-eslint/types@8.58.2)
-      vite: 8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      vite: 7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
       typescript: 5.9.3
@@ -13200,14 +13214,14 @@ snapshots:
       vite: 7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       vitefu: 1.1.1(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
 
-  '@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))':
+  '@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
       deepmerge: 4.3.1
       magic-string: 0.30.21
       obug: 2.1.1
       svelte: 5.55.4(@typescript-eslint/types@8.58.2)
-      vite: 8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
-      vitefu: 1.1.3(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      vite: 7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      vitefu: 1.1.3(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
     optional: true
 
   '@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@24.10.10)(esbuild@0.27.7)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))':
@@ -13874,6 +13888,20 @@ snapshots:
       validator: 13.15.26
     optional: true
 
+  '@vitest/browser-playwright@4.0.18(playwright@1.59.1)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)':
+    dependencies:
+      '@vitest/browser': 4.0.18(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)
+      '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      playwright: 1.59.1
+      tinyrainbow: 3.0.3
+      vitest: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.31)(@vitest/browser-playwright@4.0.18)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+    transitivePeerDependencies:
+      - bufferutil
+      - msw
+      - utf-8-validate
+      - vite
+    optional: true
+
   '@vitest/browser-playwright@4.0.18(playwright@1.59.1)(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)':
     dependencies:
       '@vitest/browser': 4.0.18(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)
@@ -13886,20 +13914,6 @@ snapshots:
       - msw
       - utf-8-validate
       - vite
-
-  '@vitest/browser-playwright@4.0.18(playwright@1.59.1)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)':
-    dependencies:
-      '@vitest/browser': 4.0.18(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)
-      '@vitest/mocker': 4.0.18(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
-      playwright: 1.59.1
-      tinyrainbow: 3.0.3
-      vitest: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.31)(@vitest/browser-playwright@4.0.18)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
-    transitivePeerDependencies:
-      - bufferutil
-      - msw
-      - utf-8-validate
-      - vite
-    optional: true
 
   '@vitest/browser-playwright@4.1.4(playwright@1.59.1)(vite@8.0.8(@types/node@24.10.10)(esbuild@0.27.7)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.1.4)':
     dependencies:
@@ -13928,6 +13942,24 @@ snapshots:
       - utf-8-validate
       - vite
 
+  '@vitest/browser@4.0.18(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)':
+    dependencies:
+      '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      '@vitest/utils': 4.0.18
+      magic-string: 0.30.21
+      pixelmatch: 7.1.0
+      pngjs: 7.0.0
+      sirv: 3.0.2
+      tinyrainbow: 3.0.3
+      vitest: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.31)(@vitest/browser-playwright@4.0.18)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      ws: 8.19.0
+    transitivePeerDependencies:
+      - bufferutil
+      - msw
+      - utf-8-validate
+      - vite
+    optional: true
+
   '@vitest/browser@4.0.18(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)':
     dependencies:
       '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
@@ -13944,24 +13976,6 @@ snapshots:
       - msw
       - utf-8-validate
       - vite
-
-  '@vitest/browser@4.0.18(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)':
-    dependencies:
-      '@vitest/mocker': 4.0.18(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
-      '@vitest/utils': 4.0.18
-      magic-string: 0.30.21
-      pixelmatch: 7.1.0
-      pngjs: 7.0.0
-      sirv: 3.0.2
-      tinyrainbow: 3.0.3
-      vitest: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.31)(@vitest/browser-playwright@4.0.18)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
-      ws: 8.19.0
-    transitivePeerDependencies:
-      - bufferutil
-      - msw
-      - utf-8-validate
-      - vite
-    optional: true
 
   '@vitest/browser@4.1.4(vite@8.0.8(@types/node@24.10.10)(esbuild@0.27.7)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.1.4)':
     dependencies:
@@ -13998,6 +14012,22 @@ snapshots:
       - utf-8-validate
       - vite
 
+  '@vitest/coverage-v8@4.0.18(@vitest/browser@4.0.18(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18))(vitest@4.0.18)':
+    dependencies:
+      '@bcoe/v8-coverage': 1.0.2
+      '@vitest/utils': 4.0.18
+      ast-v8-to-istanbul: 0.3.12
+      istanbul-lib-coverage: 3.2.2
+      istanbul-lib-report: 3.0.1
+      istanbul-reports: 3.2.0
+      magicast: 0.5.3
+      obug: 2.1.1
+      std-env: 3.10.0
+      tinyrainbow: 3.1.0
+      vitest: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.31)(@vitest/browser-playwright@4.0.18)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+    optionalDependencies:
+      '@vitest/browser': 4.0.18(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)
+
   '@vitest/coverage-v8@4.0.18(@vitest/browser@4.0.18(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18))(vitest@4.0.18)':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
@@ -14013,22 +14043,6 @@ snapshots:
       vitest: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@24.10.10)(@vitest/browser-playwright@4.0.18)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
     optionalDependencies:
       '@vitest/browser': 4.0.18(vite@7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)
-
-  '@vitest/coverage-v8@4.0.18(@vitest/browser@4.0.18(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18))(vitest@4.0.18)':
-    dependencies:
-      '@bcoe/v8-coverage': 1.0.2
-      '@vitest/utils': 4.0.18
-      ast-v8-to-istanbul: 0.3.12
-      istanbul-lib-coverage: 3.2.2
-      istanbul-lib-report: 3.0.1
-      istanbul-reports: 3.2.0
-      magicast: 0.5.3
-      obug: 2.1.1
-      std-env: 3.10.0
-      tinyrainbow: 3.1.0
-      vitest: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.31)(@vitest/browser-playwright@4.0.18)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
-    optionalDependencies:
-      '@vitest/browser': 4.0.18(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)
 
   '@vitest/expect@4.0.18':
     dependencies:
@@ -14063,15 +14077,6 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       vite: 7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
-
-  '@vitest/mocker@4.0.18(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))':
-    dependencies:
-      '@vitest/spy': 4.0.18
-      estree-walker: 3.0.3
-      magic-string: 0.30.21
-    optionalDependencies:
-      vite: 8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
-    optional: true
 
   '@vitest/mocker@4.1.4(vite@8.0.8(@types/node@24.10.10)(esbuild@0.27.7)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
@@ -14406,7 +14411,7 @@ snapshots:
 
   baseline-browser-mapping@2.9.19: {}
 
-  better-auth@1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.41.0(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18):
+  better-auth@1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.41.0(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18):
     dependencies:
       '@better-auth/core': 1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@4.3.6))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@better-auth/drizzle-adapter': 1.6.2(@better-auth/core@1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@4.3.6))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(drizzle-orm@0.41.0(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))
@@ -14427,7 +14432,7 @@ snapshots:
       zod: 4.3.6
     optionalDependencies:
       '@prisma/client': 5.22.0
-      '@sveltejs/kit': 2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      '@sveltejs/kit': 2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
       better-sqlite3: 12.6.2
       drizzle-kit: 0.31.8
       drizzle-orm: 0.41.0(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0)
@@ -14440,7 +14445,7 @@ snapshots:
       - '@cloudflare/workers-types'
       - '@opentelemetry/api'
 
-  better-auth@1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18):
+  better-auth@1.6.2(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(better-sqlite3@12.6.2)(drizzle-kit@0.31.8)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))(pg@8.18.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vitest@4.0.18):
     dependencies:
       '@better-auth/core': 1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@4.3.6))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@better-auth/drizzle-adapter': 1.6.2(@better-auth/core@1.6.2(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(better-call@1.3.5(zod@4.3.6))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(drizzle-orm@0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0))
@@ -14461,7 +14466,7 @@ snapshots:
       zod: 4.3.6
     optionalDependencies:
       '@prisma/client': 5.22.0
-      '@sveltejs/kit': 2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      '@sveltejs/kit': 2.57.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.58.2))(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.55.4(@typescript-eslint/types@8.58.2))(typescript@5.9.3)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
       better-sqlite3: 12.6.2
       drizzle-kit: 0.31.8
       drizzle-orm: 0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0)
@@ -18964,23 +18969,6 @@ snapshots:
       tsx: 4.21.0
       yaml: 2.8.2
 
-  vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
-    dependencies:
-      lightningcss: 1.32.0
-      picomatch: 4.0.4
-      postcss: 8.5.10
-      rolldown: 1.0.0-rc.15
-      tinyglobby: 0.2.15
-    optionalDependencies:
-      '@types/node': 20.19.31
-      esbuild: 0.25.12
-      fsevents: 2.3.3
-      jiti: 2.6.1
-      terser: 5.46.0
-      tsx: 4.21.0
-      yaml: 2.8.2
-    optional: true
-
   vite@8.0.8(@types/node@24.10.10)(esbuild@0.27.7)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       lightningcss: 1.32.0
@@ -19018,9 +19006,9 @@ snapshots:
     optionalDependencies:
       vite: 7.3.1(@types/node@24.10.10)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
-  vitefu@1.1.3(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)):
+  vitefu@1.1.3(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)):
     optionalDependencies:
-      vite: 8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      vite: 7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
     optional: true
 
   vitefu@1.1.3(vite@8.0.8(@types/node@24.10.10)(esbuild@0.27.7)(jiti@1.21.7)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)):
@@ -19069,7 +19057,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
       '@types/node': 20.19.31
-      '@vitest/browser-playwright': 4.0.18(playwright@1.59.1)(vite@8.0.8(@types/node@20.19.31)(esbuild@0.25.12)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)
+      '@vitest/browser-playwright': 4.0.18(playwright@1.59.1)(vite@7.3.1(@types/node@20.19.31)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(vitest@4.0.18)
     transitivePeerDependencies:
       - jiti
       - less

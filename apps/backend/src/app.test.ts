@@ -2432,6 +2432,86 @@ describe('バックエンドアプリ', () => {
     expect((body.url as string) || '').toContain('https://accounts.google.com/o/oauth2/v2/auth');
   });
 
+  it('未登録メールのサインイン失敗は Better Auth の日本語 message を返す', async () => {
+    const response = await app.request('/api/v1/auth/sign-in', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'auth-i18n-missing-user@example.com',
+        password: 'password1234',
+      }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(await toJson(response)).toMatchObject({
+      code: 'INVALID_EMAIL_OR_PASSWORD',
+      message: 'メールアドレスまたはパスワードが正しくありません。',
+      originalMessage: 'Invalid email or password',
+    });
+  });
+
+  it('既存メールのサインアップ失敗は Better Auth の日本語 message を返す', async () => {
+    const agent = createAuthAgent(app);
+    await signUpUser({
+      agent,
+      name: 'Auth I18n Existing User',
+      email: 'auth-i18n-existing-user@example.com',
+    });
+
+    const response = await agent.request('/api/v1/auth/sign-up', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Auth I18n Duplicate User',
+        email: 'auth-i18n-existing-user@example.com',
+        password: 'password1234',
+      }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(await toJson(response)).toMatchObject({
+      code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+      message: 'このメールアドレスは既に使用されています。別のメールアドレスを使用してください。',
+      originalMessage: 'User already exists. Use another email.',
+    });
+  });
+
+  it('同じ slug の組織作成失敗は Better Auth の日本語 message を返す', async () => {
+    const agent = createAuthAgent(app);
+    await signUpUser({
+      agent,
+      name: 'Auth I18n Organization Owner',
+      email: 'auth-i18n-org-owner@example.com',
+    });
+    await createOrganization({
+      agent,
+      name: 'Auth I18n Organization',
+      slug: 'auth-i18n-organization',
+    });
+
+    const response = await agent.request('/api/v1/auth/organizations', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Auth I18n Duplicate Organization',
+        slug: 'auth-i18n-organization',
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await toJson(response)).toMatchObject({
+      code: 'ORGANIZATION_ALREADY_EXISTS',
+      message: '組織は既に存在します。',
+      originalMessage: 'Organization already exists',
+    });
+  });
+
   it('組織エンドポイントに認証を要求する', async () => {
     const response = await app.request('/api/v1/auth/organizations');
 
