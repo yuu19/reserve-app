@@ -59,6 +59,12 @@ describe('参加者ログインページ', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '予約者ページログイン' }))
 			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: 'この入口でできること' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('link', { name: /管理画面ログインへ/ }))
+			.toHaveAttribute('href', '/admin/login');
 	});
 
 	it('公開イベントへのアクセスがない新規サインインユーザーをリダイレクトする', async () => {

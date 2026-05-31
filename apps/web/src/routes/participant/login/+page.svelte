@@ -6,7 +6,13 @@
 	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
@@ -22,7 +28,7 @@
 		toErrorMessage
 	} from '$lib/features/auth-session.svelte';
 	import { authRpc } from '$lib/rpc-client';
-	import { RefreshCw } from '@lucide/svelte';
+	import { ArrowRight, CalendarDays, CheckCircle2, RefreshCw, ShieldCheck } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	type Mode = 'sign-in' | 'sign-up';
@@ -37,6 +43,12 @@
 
 	let signInForm = $state({ email: '', password: '' });
 	let signUpForm = $state({ name: '', email: '', password: '' });
+
+	const participantCapabilities = [
+		'公開イベントの閲覧と予約',
+		'予約内容の確認、キャンセル',
+		'参加者招待、管理者招待への対応'
+	];
 
 	const nextPath = $derived.by(() => {
 		const next = page.url.searchParams.get('next');
@@ -183,29 +195,46 @@
 	});
 </script>
 
-<main class="min-h-screen">
-	<div class="mx-auto flex w-full max-w-xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-		<header class="surface-panel rounded-2xl border border-border/80 p-5 shadow-lg md:p-6">
-			<div class="space-y-3">
-				<Badge variant="outline">予約者ページ</Badge>
-				<h1 class="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
-					予約者ページログイン
-				</h1>
-				<p class="text-sm leading-relaxed text-muted-foreground md:text-base">
-					予約確認、公開イベントからの申込、招待対応など参加者向け機能にアクセスします。
-				</p>
-				{#if nextPath}
-					<p class="text-xs text-muted-foreground">ログイン後の遷移先: {nextPath}</p>
-				{/if}
+<main class="min-h-screen bg-background">
+	<div
+		class="mx-auto grid w-full max-w-5xl gap-6 px-4 py-6 md:px-8 md:py-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(380px,0.75fr)] lg:items-start"
+	>
+		<section
+			class="order-1 lg:col-start-1 lg:row-start-1"
+			aria-labelledby="participant-login-heading"
+		>
+			<div class="surface-panel rounded-md border border-border/80 p-5 shadow-sm md:p-6">
+				<div class="space-y-3">
+					<Badge variant="outline" class="w-fit">予約者向け</Badge>
+					<div class="space-y-2">
+						<h1 id="participant-login-heading" class="text-2xl font-bold text-foreground">
+							予約者ページログイン
+						</h1>
+						<p class="max-w-[36rem] text-sm leading-relaxed text-secondary-foreground">
+							予約確認、公開イベントからの申込、招待対応を行う予約者向けの入口です。
+						</p>
+					</div>
+					{#if nextPath}
+						<p
+							class="break-all rounded-md border border-primary/20 bg-stone-01 px-3 py-2 text-sm text-secondary-foreground"
+						>
+							ログイン後は {nextPath} に移動します。
+						</p>
+					{/if}
+				</div>
 			</div>
-		</header>
+		</section>
 
-		<Card class="surface-panel border-border/80 shadow-lg">
+		<Card
+			class="surface-panel order-2 rounded-md border-border/80 shadow-sm lg:col-start-2 lg:row-span-2 lg:row-start-1"
+		>
 			<CardHeader class="space-y-2">
-				<CardDescription>管理者入口を使う場合は下記リンクから移動してください。</CardDescription>
-				<Button href={adminLoginHref} variant="outline" class="w-full">管理画面ログインへ</Button>
+				<CardTitle class="text-xl">ログインまたは新規登録</CardTitle>
+				<CardDescription>
+					メールアドレスとパスワード、または Google アカウントで予約者ページに進めます。
+				</CardDescription>
 			</CardHeader>
-			<CardContent class="space-y-4">
+			<CardContent class="space-y-5">
 				{#if loadingSession}
 					<p class="text-sm text-muted-foreground" aria-live="polite">
 						セッション情報を確認しています…
@@ -220,7 +249,7 @@
 
 				<Tabs bind:value={mode} class="gap-5">
 					<TabsList class="grid h-10 w-full grid-cols-2">
-						<TabsTrigger value="sign-in">サインイン</TabsTrigger>
+						<TabsTrigger value="sign-in">ログイン</TabsTrigger>
 						<TabsTrigger value="sign-up">新規登録</TabsTrigger>
 					</TabsList>
 					<TabsContent value="sign-in" class="space-y-4">
@@ -234,20 +263,32 @@
 							{#if submittingAction === 'sign-in-google'}
 								<RefreshCw class="size-4 animate-spin" aria-hidden="true" />
 							{/if}
-							Google で登録/ログインする
+							{submittingAction === 'sign-in-google'
+								? 'Google に移動中…'
+								: 'Google でログイン・登録'}
 						</Button>
 
-						<form class="space-y-4" onsubmit={submitSignIn}>
+						<form
+							class="space-y-4"
+							aria-busy={submittingAction === 'sign-in'}
+							onsubmit={submitSignIn}
+						>
 							<div class="space-y-2">
 								<Label for="participant-sign-in-email">メールアドレス</Label>
 								<Input
 									id="participant-sign-in-email"
 									name="participant_sign_in_email"
 									type="email"
+									autocomplete="email"
+									inputmode="email"
 									bind:value={signInForm.email}
 									required
 									spellcheck={false}
+									aria-describedby="participant-sign-in-email-help"
 								/>
+								<p id="participant-sign-in-email-help" class="text-xs text-muted-foreground">
+									予約や招待に使ったメールアドレスを入力してください。
+								</p>
 							</div>
 							<div class="space-y-2">
 								<Label for="participant-sign-in-password">パスワード</Label>
@@ -255,26 +296,41 @@
 									id="participant-sign-in-password"
 									name="participant_sign_in_password"
 									type="password"
+									autocomplete="current-password"
 									bind:value={signInForm.password}
 									required
 									minlength={8}
 								/>
 							</div>
-							<Button type="submit" class="w-full" disabled={isBusy}>サインイン</Button>
+							<Button type="submit" class="w-full" disabled={isBusy}>
+								{#if submittingAction === 'sign-in'}
+									<RefreshCw class="size-4 animate-spin" aria-hidden="true" />
+								{/if}
+								{submittingAction === 'sign-in' ? 'ログイン中…' : '予約者ページへログイン'}
+							</Button>
 						</form>
 					</TabsContent>
 
 					<TabsContent value="sign-up" class="space-y-4">
-						<form class="space-y-4" onsubmit={submitSignUp}>
+						<form
+							class="space-y-4"
+							aria-busy={submittingAction === 'sign-up'}
+							onsubmit={submitSignUp}
+						>
 							<div class="space-y-2">
 								<Label for="participant-sign-up-name">表示名</Label>
 								<Input
 									id="participant-sign-up-name"
 									name="participant_sign_up_name"
 									type="text"
+									autocomplete="name"
 									bind:value={signUpForm.name}
 									required
+									aria-describedby="participant-sign-up-name-help"
 								/>
+								<p id="participant-sign-up-name-help" class="text-xs text-muted-foreground">
+									予約者ページや招待確認で表示される名前です。
+								</p>
 							</div>
 							<div class="space-y-2">
 								<Label for="participant-sign-up-email">メールアドレス</Label>
@@ -282,6 +338,8 @@
 									id="participant-sign-up-email"
 									name="participant_sign_up_email"
 									type="email"
+									autocomplete="email"
+									inputmode="email"
 									bind:value={signUpForm.email}
 									required
 									spellcheck={false}
@@ -293,16 +351,60 @@
 									id="participant-sign-up-password"
 									name="participant_sign_up_password"
 									type="password"
+									autocomplete="new-password"
 									bind:value={signUpForm.password}
 									required
 									minlength={8}
+									aria-describedby="participant-sign-up-password-help"
 								/>
+								<p id="participant-sign-up-password-help" class="text-xs text-muted-foreground">
+									8文字以上で設定してください。
+								</p>
 							</div>
-							<Button type="submit" class="w-full" disabled={isBusy}>新規登録</Button>
+							<Button type="submit" class="w-full" disabled={isBusy}>
+								{#if submittingAction === 'sign-up'}
+									<RefreshCw class="size-4 animate-spin" aria-hidden="true" />
+								{/if}
+								{submittingAction === 'sign-up' ? '登録中…' : '予約者として新規登録'}
+							</Button>
 						</form>
 					</TabsContent>
 				</Tabs>
 			</CardContent>
 		</Card>
+
+		<section
+			class="order-3 space-y-5 lg:col-start-1 lg:row-start-2"
+			aria-labelledby="participant-login-capabilities-heading"
+		>
+			<div class="surface-panel rounded-md border border-border/80 p-5 shadow-sm">
+				<h2
+					id="participant-login-capabilities-heading"
+					class="flex items-center gap-2 text-base font-bold text-foreground"
+				>
+					<CalendarDays class="size-4 text-primary" aria-hidden="true" />
+					この入口でできること
+				</h2>
+				<ul class="mt-3 space-y-2 text-sm text-secondary-foreground">
+					{#each participantCapabilities as item (item)}
+						<li class="flex items-start gap-2">
+							<CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
+							<span>{item}</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+
+			<div class="rounded-md border border-dashed border-border bg-card p-4">
+				<p class="text-sm text-secondary-foreground">
+					店舗や予約枠の管理を行う場合は、管理画面を使用してください。
+				</p>
+				<Button href={adminLoginHref} variant="outline" class="mt-3 w-full sm:w-auto">
+					<ShieldCheck class="size-4" aria-hidden="true" />
+					管理画面ログインへ
+					<ArrowRight class="size-4" aria-hidden="true" />
+				</Button>
+			</div>
+		</section>
 	</div>
 </main>
