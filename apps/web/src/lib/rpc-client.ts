@@ -207,6 +207,8 @@ export type ParticipantPayload = {
 
 export type ParticipantInvitationPayload = InvitationPayload;
 
+export type ServicePublicStatus = 'public' | 'private' | 'suspended';
+
 export type ServicePayload = {
 	id: string;
 	organizationId: string;
@@ -222,6 +224,7 @@ export type ServicePayload = {
 	cancellationDeadlineMinutes?: number | null;
 	timezone: string;
 	requiresTicket: boolean;
+	publicStatus: ServicePublicStatus;
 	isActive: boolean;
 	createdAt: string;
 	updatedAt: string;
@@ -725,6 +728,7 @@ type CreateServiceInput = {
 	cancellationDeadlineMinutes?: number;
 	timezone?: string;
 	requiresTicket?: boolean;
+	publicStatus?: ServicePublicStatus;
 	isActive?: boolean;
 };
 
@@ -742,6 +746,7 @@ type UpdateServiceInput = {
 	cancellationDeadlineMinutes?: number;
 	timezone?: string;
 	requiresTicket?: boolean;
+	publicStatus?: ServicePublicStatus;
 	isActive?: boolean;
 };
 

@@ -3,6 +3,7 @@ import {
 	type BookingAttendanceStatus,
 	type BookingPayload,
 	type ServiceImageUploadUrlPayload,
+	type ServicePublicStatus,
 	type StaffCreateBookingInput
 } from '$lib/rpc-client';
 import { formatJaMonth, formatJaTime } from '$lib/date/format';
@@ -331,6 +332,7 @@ export const createService = async (input: {
 	durationMinutes: number;
 	capacity: number;
 	requiresTicket: boolean;
+	publicStatus?: ServicePublicStatus;
 	cancellationDeadlineMinutes?: number;
 }) => {
 	const context = readWindowScopedRouteContext();
@@ -430,6 +432,7 @@ export const updateServiceByStaff = async (input: {
 	capacity?: number;
 	cancellationDeadlineMinutes?: number;
 	requiresTicket?: boolean;
+	publicStatus?: ServicePublicStatus;
 	isActive?: boolean;
 }) => {
 	const context = readWindowScopedRouteContext();

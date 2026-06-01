@@ -39,6 +39,13 @@ export const PUBLIC_SITE_STATUS = {
   SUSPENDED: 'suspended',
 } as const;
 
+/** 公開予約ページ上での service 公開状態。 */
+export const SERVICE_PUBLIC_STATUS = {
+  PUBLIC: 'public',
+  PRIVATE: 'private',
+  SUSPENDED: 'suspended',
+} as const;
+
 /** 予約の流入元。 */
 export const BOOKING_SOURCE = {
   PARTICIPANT: 'participant',

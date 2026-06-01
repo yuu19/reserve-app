@@ -165,6 +165,7 @@ export const createService = async (
     timezone,
     bookingPolicy: body.bookingPolicy ?? 'instant',
     requiresTicket: body.requiresTicket ?? false,
+    publicStatus: body.publicStatus ?? 'public',
     isActive: body.isActive ?? true,
   });
 
@@ -278,6 +279,7 @@ export const updateExistingService = async (
       timezone: body.timezone,
       bookingPolicy: body.bookingPolicy,
       requiresTicket: body.requiresTicket,
+      publicStatus: body.publicStatus,
       isActive: body.isActive,
     },
   });

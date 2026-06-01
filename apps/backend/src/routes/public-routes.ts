@@ -6,6 +6,7 @@ import {
   BOOKING_STATUS,
   DEFAULT_CANCELLATION_DEADLINE_MINUTES,
   PUBLIC_SITE_STATUS,
+  SERVICE_PUBLIC_STATUS,
   SLOT_STATUS,
 } from '../domain/booking/constants.js';
 import { type AuthRuntimeDatabase, type AuthRuntimeEnv } from '../auth-runtime.js';
@@ -351,6 +352,7 @@ type PublicEventQueryRow = {
   serviceKind: 'single' | 'recurring';
   bookingPolicy: 'instant' | 'approval';
   requiresTicket: boolean;
+  servicePublicStatus: string;
   slotId: string;
   startAt: Date;
   endAt: Date;
@@ -460,6 +462,7 @@ const formatPublicEvent = (
     bookingCloseAt: toIsoDate(row.bookingCloseAt),
     isBookable:
       acceptBookings &&
+      row.servicePublicStatus === SERVICE_PUBLIC_STATUS.PUBLIC &&
       isBookableSlot({
         slotStatus: row.slotStatus,
         reservedCount: row.reservedCount,
@@ -568,6 +571,7 @@ const listPublicEventRows = async ({
       serviceKind: dbSchema.service.kind,
       bookingPolicy: dbSchema.service.bookingPolicy,
       requiresTicket: dbSchema.service.requiresTicket,
+      servicePublicStatus: dbSchema.service.publicStatus,
       slotId: dbSchema.slot.id,
       startAt: dbSchema.slot.startAt,
       endAt: dbSchema.slot.endAt,
@@ -586,6 +590,10 @@ const listPublicEventRows = async ({
         eq(dbSchema.slot.organizationId, publicContext.organization.id),
         eq(dbSchema.slot.storeId, publicContext.store.id),
         eq(dbSchema.service.isActive, true),
+        inArray(dbSchema.service.publicStatus, [
+          SERVICE_PUBLIC_STATUS.PUBLIC,
+          SERVICE_PUBLIC_STATUS.SUSPENDED,
+        ]),
         gte(dbSchema.slot.startAt, now),
       ),
     )
@@ -1224,6 +1232,7 @@ export const createPublicRoutes = ({
         serviceKind: dbSchema.service.kind,
         bookingPolicy: dbSchema.service.bookingPolicy,
         requiresTicket: dbSchema.service.requiresTicket,
+        servicePublicStatus: dbSchema.service.publicStatus,
         slotId: dbSchema.slot.id,
         startAt: dbSchema.slot.startAt,
         endAt: dbSchema.slot.endAt,
@@ -1243,6 +1252,10 @@ export const createPublicRoutes = ({
           eq(dbSchema.slot.storeId, publicContext.store.id),
           eq(dbSchema.slot.id, slotId),
           eq(dbSchema.service.isActive, true),
+          inArray(dbSchema.service.publicStatus, [
+            SERVICE_PUBLIC_STATUS.PUBLIC,
+            SERVICE_PUBLIC_STATUS.SUSPENDED,
+          ]),
         ),
       )
       .limit(1);
@@ -1330,6 +1343,7 @@ export const createPublicRoutes = ({
         bookingOpenAt: dbSchema.slot.bookingOpenAt,
         bookingCloseAt: dbSchema.slot.bookingCloseAt,
         serviceIsActive: dbSchema.service.isActive,
+        servicePublicStatus: dbSchema.service.publicStatus,
         bookingPolicy: dbSchema.service.bookingPolicy,
         requiresTicket: dbSchema.service.requiresTicket,
       })
@@ -1346,6 +1360,12 @@ export const createPublicRoutes = ({
     const slot = slotRows[0] ?? null;
     if (!slot || !slot.serviceIsActive) {
       return c.json({ message: 'Public event not found.' }, 404);
+    }
+    if (slot.servicePublicStatus === SERVICE_PUBLIC_STATUS.PRIVATE) {
+      return c.json({ message: 'Public event not found.' }, 404);
+    }
+    if (slot.servicePublicStatus !== SERVICE_PUBLIC_STATUS.PUBLIC) {
+      return c.json({ message: 'Public booking is not accepted for this service.' }, 409);
     }
     if (slot.requiresTicket) {
       return c.json({ message: 'Ticket-required services cannot be booked as a guest.' }, 409);

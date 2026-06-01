@@ -92,6 +92,7 @@ describe('サービス作成ページ', () => {
 			.toBeInTheDocument();
 		await expect.element(page.getByLabelText('サービス説明')).toBeInTheDocument();
 		await expect.element(page.getByLabelText('キャンセル期限（分）')).toBeInTheDocument();
+		await expect.element(page.getByLabelText('公開予約での表示')).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: '単発' })).toBeInTheDocument();
 		await expect.element(page.getByLabelText(/サービス名/)).toHaveAttribute('maxlength', '120');
 		await expect.element(page.getByLabelText('サービス説明')).toHaveAttribute('maxlength', '500');

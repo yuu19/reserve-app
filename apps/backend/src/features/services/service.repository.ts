@@ -22,6 +22,7 @@ export const insertService = async ({
   timezone,
   bookingPolicy,
   requiresTicket,
+  publicStatus,
   isActive,
 }: {
   database: AuthRuntimeDatabase;
@@ -40,6 +41,7 @@ export const insertService = async ({
   timezone: string;
   bookingPolicy: string;
   requiresTicket: boolean;
+  publicStatus?: string;
   isActive: boolean;
 }) => {
   await database.insert(dbSchema.service).values({
@@ -58,6 +60,7 @@ export const insertService = async ({
     timezone,
     bookingPolicy,
     requiresTicket,
+    publicStatus: publicStatus ?? 'public',
     isActive,
   });
 };
@@ -160,6 +163,7 @@ export const updateService = async ({
     timezone?: string;
     bookingPolicy?: string;
     requiresTicket?: boolean;
+    publicStatus?: string;
     isActive?: boolean;
   };
 }) => {
@@ -186,6 +190,7 @@ export const updateService = async ({
       ...(changes.timezone !== undefined ? { timezone: changes.timezone } : {}),
       ...(changes.bookingPolicy !== undefined ? { bookingPolicy: changes.bookingPolicy } : {}),
       ...(changes.requiresTicket !== undefined ? { requiresTicket: changes.requiresTicket } : {}),
+      ...(changes.publicStatus !== undefined ? { publicStatus: changes.publicStatus } : {}),
       ...(changes.isActive !== undefined ? { isActive: changes.isActive } : {}),
     })
     .where(eq(dbSchema.service.id, serviceId));

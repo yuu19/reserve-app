@@ -11600,6 +11600,81 @@ describe('バックエンドアプリ', () => {
     const slotPayload = (await toJson(slotResponse)) as Record<string, unknown>;
     const slotId = slotPayload.id as string;
 
+    const privateServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Private Public Event Service',
+        kind: 'single',
+        bookingPolicy: 'instant',
+        durationMinutes: 60,
+        capacity: 3,
+        publicStatus: 'private',
+      }),
+    });
+    expect(privateServiceResponse.status).toBe(200);
+    const privateServicePayload = (await toJson(privateServiceResponse)) as Record<string, unknown>;
+    const privateServiceId = privateServicePayload.id as string;
+    expect(privateServicePayload.publicStatus).toBe('private');
+
+    const privateSlotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        serviceId: privateServiceId,
+        startAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        endAt: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
+      }),
+    });
+    expect(privateSlotResponse.status).toBe(200);
+    const privateSlotPayload = (await toJson(privateSlotResponse)) as Record<string, unknown>;
+    const privateSlotId = privateSlotPayload.id as string;
+
+    const suspendedServiceResponse = await owner.request('/api/v1/auth/organizations/services', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        name: 'Suspended Public Event Service',
+        kind: 'single',
+        bookingPolicy: 'instant',
+        durationMinutes: 60,
+        capacity: 3,
+        publicStatus: 'suspended',
+      }),
+    });
+    expect(suspendedServiceResponse.status).toBe(200);
+    const suspendedServicePayload = (await toJson(suspendedServiceResponse)) as Record<
+      string,
+      unknown
+    >;
+    const suspendedServiceId = suspendedServicePayload.id as string;
+    expect(suspendedServicePayload.publicStatus).toBe('suspended');
+
+    const suspendedSlotResponse = await owner.request('/api/v1/auth/organizations/slots', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organizationId,
+        serviceId: suspendedServiceId,
+        startAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+        endAt: new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString(),
+      }),
+    });
+    expect(suspendedSlotResponse.status).toBe(200);
+    const suspendedSlotPayload = (await toJson(suspendedSlotResponse)) as Record<string, unknown>;
+    const suspendedSlotId = suspendedSlotPayload.id as string;
+
     const allTicketTypeResponse = await owner.request('/api/v1/auth/organizations/ticket-types', {
       method: 'POST',
       headers: {
@@ -11792,6 +11867,14 @@ describe('バックエンドアプリ', () => {
     const publicEvent = publicEventsPayload.events?.find((row) => row.slotId === slotId);
     expect(publicEvent).toBeTruthy();
     expect(publicEvent?.serviceDescription).toBe('公開向けのサービス説明テキストです。');
+    expect(publicEventsPayload.events?.some((row) => row.slotId === privateSlotId)).toBe(false);
+    const suspendedPublicEvent = publicEventsPayload.events?.find(
+      (row) => row.slotId === suspendedSlotId,
+    );
+    expect(suspendedPublicEvent).toMatchObject({
+      serviceName: 'Suspended Public Event Service',
+      isBookable: false,
+    });
     const publicTicketTypeNames =
       publicEventsPayload.ticketTypes?.map((ticketType) => ticketType.name) ?? [];
     expect(publicTicketTypeNames).toEqual(
@@ -11879,6 +11962,24 @@ describe('バックエンドアプリ', () => {
       }),
     ]);
 
+    const privatePublicEventDetailResponse = await app.request(
+      `/api/v1/public/orgs/public-events-org/stores/public-events-org/events/${encodeURIComponent(privateSlotId)}`,
+    );
+    expect(privatePublicEventDetailResponse.status).toBe(404);
+
+    const suspendedPublicEventDetailResponse = await app.request(
+      `/api/v1/public/orgs/public-events-org/stores/public-events-org/events/${encodeURIComponent(suspendedSlotId)}`,
+    );
+    expect(suspendedPublicEventDetailResponse.status).toBe(200);
+    const suspendedPublicEventDetail = (await toJson(suspendedPublicEventDetailResponse)) as Record<
+      string,
+      unknown
+    >;
+    expect(suspendedPublicEventDetail).toMatchObject({
+      slotId: suspendedSlotId,
+      isBookable: false,
+    });
+
     const publicSiteResponse = await app.request(
       '/api/v1/public/orgs/public-events-org/stores/public-events-org/site',
     );
@@ -11919,6 +12020,21 @@ describe('バックエンドアプリ', () => {
       },
     );
     expect(missingAnswerBookingResponse.status).toBe(400);
+
+    const suspendedPublicBookingResponse = await app.request(
+      '/api/v1/public/orgs/public-events-org/stores/public-events-org/bookings',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          slotId: suspendedSlotId,
+          customerName: 'Suspended Guest',
+          customerEmail: 'suspended-guest@example.com',
+          participantsCount: 1,
+        }),
+      },
+    );
+    expect(suspendedPublicBookingResponse.status).toBe(409);
 
     const publicBookingResponse = await app.request(
       '/api/v1/public/orgs/public-events-org/stores/public-events-org/bookings',

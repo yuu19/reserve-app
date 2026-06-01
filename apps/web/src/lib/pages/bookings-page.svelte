@@ -81,6 +81,7 @@
 		ParticipantPayload,
 		RecurringSchedulePayload,
 		ServicePayload,
+		ServicePublicStatus,
 		SlotPayload,
 		TicketPackPayload,
 		TicketPurchasePayload,
@@ -173,6 +174,7 @@
 		description: '',
 		kind: 'single' as 'single' | 'recurring',
 		bookingPolicy: 'instant' as 'instant' | 'approval',
+		publicStatus: 'public' as ServicePublicStatus,
 		durationMinutes: '60',
 		capacity: '10',
 		requiresTicket: false,
@@ -231,6 +233,7 @@
 		description: '',
 		kind: 'single' as 'single' | 'recurring',
 		bookingPolicy: 'instant' as 'instant' | 'approval',
+		publicStatus: 'public' as ServicePublicStatus,
 		durationMinutes: '60',
 		capacity: '10',
 		cancellationDeadlineMinutes: '',
@@ -646,6 +649,21 @@
 		kind === 'single' ? '単発' : '定期';
 	const formatBookingPolicy = (bookingPolicy: ServicePayload['bookingPolicy']): string =>
 		bookingPolicy === 'approval' ? '承認制' : '先着確定';
+	const formatServicePublicStatus = (
+		status: ServicePayload['publicStatus'] | undefined
+	): string => {
+		if (status === 'private') {
+			return '非公開';
+		}
+		if (status === 'suspended') {
+			return '受付停止';
+		}
+		return '公開中';
+	};
+	const getServicePublicStatusBadgeVariant = (
+		status: ServicePayload['publicStatus'] | undefined
+	): 'outline' | 'secondary' | 'destructive' =>
+		status === 'private' ? 'destructive' : status === 'suspended' ? 'secondary' : 'outline';
 	const formatRecurringPattern = (schedule: RecurringSchedulePayload): string => {
 		if (schedule.frequency === 'weekly') {
 			const byWeekday = formatByWeekday(schedule.byWeekday);
@@ -1276,6 +1294,7 @@
 		serviceEditForm.description = service.description ?? '';
 		serviceEditForm.kind = service.kind;
 		serviceEditForm.bookingPolicy = service.bookingPolicy;
+		serviceEditForm.publicStatus = service.publicStatus ?? 'public';
 		serviceEditForm.durationMinutes = String(service.durationMinutes);
 		serviceEditForm.capacity = String(service.capacity);
 		serviceEditForm.cancellationDeadlineMinutes =
@@ -1585,6 +1604,7 @@
 				imageUrl,
 				kind: serviceForm.kind,
 				bookingPolicy: serviceForm.bookingPolicy,
+				publicStatus: serviceForm.publicStatus,
 				durationMinutes: Number(serviceForm.durationMinutes),
 				capacity: Number(serviceForm.capacity),
 				requiresTicket: serviceForm.requiresTicket,
@@ -1598,6 +1618,7 @@
 			serviceForm.name = '';
 			serviceForm.description = '';
 			serviceForm.bookingPolicy = 'instant';
+			serviceForm.publicStatus = 'public';
 			serviceForm.requiresTicket = false;
 			serviceImageFiles = undefined;
 			serviceCreateAttempted = false;
@@ -1748,6 +1769,7 @@
 				imageUrl,
 				kind: serviceEditForm.kind,
 				bookingPolicy: serviceEditForm.bookingPolicy,
+				publicStatus: serviceEditForm.publicStatus,
 				durationMinutes,
 				capacity,
 				cancellationDeadlineMinutes: parseNumberInput(serviceEditForm.cancellationDeadlineMinutes),
@@ -2478,6 +2500,19 @@
 														/></Select.Content
 													></Select.Root
 												>
+											</div>
+											<div class="space-y-2 md:col-span-2">
+												<Label for="service-public-status">公開予約での表示</Label>
+												<select
+													id="service-public-status"
+													name="service_public_status"
+													class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+													bind:value={serviceForm.publicStatus}
+												>
+													<option value="public">公開中</option>
+													<option value="suspended">表示するが予約受付を停止</option>
+													<option value="private">公開ページに表示しない</option>
+												</select>
 											</div>
 											<div class="space-y-2">
 												<Label for="service-duration">所要時間（分）*</Label><Input
@@ -3388,6 +3423,7 @@
 															<th class="px-3 py-2 text-left font-medium">画像</th>
 															<th class="px-3 py-2 text-left font-medium">種別</th>
 															<th class="px-3 py-2 text-left font-medium">予約方式</th>
+															<th class="px-3 py-2 text-left font-medium">公開予約</th>
 															<th class="px-3 py-2 text-right font-medium">所要時間</th>
 															<th class="px-3 py-2 text-right font-medium">定員</th>
 															<th class="px-3 py-2 text-left font-medium">回数券必須</th>
@@ -3416,6 +3452,15 @@
 																<td class="px-3 py-3"
 																	>{formatBookingPolicy(service.bookingPolicy)}</td
 																>
+																<td class="px-3 py-3">
+																	<Badge
+																		variant={getServicePublicStatusBadgeVariant(
+																			service.publicStatus
+																		)}
+																	>
+																		{formatServicePublicStatus(service.publicStatus)}
+																	</Badge>
+																</td>
 																<td class="px-3 py-3 text-right tabular-nums"
 																	>{service.durationMinutes}</td
 																>
@@ -4473,6 +4518,19 @@
 							>
 								<option value="instant">先着確定</option>
 								<option value="approval">承認制</option>
+							</select>
+						</div>
+						<div class="space-y-2 md:col-span-2">
+							<Label for="service-edit-public-status">公開予約での表示</Label>
+							<select
+								id="service-edit-public-status"
+								name="service_edit_public_status"
+								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+								bind:value={serviceEditForm.publicStatus}
+							>
+								<option value="public">公開中</option>
+								<option value="suspended">表示するが予約受付を停止</option>
+								<option value="private">公開ページに表示しない</option>
 							</select>
 						</div>
 						<div class="space-y-2">

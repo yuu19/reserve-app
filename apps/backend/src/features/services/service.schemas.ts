@@ -7,6 +7,7 @@ const boolStringSchema = z
 
 const serviceKindSchema = z.enum(['single', 'recurring']);
 const bookingPolicySchema = z.enum(['instant', 'approval']);
+const servicePublicStatusSchema = z.enum(['public', 'private', 'suspended']);
 
 /**
  * service 作成 API の入力を検証します。
@@ -40,6 +41,7 @@ export const serviceCreateBodySchema = z.object({
   timezone: z.string().optional(),
   bookingPolicy: bookingPolicySchema.optional(),
   requiresTicket: z.boolean().optional(),
+  publicStatus: servicePublicStatusSchema.optional(),
   imageUrl: z.string().trim().max(2048).nullable().optional(),
   isActive: z.boolean().optional(),
 });
@@ -86,6 +88,7 @@ export const serviceUpdateBodySchema = z.object({
   timezone: z.string().optional(),
   bookingPolicy: bookingPolicySchema.optional(),
   requiresTicket: z.boolean().optional(),
+  publicStatus: servicePublicStatusSchema.optional(),
   imageUrl: z.string().trim().max(2048).nullable().optional(),
   isActive: z.boolean().optional(),
 });

@@ -412,6 +412,7 @@ export const service = sqliteTable(
     timezone: text('timezone').default('Asia/Tokyo').notNull(),
     bookingPolicy: text('booking_policy').default('instant').notNull(),
     requiresTicket: integer('requires_ticket', { mode: 'boolean' }).default(false).notNull(),
+    publicStatus: text('public_status').default('public').notNull(),
     isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
@@ -424,6 +425,7 @@ export const service = sqliteTable(
   (table) => [
     index('service_organization_active_idx').on(table.organizationId, table.isActive),
     index('service_organization_kind_idx').on(table.organizationId, table.kind),
+    index('service_store_public_status_idx').on(table.storeId, table.publicStatus, table.isActive),
   ],
 );
 
