@@ -10,6 +10,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
+	import { freePricingPlan, premiumPricingPlan } from '$lib/content/pricing';
 	import {
 		ArrowDown,
 		ArrowRight,
@@ -159,57 +160,8 @@
 		}
 	];
 
-	const pricingPlans: Array<{
-		name: 'Free' | 'Premium';
-		price: string;
-		description: string;
-		recommended?: boolean;
-		highlights: string[];
-		ctaLabel: string;
-		ctaVariant: 'default' | 'outline';
-	}> = [
-		{
-			name: 'Free',
-			price: '¥0 / 月',
-			description: '小規模な予約受付を始めたい方向け',
-			highlights: ['基本的な予約受付', '公開イベントページ', 'メールログイン'],
-			ctaLabel: '無料で始める',
-			ctaVariant: 'outline'
-		},
-		{
-			name: 'Premium',
-			price: '月額 1,500円',
-			description: '日常運用を安定化したい組織向け',
-			recommended: true,
-			highlights: [
-				'管理者 / 予約者導線分離',
-				'単発 / 定期スケジュール運用',
-				'年額 15,800円も選択可'
-			],
-			ctaLabel: 'Premium を始める',
-			ctaVariant: 'default'
-		}
-	];
-
-	const comparisonRows: Array<{ feature: string; free: string; premium: string }> = [
-		{
-			feature: '予約受付',
-			free: '基本機能',
-			premium: '拡張運用'
-		},
-		{
-			feature: '管理者導線',
-			free: '限定',
-			premium: 'フル対応'
-		},
-		{
-			feature: 'サポート',
-			free: 'コミュニティ',
-			premium: '標準'
-		}
-	];
-
-	const legalFooterLinks = [
+	const publicFooterLinks = [
+		{ label: '料金', href: '/pricing' },
 		{ label: '利用規約', href: '/terms' },
 		{ label: 'プライバシーポリシー', href: '/privacy' },
 		{ label: '特定商取引法に基づく表記', href: '/commerce' }
@@ -267,8 +219,8 @@
 						<Users class="size-4" aria-hidden="true" />
 						予約者としてログイン
 					</Button>
-					<Button href="#pricing" variant="outline" class="w-full sm:w-auto">
-						<ArrowDown class="size-4" aria-hidden="true" />
+					<Button href={resolve('/pricing' as Pathname)} variant="outline" class="w-full sm:w-auto">
+						<ArrowRight class="size-4" aria-hidden="true" />
 						料金を見る
 					</Button>
 				</div>
@@ -463,80 +415,37 @@
 			</div>
 		</section>
 
-		<section id="pricing" class="scroll-mt-24 space-y-4" aria-labelledby="pricing-heading">
+		<section
+			id="pricing-summary"
+			class="scroll-mt-24 space-y-4"
+			aria-labelledby="pricing-summary-heading"
+		>
 			<div class="space-y-2">
 				<p class={sectionEyebrowClass}>料金</p>
-				<h2 id="pricing-heading" class={sectionHeadingClass}>料金プラン</h2>
+				<h2 id="pricing-summary-heading" class={sectionHeadingClass}>料金</h2>
 				<p class="max-w-[44rem] text-sm leading-relaxed text-muted-foreground">
-					運用規模に応じて、Free / Premium の 2 プランから選べます。
+					{freePricingPlan.name} は {freePricingPlan.price}、{premiumPricingPlan.name} は
+					{premiumPricingPlan.price} / {premiumPricingPlan.secondaryPrice} で利用できます。
+					{premiumPricingPlan.trialLabel}にも対応しています。
 				</p>
 			</div>
 
-			<div class="grid gap-4 md:grid-cols-2">
-				{#each pricingPlans as plan (plan.name)}
-					<Card
-						class={`${panelClass} ${plan.recommended ? 'border-primary/35 ring-1 ring-primary/15' : ''}`}
-					>
-						<CardHeader class="space-y-2 pb-0">
-							<div class="flex items-center justify-between gap-3">
-								<CardTitle class="text-xl">{plan.name}</CardTitle>
-								{#if plan.recommended}
-									<span
-										class="rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground"
-									>
-										おすすめ
-									</span>
-								{/if}
-							</div>
-							<p class="metric-value text-2xl font-bold leading-tight text-foreground">
-								{plan.price}
-							</p>
-							<CardDescription>{plan.description}</CardDescription>
-						</CardHeader>
-						<CardContent class="space-y-4 pt-4">
-							<ul class="space-y-2 text-sm text-secondary-foreground">
-								{#each plan.highlights as highlight (highlight)}
-									<li class={listTileClass}>{highlight}</li>
-								{/each}
-							</ul>
-							<Button href={adminLoginHref} variant={plan.ctaVariant} class="w-full">
-								<LogIn class="size-4" aria-hidden="true" />
-								{plan.ctaLabel}
-							</Button>
-						</CardContent>
-					</Card>
-				{/each}
+			<div
+				class="flex flex-col gap-4 rounded-md border border-border/80 bg-card p-5 shadow-sm md:flex-row md:items-center md:justify-between"
+			>
+				<div class="space-y-2">
+					<p class="text-sm font-bold text-foreground">
+						詳細な機能差分、注意事項、法務リンクは料金ページにまとめています。
+					</p>
+					<p class="text-sm leading-relaxed text-secondary-foreground">
+						公開ページから直接決済は開始せず、申込や契約管理はログイン後の契約画面で扱います。
+					</p>
+				</div>
+				<Button href={resolve('/pricing' as Pathname)} variant="outline" class="w-full md:w-auto">
+					<ArrowRight class="size-4" aria-hidden="true" />
+					料金ページへ
+				</Button>
 			</div>
-
-			<Card class={panelClass}>
-				<CardHeader class="pb-0">
-					<CardTitle class="text-base">プラン比較</CardTitle>
-				</CardHeader>
-				<CardContent class="pt-4">
-					<div class="overflow-x-auto">
-						<table class="w-full min-w-[560px] text-sm">
-							<thead class="bg-secondary text-muted-foreground">
-								<tr>
-									<th scope="col" class="px-3 py-2 text-left font-medium">項目</th>
-									<th scope="col" class="px-3 py-2 text-left font-medium">Free</th>
-									<th scope="col" class="px-3 py-2 text-left font-medium">Premium</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each comparisonRows as row (row.feature)}
-									<tr class="border-t border-border/70">
-										<th scope="row" class="px-3 py-2 text-left font-medium text-foreground">
-											{row.feature}
-										</th>
-										<td class="px-3 py-2 text-secondary-foreground">{row.free}</td>
-										<td class="px-3 py-2 text-secondary-foreground">{row.premium}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				</CardContent>
-			</Card>
 		</section>
 
 		<section>
@@ -590,7 +499,7 @@
 						開発者情報
 						<ExternalLink class="size-3.5" aria-hidden="true" />
 					</a>
-					{#each legalFooterLinks as link (link.href)}
+					{#each publicFooterLinks as link (link.href)}
 						<a class={linkClass} href={resolve(link.href as Pathname)}>
 							{link.label}
 						</a>

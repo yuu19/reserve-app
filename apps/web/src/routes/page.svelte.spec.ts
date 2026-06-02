@@ -24,7 +24,7 @@ describe('トップページ', () => {
 		render(Page);
 
 		const heading = page.getByRole('heading', { level: 1, name: 'WakuReserve' });
-		const pricingHeading = page.getByRole('heading', { level: 2, name: '料金プラン' });
+		const pricingHeading = page.getByRole('heading', { level: 2, name: '料金' });
 
 		await expect.element(heading).toBeInTheDocument();
 		await expect.element(pricingHeading).toBeInTheDocument();
@@ -36,7 +36,15 @@ describe('トップページ', () => {
 		expect(document.body.textContent ?? '').toContain('1,500円');
 		expect(document.body.textContent ?? '').toContain('15,800円');
 		expect(document.body.textContent ?? '').not.toContain('9,800');
+		expect(document.body.textContent ?? '').not.toContain('料金プラン');
+		expect(document.body.textContent ?? '').not.toContain('プラン比較');
 		expect(document.body.textContent ?? '').toContain('開発者情報');
+		const pricingSection = document.querySelector(
+			'section[aria-labelledby="pricing-summary-heading"]'
+		);
+		expect(pricingSection).not.toBeNull();
+		expect(pricingSection?.querySelector('[data-slot="card"]')).toBeNull();
+		expect(pricingSection?.querySelector('table')).toBeNull();
 
 		const adminLinks = Array.from(document.querySelectorAll('a')).filter(
 			(element) => element.textContent?.trim() === '管理者としてログイン'
@@ -46,6 +54,15 @@ describe('トップページ', () => {
 		);
 		const footerLoginLink = Array.from(document.querySelectorAll('a')).find(
 			(element) => element.textContent?.trim() === 'ログイン入口へ'
+		);
+		const pricingLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === '料金を見る'
+		);
+		const pricingDetailLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === '料金ページへ'
+		);
+		const footerPricingLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === '料金'
 		);
 		const termsLink = Array.from(document.querySelectorAll('a')).find(
 			(element) => element.textContent?.trim() === '利用規約'
@@ -59,6 +76,9 @@ describe('トップページ', () => {
 		expect(adminLinks.length).toBeGreaterThan(0);
 		expect(participantLinks.length).toBeGreaterThan(0);
 		expect(footerLoginLink?.getAttribute('href')).toBe('#portal-entry');
+		expect(pricingLink?.getAttribute('href')).toBe('/pricing');
+		expect(pricingDetailLink?.getAttribute('href')).toBe('/pricing');
+		expect(footerPricingLink?.getAttribute('href')).toBe('/pricing');
 		expect(termsLink?.getAttribute('href')).toBe('/terms');
 		expect(termsLink?.getAttribute('target')).toBeNull();
 		expect(privacyLink?.getAttribute('href')).toBe('/privacy');

@@ -318,8 +318,8 @@ describe('共通レイアウト', () => {
 		expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
 	});
 
-	it.each(['/terms', '/privacy', '/commerce'])(
-		'ログイン中でも公開法務ページ %s ではサイドバーと AI ウィジェットを隠す',
+	it.each(['/pricing', '/terms', '/privacy', '/commerce'])(
+		'ログイン中でも公開ページ %s ではサイドバーと AI ウィジェットを隠す',
 		async (path) => {
 			pageState.url = new URL(`https://example.com${path}`);
 			renderLayout();
@@ -330,6 +330,7 @@ describe('共通レイアウト', () => {
 				expect(document.querySelector('a[href="/admin/dashboard"]')).toBeNull();
 				expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
 			});
+			expect(document.querySelector('footer a[href="/pricing"]')?.textContent?.trim()).toBe('料金');
 			expect(document.querySelector('footer a[href="/terms"]')?.textContent?.trim()).toBe(
 				'利用規約'
 			);

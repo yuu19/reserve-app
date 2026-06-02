@@ -76,16 +76,17 @@
 	const brandIcon16Href = '/brand/reservation-logo-16x16.svg';
 	const brandIcon32Href = '/brand/reservation-logo-32x32.svg';
 	const brandAppleTouchHref = '/brand/reservation-logo-180x180.svg';
-	const legalFooterLinks: Array<{ label: string; href: ResolvablePath }> = [
+	const publicFooterLinks: Array<{ label: string; href: ResolvablePath }> = [
+		{ label: '料金', href: '/pricing' },
 		{ label: '利用規約', href: '/terms' },
 		{ label: 'プライバシーポリシー', href: '/privacy' },
 		{ label: '特定商取引法に基づく表記', href: '/commerce' }
 	];
 	const shouldShowAiChatWidget = (featureFlag: string | undefined, loggedIn: boolean) =>
 		featureFlag !== 'false' && loggedIn;
-	const publicLegalPaths = ['/terms', '/privacy', '/commerce'] as const;
-	const isPublicLegalPath = (value: string): boolean =>
-		publicLegalPaths.some((legalPath) => value === legalPath);
+	const publicStandalonePaths = ['/pricing', '/terms', '/privacy', '/commerce'] as const;
+	const isPublicStandalonePath = (value: string): boolean =>
+		publicStandalonePaths.some((publicPath) => value === publicPath);
 
 	let loadingSession = $state(true);
 	let isLoggedIn = $state(false);
@@ -213,8 +214,8 @@
 	const rawPathname = $derived(page.url.pathname);
 	const pathname = $derived(getRoutePathFromUrlPath(rawPathname));
 	const isPublicAuthRoute = $derived(isPublicAuthEntryPath(pathname));
-	const isPublicLegalRoute = $derived(isPublicLegalPath(pathname));
-	const isPublicStandaloneRoute = $derived(isPublicAuthRoute || isPublicLegalRoute);
+	const isPublicStandaloneContentRoute = $derived(isPublicStandalonePath(pathname));
+	const isPublicStandaloneRoute = $derived(isPublicAuthRoute || isPublicStandaloneContentRoute);
 	const aiChatWidgetEnabled = $derived(
 		shouldShowAiChatWidget(env.PUBLIC_AI_CHAT_ENABLED, isLoggedIn) && !isPublicStandaloneRoute
 	);
@@ -1345,7 +1346,7 @@
 				>
 					<p>© WakuReserve. 個人開発プロジェクト</p>
 					<nav class="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="フッターリンク">
-						{#each legalFooterLinks as link (link.href)}
+						{#each publicFooterLinks as link (link.href)}
 							<a
 								class="text-link underline-offset-4 transition-colors hover:text-primary hover:underline"
 								href={resolve(link.href)}
