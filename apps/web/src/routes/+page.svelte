@@ -12,14 +12,12 @@
 	} from '$lib/components/ui/card';
 	import { freePricingPlan, premiumPricingPlan } from '$lib/content/pricing';
 	import {
-		ArrowDown,
 		ArrowRight,
 		Building2,
 		CalendarDays,
 		CheckCircle2,
 		ExternalLink,
 		Github,
-		LogIn,
 		Settings,
 		ShieldCheck,
 		TicketCheck,
@@ -27,9 +25,15 @@
 		Users
 	} from '@lucide/svelte';
 
-	const pageTitle = 'WakuReserve | 予約管理プラットフォーム';
+	const pageTitle = 'WakuReserve | 教室・スクール向け予約管理';
 	const pageDescription =
-		'WakuReserve は、管理者と予約者の導線を分離しながら、予約作成・受付運用・参加者対応を一体で管理できる予約プラットフォームです。';
+		'WakuReserve は、小規模スクール・教室向けに、予約枠の公開、承認制受付、参加者対応、回数券管理をまとめて扱える予約管理SaaSです。';
+
+	const pricingHref = resolve('/pricing' as Pathname);
+	const freeStartHref = `${resolve('/admin/login' as Pathname)}?next=${encodeURIComponent(
+		'/admin/onboarding'
+	)}`;
+	const developerHref = 'https://wakureserve.com/developer';
 
 	const nextPath = $derived.by(() => {
 		const next = page.url.searchParams.get('next');
@@ -85,7 +89,7 @@
 	const operationStats = [
 		{ label: '本日の予約', value: '18件' },
 		{ label: '承認待ち', value: '3件' },
-		{ label: '公開枠', value: '12枠' }
+		{ label: '公開中の予約枠', value: '12枠' }
 	];
 
 	const previewRows = [
@@ -95,16 +99,22 @@
 	];
 
 	const operationCases = [
-		'管理者と予約者の入口を分けたい',
-		'公開イベントから予約受付まで一続きで運用したい',
-		'予約確認、キャンセル、招待対応まで同じサービスで管理したい'
+		'個人教室や少人数レッスンの予約受付',
+		'体験予約や承認制のレッスン運用',
+		'回数券制スクールの参加者対応',
+		'管理者と予約者の入口を分けたい運用'
 	];
 
 	const challengeCards = [
 		{
 			title: '受付状況が分散する',
-			challenge: '受付表、連絡、集計が別々になると、日々の確認や転記の手間が増えます。',
+			challenge: 'LINE、紙、Googleフォームで受付を分けると、日々の確認や転記の手間が増えます。',
 			solution: '予約枠、受付状況、参加者対応を同じ管理画面で確認できます。'
+		},
+		{
+			title: '承認待ちを追いにくい',
+			challenge: '体験予約や少人数制クラスでは、申込後の確認、調整、キャンセル対応が残ります。',
+			solution: '予約ステータスを確認し、承認、却下、キャンセルを整理できます。'
 		},
 		{
 			title: '予約者の導線が迷いやすい',
@@ -113,27 +123,35 @@
 		}
 	];
 
-	const featureColumns: Array<{
+	const featureCards: Array<{
 		title: string;
 		description: string;
 		icon: IconComponent;
-		items: string[];
 	}> = [
 		{
-			title: '管理者向け機能',
-			description: '受付運用と設定作業をまとめる機能群',
-			icon: Building2,
-			items: [
-				'サービス、単発予約枠、定期スケジュールの作成',
-				'予約ステータス管理（承認・却下・キャンセル）',
-				'管理者招待、参加者管理、契約管理'
-			]
+			title: 'レッスン予約を公開する',
+			description: '単発イベントや定期レッスンの予約枠を作成し、公開状態を管理できます。',
+			icon: CalendarDays
 		},
 		{
-			title: '予約者向け機能',
-			description: '予約体験をシンプルに保つ参加者向け導線',
-			icon: CalendarDays,
-			items: ['公開イベントの閲覧と予約', '予約確認・キャンセル', '参加者招待・管理者招待への対応']
+			title: '承認制で受け付ける',
+			description: '体験レッスンや少人数制クラスで、管理者が確認してから予約を確定できます。',
+			icon: ShieldCheck
+		},
+		{
+			title: '参加者ポータルを用意する',
+			description: '予約確認、キャンセル、招待対応を予約者向けの入口から案内できます。',
+			icon: Users
+		},
+		{
+			title: '回数券を管理する',
+			description: '回数券の申請、付与、利用対象サービスの管理に対応できます。',
+			icon: TicketCheck
+		},
+		{
+			title: 'スタッフを招待する',
+			description: '店舗運用に関わる管理者やスタッフを招待し、役割に合わせて運用できます。',
+			icon: Building2
 		}
 	];
 
@@ -172,7 +190,6 @@
 	const panelClass = 'surface-panel rounded-md border border-border/80 shadow-sm';
 	const linkClass =
 		'inline-flex items-center gap-1.5 text-sm font-medium text-link underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
-	const listTileClass = 'rounded-md border border-border/70 bg-stone-01 px-3 py-2';
 </script>
 
 <svelte:head>
@@ -188,41 +205,68 @@
 </a>
 
 <main id="main-content" class="min-h-screen overflow-x-hidden bg-background">
-	<section id="portal-entry" class="border-b border-border/80 bg-card">
+	<header class="border-b border-border/80 bg-card">
+		<div
+			class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-8"
+		>
+			<a
+				href={resolve('/' as Pathname)}
+				class="flex items-center gap-3 text-foreground no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+			>
+				<img
+					src={resolve('/brand/reservation-logo-44x44.svg')}
+					alt=""
+					class="size-10"
+					width="40"
+					height="40"
+				/>
+				<span class="text-lg font-bold">WakuReserve</span>
+			</a>
+
+			<nav class="flex flex-col gap-3 md:flex-row md:items-center" aria-label="トップページ">
+				<div class="flex flex-wrap items-center gap-x-5 gap-y-3">
+					<a class={linkClass} href="#features">機能</a>
+					<a class={linkClass} href={pricingHref}>料金</a>
+					<a class={linkClass} href={developerHref} target="_blank" rel="noreferrer">
+						開発者情報
+						<ExternalLink class="size-3.5" aria-hidden="true" />
+					</a>
+					<a class={linkClass} href="#portal-entry">ログイン</a>
+				</div>
+				<Button href={freeStartHref} class="w-full md:w-auto">
+					<ArrowRight class="size-4" aria-hidden="true" />
+					無料で始める
+				</Button>
+			</nav>
+		</div>
+	</header>
+
+	<section class="border-b border-border/80 bg-card">
 		<div
 			class="mx-auto grid w-full max-w-6xl gap-8 px-4 py-8 md:px-8 md:py-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.8fr)] lg:items-center"
 		>
 			<div class="space-y-6">
 				<div class="space-y-3">
-					<p class={sectionEyebrowClass}>予約管理プラットフォーム</p>
-					<h1 class="text-2xl font-bold leading-tight text-foreground">WakuReserve</h1>
+					<p class={sectionEyebrowClass}>教室・スクール向け予約管理</p>
+					<h1 class="max-w-[44rem] text-2xl font-bold leading-tight text-foreground">
+						小規模スクール・教室の予約運用を、ひとつの管理画面に。
+					</h1>
 					<p class="max-w-[42rem] text-base leading-relaxed text-secondary-foreground">
-						予約枠の公開、受付状況の確認、参加者対応をひとつの画面で扱える予約管理サービスです。
-						管理者と予約者の入口を分け、役割ごとに必要な操作へ案内します。
+						予約枠の公開、承認制受付、参加者対応、回数券管理まで。WakuReserve
+						は、個人教室・スクール向けの予約管理SaaSです。
 					</p>
 				</div>
 
-				{#if nextPath}
-					<p
-						class="break-all rounded-md border border-primary/20 bg-stone-01 px-3 py-2 text-sm text-secondary-foreground"
-					>
-						ログイン後は {nextPath} に戻ります。
-					</p>
-				{/if}
-
 				<div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-					<Button href={adminLoginHref} class="w-full sm:w-auto">
-						<LogIn class="size-4" aria-hidden="true" />
-						管理者としてログイン
+					<Button href={freeStartHref} class="w-full sm:w-auto">
+						<ArrowRight class="size-4" aria-hidden="true" />
+						無料で始める
 					</Button>
-					<Button href={participantLoginHref} variant="outline" class="w-full sm:w-auto">
-						<Users class="size-4" aria-hidden="true" />
-						予約者としてログイン
-					</Button>
-					<Button href={resolve('/pricing' as Pathname)} variant="outline" class="w-full sm:w-auto">
+					<Button href={pricingHref} variant="outline" class="w-full sm:w-auto">
 						<ArrowRight class="size-4" aria-hidden="true" />
 						料金を見る
 					</Button>
+					<a class={linkClass} href="#portal-entry">既存利用者のログイン入口</a>
 				</div>
 
 				<div class="grid gap-3 sm:grid-cols-3">
@@ -292,43 +336,17 @@
 	</section>
 
 	<div class="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 md:px-8 md:py-10">
-		<section class="space-y-4" aria-labelledby="portal-heading">
+		<section class="space-y-4" aria-labelledby="fit-heading">
 			<div class="space-y-2">
-				<p class={sectionEyebrowClass}>ログイン入口</p>
-				<h2 id="portal-heading" class={sectionHeadingClass}>役割に合わせて入口を選択</h2>
+				<p class={sectionEyebrowClass}>向いている運用</p>
+				<h2 id="fit-heading" class={sectionHeadingClass}>こんな教室・スクールに向いています</h2>
 				<p class="max-w-[44rem] text-sm leading-relaxed text-muted-foreground">
-					招待や予約確認が目的の場合は予約者ポータル、店舗や予約枠の運用は管理者ポータルを使います。
+					予約受付、承認待ち、参加者対応が複数のツールに分かれている運用を整理できます。
 				</p>
 			</div>
 
-			<div class="grid gap-4 md:grid-cols-2">
-				{#each portalCards as portal (portal.key)}
-					<a
-						class={`${panelClass} group block p-5 text-foreground no-underline transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
-						href={resolve(
-							(portal.key === 'admin' ? adminLoginHref : participantLoginHref) as Pathname
-						)}
-					>
-						<div class="flex items-start justify-between gap-4">
-							<div class="space-y-2">
-								<div class="flex items-center gap-2 text-lg font-bold">
-									<portal.icon class="size-4 text-primary" aria-hidden="true" />
-									{portal.title}
-								</div>
-								<p class="text-sm leading-relaxed text-secondary-foreground">
-									{portal.description}
-								</p>
-							</div>
-							<ArrowRight class="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
-						</div>
-						<p class="mt-4 text-sm font-bold text-link">{portal.ctaLabel}</p>
-					</a>
-				{/each}
-			</div>
-
 			<div class="rounded-md border border-dashed border-border bg-card p-4">
-				<p class={sectionEyebrowClass}>向いている運用</p>
-				<ul class="mt-3 grid gap-2 text-sm text-secondary-foreground md:grid-cols-3">
+				<ul class="grid gap-2 text-sm text-secondary-foreground md:grid-cols-2">
 					{#each operationCases as item (item)}
 						<li class="flex items-start gap-2">
 							<CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
@@ -345,10 +363,10 @@
 				<h2 id="challenge-heading" class={sectionHeadingClass}>予約運用で詰まりやすい点を整理</h2>
 			</div>
 
-			<div class="grid gap-4 md:grid-cols-2">
+			<div class="grid gap-4 md:grid-cols-3">
 				{#each challengeCards as item (item.title)}
 					<Card class={panelClass}>
-						<CardHeader class="space-y-2 pb-0">
+						<CardHeader class="space-y-2">
 							<CardTitle class="text-lg">{item.title}</CardTitle>
 							<CardDescription class="leading-relaxed">{item.challenge}</CardDescription>
 						</CardHeader>
@@ -363,32 +381,35 @@
 			</div>
 		</section>
 
-		<section class="space-y-4" aria-labelledby="feature-heading">
+		<section id="features" class="scroll-mt-24 space-y-4" aria-labelledby="feature-heading">
 			<div class="space-y-2">
 				<p class={sectionEyebrowClass}>主要機能</p>
-				<h2 id="feature-heading" class={sectionHeadingClass}>役割ごとに必要な機能を配置</h2>
+				<h2 id="feature-heading" class={sectionHeadingClass}>利用シーンごとに必要な機能を配置</h2>
+				<p class="max-w-[44rem] text-sm leading-relaxed text-muted-foreground">
+					機能名の一覧ではなく、教室運営で使う場面に合わせて確認できます。
+				</p>
 			</div>
 
-			<div class="grid gap-4 md:grid-cols-2">
-				{#each featureColumns as feature (feature.title)}
+			<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+				{#each featureCards as feature (feature.title)}
 					<Card class={panelClass}>
-						<CardHeader class="space-y-2 pb-0">
+						<CardHeader class="space-y-2">
 							<CardTitle class="flex items-center gap-2 text-lg">
 								<feature.icon class="size-4 text-primary" aria-hidden="true" />
 								{feature.title}
 							</CardTitle>
 							<CardDescription>{feature.description}</CardDescription>
 						</CardHeader>
-						<CardContent class="pt-4">
-							<ul class="space-y-2 text-sm text-secondary-foreground">
-								{#each feature.items as line (line)}
-									<li class={listTileClass}>{line}</li>
-								{/each}
-							</ul>
-						</CardContent>
 					</Card>
 				{/each}
 			</div>
+
+			<p
+				class="rounded-md border border-border/80 bg-card px-4 py-3 text-sm leading-relaxed text-secondary-foreground"
+			>
+				回数券管理、複数店舗、スタッフ招待など一部の機能は Premium の対象です。
+				プランごとの利用可否は料金ページで確認できます。
+			</p>
 		</section>
 
 		<section class="space-y-4" aria-labelledby="flow-heading">
@@ -441,38 +462,82 @@
 						公開ページから直接決済は開始せず、申込や契約管理はログイン後の契約画面で扱います。
 					</p>
 				</div>
-				<Button href={resolve('/pricing' as Pathname)} variant="outline" class="w-full md:w-auto">
+				<Button href={pricingHref} variant="outline" class="w-full md:w-auto">
 					<ArrowRight class="size-4" aria-hidden="true" />
 					料金ページへ
 				</Button>
 			</div>
 		</section>
 
-		<section>
-			<Card class="surface-panel rounded-md border border-primary/20 bg-card shadow-sm">
-				<CardContent
-					class="flex flex-col gap-5 p-5 md:flex-row md:items-end md:justify-between md:p-6"
-				>
-					<div class="space-y-2">
-						<p class="text-xs font-bold text-primary">利用開始</p>
-						<h2 class="text-xl font-bold text-foreground">まずは入口を選択してください</h2>
-						<p class="max-w-[44rem] text-sm leading-relaxed text-secondary-foreground">
-							管理者は設定と運用、予約者は予約確認と招待対応から始められます。
-						</p>
-					</div>
+		<section
+			class="flex flex-col gap-5 border-y border-primary/20 bg-card px-0 py-6 md:flex-row md:items-center md:justify-between"
+			aria-labelledby="final-cta-heading"
+		>
+			<div class="space-y-2">
+				<p class="text-xs font-bold text-primary">利用開始</p>
+				<h2 id="final-cta-heading" class="text-xl font-bold text-foreground">
+					まずは無料で予約運用を整理する
+				</h2>
+				<p class="max-w-[44rem] text-sm leading-relaxed text-secondary-foreground">
+					管理者としてログインし、初期設定から組織、店舗、サービス、予約枠の準備を始められます。
+				</p>
+			</div>
 
-					<div class="flex flex-col gap-3 sm:flex-row">
-						<Button href={adminLoginHref} class="w-full sm:w-auto">
-							<LogIn class="size-4" aria-hidden="true" />
-							管理者としてログイン
-						</Button>
-						<Button href={participantLoginHref} variant="outline" class="w-full sm:w-auto">
-							<Users class="size-4" aria-hidden="true" />
-							予約者としてログイン
-						</Button>
-					</div>
-				</CardContent>
-			</Card>
+			<div class="flex flex-col gap-3 sm:flex-row">
+				<Button href={freeStartHref} class="w-full sm:w-auto">
+					<ArrowRight class="size-4" aria-hidden="true" />
+					無料で始める
+				</Button>
+				<Button href={pricingHref} variant="outline" class="w-full sm:w-auto">
+					<ArrowRight class="size-4" aria-hidden="true" />
+					料金を見る
+				</Button>
+			</div>
+		</section>
+
+		<section id="portal-entry" class="scroll-mt-24 space-y-4" aria-labelledby="portal-heading">
+			<div class="space-y-2">
+				<p class={sectionEyebrowClass}>ログイン入口</p>
+				<h2 id="portal-heading" class={sectionHeadingClass}>
+					既存利用者は役割に合わせて入口を選択
+				</h2>
+				<p class="max-w-[44rem] text-sm leading-relaxed text-muted-foreground">
+					招待や予約確認が目的の場合は予約者ポータル、店舗や予約枠の運用は管理者ポータルを使います。
+				</p>
+			</div>
+
+			{#if nextPath}
+				<p
+					class="break-all rounded-md border border-primary/20 bg-stone-01 px-3 py-2 text-sm text-secondary-foreground"
+				>
+					ログイン後は {nextPath} に戻ります。
+				</p>
+			{/if}
+
+			<div class="grid gap-4 md:grid-cols-2">
+				{#each portalCards as portal (portal.key)}
+					<a
+						class={`${panelClass} group block p-5 text-foreground no-underline transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
+						href={resolve(
+							(portal.key === 'admin' ? adminLoginHref : participantLoginHref) as Pathname
+						)}
+					>
+						<div class="flex items-start justify-between gap-4">
+							<div class="space-y-2">
+								<div class="flex items-center gap-2 text-lg font-bold">
+									<portal.icon class="size-4 text-primary" aria-hidden="true" />
+									{portal.title}
+								</div>
+								<p class="text-sm leading-relaxed text-secondary-foreground">
+									{portal.description}
+								</p>
+							</div>
+							<ArrowRight class="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
+						</div>
+						<p class="mt-4 text-sm font-bold text-link">{portal.ctaLabel}</p>
+					</a>
+				{/each}
+			</div>
 		</section>
 	</div>
 
@@ -490,12 +555,7 @@
 						サービス紹介
 						<ExternalLink class="size-3.5" aria-hidden="true" />
 					</a>
-					<a
-						class={linkClass}
-						href="https://wakureserve.com/developer"
-						target="_blank"
-						rel="noreferrer"
-					>
+					<a class={linkClass} href={developerHref} target="_blank" rel="noreferrer">
 						開発者情報
 						<ExternalLink class="size-3.5" aria-hidden="true" />
 					</a>
@@ -530,9 +590,9 @@
 				</div>
 			</div>
 
-			<Button href="#portal-entry" variant="outline" class="w-full sm:w-auto">
-				<ArrowDown class="size-4" aria-hidden="true" />
-				ログイン入口へ
+			<Button href={freeStartHref} class="w-full sm:w-auto">
+				<ArrowRight class="size-4" aria-hidden="true" />
+				無料で始める
 			</Button>
 		</div>
 	</footer>

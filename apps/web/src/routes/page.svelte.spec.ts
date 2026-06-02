@@ -23,7 +23,10 @@ describe('トップページ', () => {
 	it('ランディングセクションとログインリンクを表示する', async () => {
 		render(Page);
 
-		const heading = page.getByRole('heading', { level: 1, name: 'WakuReserve' });
+		const heading = page.getByRole('heading', {
+			level: 1,
+			name: '小規模スクール・教室の予約運用を、ひとつの管理画面に。'
+		});
 		const pricingHeading = page.getByRole('heading', { level: 2, name: '料金' });
 
 		await expect.element(heading).toBeInTheDocument();
@@ -38,6 +41,8 @@ describe('トップページ', () => {
 		expect(document.body.textContent ?? '').not.toContain('9,800');
 		expect(document.body.textContent ?? '').not.toContain('料金プラン');
 		expect(document.body.textContent ?? '').not.toContain('プラン比較');
+		expect(document.body.textContent ?? '').toContain('無料で始める');
+		expect(document.body.textContent ?? '').toContain('回数券管理、複数店舗、スタッフ招待');
 		expect(document.body.textContent ?? '').toContain('開発者情報');
 		const pricingSection = document.querySelector(
 			'section[aria-labelledby="pricing-summary-heading"]'
@@ -46,14 +51,20 @@ describe('トップページ', () => {
 		expect(pricingSection?.querySelector('[data-slot="card"]')).toBeNull();
 		expect(pricingSection?.querySelector('table')).toBeNull();
 
-		const adminLinks = Array.from(document.querySelectorAll('a')).filter(
-			(element) => element.textContent?.trim() === '管理者としてログイン'
+		const adminLinks = Array.from(document.querySelectorAll('a')).filter((element) =>
+			element.textContent?.includes('管理者としてログイン')
 		);
-		const participantLinks = Array.from(document.querySelectorAll('a')).filter(
-			(element) => element.textContent?.trim() === '予約者としてログイン'
+		const participantLinks = Array.from(document.querySelectorAll('a')).filter((element) =>
+			element.textContent?.includes('予約者としてログイン')
 		);
-		const footerLoginLink = Array.from(document.querySelectorAll('a')).find(
-			(element) => element.textContent?.trim() === 'ログイン入口へ'
+		const freeStartLinks = Array.from(document.querySelectorAll('a')).filter(
+			(element) => element.textContent?.trim() === '無料で始める'
+		);
+		const featureLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === '機能'
+		);
+		const loginSectionLink = Array.from(document.querySelectorAll('a')).find(
+			(element) => element.textContent?.trim() === 'ログイン'
 		);
 		const pricingLink = Array.from(document.querySelectorAll('a')).find(
 			(element) => element.textContent?.trim() === '料金を見る'
@@ -75,7 +86,10 @@ describe('トップページ', () => {
 		);
 		expect(adminLinks.length).toBeGreaterThan(0);
 		expect(participantLinks.length).toBeGreaterThan(0);
-		expect(footerLoginLink?.getAttribute('href')).toBe('#portal-entry');
+		expect(freeStartLinks.length).toBeGreaterThan(0);
+		expect(freeStartLinks[0]?.getAttribute('href')).toBe('/admin/login?next=%2Fadmin%2Fonboarding');
+		expect(featureLink?.getAttribute('href')).toBe('#features');
+		expect(loginSectionLink?.getAttribute('href')).toBe('#portal-entry');
 		expect(pricingLink?.getAttribute('href')).toBe('/pricing');
 		expect(pricingDetailLink?.getAttribute('href')).toBe('/pricing');
 		expect(footerPricingLink?.getAttribute('href')).toBe('/pricing');
@@ -91,11 +105,11 @@ describe('トップページ', () => {
 		mocks.url = new URL('http://localhost/?next=/admin/services/new');
 		render(Page);
 
-		const adminAnchor = Array.from(document.querySelectorAll('a')).find(
-			(element) => element.textContent?.trim() === '管理者としてログイン'
+		const adminAnchor = Array.from(document.querySelectorAll('a')).find((element) =>
+			element.textContent?.includes('管理者としてログイン')
 		);
-		const participantAnchor = Array.from(document.querySelectorAll('a')).find(
-			(element) => element.textContent?.trim() === '予約者としてログイン'
+		const participantAnchor = Array.from(document.querySelectorAll('a')).find((element) =>
+			element.textContent?.includes('予約者としてログイン')
 		);
 
 		expect(adminAnchor?.getAttribute('href')).toBe('/admin/login?next=%2Fadmin%2Fservices%2Fnew');
