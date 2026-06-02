@@ -16,12 +16,9 @@
 		Building2,
 		CalendarDays,
 		CheckCircle2,
-		ExternalLink,
-		Github,
 		Settings,
 		ShieldCheck,
 		TicketCheck,
-		Twitter,
 		Users
 	} from '@lucide/svelte';
 
@@ -33,7 +30,6 @@
 	const freeStartHref = `${resolve('/admin/login' as Pathname)}?next=${encodeURIComponent(
 		'/admin/onboarding'
 	)}`;
-	const developerHref = 'https://wakureserve.com/developer';
 
 	const nextPath = $derived.by(() => {
 		const next = page.url.searchParams.get('next');
@@ -227,10 +223,6 @@
 				<div class="flex flex-wrap items-center gap-x-5 gap-y-3">
 					<a class={linkClass} href="#features">機能</a>
 					<a class={linkClass} href={pricingHref}>料金</a>
-					<a class={linkClass} href={developerHref} target="_blank" rel="noreferrer">
-						開発者情報
-						<ExternalLink class="size-3.5" aria-hidden="true" />
-					</a>
 					<a class={linkClass} href="#portal-entry">ログイン</a>
 				</div>
 				<Button href={freeStartHref} class="w-full md:w-auto">
@@ -551,42 +543,11 @@
 				<p class="text-sm text-secondary-foreground">© WakuReserve. 個人開発プロジェクト</p>
 
 				<div class="flex flex-wrap items-center gap-x-5 gap-y-3">
-					<a class={linkClass} href="https://wakureserve.com" target="_blank" rel="noreferrer">
-						サービス紹介
-						<ExternalLink class="size-3.5" aria-hidden="true" />
-					</a>
-					<a class={linkClass} href={developerHref} target="_blank" rel="noreferrer">
-						開発者情報
-						<ExternalLink class="size-3.5" aria-hidden="true" />
-					</a>
 					{#each publicFooterLinks as link (link.href)}
 						<a class={linkClass} href={resolve(link.href as Pathname)}>
 							{link.label}
 						</a>
 					{/each}
-
-					<div class="flex items-center gap-2">
-						<a
-							class="inline-flex size-10 items-center justify-center rounded-md text-link transition-colors hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-							href="https://github.com/yuu19/reserve-app"
-							target="_blank"
-							rel="noreferrer"
-							aria-label="GitHub"
-							title="GitHub"
-						>
-							<Github class="size-5" aria-hidden="true" />
-						</a>
-						<a
-							class="inline-flex size-10 items-center justify-center rounded-md text-link transition-colors hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-							href="https://x.com/wakureserve"
-							target="_blank"
-							rel="noreferrer"
-							aria-label="X"
-							title="X"
-						>
-							<Twitter class="size-5" aria-hidden="true" />
-						</a>
-					</div>
 				</div>
 			</div>
 

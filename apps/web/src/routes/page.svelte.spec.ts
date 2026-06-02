@@ -43,7 +43,8 @@ describe('トップページ', () => {
 		expect(document.body.textContent ?? '').not.toContain('プラン比較');
 		expect(document.body.textContent ?? '').toContain('無料で始める');
 		expect(document.body.textContent ?? '').toContain('回数券管理、複数店舗、スタッフ招待');
-		expect(document.body.textContent ?? '').toContain('開発者情報');
+		expect(document.body.textContent ?? '').not.toContain('サービス紹介');
+		expect(document.body.textContent ?? '').not.toContain('開発者情報');
 		const pricingSection = document.querySelector(
 			'section[aria-labelledby="pricing-summary-heading"]'
 		);
@@ -84,6 +85,10 @@ describe('トップページ', () => {
 		const commerceLink = Array.from(document.querySelectorAll('a')).find(
 			(element) => element.textContent?.trim() === '特定商取引法に基づく表記'
 		);
+		const githubLink = document.querySelector('a[href="https://github.com/yuu19/reserve-app"]');
+		const xLink = document.querySelector('a[href="https://x.com/wakureserve"]');
+		const serviceIntroLink = document.querySelector('a[href="https://wakureserve.com"]');
+		const developerLink = document.querySelector('a[href="https://wakureserve.com/developer"]');
 		expect(adminLinks.length).toBeGreaterThan(0);
 		expect(participantLinks.length).toBeGreaterThan(0);
 		expect(freeStartLinks.length).toBeGreaterThan(0);
@@ -99,6 +104,10 @@ describe('トップページ', () => {
 		expect(privacyLink?.getAttribute('target')).toBeNull();
 		expect(commerceLink?.getAttribute('href')).toBe('/commerce');
 		expect(commerceLink?.getAttribute('target')).toBeNull();
+		expect(githubLink).toBeNull();
+		expect(xLink).toBeNull();
+		expect(serviceIntroLink).toBeNull();
+		expect(developerLink).toBeNull();
 	});
 
 	it('ログインリンクへ next クエリを引き継ぐ', async () => {
