@@ -1,5 +1,10 @@
 # Billing v2 実行手順書（MVP・既存データ破棄前提）
 
+## この文書の扱い
+
+この文書は現行仕様の正本ではなく、Billing v2 移行の履歴・計画メモです。
+現行の組織単位課金仕様は [billing.md](./billing.md) を確認してください。
+
 ## 目的
 
 `reserve-app` の Stripe 課金実装を、他の SaaS でも再利用しやすい **Billing v2** に移行する。

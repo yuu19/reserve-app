@@ -1,5 +1,10 @@
 # yuu19/reserve-app AI Chatbot 再利用化 実行計画
 
+## この文書の扱い
+
+この文書は現行仕様の正本ではなく、AI チャット再利用化の履歴・計画メモです。
+現行の AI チャット責務境界は [ai-chat-reusable-architecture.md](./ai-chat-reusable-architecture.md) を確認してください。
+
 ## 0. 前提
 
 この計画は、`yuu19/reserve-app` にすでに存在する AI Chatbot 実装を踏まえて、将来の SaaS 開発でも再利用しやすい形へ整理するための実行計画です。

@@ -1,3 +1,10 @@
+# Backend ディレクトリ構成移行メモ
+
+## この文書の扱い
+
+この文書は現行仕様の正本ではなく、backend ディレクトリ再編の履歴・計画メモです。
+現行構成を確認するときは、実際の `apps/backend/src` と [architecture.md](./architecture.md) を確認してください。
+
 一気に進める前提なら、**Backend 全体を `app / features / domain / infra / shared` に整理する案**がよいです。`modules/` は廃止し、`booking` 直下の旧共通層も `domain/booking` に寄せます。
 
 ```txt

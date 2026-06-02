@@ -2,29 +2,67 @@
 
 このリポジトリは `pnpm` と `turborepo` を使ったモノレポ構成です。
 
-## 設計ドキュメント
+## docs の見方
 
-- [architecture.md](./architecture.md)
-- [authorization.md](./authorization.md)
-- [billing.md](./billing.md)
-- [database-er.md](./database-er.md)
-- [database-er-reference.html](./database-er-reference.html)（現行DBのテーブル定義、リレーション、静的ER図）
-- [playwright-report-r2.md](./playwright-report-r2.md)
-- [test-strategy.md](./test-strategy.md)
+ルート直下の `docs/` は、現行仕様、運用・検証、履歴・計画、調査メモを分けて置く入口です。
+現行挙動を確認するときは、履歴・計画メモではなく「現行仕様」と「課金」「AI」の文書を優先してください。
 
-### AI チャット関連
+### 現行仕様
 
-- [ai-chat-proposal.md](./ai-chat-proposal.md)（Cloudflare Workers AI / Vectorize / AI Gateway 構成と初期運用）
-- [ai-chat-reusable-architecture.md](./ai-chat-reusable-architecture.md)（共通 core、backend、infra、web の責務境界）
-- [AI チャットの公開マニュアル](../apps/docs/src/routes/manuals/common/ai-chatbot/+page.md)
-- [AI Chatbot quickstart](../specs/004-ai-chatbot/quickstart.md)
+- [architecture.md](./architecture.md): 組織、店舗、参加者、招待、公開予約の全体構成。
+- [authorization.md](./authorization.md): 組織、店舗、参加者の認可モデル。
+- [reserve-app-mvp.md](./reserve-app-mvp.md): 公開予約 MVP の実装状況と残作業。
+- [saas-landing-page.md](./saas-landing-page.md): SaaS ランディングページの情報設計、コピー、CTA 方針。
+- [database-er.md](./database-er.md): DB の概要と簡略 ER。
+- [database-er-reference.html](./database-er-reference.html): 現行 DB のテーブル定義、リレーション、静的 ER 図。
 
-## 現在の移行ステータス（2026-03）
+### 運用・検証
 
-- Backend/DB は `organization + store` の2階層へ移行済み（`store_id` 必須）。
-- 認可/招待/Public Events API は store スコープ API を導入済み。
-- booking API / 一部Webルートは段階移行中（互換エンドポイントを一時併用）。
-- Mobile は access/invitation DTO の新モデルに追従済み。自動テストは未設定。
+- [test-strategy.md](./test-strategy.md): テスト方針と CI の扱い。
+- [playwright-report-r2.md](./playwright-report-r2.md): Playwright レポート公開の運用。
+- [billing-verification-checklist.md](./billing-verification-checklist.md): 課金確認のチェックリスト。
+
+### AI
+
+- [ai-chat-reusable-architecture.md](./ai-chat-reusable-architecture.md): 現行 AI チャットの責務境界。
+- [AI チャットの公開マニュアル](../apps/docs/src/routes/manuals/common/ai-chatbot/+page.md): 利用者向けの操作説明。
+- [AI Chatbot quickstart](../specs/004-ai-chatbot/quickstart.md): Speckit 由来の確認手順。
+
+### 課金
+
+- [billing.md](./billing.md): 現行の組織単位課金仕様。
+- [assets/billing-payment-flow.mmd](./assets/billing-payment-flow.mmd): 課金フロー図の Mermaid ソース。
+- [assets/billing-payment-flow.svg](./assets/billing-payment-flow.svg): 課金フロー図。
+
+### 履歴・計画
+
+ここにある文書は、現行仕様の正本ではありません。
+過去の計画、再利用化検討、移行メモとして読み、現行挙動は上の現行仕様文書で確認してください。
+
+- [stripe-reusable.md](./stripe-reusable.md): Stripe 課金再利用化の旧実行計画。
+- [stripe-reusable-v2.md](./stripe-reusable-v2.md): Billing v2 移行手順の旧メモ。
+- [billing-schema-reuse-plan-db-per-saas.md](./billing-schema-reuse-plan-db-per-saas.md): SaaS 別 DB で課金 schema を使い回す検討。
+- [directory-structure.md](./directory-structure.md): backend ディレクトリ再編の検討。
+- [reserve-app-ai-chatbot-reusable-plan.md](./reserve-app-ai-chatbot-reusable-plan.md): AI チャット再利用化の旧実行計画。
+- [ai-chat-proposal.md](./ai-chat-proposal.md): AI チャット初期提案と追記メモ。
+
+### 調査メモ
+
+- [research/main.md](./research/main.md)
+- [research/coupon.md](./research/coupon.md)
+- [research/organization.md](./research/organization.md)
+- [個人開発のスクール・教室向け予約管理サイト 競合調査とトップページ要件抽出.pdf](./個人開発のスクール・教室向け予約管理サイト%20競合調査とトップページ要件抽出.pdf)
+
+## 現在の移行ステータス（2026-06-02）
+
+- Backend/DB は `organization + store` の2階層へ移行済みです。予約ドメインの主要データは `store_id` を持ちます。
+- 公開予約ページと公開予約 API は、`/{orgSlug}/{storeSlug}` と `/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}` を正として店舗を解決します。
+- 管理・参加者画面は、組織と店舗のスコープ付き URL を基本導線にしています。
+- 未スコープの公開イベント導線と、ログイン済み利用者の自己参加登録 API は互換導線として残っています。この範囲では `PUBLIC_EVENTS_ORG_SLUG` / `PUBLIC_EVENTS_STORE_SLUG` を使います。
+- 店舗公開サイトは `public_site_setting` で公開状態、予約受付、検索除外を管理します。
+- サービス単位の公開制御は `service.public_status` で管理します。`public`、`private`、`suspended` を扱い、公開ページの表示と予約可否に反映します。
+- 枠単位の公開制御は `slot.public_status` で管理します。単発予約枠ごとに公開中、非公開、受付停止を扱えます。
+- 組織単位課金の正本は [billing.md](./billing.md) です。AI チャットの責務境界は [ai-chat-reusable-architecture.md](./ai-chat-reusable-architecture.md) です。
 
 ## アプリ構成
 

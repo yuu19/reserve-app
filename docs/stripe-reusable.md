@@ -1,5 +1,10 @@
 # Stripe 課金再利用化 実行計画（修正版）
 
+## この文書の扱い
+
+この文書は現行仕様の正本ではなく、課金再利用化の履歴・計画メモです。
+現行の組織単位課金仕様は [billing.md](./billing.md) を確認してください。
+
 `reserve-app` の Stripe 課金実装を、他の SaaS でも再利用できる形へ近づけるための実行計画です。
 
 この計画では、最初から generic billing tables へ置き換えることはしません。
@@ -348,13 +353,13 @@ export interface BillingEventStore {
 
 ### 5.3 再送時の扱い
 
-| 既存状態 | 再送時の扱い |
-| --- | --- |
-| `processed` | no-op で 2xx |
-| `failed` | `processing` に戻して再処理 |
-| `processing` かつ stale | 再処理 |
+| 既存状態                | 再送時の扱い                          |
+| ----------------------- | ------------------------------------- |
+| `processed`             | no-op で 2xx                          |
+| `failed`                | `processing` に戻して再処理           |
+| `processing` かつ stale | 再処理                                |
 | `processing` かつ fresh | 同期 webhook では成功済み扱いにしない |
-| 未受領 | `processing` として claim |
+| 未受領                  | `processing` として claim             |
 
 ### 5.4 `processing fresh` の response
 
@@ -408,12 +413,12 @@ create_portal_session:${subjectType}:${subjectId}:subscription_cancel:${provider
 
 ### 6.2 attempt 状態の扱い
 
-| 状態 | 扱い |
-| --- | --- |
-| `succeeded` + handoffUrl 有効 | reuse |
-| `pending` + fresh | 短時間待つ、または `409 retry_later` |
-| `pending` + stale | takeover または新 attempt |
-| `failed` | reuse しない。新 attempt と新 idempotencyKey で retry |
+| 状態                          | 扱い                                                  |
+| ----------------------------- | ----------------------------------------------------- |
+| `succeeded` + handoffUrl 有効 | reuse                                                 |
+| `pending` + fresh             | 短時間待つ、または `409 retry_later`                  |
+| `pending` + stale             | takeover または新 attempt                             |
+| `failed`                      | reuse しない。新 attempt と新 idempotencyKey で retry |
 
 ### 6.3 failed attempt の retry
 
@@ -460,11 +465,11 @@ export type CatalogValidationErrorCode =
 
 意味:
 
-| code | 意味 |
-| --- | --- |
-| `billing_price_not_configured` | env に必要な price id がない |
-| `billing_plan_not_found` | planCode が catalog に存在しない |
-| `billing_interval_not_supported` | plan はあるが interval がない |
+| code                             | 意味                                            |
+| -------------------------------- | ----------------------------------------------- |
+| `billing_price_not_configured`   | env に必要な price id がない                    |
+| `billing_plan_not_found`         | planCode が catalog に存在しない                |
+| `billing_interval_not_supported` | plan はあるが interval がない                   |
 | `billing_unknown_provider_price` | webhook で未知の provider price id を受け取った |
 
 ### 7.3 owner 操作時

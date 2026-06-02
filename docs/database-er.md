@@ -1,6 +1,6 @@
 # DB説明とER（Org + Store）
 
-最終更新: 2026-05-31
+最終更新: 2026-06-02
 参照: `apps/backend/src/infra/db/schema.ts`
 
 現行DBの全テーブル、リレーション、静的ER図は [database-er-reference.html](./database-er-reference.html) を参照。
@@ -71,6 +71,12 @@
   - `(organization_id, recurring_schedule_id, start_at)`
 - `booking` unique:
   - `(slot_id, participant_id)`
+- `service` public visibility:
+  - `public_status`: `public | private | suspended`
+  - `service_store_public_status_idx`: `(store_id, public_status, is_active)`
+- `slot` public visibility:
+  - `public_status`: `public | private | suspended`
+  - `slot_store_public_status_idx`: `(store_id, public_status, status, start_at)`
 - `invitation`:
   - `organization_id` は必須
   - `store_id` は org operator 招待では `null`、store/participant 招待では設定

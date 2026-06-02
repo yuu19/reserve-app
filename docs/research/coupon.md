@@ -1,6 +1,5 @@
 # 回数券
 
-
 レゼルバペイメント
 https://support.reserva.be/hc/ja/articles/227137508-%E3%83%AC%E3%82%BC%E3%83%AB%E3%83%90%E3%83%9A%E3%82%A4%E3%83%A1%E3%83%B3%E3%83%88%E3%81%AE%E6%A6%82%E8%A6%81
 
@@ -9,7 +8,6 @@ https://lp.reserva.be/function/coupon-tickets/?utm_source=chatgpt.com
 https://reserva.be/magazine/function-introduction-coupon-tickets/?utm_source=chatgpt.com
 回数券のサンプル
 https://reserva.be/yogastudiosamplesuite01/ticket/detail/list/4ceJwzAgAAMwAz
-
 
 月額制
 

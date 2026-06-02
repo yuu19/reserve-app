@@ -1,14 +1,14 @@
-# 権限設計（全体Org + 複数Store）
+# 権限設計（組織 + 複数店舗）
 
 最終更新: 2026-06-02
 
 ## 1. 目的
 
-`organization = 全体Org`、`store = 店舗` の2階層で認可する。
+`organization` を組織、`store` を店舗として、2階層で認可する。
 
-- Org 層: 組織全体の管理責務
-- Store 層: 店舗単位の運用責務
-- Participant: 店舗ロールではなく、参加者レコードの有無で扱う
+- 組織層: 組織全体の管理責務
+- 店舗層: 店舗単位の運用責務
+- 参加者: 店舗ロールではなく、参加者レコードの有無で扱う
 
 ## 2. 事実モデル
 
@@ -23,11 +23,11 @@
 - `manager`
 - `staff`
 
-### Participant fact
+### 参加者 fact
 
 - `hasParticipantRecord: boolean`
-- participant は `store_member.role` には入れない
-- participant-only user は `orgRole = null | member` かつ `storeStaffRole = null` になりうる
+- 参加者は `store_member.role` には入れない
+- 参加者専用 user は `orgRole = null | member` かつ `storeStaffRole = null` になりうる
 
 ## 3. 認可の4層
 
@@ -86,42 +86,42 @@ UI では enum 値をそのまま表示しない。ユーザー向けには次�
 
 ### 4-1. OrgRole 由来
 
-| OrgRole  | Org全体管理 | 全店舗の設定/招待 | 予約運用 | 参加者管理 | participant導線                |
-| -------- | ----------- | ----------------- | -------- | ---------- | ------------------------------ |
-| `owner`  | 可          | 可                | 可       | 可         | 参加者レコードがある店舗のみ可 |
-| `admin`  | 可          | 可                | 可       | 可         | 参加者レコードがある店舗のみ可 |
-| `member` | 不可        | 不可              | 不可     | 不可       | 不可                           |
+| OrgRole  | 組織全体管理 | 全店舗の設定/招待 | 予約運用 | 参加者管理 | 参加者導線                     |
+| -------- | ------------ | ----------------- | -------- | ---------- | ------------------------------ |
+| `owner`  | 可           | 可                | 可       | 可         | 参加者レコードがある店舗のみ可 |
+| `admin`  | 可           | 可                | 可       | 可         | 参加者レコードがある店舗のみ可 |
+| `member` | 不可         | 不可              | 不可     | 不可       | 不可                           |
 
 補足:
 
-- `owner` / `admin` は store member がなくても全店舗で管理権限を持つ。
+- `owner` / `admin` は `store_member` がなくても全店舗で管理権限を持つ。
 - ただし `display.primaryRole` が `manager` に偽装されることはない。根拠は `sources.* = org_role` で追う。
 
 ### 4-2. StoreStaffRole 由来
 
 前提: OrgRole は `member` または `null` で、店舗スタッフ権限だけが効いているケース。
 
-| StoreStaffRole | 対象店舗の設定/招待 | 予約運用 | 参加者管理 | participant導線 |
-| -------------- | ------------------- | -------- | ---------- | --------------- |
-| `manager`      | 可                  | 可       | 可         | 不可            |
-| `staff`        | 不可                | 可       | 可         | 不可            |
+| StoreStaffRole | 対象店舗の設定/招待 | 予約運用 | 参加者管理 | 参加者導線 |
+| -------------- | ------------------- | -------- | ---------- | ---------- |
+| `manager`      | 可                  | 可       | 可         | 不可       |
+| `staff`        | 不可                | 可       | 可         | 不可       |
 
 補足:
 
 - `manager` は店舗単位の管理操作を実行できる。
 - `staff` は予約運用と参加者管理までで、サービス/枠/定期の管理はできない。
 
-### 4-3. Participant record 由来
+### 4-3. 参加者 record 由来
 
-| 条件                           | participant導線 |
-| ------------------------------ | --------------- |
-| `hasParticipantRecord = true`  | 可              |
-| `hasParticipantRecord = false` | 不可            |
+| 条件                           | 参加者導線 |
+| ------------------------------ | ---------- |
+| `hasParticipantRecord = true`  | 可         |
+| `hasParticipantRecord = false` | 不可       |
 
 補足:
 
-- `manager` / `staff` であっても、participant レコードがなければ `effective.canUseParticipantBooking = false`。
-- participant 導線の厳格仕様は維持する。管理者向けの代理閲覧・代理予約は別フェーズ。
+- `manager` / `staff` であっても、参加者レコードがなければ `effective.canUseParticipantBooking = false`。
+- 参加者導線の厳格仕様は維持する。管理者向けの代理閲覧・代理予約は別フェーズ。
 
 ## 5. access-tree API
 
@@ -229,20 +229,20 @@ UI では enum 値をそのまま表示しない。ユーザー向けには次�
   - `member` を upsert
 - `subjectKind = store_operator`
   - `role = manager | staff`
-  - org member を最低 `member` として存在保証し、`store_member` を upsert
-  - `manager -> admin` のような org 権限昇格は行わない
+  - 組織メンバーを最低 `member` として存在保証し、`store_member` を upsert
+  - `manager -> admin` のような組織権限昇格は行わない
 - `subjectKind = participant`
   - `participant` を upsert
-  - Org member は自動付与しない
+  - 組織メンバーは自動付与しない
 
 ## 7. 招待API
 
-### Org operator 招待
+### 組織運営者招待
 
 - `POST /api/v1/auth/orgs/{orgSlug}/invitations`
 - `GET /api/v1/auth/orgs/{orgSlug}/invitations`
 
-### Store 招待
+### 店舗招待
 
 - `POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations`
 - `GET /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations`
@@ -260,15 +260,15 @@ UI では enum 値をそのまま表示しない。ユーザー向けには次�
 
 ## 8. 画面導線
 
-- Org admin/owner
+- 組織 admin/owner
   - `/admin/dashboard` へ誘導
-  - Org/Store 切替 UI を表示
-- Store staff/manager
+  - 組織/店舗切替 UI を表示
+- 店舗 staff/manager
   - 管理導線を表示
-- participant-only
+- 参加者専用 user
   - `/participant/home` へ誘導
 
-招待受諾 UI は API が統一されていても、現状の Web では管理者向け `/invitations/accept` と participant 向け `/participants/invitations/accept` を使い分ける。
+招待受諾 UI は API が統一されていても、現状の Web では管理者向け `/invitations/accept` と参加者向け `/participants/invitations/accept` を使い分ける。
 
 ## 9. 実装メモ
 

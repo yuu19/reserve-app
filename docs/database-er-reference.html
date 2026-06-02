@@ -508,7 +508,7 @@
   <body>
     <header>
       <div class="logo">Reserve App DB <span>/</span> schema</div>
-      <div class="v-badge">schema.ts / 2026-05-31</div>
+      <div class="v-badge">schema.ts / 2026-06-02</div>
       <div class="summary">
         <div class="pill">外部リソースなし</div>
         <div class="pill">48 tables</div>
@@ -678,8 +678,11 @@
                 >storeInvitation</code
               >
               と <code>participantInvitation</code> は <code>invitation</code> の参照 alias
-              であり、独立テーブルとしては数えていません。現在の Drizzle schema と <code>apps/backend/drizzle/0030_public_booking_mvp.sql</code>
-              までの公開予約MVPテーブルを反映し、旧課金テーブルは含めていません。
+              であり、独立テーブルとしては数えていません。現在の Drizzle schema と <code>apps/backend/drizzle/0035_slot_public_status.sql</code>
+              までの公開予約MVPテーブルを反映し、旧課金テーブルは含めていません。サービス単位の公開状態は
+              <code>service.public_status</code> と <code>service_store_public_status_idx</code>
+              を反映しています。枠単位の公開状態は <code>slot.public_status</code> と
+              <code>slot_store_public_status_idx</code> を反映しています。
             </div>
             <section class="table-group">
               <h3>認証</h3>
@@ -1517,7 +1520,7 @@
                   <div class="tcard-header">
                     <div class="tname">service</div>
                     <div class="tcard-badges">
-                      <span class="tbadge">18 cols</span><span class="tbadge">2 FK</span
+                      <span class="tbadge">19 cols</span><span class="tbadge">2 FK</span
                       ><span class="tbadge">0 UK</span>
                     </div>
                   </div>
@@ -1619,6 +1622,16 @@
                     </div>
                     <div class="ftype">integer(boolean)</div>
                     <div class="fdesc">真偽値。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      public_status<span class="ftag tag-meta">default</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">
+                      公開ページでの表示・受付状態。public / private /
+                      suspended。検索用 index は service_store_public_status_idx。
+                    </div>
                   </div>
                   <div class="frow">
                     <div class="fname">is_active<span class="ftag tag-meta">default</span></div>
@@ -1852,7 +1865,7 @@
                   <div class="tcard-header">
                     <div class="tname">slot</div>
                     <div class="tcard-badges">
-                      <span class="tbadge">16 cols</span><span class="tbadge">4 FK</span
+                      <span class="tbadge">17 cols</span><span class="tbadge">4 FK</span
                       ><span class="tbadge">1 UK</span>
                     </div>
                   </div>
@@ -1920,6 +1933,16 @@
                     <div class="fname">status<span class="ftag tag-meta">default</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">状態値。値域はドメイン層またはユースケース層を参照。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      public_status<span class="ftag tag-meta">default</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">
+                      公開ページでの表示・受付状態。public / private /
+                      suspended。検索用 index は slot_store_public_status_idx。
+                    </div>
                   </div>
                   <div class="frow">
                     <div class="fname">staff_label<span class="ftag tag-meta">nullable</span></div>
@@ -6153,7 +6176,7 @@
                 <g class="node" transform="translate(1060, 54)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">service</text>
-                  <text class="node-sub" x="12" y="43">18 columns</text>
+                  <text class="node-sub" x="12" y="43">19 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 2</text>
                 </g>
@@ -6174,7 +6197,7 @@
                 <g class="node" transform="translate(1060, 330)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">slot</text>
-                  <text class="node-sub" x="12" y="43">16 columns</text>
+                  <text class="node-sub" x="12" y="43">17 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 4</text>
                 </g>
@@ -6574,6 +6597,7 @@ erDiagram
         varchar timezone "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
         varchar booking_policy "実装上の業務属性。詳細な値域はドメイン層またはユースケース層を参照。"
         int requires_ticket "真偽値。"
+        varchar public_status "公開ページでの表示・受付状態。public / private / suspended。"
         int is_active "真偽値。"
         int created_at "作成日時。timestamp_ms。"
         int updated_at "更新日時。timestamp_ms。"
@@ -6625,6 +6649,7 @@ erDiagram
         int capacity "数値。単位はカラム名に従う。"
         int reserved_count "数値。単位はカラム名に従う。"
         varchar status "状態値。値域はドメイン層またはユースケース層を参照。"
+        varchar public_status "公開ページでの表示・受付状態。public / private / suspended。"
         varchar staff_label "表示名またはラベル。"
         varchar location_label "表示名またはラベル。"
         int booking_open_at "日時。timestamp_ms。"
