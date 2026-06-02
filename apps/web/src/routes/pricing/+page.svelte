@@ -16,7 +16,6 @@
 		pricingNotes,
 		pricingPlans,
 		type PricingFeature,
-		type PricingManualLink,
 		type PricingPlan
 	} from '$lib/content/pricing';
 	import { ArrowLeft, ArrowRight, CheckCircle2, Info, LogIn, ShieldCheck } from '@lucide/svelte';
@@ -28,8 +27,6 @@
 	const sectionHeadingClass = 'text-xl font-bold text-foreground md:text-2xl';
 	const panelClass = 'surface-panel rounded-md border border-border/80 shadow-sm';
 	const listTileClass = 'rounded-md border border-border/70 bg-stone-01 px-3 py-2';
-	const manualLinkClass =
-		'inline-flex min-h-7 items-center gap-1 rounded-md border border-border bg-card px-2 py-1 font-medium text-link transition-colors hover:bg-secondary hover:no-underline';
 	const comparisonPrimaryManualLinkClass =
 		'inline-flex max-w-full items-center gap-1.5 rounded-sm font-bold text-link underline-offset-2 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 	const comparisonSecondaryManualLinkClass =
@@ -51,21 +48,6 @@
 		}
 	];
 </script>
-
-{#snippet manualLinkList(manualLinks: readonly PricingManualLink[])}
-	{#if manualLinks.length > 0}
-		<span class="mt-1 flex flex-wrap gap-1.5 text-xs" aria-label="関連マニュアル">
-			{#each manualLinks as manualLink (manualLink.href)}
-				<a class={manualLinkClass} href={manualLink.href} rel="external">
-					<span>{manualLink.label}</span>
-					{#if manualLink.status === 'preparing'}
-						<span class={preparingBadgeClass}>準備中</span>
-					{/if}
-				</a>
-			{/each}
-		</span>
-	{/if}
-{/snippet}
 
 {#snippet comparisonFeatureCell(feature: PricingFeature)}
 	<div class="flex min-w-0 flex-col gap-1.5">
@@ -184,10 +166,7 @@
 								{#each plan.highlights as highlight (highlight.label)}
 									<li class={`${listTileClass} flex items-start gap-2`}>
 										<CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
-										<span class="min-w-0">
-											<span>{highlight.label}</span>
-											{@render manualLinkList(highlight.manualLinks)}
-										</span>
+										<span class="min-w-0">{highlight.label}</span>
 									</li>
 								{/each}
 							</ul>

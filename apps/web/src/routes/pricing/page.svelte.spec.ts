@@ -32,6 +32,18 @@ describe('料金ページ', () => {
 		expect(premiumActionLink?.getAttribute('href')).toBe('/admin/login?next=%2Fadmin%2Fcontracts');
 	});
 
+	it('プランカードにはマニュアルリンクを表示しない', async () => {
+		render(PricingPage);
+
+		const plansSection = document.querySelector('section[aria-labelledby="plans-heading"]');
+
+		expect(plansSection?.textContent).toContain(
+			'公開予約受付を始める基本機能と、運営拡張に必要な Premium 機能を比較できます。'
+		);
+		expect(plansSection?.querySelector('a[href^="https://docs.wakureserve.com/manuals/"]')).toBeNull();
+		expect(plansSection?.textContent).not.toContain('準備中');
+	});
+
 	it('カテゴリ付きの機能比較表を表示する', async () => {
 		render(PricingPage);
 
@@ -103,7 +115,6 @@ describe('料金ページ', () => {
 		render(PricingPage);
 
 		const expectedManualHrefs = [
-			'https://docs.wakureserve.com/manuals/admin/getting-started',
 			'https://docs.wakureserve.com/manuals/admin/one-time-slots',
 			'https://docs.wakureserve.com/manuals/admin/recurring-schedules',
 			'https://docs.wakureserve.com/manuals/admin/organization-and-store',
@@ -112,11 +123,11 @@ describe('料金ページ', () => {
 			'https://docs.wakureserve.com/manuals/admin/contracts-and-premium'
 		];
 
+		const comparisonTable = document.querySelector('table[aria-labelledby="comparison-heading"]');
 		for (const href of expectedManualHrefs) {
-			expect(document.querySelector(`a[href="${href}"]`)).toBeTruthy();
+			expect(comparisonTable?.querySelector(`a[href="${href}"]`)).toBeTruthy();
 		}
 
-		const comparisonTable = document.querySelector('table[aria-labelledby="comparison-heading"]');
 		const preparingManualLink = comparisonTable?.querySelector(
 			'a[href="https://docs.wakureserve.com/manuals/admin/one-time-slots"]'
 		);
@@ -127,7 +138,7 @@ describe('料金ページ', () => {
 		expect(preparingManualLink?.textContent).toContain('準備中');
 		expect(publishedManualLink?.textContent).not.toContain('準備中');
 		await expect
-			.element(page.getByRole('link', { name: /単発予約枠/ }).first())
+			.element(page.getByRole('link', { name: /予約受付/ }).first())
 			.toBeInTheDocument();
 	});
 });
