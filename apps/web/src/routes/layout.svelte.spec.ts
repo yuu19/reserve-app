@@ -343,6 +343,20 @@ describe('共通レイアウト', () => {
 		}
 	);
 
+	it('ログイン中でもトップページではアプリシェルと共通ブランドヘッダーを隠す', async () => {
+		pageState.url = new URL('https://example.com/');
+		renderLayout();
+
+		await vi.waitFor(() => {
+			expect(mocks.loadSession).toHaveBeenCalled();
+			expect(document.querySelector('a[href="/admin/dashboard"]')).toBeNull();
+			expect(document.querySelector('button[aria-label="AIサポートを開く"]')).toBeNull();
+		});
+		expect(document.body.textContent).not.toContain('予約管理プラットフォーム');
+		expect(document.querySelector('header')).toBeNull();
+		expect(document.querySelector('footer')).toBeNull();
+	});
+
 	it('ログイン前は AI ウィジェットを隠す', async () => {
 		mocks.loadSession.mockResolvedValue({
 			session: null,

@@ -84,7 +84,7 @@
 	];
 	const shouldShowAiChatWidget = (featureFlag: string | undefined, loggedIn: boolean) =>
 		featureFlag !== 'false' && loggedIn;
-	const publicStandalonePaths = ['/pricing', '/terms', '/privacy', '/commerce'] as const;
+	const publicStandalonePaths = ['/', '/pricing', '/terms', '/privacy', '/commerce'] as const;
 	const isPublicStandalonePath = (value: string): boolean =>
 		publicStandalonePaths.some((publicPath) => value === publicPath);
 
@@ -1317,27 +1317,29 @@
 	/>
 {:else}
 	<div class="min-h-screen bg-background">
-		<header class="border-b border-border/70 bg-card/90 backdrop-blur">
-			<div class="mx-auto flex w-full max-w-7xl items-center px-4 py-3 md:px-8">
-				<a
-					href={resolve('/' as ResolvablePath)}
-					class="inline-flex items-center gap-3 text-foreground no-underline hover:no-underline"
-				>
-					<img
-						alt=""
-						aria-hidden="true"
-						class="size-11 shrink-0 rounded-2xl border border-border/80 bg-white shadow-sm"
-						height="44"
-						src={brandMarkHref}
-						width="44"
-					/>
-					<span class="flex min-w-0 flex-col">
-						<span class="truncate text-sm font-semibold md:text-base">{brandName}</span>
-						<span class="truncate text-xs text-muted-foreground md:text-sm">{brandTagline}</span>
-					</span>
-				</a>
-			</div>
-		</header>
+		{#if pathname !== '/'}
+			<header class="border-b border-border/70 bg-card/90 backdrop-blur">
+				<div class="mx-auto flex w-full max-w-7xl items-center px-4 py-3 md:px-8">
+					<a
+						href={resolve('/' as ResolvablePath)}
+						class="inline-flex items-center gap-3 text-foreground no-underline hover:no-underline"
+					>
+						<img
+							alt=""
+							aria-hidden="true"
+							class="size-11 shrink-0 rounded-2xl border border-border/80 bg-white shadow-sm"
+							height="44"
+							src={brandMarkHref}
+							width="44"
+						/>
+						<span class="flex min-w-0 flex-col">
+							<span class="truncate text-sm font-semibold md:text-base">{brandName}</span>
+							<span class="truncate text-xs text-muted-foreground md:text-sm">{brandTagline}</span>
+						</span>
+					</a>
+				</div>
+			</header>
+		{/if}
 		{@render children()}
 		{#if pathname !== '/'}
 			<footer class="border-t border-border/80 bg-card">
