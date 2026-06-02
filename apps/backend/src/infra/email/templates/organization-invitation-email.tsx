@@ -83,6 +83,14 @@ const styles = {
   },
 } as const;
 
+const roleLabels: Record<string, string> = {
+  admin: '組織管理者',
+  member: '組織メンバー',
+  manager: '店舗管理者',
+  staff: '店舗スタッフ',
+  participant: '参加者',
+};
+
 export const OrganizationInvitationEmail = ({
   invitationId,
   organizationName,
@@ -102,10 +110,10 @@ export const OrganizationInvitationEmail = ({
           <Text style={styles.text}>以下の内容で組織メンバーへの招待が届いています。</Text>
           <Section style={styles.detailSection}>
             <Text style={styles.detailText}>
-              <strong>Role:</strong> {role}
+              <strong>付与される権限:</strong> {roleLabels[role] ?? role}
             </Text>
             <Text style={styles.detailText}>
-              <strong>Inviter:</strong> {inviterDisplay}
+              <strong>招待者:</strong> {inviterDisplay}
             </Text>
           </Section>
           <Button href={invitationUrl} style={styles.button}>

@@ -26,6 +26,7 @@
 		loadNotificationSettings,
 		updateNotificationSettings
 	} from '$lib/features/notification-settings';
+	import { ROLE_DISPLAY_LABELS } from '$lib/features/role-labels';
 	import type { NotificationSettingsPayload } from '$lib/rpc-client';
 
 	type ResolvablePath = Pathname;
@@ -65,23 +66,23 @@
 	}> = [
 		{
 			key: 'notifyOwner',
-			label: 'owner に通知',
-			description: '組織 owner のメールアドレスを通知先に含めます。'
+			label: `${ROLE_DISPLAY_LABELS.owner}に通知`,
+			description: `${ROLE_DISPLAY_LABELS.owner}のメールアドレスを通知先に含めます。`
 		},
 		{
 			key: 'notifyAdmins',
-			label: 'admin に通知',
-			description: '組織 admin のメールアドレスを通知先に含めます。'
+			label: `${ROLE_DISPLAY_LABELS.admin}に通知`,
+			description: `${ROLE_DISPLAY_LABELS.admin}のメールアドレスを通知先に含めます。`
 		},
 		{
 			key: 'notifyStoreManagers',
-			label: '店舗 manager に通知',
-			description: '対象店舗の manager を通知先に含めます。'
+			label: `${ROLE_DISPLAY_LABELS.manager}に通知`,
+			description: `対象店舗の${ROLE_DISPLAY_LABELS.manager}を通知先に含めます。`
 		},
 		{
 			key: 'notifyStaff',
-			label: '店舗 staff に通知',
-			description: '対象店舗の staff を通知先に含めます。'
+			label: `${ROLE_DISPLAY_LABELS.staff}に通知`,
+			description: `対象店舗の${ROLE_DISPLAY_LABELS.staff}を通知先に含めます。`
 		}
 	];
 
@@ -224,13 +225,13 @@
 		<section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]">
 			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader class="space-y-2">
-					<h2 class="text-xl font-semibold text-foreground">通知ロール</h2>
-					<CardDescription>予約通知メールに含める運営ロールを選択します。</CardDescription>
+					<h2 class="text-xl font-semibold text-foreground">通知対象の権限</h2>
+					<CardDescription>予約通知メールに含める運営側の権限を選択します。</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form class="space-y-5" onsubmit={submit}>
 						<fieldset class="space-y-3 rounded-lg border border-border/80 bg-card/80 p-4">
-							<legend class="px-1 text-sm font-semibold text-foreground">ロール通知</legend>
+							<legend class="px-1 text-sm font-semibold text-foreground">通知対象の権限</legend>
 							{#each roleOptions as option (option.key)}
 								<label
 									class="flex items-start gap-3 rounded-md border border-border/70 bg-background/70 p-3"

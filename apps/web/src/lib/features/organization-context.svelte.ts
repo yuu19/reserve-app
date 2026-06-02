@@ -348,7 +348,7 @@ export const createOrganizationBillingPaymentMethod = async (input: {
 		message: response.ok
 			? ''
 			: response.status === 409
-				? '支払い方法の登録は Premiumトライアル中の owner のみが開始できます。'
+				? '支払い方法の登録は Premiumトライアル中の組織オーナーのみが開始できます。'
 				: toErrorMessage(payload, '支払い方法登録画面の作成に失敗しました。'),
 		url
 	};

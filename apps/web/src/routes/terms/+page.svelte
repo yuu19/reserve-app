@@ -39,8 +39,9 @@
 	<section class={sectionClass} aria-labelledby="organization-heading">
 		<h2 id="organization-heading" class={headingClass}>第3条 組織、店舗、権限</h2>
 		<p class={paragraphClass}>
-			WakuReserve は、組織と店舗を単位として予約運用を管理します。組織 owner、管理者、店舗スタッフ、
-			参加者などの権限は、サービス内の設定と招待状態に基づいて判定されます。利用者は、自身に付与された権限の範囲でのみ操作できます。
+			WakuReserve は、組織と店舗を単位として予約運用を管理します。組織オーナー、組織管理者、
+			店舗管理者、店舗スタッフ、参加者などの権限は、サービス内の設定と招待状態に基づいて判定されます。
+			利用者は、自身に付与された権限の範囲でのみ操作できます。
 		</p>
 	</section>
 
@@ -85,7 +86,7 @@
 				月額 1,500円、年額 15,800円のプランを Stripe Checkout または Customer Portal
 				経由で扱います。
 			</li>
-			<li>契約開始、支払い方法登録、解約、請求状況の確認は、原則として組織 owner が行います。</li>
+			<li>契約開始、支払い方法登録、解約、請求状況の確認は、原則として組織オーナーが行います。</li>
 			<li>
 				支払い遅延、未払い、決済未完了、未登録の Stripe price などが検出された場合、Premium
 				機能を制限することがあります。

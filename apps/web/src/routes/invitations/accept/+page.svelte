@@ -12,6 +12,7 @@
 	} from '$lib/components/ui/card';
 	import { formatJaDateTime } from '$lib/date/format';
 	import { loadSession, redirectToLoginWithNext } from '$lib/features/auth-session.svelte';
+	import { resolveRoleLabel } from '$lib/features/role-labels';
 	import { authRpc } from '$lib/rpc-client';
 
 	type JsonRecord = Record<string, unknown>;
@@ -274,7 +275,7 @@
 							<Badge variant={isPending ? 'outline' : 'secondary'}>{invitationStatus ?? '-'}</Badge>
 						</div>
 						<p class="text-xs text-muted-foreground">
-							role: {typeof invitation.role === 'string' ? invitation.role : '-'}
+							役割: {resolveRoleLabel(typeof invitation.role === 'string' ? invitation.role : null)}
 						</p>
 						<p class="text-xs text-muted-foreground">
 							期限: {formatTimestamp(invitation.expiresAt)}

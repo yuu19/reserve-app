@@ -199,7 +199,7 @@ export const sendOrganizationInvitationEmail = async ({
       ? inviterEmail
         ? `${inviterName} (${inviterEmail})`
         : inviterName
-      : (inviterEmail ?? 'organization owner');
+      : (inviterEmail ?? '組織オーナー');
 
   const subject = `${organizationName} に招待されました`;
   const html = await render(

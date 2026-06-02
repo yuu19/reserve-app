@@ -25,6 +25,7 @@ vi.mock('$lib/features/organization-context.svelte', () => ({
 }));
 
 vi.mock('$lib/features/scoped-routing', () => ({
+	preserveScopedRouteContext: (targetPath: string) => targetPath,
 	readWindowScopedRouteContext: () => ({
 		orgSlug: 'org-one',
 		storeSlug: 'room-a'
@@ -141,7 +142,7 @@ describe('スコープ付き店舗招待管理ページ', () => {
 			)
 			.toBeInTheDocument();
 		await expect
-			.element(page.getByText(/契約変更と支払い設定は organization owner のみです/))
+			.element(page.getByText(/契約変更と支払い設定は組織オーナーのみです/))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('button', { name: '契約画面を開く' }))

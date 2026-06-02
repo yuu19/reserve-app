@@ -85,7 +85,9 @@ describe('管理者招待ページ', () => {
 
 	it('管理者招待の見出しを表示する', async () => {
 		render(AdminInvitationsPage);
-		await expect.element(page.getByRole('heading', { level: 1, name: '管理者招待' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 1, name: '管理者招待' }))
+			.toBeInTheDocument();
 	});
 
 	it('初期読み込み中は読み込みメッセージを表示し組織必須メッセージを隠す', async () => {
@@ -152,10 +154,12 @@ describe('管理者招待ページ', () => {
 		render(AdminInvitationsPage);
 
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '管理者招待には Premiumプランが必要です' }))
+			.element(
+				page.getByRole('heading', { level: 2, name: '管理者招待には Premiumプランが必要です' })
+			)
 			.toBeInTheDocument();
 		await expect
-			.element(page.getByText(/契約変更と支払い設定は organization owner のみです/))
+			.element(page.getByText(/契約変更と支払い設定は組織オーナーのみです/))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('button', { name: '契約画面を開く' }))

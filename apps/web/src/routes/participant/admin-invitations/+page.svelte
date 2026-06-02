@@ -154,8 +154,7 @@
 	<Card class="surface-panel border-border/80 shadow-lg">
 		<CardHeader>
 			<h2 class="text-xl font-semibold">受信した運営招待一覧</h2>
-			<CardDescription>participant 招待は `/participant/invitations` で対応します。</CardDescription
-			>
+			<CardDescription>参加者招待は `/participant/invitations` で対応します。</CardDescription>
 		</CardHeader>
 		<CardContent>
 			{#if loading}

@@ -384,7 +384,7 @@ describe('契約ページ', () => {
 		await expect
 			.element(
 				page.getByText(
-					'organization owner は、契約変更・通知・対応が必要な状態確認の履歴をこの画面から確認できます。'
+					'組織オーナーは、契約変更・通知・対応が必要な状態確認の履歴をこの画面から確認できます。'
 				)
 			)
 			.toBeInTheDocument();
@@ -467,7 +467,7 @@ describe('契約ページ', () => {
 		await expect
 			.element(
 				page.getByText(
-					'あなたの role では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、billing authority は付与されません。'
+					'現在の権限では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、契約・支払いの管理権限は付与されません。'
 				)
 			)
 			.toBeInTheDocument();
@@ -477,7 +477,7 @@ describe('契約ページ', () => {
 		await expect
 			.element(
 				page.getByText(
-					'契約履歴の詳細は organization owner のみ確認できます。必要な場合は owner に確認を依頼してください。'
+					'契約履歴の詳細は組織オーナーのみ確認できます。必要な場合は組織オーナーに確認を依頼してください。'
 				)
 			)
 			.toBeInTheDocument();
@@ -548,7 +548,7 @@ describe('契約ページ', () => {
 		await expect
 			.element(
 				page.getByText(
-					'契約状態は確認できますが、契約変更と支払い設定は organization owner のみが扱います。'
+					'契約状態は確認できますが、契約変更と支払い設定は組織オーナーのみが扱います。'
 				)
 			)
 			.toBeInTheDocument();
@@ -879,7 +879,7 @@ describe('契約ページ', () => {
 		await expect
 			.element(
 				page.getByText(
-					'あなたの role では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、billing authority は付与されません。'
+					'現在の権限では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、契約・支払いの管理権限は付与されません。'
 				)
 			)
 			.toBeInTheDocument();

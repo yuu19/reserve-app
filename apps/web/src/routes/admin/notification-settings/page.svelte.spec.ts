@@ -112,12 +112,12 @@ describe('通知先設定ページ', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '通知先設定' }))
 			.toBeInTheDocument();
-		await expect.element(page.getByLabelText('owner に通知')).toBeChecked();
-		await expect.element(page.getByLabelText('店舗 staff に通知')).not.toBeChecked();
+		await expect.element(page.getByLabelText('組織オーナーに通知')).toBeChecked();
+		await expect.element(page.getByLabelText('店舗スタッフに通知')).not.toBeChecked();
 		await expect.element(page.getByLabelText('追加メールアドレス')).toHaveValue('ops@example.com');
 
-		await page.getByLabelText('owner に通知').click();
-		await page.getByLabelText('店舗 staff に通知').click();
+		await page.getByLabelText('組織オーナーに通知').click();
+		await page.getByLabelText('店舗スタッフに通知').click();
 		await page.getByLabelText('追加メールアドレス').fill('staff@example.com\n\nops@example.com');
 		await page.getByRole('button', { name: '保存' }).click();
 

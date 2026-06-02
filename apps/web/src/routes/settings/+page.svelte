@@ -248,8 +248,7 @@
 					<div class="rounded-lg border border-border/80 bg-card/80 p-4">
 						<h3 class="text-sm font-semibold text-foreground">組織作成</h3>
 						<p class="mt-2 text-sm text-muted-foreground">
-							招待参加ユーザーは新しい組織を作成できません。組織の追加が必要な場合は owner
-							権限の管理者に依頼してください。
+							招待参加ユーザーは新しい組織を作成できません。組織の追加が必要な場合は組織オーナーに依頼してください。
 						</p>
 					</div>
 				{/if}
@@ -363,9 +362,7 @@
 						<Button
 							type="button"
 							variant="outline"
-							href={reminderSettingsPath
-								? resolve(reminderSettingsPath as Pathname)
-								: undefined}
+							href={reminderSettingsPath ? resolve(reminderSettingsPath as Pathname) : undefined}
 							disabled={!reminderSettingsPath}
 						>
 							リマインド設定へ移動

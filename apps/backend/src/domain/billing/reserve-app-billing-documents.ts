@@ -214,7 +214,7 @@ export const buildOwnerSafeBillingDocumentHistoryEntry = (
         ? `Stripe 上の請求書・領収書参照を ${availableCount}/${documentCount} 件確認できます。`
         : '将来の請求書・領収書参照は Stripe の提供情報をもとに表示します。',
     billingContext: [
-      `アクセス: organization owner のみ`,
+      `アクセス: 組織オーナーのみ`,
       `保存方針: provider reference only`,
       readiness.stripeCustomerId ? `Stripe customer: ${readiness.stripeCustomerId}` : null,
       readiness.stripeSubscriptionId

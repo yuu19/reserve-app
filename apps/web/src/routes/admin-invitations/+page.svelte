@@ -17,6 +17,10 @@
 		loadAdminInvitations
 	} from '$lib/features/invitations-admin.svelte';
 	import {
+		ORGANIZATION_INVITATION_ROLE_OPTIONS,
+		resolveRoleLabel
+	} from '$lib/features/role-labels';
+	import {
 		getRoutePathFromUrlPath,
 		readWindowScopedRouteContext,
 		replacePortalPathWithScopedContext
@@ -61,6 +65,14 @@
 	const pendingReceivedCount = $derived(
 		receivedInvitations.filter((invitation) => invitation.status === 'pending').length
 	);
+	const invitationStatusLabel = (status: InvitationPayload['status']) =>
+		({
+			pending: '送信中',
+			accepted: '承諾済み',
+			rejected: '辞退済み',
+			cancelled: '取消済み',
+			expired: '期限切れ'
+		})[status];
 
 	const refresh = async () => {
 		const { session } = await loadSession();
@@ -278,16 +290,15 @@
 									/>
 								</div>
 								<div class="space-y-2">
-									<Label for="admin-role">ロール</Label><Select.Root
+									<Label for="admin-role">付与する権限</Label><Select.Root
 										type="single"
 										bind:value={invitationForm.role}
 										><Select.Trigger id="admin-role" class="w-full"
-											>{invitationForm.role}</Select.Trigger
+											>{resolveRoleLabel(invitationForm.role)}</Select.Trigger
 										><Select.Content
-											><Select.Item value="admin" label="admin" /><Select.Item
-												value="member"
-												label="member"
-											/></Select.Content
+											>{#each ORGANIZATION_INVITATION_ROLE_OPTIONS as option (option.value)}
+												<Select.Item value={option.value} label={option.label} />
+											{/each}</Select.Content
 										></Select.Root
 									>
 								</div>
@@ -305,11 +316,13 @@
 									>
 										<div>
 											<p class="text-sm font-semibold">{invitation.email}</p>
-											<p class="text-xs text-muted-foreground">role: {invitation.role}</p>
+											<p class="text-xs text-muted-foreground">
+												役割: {resolveRoleLabel(invitation.role)}
+											</p>
 										</div>
 										<div class="flex items-center gap-2">
 											<Badge variant={invitation.status === 'pending' ? 'outline' : 'secondary'}
-												>{invitation.status}</Badge
+												>{invitationStatusLabel(invitation.status)}</Badge
 											><Button
 												type="button"
 												variant="outline"
@@ -354,7 +367,8 @@
 												{invitation.organizationName ?? invitation.organizationId}
 											</p>
 											<p class="text-xs text-muted-foreground">
-												role: {invitation.role} / {invitation.status}
+												役割: {resolveRoleLabel(invitation.role)} / 状態:
+												{invitationStatusLabel(invitation.status)}
 											</p>
 										</div>
 										<div class="flex items-center gap-2">

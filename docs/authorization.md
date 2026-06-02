@@ -1,6 +1,6 @@
 # 権限設計（全体Org + 複数Store）
 
-最終更新: 2026-03-10
+最終更新: 2026-06-02
 
 ## 1. 目的
 
@@ -70,6 +70,17 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 
 `primaryRole` の優先順は `owner/admin > manager > staff > participant`。
 `badges` は複数保持できるため、`staff + participant` のような重なりを潰さない。
+
+UI では enum 値をそのまま表示しない。ユーザー向けには次の表示名を使う。
+
+| enum 値       | ユーザー向け表示名 |
+| ------------- | ------------------ |
+| `owner`       | 組織オーナー       |
+| `admin`       | 組織管理者         |
+| `member`      | 組織メンバー       |
+| `manager`     | 店舗管理者         |
+| `staff`       | 店舗スタッフ       |
+| `participant` | 参加者             |
 
 ## 4. 実効権限
 
@@ -236,7 +247,8 @@ UI 表示専用の補助値。権限判定の正本には使わない。
 - `POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations`
 - `GET /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations`
 
-`role = participant` は participant 招待、`role = manager | staff` は store operator 招待として同じ endpoint を使う。
+`role = participant`（参加者）は参加者招待として扱う。
+`role = manager | staff`（店舗管理者 / 店舗スタッフ）は store operator 招待として同じ endpoint を使う。
 
 ### ユーザー操作
 

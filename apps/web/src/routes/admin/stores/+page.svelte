@@ -38,6 +38,7 @@
 		SLUG_INPUT_HINT,
 		SLUG_PATTERN_ATTRIBUTE
 	} from '$lib/features/slug';
+	import { resolveRoleLabel } from '$lib/features/role-labels';
 	import type { OrganizationBillingPayload, OrganizationPayload } from '$lib/rpc-client';
 	import type { OrganizationPremiumRestrictionPayload } from '$lib/features/premium-restrictions';
 	import { toast } from 'svelte-sonner';
@@ -57,18 +58,9 @@
 	let editTarget = $state<StoreContextPayload | null>(null);
 	let editForm = $state({ name: '', slug: '' });
 
-	const roleLabelMap = {
-		manager: 'manager',
-		staff: 'staff',
-		participant: 'participant'
-	} as const;
-
 	const resolveStoreRoleLabel = (store: StoreContextPayload) => {
 		const primaryRole = store.display.primaryRole;
-		if (primaryRole === 'manager' || primaryRole === 'staff' || primaryRole === 'participant') {
-			return roleLabelMap[primaryRole];
-		}
-		return null;
+		return primaryRole ? resolveRoleLabel(primaryRole) : null;
 	};
 
 	const storeSlugs = () => stores.map((store) => store.slug);
@@ -305,7 +297,7 @@
 				<CardContent class="space-y-4">
 					{#if !canManageOrganization}
 						<p class="text-sm text-muted-foreground">
-							店舗の作成と設定更新は owner / admin のみ実行できます。
+							店舗の作成と設定更新は組織オーナー / 組織管理者のみ実行できます。
 						</p>
 					{:else}
 						<form

@@ -77,7 +77,7 @@ export const createStoreInvitation = async (input: {
 		return {
 			ok: false,
 			status: 422,
-			message: 'ロールは manager / staff / participant を指定してください。'
+			message: '付与する権限を正しく選択してください。'
 		};
 	}
 	if (input.role === 'participant' && !input.participantName?.trim()) {

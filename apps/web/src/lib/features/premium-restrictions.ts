@@ -157,12 +157,12 @@ export const buildPremiumRestrictionNoticeModel = ({
 		billing.paymentIssueState !== 'stale_failure_history_only'
 	);
 	const ownerGuidance = hasPaymentIssue
-		? 'organization owner は契約画面で支払い方法、認証、請求状況を確認できます。'
+		? '組織オーナーは契約画面で支払い方法、認証、請求状況を確認できます。'
 		: billing?.planState === 'premium_trial'
-			? 'organization owner は契約画面で支払い方法登録状況と契約状態を確認できます。'
-			: 'organization owner は契約画面から 7日間のPremiumトライアル開始や契約状態の確認に進めます。';
+			? '組織オーナーは契約画面で支払い方法登録状況と契約状態を確認できます。'
+			: '組織オーナーは契約画面から 7日間のPremiumトライアル開始や契約状態の確認に進めます。';
 	const readOnlyGuidance =
-		'契約変更と支払い設定は organization owner のみです。必要な場合は owner に契約画面の確認を依頼してください。';
+		'契約変更と支払い設定は組織オーナーのみです。必要な場合は組織オーナーに契約画面の確認を依頼してください。';
 	const description = resolveRestrictionDescription(featureLabel, billing, restriction);
 	const currentBillingContext = resolveBillingContextLabel(billing, restriction);
 

@@ -2423,7 +2423,7 @@
 						<Card class="surface-panel border-border/80 shadow-lg">
 							<CardContent class="py-6">
 								<p class="text-sm text-muted-foreground">
-									この組織の運営操作には admin または owner 権限が必要です。
+									この組織の運営操作には組織管理者または組織オーナー権限が必要です。
 								</p>
 							</CardContent>
 						</Card>
@@ -3060,7 +3060,7 @@
 									<CardContent class="space-y-4">
 										{#if !canManage}
 											<p class="text-sm text-muted-foreground">
-												予約一覧の閲覧と運営操作には admin または owner 権限が必要です。
+												予約一覧の閲覧と運営操作には組織管理者または組織オーナー権限が必要です。
 											</p>
 										{:else}
 											<div class="grid gap-3 md:grid-cols-3">

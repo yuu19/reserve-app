@@ -69,7 +69,7 @@ export const createAdminInvitation = async (input: {
 }) => {
 	const role = toRole(input.role);
 	if (!role) {
-		return { ok: false, status: 422, message: 'ロールは admin / member を指定してください。' };
+		return { ok: false, status: 422, message: '付与する権限を正しく選択してください。' };
 	}
 	const context = readWindowScopedRouteContext();
 	if (!context) {

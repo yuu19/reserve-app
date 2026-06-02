@@ -13,6 +13,10 @@
 		loadStoreInvitations
 	} from '$lib/features/invitations-store.svelte';
 	import {
+		resolveRoleLabel,
+		STORE_OPERATOR_INVITATION_ROLE_OPTIONS
+	} from '$lib/features/role-labels';
+	import {
 		getCurrentPathWithSearch,
 		loadSession,
 		redirectToLoginWithNext
@@ -35,8 +39,7 @@
 			expired: '期限切れ'
 		})[status];
 
-	const operatorRoleLabel = (role: InvitationPayload['role']) =>
-		role === 'manager' ? 'manager' : role === 'staff' ? 'staff' : String(role);
+	const operatorRoleLabel = (role: InvitationPayload['role']) => resolveRoleLabel(role);
 
 	let loading = $state(true);
 	let busy = $state(false);
@@ -247,7 +250,9 @@
 		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
 				<h2 class="text-lg font-semibold text-foreground">店舗運営招待</h2>
-				<CardDescription>manager / staff の招待送信、再送、取消を行います。</CardDescription>
+				<CardDescription>
+					店舗管理者 / 店舗スタッフの招待送信、再送、取消を行います。
+				</CardDescription>
 			</CardHeader>
 			<CardContent class="grid gap-2 text-sm text-secondary-foreground sm:grid-cols-2">
 				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
@@ -264,7 +269,7 @@
 		<Card class="surface-panel border-border/80 shadow-md">
 			<CardHeader class="space-y-1">
 				<h2 class="text-lg font-semibold text-foreground">参加者招待</h2>
-				<CardDescription>participant 招待の送信、再送、取消を行います。</CardDescription>
+				<CardDescription>参加者招待の送信、再送、取消を行います。</CardDescription>
 			</CardHeader>
 			<CardContent class="grid gap-2 text-sm text-secondary-foreground sm:grid-cols-2">
 				<div class="rounded-md border border-border/80 bg-card/80 px-3 py-2">
@@ -298,7 +303,7 @@
 			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader>
 					<h2 class="text-xl font-semibold">送信済み店舗運営招待</h2>
-					<CardDescription>manager / staff の付与先をここで管理します。</CardDescription>
+					<CardDescription>店舗管理者 / 店舗スタッフの付与先をここで管理します。</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-3">
 					{#if !canManageStore}
@@ -323,14 +328,15 @@
 								/>
 							</div>
 							<div class="space-y-2">
-								<Label for="operator-role">ロール</Label>
+								<Label for="operator-role">付与する権限</Label>
 								<Select.Root type="single" bind:value={operatorInvitationForm.role}>
 									<Select.Trigger id="operator-role" class="w-full">
-										{operatorInvitationForm.role}
+										{resolveRoleLabel(operatorInvitationForm.role)}
 									</Select.Trigger>
 									<Select.Content>
-										<Select.Item value="manager" label="manager" />
-										<Select.Item value="staff" label="staff" />
+										{#each STORE_OPERATOR_INVITATION_ROLE_OPTIONS as option (option.value)}
+											<Select.Item value={option.value} label={option.label} />
+										{/each}
 									</Select.Content>
 								</Select.Root>
 							</div>
@@ -349,7 +355,7 @@
 									<div class="space-y-1">
 										<p class="text-sm font-semibold">{invitation.email}</p>
 										<p class="text-xs text-muted-foreground">
-											role: {operatorRoleLabel(invitation.role)}
+											役割: {operatorRoleLabel(invitation.role)}
 										</p>
 									</div>
 									<div class="flex items-center gap-2">
@@ -383,7 +389,7 @@
 			<Card class="surface-panel border-border/80 shadow-lg">
 				<CardHeader>
 					<h2 class="text-xl font-semibold">送信済み参加者招待</h2>
-					<CardDescription>participant 招待では参加者名も記録します。</CardDescription>
+					<CardDescription>参加者招待では参加者名も記録します。</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-3">
 					{#if !canManageParticipants}

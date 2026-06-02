@@ -87,7 +87,7 @@
 						<p
 							class="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-secondary-foreground"
 						>
-							断定できない内容です。owner またはサポートに確認してください。
+							断定できない内容です。組織オーナーまたはサポートに確認してください。
 						</p>
 					{/if}
 

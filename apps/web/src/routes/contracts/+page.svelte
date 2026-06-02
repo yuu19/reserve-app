@@ -101,7 +101,7 @@
 			case 'premium_trial':
 				return 'Premium機能の確認期間中です。終了日までに継続判断を進めれば、運営への影響を抑えられます。';
 			case 'premium_paid':
-				return 'Premium機能を利用中です。契約変更と支払い設定は owner のみが実行し、他ロールは状態確認のみ行えます。';
+				return 'Premium機能を利用中です。契約変更と支払い設定は組織オーナーのみが実行し、他の権限では状態確認のみ行えます。';
 			default:
 				return '無料プランで基本運用を続けながら、Premiumトライアルで複数店舗管理やスタッフ権限などの拡張機能を7日間確認できます。';
 		}
@@ -138,11 +138,11 @@
 			case 'past_due_grace_active':
 				return `支払い遅延の猶予期間中です。猶予期限は ${paymentIssueGraceEndsAtLabel} です。`;
 			case 'past_due_grace_expired':
-				return '支払い遅延の猶予期限を過ぎています。Premium 機能は停止されています。owner は契約管理画面で支払い方法または請求状況を確認してください。';
+				return '支払い遅延の猶予期限を過ぎています。Premium 機能は停止されています。組織オーナーは契約管理画面で支払い方法または請求状況を確認してください。';
 			case 'unpaid':
-				return '未払い状態のため Premium 機能は停止されています。owner は契約管理画面で支払い状況を確認してください。';
+				return '未払い状態のため Premium 機能は停止されています。組織オーナーは契約管理画面で支払い状況を確認してください。';
 			case 'incomplete':
-				return '契約処理が未完了のため Premium 機能はまだ有効化されていません。owner は checkout または契約管理画面の状態を確認してください。';
+				return '契約処理が未完了のため Premium 機能はまだ有効化されていません。組織オーナーは申込画面または契約管理画面の状態を確認してください。';
 			case 'recovered':
 				return '支払い問題は解消済みです。Premium の利用状態は最新の契約状態に基づいて復旧しています。';
 			case 'stale_failure_history_only':
@@ -154,13 +154,13 @@
 				: '支払い遅延を確認しています。Premiumの利用可否は最新の契約状態に基づいて判定されます。';
 		}
 		if (billing.subscriptionStatus === 'unpaid') {
-			return '未払い状態のため Premium 機能は停止されています。owner は契約管理画面で支払い状況を確認してください。';
+			return '未払い状態のため Premium 機能は停止されています。組織オーナーは契約管理画面で支払い状況を確認してください。';
 		}
 		if (billing.subscriptionStatus === 'incomplete') {
-			return '契約処理が未完了のため Premium 機能はまだ有効化されていません。owner は checkout または契約管理画面の状態を確認してください。';
+			return '契約処理が未完了のため Premium 機能はまだ有効化されていません。組織オーナーは申込画面または契約管理画面の状態を確認してください。';
 		}
 		if (billing.subscriptionStatus === 'canceled') {
-			return '契約は解約済みです。必要な場合は owner が新しい有料契約を開始できます。';
+			return '契約は解約済みです。必要な場合は組織オーナーが新しい有料契約を開始できます。';
 		}
 		if (billing.paidTier?.resolution === 'unknown_price') {
 			return '未登録の Stripe price id を検出したため Premium 機能を停止しています。サポート確認が必要です。';
@@ -172,10 +172,10 @@
 			case 'incomplete':
 				return (
 					billing.billingProfileReadiness.nextAction ??
-					'請求先情報の確認が未完了です。checkout と Premium 利用はブロックされません。'
+					'請求先情報の確認が未完了です。申込画面と Premium 利用はブロックされません。'
 				);
 			case 'unavailable':
-				return '請求先情報の確認を一時的に取得できません。checkout と Premium 利用はブロックされません。';
+				return '請求先情報の確認を一時的に取得できません。申込画面と Premium 利用はブロックされません。';
 			default:
 				return null;
 		}
@@ -244,24 +244,24 @@
 	const actionHeading = $derived(showOwnerActions ? '管理アクション' : '閲覧専用');
 	const actionDescription = $derived.by(() => {
 		if (!showOwnerActions) {
-			return '契約状態は確認できますが、契約変更と支払い設定は organization owner のみが扱います。';
+			return '契約状態は確認できますが、契約変更と支払い設定は組織オーナーのみが扱います。';
 		}
 		if (billing?.planState === 'free') {
-			return 'organization owner はこの billing workspace から 7日間のPremiumトライアルを開始し、反映後の契約状態をここで確認できます。';
+			return '組織オーナーはこの契約画面から 7日間のPremiumトライアルを開始し、反映後の契約状態をここで確認できます。';
 		}
 		if (billing?.planState === 'premium_trial') {
 			return billing.paymentMethodStatus === 'registered'
-				? 'organization owner はトライアル継続準備が完了していることをこの画面で確認できます。必要なら状態を見直し、他ロールは閲覧のみ行えます。'
-				: 'organization owner はこの billing workspace から支払い方法登録へ進み、トライアル終了前の継続準備を進められます。';
+				? '組織オーナーはトライアル継続準備が完了していることをこの画面で確認できます。必要なら状態を見直し、他の権限では閲覧のみ行えます。'
+				: '組織オーナーはこの契約画面から支払い方法登録へ進み、トライアル終了前の継続準備を進められます。';
 		}
-		return 'organization owner は現在の契約状態を確認し、必要に応じて Stripe Customer Portal でプラン変更を開始できます。';
+		return '組織オーナーは現在の契約状態を確認し、必要に応じて Stripe Customer Portal でプラン変更を開始できます。';
 	});
 	const ownerAuthorityNote =
-		'契約変更と支払い設定は organization owner のみです。店舗や参加者の運用権限とは分かれて管理されます。';
+		'契約変更と支払い設定は組織オーナーのみです。店舗や参加者の運用権限とは分かれて管理されます。';
 	const readOnlyAuthorityNote =
-		'あなたの role では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、billing authority は付与されません。';
+		'現在の権限では契約状態の閲覧のみ可能です。店舗や参加者の運用権限があっても、契約・支払いの管理権限は付与されません。';
 	const readOnlyHistoryNote =
-		'契約履歴の詳細は organization owner のみ確認できます。必要な場合は owner に確認を依頼してください。';
+		'契約履歴の詳細は組織オーナーのみ確認できます。必要な場合は組織オーナーに確認を依頼してください。';
 	const accessibleLifecycleSummary = $derived.by(() => {
 		if (!billingReady || !billing) {
 			return '';
@@ -271,9 +271,9 @@
 			case 'premium_trial':
 				return `現在はPremiumトライアル中です。終了予定日は ${trialEndsAtLabel} で、同じ組織で新しいトライアルを重ねて開始することはできません。支払い方法の登録状況は ${paymentMethodStatusLabel} です。`;
 			case 'premium_paid':
-				return '現在はPremiumプラン利用中です。契約状態の確認と契約管理はできますが、契約変更と支払い設定は organization owner のみが実行できます。';
+				return '現在はPremiumプラン利用中です。契約状態の確認と契約管理はできますが、契約変更と支払い設定は組織オーナーのみが実行できます。';
 			default:
-				return '現在は無料プランです。7日間のPremiumトライアルを開始できるのは organization owner のみで、この操作ではまだ支払い方法は登録されません。';
+				return '現在は無料プランです。7日間のPremiumトライアルを開始できるのは組織オーナーのみで、この操作ではまだ支払い方法は登録されません。';
 		}
 	});
 	const routeStatusNotice = $derived.by(() => {
@@ -1000,8 +1000,7 @@
 			<CardHeader>
 				<h2 class="text-xl font-semibold text-foreground">契約履歴</h2>
 				<CardDescription>
-					organization owner
-					は、契約変更・通知・対応が必要な状態確認の履歴をこの画面から確認できます。
+					組織オーナーは、契約変更・通知・対応が必要な状態確認の履歴をこの画面から確認できます。
 				</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-4">

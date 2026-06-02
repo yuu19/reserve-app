@@ -134,7 +134,7 @@ export const BillingPaymentIssueEmail = ({
           </Button>
           <Text style={styles.note}>{noteText}</Text>
           <Hr style={styles.hr} />
-          <Text style={styles.footer}>このメールは organization owner に送信されています。</Text>
+          <Text style={styles.footer}>このメールは組織オーナーに送信されています。</Text>
         </Container>
       </Body>
     </Html>
