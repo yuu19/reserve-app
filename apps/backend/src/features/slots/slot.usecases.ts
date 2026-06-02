@@ -1,5 +1,9 @@
 import { resolveOrganizationId } from '../../domain/booking/authorization.js';
-import { DEFAULT_TIMEZONE, SLOT_STATUS } from '../../domain/booking/constants.js';
+import {
+  DEFAULT_TIMEZONE,
+  SLOT_PUBLIC_STATUS,
+  SLOT_STATUS,
+} from '../../domain/booking/constants.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import { parseIsoDateOrNull } from '../../shared/date.js';
 import { serializeSlot } from '../../shared/serializers.js';
@@ -23,12 +27,14 @@ import {
   listAvailableSlots,
   listSlots,
   updateSlot,
+  updateSlotPublicStatus,
 } from './slot.repository.js';
 import type {
   SlotAvailableQuery,
   SlotCancelBody,
   SlotCreateBody,
   SlotListQuery,
+  SlotPublicStatusUpdateBody,
   SlotUpdateBody,
 } from './slot.schemas.js';
 
@@ -128,6 +134,7 @@ export const createSlot = async (
     locationLabel: normalizeOptionalText(body.locationLabel) ?? null,
     bookingOpenAt: slotBookingWindow.bookingOpenAt,
     bookingCloseAt: slotBookingWindow.bookingCloseAt,
+    publicStatus: body.publicStatus ?? SLOT_PUBLIC_STATUS.PUBLIC,
   });
 
   const slot = await getSlotById(ctx.database, slotId);
@@ -206,6 +213,54 @@ export const updateExistingSlot = async (
     locationLabel: normalizeOptionalText(body.locationLabel) ?? null,
     bookingOpenAt: slotBookingWindow.bookingOpenAt,
     bookingCloseAt: slotBookingWindow.bookingCloseAt,
+  });
+
+  const updatedSlot = await getSlotById(ctx.database, slot.id);
+  return jsonResult(serializeSlot(updatedSlot as Record<string, unknown> | undefined));
+};
+
+/**
+ * 既存予約を残したまま、未来の open slot の公開予約上の表示だけを更新します。
+ */
+export const updateExistingSlotPublicStatus = async (
+  ctx: BookingRouteContext,
+  body: SlotPublicStatusUpdateBody,
+  headers: Headers,
+): Promise<JsonRouteResult> => {
+  const identity = await ctx.requireIdentity(headers);
+  if (!identity) {
+    return unauthorized();
+  }
+
+  const slot = await findSlotForUpdate(ctx.database, body.slotId);
+  if (!slot) {
+    return notFound('Slot not found.');
+  }
+
+  if (isRequestedStoreMismatch(body.storeId, slot.storeId)) {
+    return forbidden();
+  }
+
+  const hasAccess = await ctx.canManageStoreScope({
+    organizationId: slot.organizationId,
+    storeId: slot.storeId,
+    userId: identity.userId,
+  });
+  if (!hasAccess) {
+    return forbidden();
+  }
+
+  if (slot.status !== SLOT_STATUS.OPEN) {
+    return conflict('Slot is not open.');
+  }
+  if (new Date(slot.startAt).getTime() <= Date.now()) {
+    return conflict('Started slot cannot be updated.');
+  }
+
+  await updateSlotPublicStatus({
+    database: ctx.database,
+    slotId: slot.id,
+    publicStatus: body.publicStatus,
   });
 
   const updatedSlot = await getSlotById(ctx.database, slot.id);

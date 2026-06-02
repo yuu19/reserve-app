@@ -156,6 +156,7 @@ describe('単発枠作成ページ', () => {
 		await expect
 			.element(page.getByRole('button', { name: '単発予約枠を作成' }))
 			.toBeInTheDocument();
+		await expect.element(page.getByLabelText('公開予約での表示')).toBeInTheDocument();
 		expect(document.body.textContent ?? '').toContain('サービスを選択してください。');
 	});
 

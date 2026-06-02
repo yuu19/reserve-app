@@ -7,6 +7,7 @@ import {
   DEFAULT_CANCELLATION_DEADLINE_MINUTES,
   PUBLIC_SITE_STATUS,
   SERVICE_PUBLIC_STATUS,
+  SLOT_PUBLIC_STATUS,
   SLOT_STATUS,
 } from '../domain/booking/constants.js';
 import { type AuthRuntimeDatabase, type AuthRuntimeEnv } from '../auth-runtime.js';
@@ -58,6 +59,11 @@ const publicEventSchema = z.object({
   startAt: z.string(),
   endAt: z.string(),
   slotStatus: z.enum([SLOT_STATUS.OPEN, SLOT_STATUS.CANCELED, SLOT_STATUS.COMPLETED]),
+  slotPublicStatus: z.enum([
+    SLOT_PUBLIC_STATUS.PUBLIC,
+    SLOT_PUBLIC_STATUS.PRIVATE,
+    SLOT_PUBLIC_STATUS.SUSPENDED,
+  ]),
   capacity: z.number(),
   reservedCount: z.number(),
   remainingCount: z.number(),
@@ -357,6 +363,7 @@ type PublicEventQueryRow = {
   startAt: Date;
   endAt: Date;
   slotStatus: string;
+  slotPublicStatus: string;
   capacity: number;
   reservedCount: number;
   bookingOpenAt: Date;
@@ -455,6 +462,7 @@ const formatPublicEvent = (
     startAt: toIsoDate(row.startAt),
     endAt: toIsoDate(row.endAt),
     slotStatus: row.slotStatus as 'open' | 'canceled' | 'completed',
+    slotPublicStatus: row.slotPublicStatus as 'public' | 'private' | 'suspended',
     capacity: row.capacity,
     reservedCount: row.reservedCount,
     remainingCount,
@@ -463,6 +471,7 @@ const formatPublicEvent = (
     isBookable:
       acceptBookings &&
       row.servicePublicStatus === SERVICE_PUBLIC_STATUS.PUBLIC &&
+      row.slotPublicStatus === SLOT_PUBLIC_STATUS.PUBLIC &&
       isBookableSlot({
         slotStatus: row.slotStatus,
         reservedCount: row.reservedCount,
@@ -576,6 +585,7 @@ const listPublicEventRows = async ({
       startAt: dbSchema.slot.startAt,
       endAt: dbSchema.slot.endAt,
       slotStatus: dbSchema.slot.status,
+      slotPublicStatus: dbSchema.slot.publicStatus,
       capacity: dbSchema.slot.capacity,
       reservedCount: dbSchema.slot.reservedCount,
       bookingOpenAt: dbSchema.slot.bookingOpenAt,
@@ -593,6 +603,10 @@ const listPublicEventRows = async ({
         inArray(dbSchema.service.publicStatus, [
           SERVICE_PUBLIC_STATUS.PUBLIC,
           SERVICE_PUBLIC_STATUS.SUSPENDED,
+        ]),
+        inArray(dbSchema.slot.publicStatus, [
+          SLOT_PUBLIC_STATUS.PUBLIC,
+          SLOT_PUBLIC_STATUS.SUSPENDED,
         ]),
         gte(dbSchema.slot.startAt, now),
       ),
@@ -1237,6 +1251,7 @@ export const createPublicRoutes = ({
         startAt: dbSchema.slot.startAt,
         endAt: dbSchema.slot.endAt,
         slotStatus: dbSchema.slot.status,
+        slotPublicStatus: dbSchema.slot.publicStatus,
         capacity: dbSchema.slot.capacity,
         reservedCount: dbSchema.slot.reservedCount,
         bookingOpenAt: dbSchema.slot.bookingOpenAt,
@@ -1255,6 +1270,10 @@ export const createPublicRoutes = ({
           inArray(dbSchema.service.publicStatus, [
             SERVICE_PUBLIC_STATUS.PUBLIC,
             SERVICE_PUBLIC_STATUS.SUSPENDED,
+          ]),
+          inArray(dbSchema.slot.publicStatus, [
+            SLOT_PUBLIC_STATUS.PUBLIC,
+            SLOT_PUBLIC_STATUS.SUSPENDED,
           ]),
         ),
       )
@@ -1338,6 +1357,7 @@ export const createPublicRoutes = ({
         serviceId: dbSchema.slot.serviceId,
         startAt: dbSchema.slot.startAt,
         status: dbSchema.slot.status,
+        publicStatus: dbSchema.slot.publicStatus,
         capacity: dbSchema.slot.capacity,
         reservedCount: dbSchema.slot.reservedCount,
         bookingOpenAt: dbSchema.slot.bookingOpenAt,
@@ -1366,6 +1386,12 @@ export const createPublicRoutes = ({
     }
     if (slot.servicePublicStatus !== SERVICE_PUBLIC_STATUS.PUBLIC) {
       return c.json({ message: 'Public booking is not accepted for this service.' }, 409);
+    }
+    if (slot.publicStatus === SLOT_PUBLIC_STATUS.PRIVATE) {
+      return c.json({ message: 'Public event not found.' }, 404);
+    }
+    if (slot.publicStatus !== SLOT_PUBLIC_STATUS.PUBLIC) {
+      return c.json({ message: 'Public booking is not accepted for this slot.' }, 409);
     }
     if (slot.requiresTicket) {
       return c.json({ message: 'Ticket-required services cannot be booked as a guest.' }, 409);

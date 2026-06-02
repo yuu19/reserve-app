@@ -95,6 +95,7 @@ const isPublicEvent = (value: unknown): value is PublicEventListItemPayload =>
 	typeof value.startAt === 'string' &&
 	typeof value.endAt === 'string' &&
 	typeof value.slotStatus === 'string' &&
+	typeof value.slotPublicStatus === 'string' &&
 	typeof value.capacity === 'number' &&
 	typeof value.reservedCount === 'number' &&
 	typeof value.remainingCount === 'number' &&

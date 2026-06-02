@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { SLOT_STATUS } from '../../domain/booking/constants.js';
+import { SLOT_PUBLIC_STATUS, SLOT_STATUS } from '../../domain/booking/constants.js';
 
 const isoDateTimeSchema = z
   .string()
@@ -7,6 +7,11 @@ const isoDateTimeSchema = z
   .refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid ISO datetime');
 
 const slotStatusSchema = z.enum([SLOT_STATUS.OPEN, SLOT_STATUS.CANCELED, SLOT_STATUS.COMPLETED]);
+const slotPublicStatusSchema = z.enum([
+  SLOT_PUBLIC_STATUS.PUBLIC,
+  SLOT_PUBLIC_STATUS.PRIVATE,
+  SLOT_PUBLIC_STATUS.SUSPENDED,
+]);
 
 /**
  * slot 作成 API の入力を検証します。
@@ -20,6 +25,7 @@ export const slotCreateBodySchema = z.object({
   capacity: z.int().min(1).max(500).optional(),
   staffLabel: z.string().trim().max(120).optional(),
   locationLabel: z.string().trim().max(120).optional(),
+  publicStatus: slotPublicStatusSchema.optional(),
 });
 
 /**
@@ -33,6 +39,15 @@ export const slotUpdateBodySchema = z.object({
   capacity: z.int().min(1).max(500).optional(),
   staffLabel: z.string().trim().max(120).optional(),
   locationLabel: z.string().trim().max(120).optional(),
+});
+
+/**
+ * slot の公開予約上の表示だけを更新する入力を検証します。
+ */
+export const slotPublicStatusUpdateBodySchema = z.object({
+  slotId: z.string().min(1),
+  storeId: z.string().min(1).optional(),
+  publicStatus: slotPublicStatusSchema,
 });
 
 /**
@@ -75,6 +90,10 @@ export type SlotCreateBody = z.infer<typeof slotCreateBodySchema>;
  * slot 更新 usecase が受け取る検証済み body 型です。
  */
 export type SlotUpdateBody = z.infer<typeof slotUpdateBodySchema>;
+/**
+ * slot 公開状態更新 usecase が受け取る検証済み body 型です。
+ */
+export type SlotPublicStatusUpdateBody = z.infer<typeof slotPublicStatusUpdateBodySchema>;
 /**
  * staff 向け slot 一覧 usecase が受け取る検証済み query 型です。
  */
@@ -135,6 +154,34 @@ export const updateSlotRoute = createRoute({
   },
   responses: {
     200: { description: 'Slot updated' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'State conflict' },
+    422: { description: 'Validation error' },
+  },
+});
+
+/**
+ * open slot の公開予約上の表示を更新する OpenAPI 定義です。
+ */
+export const updateSlotPublicStatusRoute = createRoute({
+  method: 'post',
+  path: '/organizations/slots/public-status',
+  tags: ['Slots'],
+  summary: 'Update slot public status',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: slotPublicStatusUpdateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'Slot public status updated' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },

@@ -4,6 +4,7 @@ import {
 	type BookingPayload,
 	type ServiceImageUploadUrlPayload,
 	type ServicePublicStatus,
+	type SlotPublicStatus,
 	type StaffCreateBookingInput
 } from '$lib/rpc-client';
 import { formatJaMonth, formatJaTime } from '$lib/date/format';
@@ -357,6 +358,7 @@ export const createSlot = async (input: {
 	capacity?: number;
 	staffLabel?: string;
 	locationLabel?: string;
+	publicStatus?: SlotPublicStatus;
 }) => {
 	const context = readWindowScopedRouteContext();
 	if (!context) {
@@ -391,6 +393,28 @@ export const updateSlotByStaff = async (input: {
 		message: response.ok
 			? '単発枠を更新しました。'
 			: toReservationErrorMessage(response.status, payload, '単発枠更新に失敗しました。')
+	};
+};
+
+export const updateSlotPublicStatusByStaff = async (input: {
+	slotId: string;
+	publicStatus: SlotPublicStatus;
+}) => {
+	const context = readWindowScopedRouteContext();
+	if (!context) {
+		return { ok: false, message: 'URL に組織/店舗コンテキストがありません。' };
+	}
+	const response = await authRpc.updateSlotPublicStatusScoped(context, input);
+	const payload = await parseResponseBody(response);
+	return {
+		ok: response.ok,
+		message: response.ok
+			? '予約枠の公開予約表示を更新しました。'
+			: toReservationErrorMessage(
+					response.status,
+					payload,
+					'予約枠の公開予約表示更新に失敗しました。'
+				)
 	};
 };
 

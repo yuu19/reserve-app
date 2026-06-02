@@ -60,6 +60,7 @@
 		uploadServiceImage,
 		updateRecurringScheduleByStaff,
 		updateSlotByStaff,
+		updateSlotPublicStatusByStaff,
 		updateServiceByStaff,
 		upsertRecurringExceptionByStaff
 	} from '$lib/features/bookings.svelte';
@@ -83,6 +84,7 @@
 		ServicePayload,
 		ServicePublicStatus,
 		SlotPayload,
+		SlotPublicStatus,
 		TicketPackPayload,
 		TicketPurchasePayload,
 		TicketTypePayload
@@ -150,6 +152,7 @@
 		| 'service_archive'
 		| 'service_resume'
 		| 'slot_update'
+		| 'slot_public_status_update'
 		| 'slot_cancel'
 		| 'recurring_update'
 		| 'recurring_stop'
@@ -190,7 +193,8 @@
 		endTime: '11:00',
 		capacity: '',
 		staffLabel: '',
-		locationLabel: ''
+		locationLabel: '',
+		publicStatus: 'public' as SlotPublicStatus
 	});
 	let serviceCreateAttempted = $state(false);
 	let serviceCreateTouched = $state({
@@ -368,7 +372,7 @@
 			case 'admin-services-new':
 				return '新しいサービスを作成します。';
 			case 'admin-slots':
-				return '単発予約枠の確認と停止を行います。';
+				return '単発予約枠の確認、公開予約表示の変更、停止を行います。';
 			case 'admin-slots-new':
 				return '新しい単発予約枠を作成します。';
 			case 'admin-recurring':
@@ -664,6 +668,21 @@
 		status: ServicePayload['publicStatus'] | undefined
 	): 'outline' | 'secondary' | 'destructive' =>
 		status === 'private' ? 'destructive' : status === 'suspended' ? 'secondary' : 'outline';
+	const formatSlotPublicStatus = (status: SlotPayload['publicStatus'] | undefined): string => {
+		if (status === 'private') {
+			return '非公開';
+		}
+		if (status === 'suspended') {
+			return '受付停止';
+		}
+		return '公開中';
+	};
+	const getSlotPublicStatusBadgeVariant = (
+		status: SlotPayload['publicStatus'] | undefined
+	): 'outline' | 'secondary' | 'destructive' =>
+		status === 'private' ? 'destructive' : status === 'suspended' ? 'secondary' : 'outline';
+	const isSlotPublicStatus = (value: string): value is SlotPublicStatus =>
+		value === 'public' || value === 'private' || value === 'suspended';
 	const formatRecurringPattern = (schedule: RecurringSchedulePayload): string => {
 		if (schedule.frequency === 'weekly') {
 			const byWeekday = formatByWeekday(schedule.byWeekday);
@@ -1308,6 +1327,8 @@
 		slot.status === 'open' &&
 		slot.reservedCount === 0 &&
 		new Date(slot.startAt).getTime() > Date.now();
+	const isSlotPublicStatusEditable = (slot: SlotPayload): boolean =>
+		slot.status === 'open' && new Date(slot.startAt).getTime() > Date.now();
 	const selectSlotForEdit = (slot: SlotPayload) => {
 		if (!isSlotEditable(slot)) {
 			toast.error('この単発枠は編集できません。');
@@ -1656,7 +1677,8 @@
 				endAt,
 				capacity: parseNumberInput(slotForm.capacity),
 				staffLabel: slotForm.staffLabel || undefined,
-				locationLabel: slotForm.locationLabel || undefined
+				locationLabel: slotForm.locationLabel || undefined,
+				publicStatus: slotForm.publicStatus
 			});
 			if (!result.ok) {
 				toast.error(result.message);
@@ -1847,6 +1869,30 @@
 			const result = await cancelSlotByStaff(slotId, reasonInput);
 			if (!result.ok) {
 				toast.error(result.message);
+				return;
+			}
+			toast.success(result.message);
+			await refresh();
+		} finally {
+			resourceAction = null;
+		}
+	};
+	const submitUpdateSlotPublicStatusByStaff = async (
+		slotId: string,
+		publicStatus: SlotPublicStatus
+	) => {
+		if (!canManage || resourceAction) {
+			return;
+		}
+		resourceAction = { kind: 'slot_public_status_update', id: slotId };
+		try {
+			const result = await updateSlotPublicStatusByStaff({
+				slotId,
+				publicStatus
+			});
+			if (!result.ok) {
+				toast.error(result.message);
+				await refresh();
 				return;
 			}
 			toast.success(result.message);
@@ -2703,6 +2749,19 @@
 													終了日時は開始日時より後にしてください。
 												</p>
 											{/if}
+											<div class="space-y-2 md:col-span-2">
+												<Label for="slot-public-status">公開予約での表示</Label>
+												<select
+													id="slot-public-status"
+													name="slot_public_status"
+													class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+													bind:value={slotForm.publicStatus}
+												>
+													<option value="public">公開中</option>
+													<option value="suspended">表示するが予約受付を停止</option>
+													<option value="private">公開ページに表示しない</option>
+												</select>
+											</div>
 											<div
 												class="md:col-span-2 sticky bottom-2 z-10 rounded-lg border border-border/80 bg-card/95 p-3 shadow-sm backdrop-blur"
 											>
@@ -3533,7 +3592,7 @@
 									<CardHeader>
 										<h2 class="text-lg font-semibold">単発予約枠管理</h2>
 										<CardDescription>
-											表示月に含まれる予約枠を表示します。受付中の予約枠のみ停止できます。
+											表示月に含まれる予約枠を表示します。受付中の予約枠のみ公開予約表示の変更と停止ができます。
 										</CardDescription>
 									</CardHeader>
 									<CardContent>
@@ -3543,7 +3602,7 @@
 											</p>
 										{:else}
 											<div class="overflow-x-auto rounded-lg border border-border/80 bg-card/80">
-												<table class="w-full min-w-[1080px] text-sm">
+												<table class="w-full min-w-[1180px] text-sm">
 													<thead class="bg-secondary text-muted-foreground">
 														<tr>
 															<th class="px-3 py-2 text-left font-medium">予約枠ID</th>
@@ -3552,6 +3611,7 @@
 															<th class="px-3 py-2 text-right font-medium">定員</th>
 															<th class="px-3 py-2 text-right font-medium">予約済</th>
 															<th class="px-3 py-2 text-left font-medium">ステータス</th>
+															<th class="px-3 py-2 text-left font-medium">公開予約</th>
 															<th class="px-3 py-2 text-left font-medium">担当</th>
 															<th class="px-3 py-2 text-left font-medium">場所</th>
 															<th class="px-3 py-2 text-left font-medium">操作</th>
@@ -3580,6 +3640,40 @@
 																	<Badge variant={slot.status === 'open' ? 'outline' : 'secondary'}>
 																		{statusLabelMap[slot.status]}
 																	</Badge>
+																</td>
+																<td class="px-3 py-3">
+																	<div class="space-y-2">
+																		<Badge
+																			variant={getSlotPublicStatusBadgeVariant(slot.publicStatus)}
+																		>
+																			{formatSlotPublicStatus(slot.publicStatus)}
+																		</Badge>
+																		<select
+																			class="flex h-9 w-44 rounded-md border border-input bg-background px-2 py-1 text-xs"
+																			aria-label={`公開予約での表示 ${formatSlotIdShort(slot.id)}`}
+																			value={slot.publicStatus ?? 'public'}
+																			disabled={busy ||
+																				!!resourceAction ||
+																				!isSlotPublicStatusEditable(slot)}
+																			onchange={(event) => {
+																				const value = (event.currentTarget as HTMLSelectElement)
+																					.value;
+																				if (!isSlotPublicStatus(value)) {
+																					return;
+																				}
+																				void submitUpdateSlotPublicStatusByStaff(slot.id, value);
+																			}}
+																		>
+																			<option value="public">公開中</option>
+																			<option value="suspended">受付停止</option>
+																			<option value="private">非公開</option>
+																		</select>
+																		{#if isResourceActionInProgress('slot_public_status_update', slot.id)}
+																			<p class="text-xs text-muted-foreground">更新中…</p>
+																		{:else if !isSlotPublicStatusEditable(slot)}
+																			<p class="text-xs text-muted-foreground">変更不可</p>
+																		{/if}
+																	</div>
 																</td>
 																<td class="px-3 py-3">{slot.staffLabel || '-'}</td>
 																<td class="px-3 py-3">{slot.locationLabel || '-'}</td>

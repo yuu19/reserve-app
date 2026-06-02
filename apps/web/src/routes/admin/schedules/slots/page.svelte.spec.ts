@@ -15,7 +15,11 @@ describe('単発枠一覧ページ', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: '単発予約枠一覧' }))
 			.toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: '単発予約枠作成へ' })).toBeInTheDocument();
-		await expect.element(page.getByText('単発予約枠の確認と停止を行います。')).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: '単発予約枠作成へ' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('単発予約枠の確認、公開予約表示の変更、停止を行います。'))
+			.toBeInTheDocument();
 	});
 });

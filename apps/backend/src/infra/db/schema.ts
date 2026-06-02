@@ -527,6 +527,7 @@ export const slot = sqliteTable(
     capacity: integer('capacity').notNull(),
     reservedCount: integer('reserved_count').default(0).notNull(),
     status: text('status').default('open').notNull(),
+    publicStatus: text('public_status').default('public').notNull(),
     staffLabel: text('staff_label'),
     locationLabel: text('location_label'),
     bookingOpenAt: integer('booking_open_at', { mode: 'timestamp_ms' }).notNull(),
@@ -553,6 +554,12 @@ export const slot = sqliteTable(
     index('slot_organization_service_start_idx').on(
       table.organizationId,
       table.serviceId,
+      table.startAt,
+    ),
+    index('slot_store_public_status_idx').on(
+      table.storeId,
+      table.publicStatus,
+      table.status,
       table.startAt,
     ),
   ],

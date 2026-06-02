@@ -76,6 +76,7 @@ export const insertSlot = async ({
   locationLabel,
   bookingOpenAt,
   bookingCloseAt,
+  publicStatus,
 }: {
   database: AuthRuntimeDatabase;
   slotId: string;
@@ -89,6 +90,7 @@ export const insertSlot = async ({
   locationLabel: string | null;
   bookingOpenAt: Date;
   bookingCloseAt: Date;
+  publicStatus: string;
 }) => {
   await database.insert(dbSchema.slot).values({
     id: slotId,
@@ -101,11 +103,27 @@ export const insertSlot = async ({
     capacity,
     reservedCount: 0,
     status: SLOT_STATUS.OPEN,
+    publicStatus,
     staffLabel,
     locationLabel,
     bookingOpenAt,
     bookingCloseAt,
   });
+};
+
+/**
+ * open slot の公開予約上の表示だけを更新します。
+ */
+export const updateSlotPublicStatus = async ({
+  database,
+  slotId,
+  publicStatus,
+}: {
+  database: AuthRuntimeDatabase;
+  slotId: string;
+  publicStatus: string;
+}) => {
+  await database.update(dbSchema.slot).set({ publicStatus }).where(eq(dbSchema.slot.id, slotId));
 };
 
 /**

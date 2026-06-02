@@ -14,6 +14,13 @@ export const SLOT_STATUS = {
   COMPLETED: 'completed',
 } as const;
 
+/** 公開予約ページ上での slot 公開状態。 */
+export const SLOT_PUBLIC_STATUS = {
+  PUBLIC: 'public',
+  PRIVATE: 'private',
+  SUSPENDED: 'suspended',
+} as const;
+
 /** 予約 lifecycle で永続化する status 値。 */
 export const BOOKING_STATUS = {
   CONFIRMED: 'confirmed',

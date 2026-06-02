@@ -5,6 +5,7 @@ import {
   createSlotRoute,
   listAvailableSlotsRoute,
   listSlotsRoute,
+  updateSlotPublicStatusRoute,
   updateSlotRoute,
 } from './slot.schemas.js';
 import {
@@ -13,6 +14,7 @@ import {
   listParticipantAvailableSlots,
   listStaffSlots,
   updateExistingSlot,
+  updateExistingSlotPublicStatus,
 } from './slot.usecases.js';
 
 /**
@@ -25,6 +27,13 @@ export const registerSlotRoutes = (ctx: BookingRouteContext) => {
 
   ctx.authRoutes.openapi(updateSlotRoute, async (c) =>
     jsonRouteResult(c, await updateExistingSlot(ctx, c.req.valid('json'), c.req.raw.headers)),
+  );
+
+  ctx.authRoutes.openapi(updateSlotPublicStatusRoute, async (c) =>
+    jsonRouteResult(
+      c,
+      await updateExistingSlotPublicStatus(ctx, c.req.valid('json'), c.req.raw.headers),
+    ),
   );
 
   ctx.authRoutes.openapi(listSlotsRoute, async (c) =>

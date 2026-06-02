@@ -46,6 +46,7 @@ describe('公開イベント一覧ページ', () => {
 					startAt: '2026-06-01T01:00:00.000Z',
 					endAt: '2026-06-01T02:00:00.000Z',
 					slotStatus: 'open',
+					slotPublicStatus: 'public',
 					capacity: 8,
 					reservedCount: 1,
 					remainingCount: 7,

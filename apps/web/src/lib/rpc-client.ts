@@ -208,6 +208,7 @@ export type ParticipantPayload = {
 export type ParticipantInvitationPayload = InvitationPayload;
 
 export type ServicePublicStatus = 'public' | 'private' | 'suspended';
+export type SlotPublicStatus = 'public' | 'private' | 'suspended';
 
 export type ServicePayload = {
 	id: string;
@@ -242,6 +243,7 @@ export type SlotPayload = {
 	capacity: number;
 	reservedCount: number;
 	status: 'open' | 'canceled' | 'completed';
+	publicStatus: SlotPublicStatus;
 	staffLabel?: string | null;
 	locationLabel?: string | null;
 	bookingOpenAt: string;
@@ -396,6 +398,7 @@ export type PublicEventListItemPayload = {
 	startAt: string;
 	endAt: string;
 	slotStatus: 'open' | 'canceled' | 'completed';
+	slotPublicStatus: SlotPublicStatus;
 	capacity: number;
 	reservedCount: number;
 	remainingCount: number;
@@ -777,6 +780,7 @@ type CreateSlotInput = {
 	capacity?: number;
 	staffLabel?: string;
 	locationLabel?: string;
+	publicStatus?: SlotPublicStatus;
 };
 
 type UpdateSlotInput = {
@@ -787,6 +791,12 @@ type UpdateSlotInput = {
 	capacity?: number;
 	staffLabel?: string;
 	locationLabel?: string;
+};
+
+type UpdateSlotPublicStatusInput = {
+	slotId: string;
+	storeId?: string;
+	publicStatus: SlotPublicStatus;
 };
 
 type ListSlotsQuery = {
@@ -1775,6 +1785,10 @@ export const authRpc = {
 	updateSlotScoped: (context: ScopedApiContext, json: UpdateSlotInput) =>
 		withScopedJson(context, json, (resolvedJson) =>
 			authFetch('/api/v1/auth/organizations/slots/update', { json: resolvedJson })
+		),
+	updateSlotPublicStatusScoped: (context: ScopedApiContext, json: UpdateSlotPublicStatusInput) =>
+		withScopedJson(context, json, (resolvedJson) =>
+			authFetch('/api/v1/auth/organizations/slots/public-status', { json: resolvedJson })
 		),
 	listAvailableSlotsScoped: (
 		context: ScopedApiContext,
