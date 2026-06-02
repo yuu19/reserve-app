@@ -6,7 +6,7 @@
 ## Summary
 
 reserve-app の authenticated web users 向けに、根拠付き・権限安全な AI チャット V1 を追加する。
-技術方針は `docs/ai-chat-proposal.md` を正として、Cloudflare Workers backend 上に RAG 構成を置く。
+技術方針は `docs/history/ai-chat-proposal.md` を正として、Cloudflare Workers backend 上に RAG 構成を置く。
 Workers AI は embedding と回答生成、Cloudflare Vectorize は embedding 検索、Cloudflare D1 は
 knowledge 本文・metadata・会話・feedback・usage counter の正本、AI Gateway は model call の
 observability、cache、rate-limit 補助、fallback の入口として扱う。

@@ -190,7 +190,7 @@ pnpm --filter @repo/e2e run clean:e2e
 CI では pull request と `main` push で Chromium の E2E を実行します。
 失敗時の調査に使う `playwright-report` と `test-results` は GitHub Actions artifact に保存されます。
 `main` の最新 Playwright HTML レポートは Cloudflare R2 に集約して公開します。
-公開 URL と運用設定は [Playwright Report の R2 公開構成](../../docs/playwright-report-r2.md) を参照してください。
+公開 URL と運用設定は [Playwright Report の R2 公開構成](../../docs/operations/playwright-report-r2.md) を参照してください。
 
 ## GitHub Actions deploy
 

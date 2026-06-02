@@ -4,7 +4,7 @@
 
 この文書は現行仕様の正本ではなく、AI チャットの初期提案と追記を重ねた履歴・計画メモです。
 外部 Cloudflare 仕様の最新化はこの更新では行っていません。
-現行の AI チャット責務境界は [ai-chat-reusable-architecture.md](./ai-chat-reusable-architecture.md) を確認してください。
+現行の AI チャット責務境界は [ai-chat-reusable-architecture.md](../ai/ai-chat-reusable-architecture.md) を確認してください。
 現行実装との対応を確認するときは、以下の構成を正とします。
 
 - 共通型と port: `packages/saas-chatbot-core`

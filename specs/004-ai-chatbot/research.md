@@ -2,7 +2,7 @@
 
 ## Decision: Implement V1 as Cloudflare Workers RAG, not a standalone AI service
 
-**Rationale**: `docs/ai-chat-proposal.md` matches the current reserve-app architecture: backend already runs on
+**Rationale**: `docs/history/ai-chat-proposal.md` matches the current reserve-app architecture: backend already runs on
 Cloudflare Workers + Hono + Better Auth + D1, and web already calls backend through the existing client layer. Keeping
 RAG in `apps/backend` preserves session handling, organization/store scope resolution, Sentry context, deployment
 order, and D1 access without adding a new service boundary.
@@ -109,7 +109,7 @@ out-of-scope unless planning later expands scope.
 
 ## References
 
-- Local proposal: [docs/ai-chat-proposal.md](../../docs/ai-chat-proposal.md)
+- Local proposal: [docs/history/ai-chat-proposal.md](../../docs/history/ai-chat-proposal.md)
 - Cloudflare AI Gateway Workers binding methods: https://developers.cloudflare.com/ai-gateway/integrations/worker-binding-methods/
 - Cloudflare Workers AI binding: https://developers.cloudflare.com/workers-ai/configuration/bindings/
 - Cloudflare Vectorize metadata filtering: https://developers.cloudflare.com/vectorize/reference/metadata-filtering/

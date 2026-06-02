@@ -38,7 +38,7 @@ channel は email のみ。D1 schema 変更は migration と既存データ互�
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
 - **既存 brownfield baseline**: PASS。既存 monorepo、backend/web/mobile 境界、billing
   aggregate、contracts page、webhook/email/observability の拡張で進め、新 starter や別
@@ -135,8 +135,8 @@ contracts route、organization context feature を拡張する。新しい top-l
 > **Fill ONLY if Constitution Check has violations that must be justified**
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| None | N/A | N/A |
+| --------- | ---------- | ------------------------------------ |
+| None      | N/A        | N/A                                  |
 
 ## Phase 0 Research Output
 

@@ -1,7 +1,7 @@
 # @repo/saas-billing-drizzle
 
 別 SaaS の backend に、既存の課金 schema と Drizzle store を導入するための入口です。
-設計判断と残作業の詳細は [SaaS ごとに DB を分けて Billing schema を使い回すための現状と残作業](../../docs/billing-schema-reuse-plan-db-per-saas.md) を正とします。
+設計判断と残作業の詳細は [SaaS ごとに DB を分けて Billing schema を使い回すための現状と残作業](../../docs/history/billing-schema-reuse-plan-db-per-saas.md) を正とします。
 
 この README では、導入時に最低限確認する手順だけをまとめます。
 

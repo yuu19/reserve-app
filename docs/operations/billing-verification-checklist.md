@@ -2,7 +2,7 @@
 
 このチェックリストは、リリース前 QA で Stripe test mode を使って課金まわりの動作を確認するためのものです。
 
-仕様の正本は [課金仕様](./billing.md) です。
+仕様の正本は [課金仕様](../billing/billing.md) です。
 
 自動テストの位置づけは [テスト戦略](./test-strategy.md) を参照します。
 
@@ -77,9 +77,9 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
 
 実装メモ:
 
-- backend 環境変数: [`apps/backend/.env.example`](../apps/backend/.env.example)
-- backend worker 設定: [`apps/backend/wrangler.jsonc`](../apps/backend/wrangler.jsonc)
-- Stripe Billing E2E workflow: [`.github/workflows/stripe-billing-e2e.yml`](../.github/workflows/stripe-billing-e2e.yml)
+- backend 環境変数: [`apps/backend/.env.example`](../../apps/backend/.env.example)
+- backend worker 設定: [`apps/backend/wrangler.jsonc`](../../apps/backend/wrangler.jsonc)
+- Stripe Billing E2E workflow: [`.github/workflows/stripe-billing-e2e.yml`](../../.github/workflows/stripe-billing-e2e.yml)
 
 ## 3. 自動検証
 
@@ -116,16 +116,16 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
   - 期待結果: Test Clock を使ったトライアル、有料化、支払い失敗、復旧、トライアル終了の主要遷移が通る。
   - 記録:
 - [ ] GitHub Actions の Stripe Billing E2E 結果を確認した。
-  - 期待結果: [Stripe Billing E2E](../.github/workflows/stripe-billing-e2e.yml) の手動実行または定期実行が成功している。
+  - 期待結果: [Stripe Billing E2E](../../.github/workflows/stripe-billing-e2e.yml) の手動実行または定期実行が成功している。
   - 記録:
 
 実装メモ:
 
-- CI Tests workflow: [`.github/workflows/ci-tests.yml`](../.github/workflows/ci-tests.yml)
-- Playwright E2E 設定: [`packages/e2e/playwright.config.ts`](../packages/e2e/playwright.config.ts)
-- Stripe Billing E2E spec: [`packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`](../packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts)
-- E2E scripts: [`packages/e2e/package.json`](../packages/e2e/package.json)
-- backend scripts: [`apps/backend/package.json`](../apps/backend/package.json)
+- CI Tests workflow: [`.github/workflows/ci-tests.yml`](../../.github/workflows/ci-tests.yml)
+- Playwright E2E 設定: [`packages/e2e/playwright.config.ts`](../../packages/e2e/playwright.config.ts)
+- Stripe Billing E2E spec: [`packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`](../../packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts)
+- E2E scripts: [`packages/e2e/package.json`](../../packages/e2e/package.json)
+- backend scripts: [`apps/backend/package.json`](../../apps/backend/package.json)
 
 ## 4. 手動確認
 
@@ -326,10 +326,10 @@ Stripe 通知の正当性、重複、照合、owner 通知を確認します。
 
 実装メモ:
 
-- Stripe 通知同期: [`apps/backend/src/domain/billing/stripe-webhook-sync.ts`](../apps/backend/src/domain/billing/stripe-webhook-sync.ts)
-- 定期照合: [`apps/backend/src/domain/billing/organization-billing-maintenance.ts`](../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
-- 通知処理: [`apps/backend/src/domain/billing/reserve-app-billing-notifications.ts`](../apps/backend/src/domain/billing/reserve-app-billing-notifications.ts)
-- 請求書・支払いイベント: [`apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts`](../apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts)
+- Stripe 通知同期: [`apps/backend/src/domain/billing/stripe-webhook-sync.ts`](../../apps/backend/src/domain/billing/stripe-webhook-sync.ts)
+- 定期照合: [`apps/backend/src/domain/billing/organization-billing-maintenance.ts`](../../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
+- 通知処理: [`apps/backend/src/domain/billing/reserve-app-billing-notifications.ts`](../../apps/backend/src/domain/billing/reserve-app-billing-notifications.ts)
+- 請求書・支払いイベント: [`apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts`](../../apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts)
 
 ## 7. 社内調査
 
@@ -368,9 +368,9 @@ Stripe 通知の正当性、重複、照合、owner 通知を確認します。
 
 実装メモ:
 
-- 社内調査: [`apps/backend/src/domain/billing/internal-billing-inspection.ts`](../apps/backend/src/domain/billing/internal-billing-inspection.ts)
-- 契約画面: [`apps/web/src/routes/contracts/+page.svelte`](../apps/web/src/routes/contracts/+page.svelte)
-- 課金 store 境界: [`apps/backend/src/features/billing/billing.store.ts`](../apps/backend/src/features/billing/billing.store.ts)
+- 社内調査: [`apps/backend/src/domain/billing/internal-billing-inspection.ts`](../../apps/backend/src/domain/billing/internal-billing-inspection.ts)
+- 契約画面: [`apps/web/src/routes/contracts/+page.svelte`](../../apps/web/src/routes/contracts/+page.svelte)
+- 課金 store 境界: [`apps/backend/src/features/billing/billing.store.ts`](../../apps/backend/src/features/billing/billing.store.ts)
 
 ## 8. リリース判定
 

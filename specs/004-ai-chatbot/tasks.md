@@ -170,7 +170,7 @@
 - [x] T061 Add retention cleanup tests for 180-day conversation content and 1-year aggregate feedback retention in `apps/backend/src/features/ai/conversation-store.test.ts`.
 - [x] T062 Implement retention cleanup helpers and scheduled worker entry integration in `apps/backend/src/infra/ai-knowledge/drizzle-ai-conversation-store.ts` and `apps/backend/src/worker.ts`.
 - [x] T063 Add Sentry breadcrumbs/metrics-safe logging for AI request ids, latency, fallback state, and rate-limit decisions in `apps/backend/src/routes/ai-routes.ts`.
-- [x] T064 Document AI bindings, Vectorize index creation, AI Gateway cache policy, and indexing operations in `docs/ai-chat-proposal.md`.
+- [x] T064 Document AI bindings, Vectorize index creation, AI Gateway cache policy, and indexing operations in `docs/history/ai-chat-proposal.md`.
 - [x] T065 Record local verification commands and expected outputs for API, indexing, and web UI smoke tests in `specs/004-ai-chatbot/quickstart.md`.
 - [x] T066 Verify OpenAPI contract alignment between the implementation and `specs/004-ai-chatbot/contracts/ai-api.openapi.yaml` in `apps/backend/src/routes/ai-routes.ts`.
 

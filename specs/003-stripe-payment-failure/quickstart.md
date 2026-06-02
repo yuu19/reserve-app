@@ -78,8 +78,8 @@ Stripe Billing E2E:
    - Keep non-owner view read-only and free of payment document/notification recipient details.
 
 7. Update documentation if user-facing or operational behavior changes.
-   - `docs/billing.md` for operational payment failure behavior.
-   - `docs/test-strategy.md` only if verification commands or CI expectations change.
+   - `docs/billing/billing.md` for operational payment failure behavior.
+   - `docs/operations/test-strategy.md` only if verification commands or CI expectations change.
 
 ## Verification Commands
 

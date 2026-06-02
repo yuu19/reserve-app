@@ -105,19 +105,19 @@ aws s3 sync .pages "${s3_uri}" \
 2026-05-25 時点の設定は次のとおり。
 API token、R2 Access Key ID、R2 Secret Access Key は機密情報としてこの文書には記載しない。
 
-| 項目 | 値 |
-| --- | --- |
-| Cloudflare account ID | `d8ee18029fb3e06794971d45b9c4a67d` |
-| Zone | `wakureserve.com` |
-| Zone ID | `331e6ef7d4fd07515ce80befb058a31c` |
-| R2 bucket | `reserve-app-playwright-reports` |
-| Custom Domain | `https://playwright-reports.wakureserve.com` |
-| Cloudflare Access application | `Reserve App Playwright Reports` |
-| Cloudflare Access application ID | `e99822c8-cc0e-4dd5-93af-ac707995cc23` |
-| Cloudflare Access policy | `Reserve App Playwright Reports - Allow yusuke` |
-| Cloudflare Access policy ID | `eeb54c19-f5a6-4550-b9f3-e30cce72efa6` |
-| 許可ユーザー | `yusuke.kusi1028@gmail.com` |
-| Public Development URL | 無効 |
+| 項目                             | 値                                              |
+| -------------------------------- | ----------------------------------------------- |
+| Cloudflare account ID            | `d8ee18029fb3e06794971d45b9c4a67d`              |
+| Zone                             | `wakureserve.com`                               |
+| Zone ID                          | `331e6ef7d4fd07515ce80befb058a31c`              |
+| R2 bucket                        | `reserve-app-playwright-reports`                |
+| Custom Domain                    | `https://playwright-reports.wakureserve.com`    |
+| Cloudflare Access application    | `Reserve App Playwright Reports`                |
+| Cloudflare Access application ID | `e99822c8-cc0e-4dd5-93af-ac707995cc23`          |
+| Cloudflare Access policy         | `Reserve App Playwright Reports - Allow yusuke` |
+| Cloudflare Access policy ID      | `eeb54c19-f5a6-4550-b9f3-e30cce72efa6`          |
+| 許可ユーザー                     | `yusuke.kusi1028@gmail.com`                     |
+| Public Development URL           | 無効                                            |
 
 ### Bucket を作成する
 

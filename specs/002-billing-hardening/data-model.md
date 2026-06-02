@@ -12,6 +12,7 @@ receipt history, auditability, and reconciliation diagnostics.
 eligibility evaluation.
 
 **Existing fields kept**:
+
 - `id`
 - `organization_id`
 - `plan_code`: `free` or `premium`
@@ -29,6 +30,7 @@ eligibility evaluation.
 - `updated_at`
 
 **New or extended fields**:
+
 - `payment_issue_started_at`: timestamp nullable; set when `past_due`, `unpaid`, or `incomplete` is first observed.
 - `past_due_grace_ends_at`: timestamp nullable; set to 7 days after `past_due` starts.
 - `billing_profile_readiness`: `complete`, `incomplete`, `unavailable`, `not_required`; default `not_required`.
@@ -38,6 +40,7 @@ eligibility evaluation.
 - `last_reconciliation_reason`: nullable diagnostic string.
 
 **Validation rules**:
+
 - Unique `organization_id`.
 - `stripe_customer_id` and `stripe_subscription_id` remain unique when present.
 - `plan_code = free` requires `subscription_status = free` or `canceled` after migration normalization.
@@ -49,6 +52,7 @@ eligibility evaluation.
 **Purpose**: Persistent idempotency and reuse record for owner-initiated billing actions.
 
 **Fields**:
+
 - `id`
 - `organization_id`
 - `purpose`: `trial_start`, `paid_checkout`, `payment_method_setup`, `billing_portal`
@@ -68,6 +72,7 @@ eligibility evaluation.
 - `updated_at`
 
 **Validation rules**:
+
 - At most one active reusable attempt for the same `organization_id`, `purpose`, and `billing_interval`.
 - Reuse if `state in (processing, succeeded)` and `handoff_expires_at > now`.
 - Create a new attempt after expiry.
@@ -78,6 +83,7 @@ eligibility evaluation.
 **Purpose**: Permanent provider event idempotency and receipt history for trusted Stripe events.
 
 **Existing fields kept**:
+
 - `id`: Stripe event id
 - `event_type`
 - `scope`
@@ -91,12 +97,14 @@ eligibility evaluation.
 - `updated_at`
 
 **New or extended fields**:
+
 - `signature_verification_status`: `verified`
 - `duplicate_detected`: boolean default false
 - `duplicate_detected_at`: timestamp nullable
 - `receipt_status`: `accepted`, `duplicate`, `failed`
 
 **Validation rules**:
+
 - Stripe event ids are never automatically expired for this feature.
 - Duplicate event ids are no-op for billing state, notifications, entitlement, and invoice history.
 - Only events that pass signature verification can be recorded as trusted event ids.
@@ -106,6 +114,7 @@ eligibility evaluation.
 **Purpose**: Sanitized failure history for untrusted or failed webhook attempts.
 
 **Existing fields kept**:
+
 - `id`
 - `event_id`
 - `event_type`
@@ -118,10 +127,12 @@ eligibility evaluation.
 - `created_at`
 
 **New accepted failure values**:
+
 - `failure_stage`: add `signature_verification`
 - `failure_reason`: add `missing_signature`, `mismatched_signature`, `expired_signature`
 
 **Validation rules**:
+
 - Signature failures must not update `organization_billing`.
 - Signature failures must not create owner notifications, entitlement changes, or invoice history rows.
 - Failure context is sanitized and must not store raw webhook body or raw payment details.
@@ -131,6 +142,7 @@ eligibility evaluation.
 **Purpose**: Append-only normalized invoice and payment event history.
 
 **Fields**:
+
 - `id`
 - `organization_id`
 - `stripe_event_id`
@@ -145,6 +157,7 @@ eligibility evaluation.
 - `created_at`
 
 **Validation rules**:
+
 - Unique `(stripe_event_id, event_type)` for trusted provider events.
 - Refunds and credit notes are not recorded as v1 invoice events.
 - No raw card data, payment method details, raw tax details, or raw provider payloads.
@@ -154,6 +167,7 @@ eligibility evaluation.
 **Purpose**: Safe owner-visible provider document references.
 
 **Fields**:
+
 - `id`
 - `organization_id`
 - `invoice_event_id`
@@ -169,6 +183,7 @@ eligibility evaluation.
 - `updated_at`
 
 **Validation rules**:
+
 - URLs are provider-hosted references only.
 - Documents are owner-only in organization UI and internal-operator-only in inspection.
 - Absence of a document is represented as `missing` or `checking`, never as success.
@@ -178,6 +193,7 @@ eligibility evaluation.
 **Purpose**: Append-only owner billing communication history.
 
 **Existing fields kept**:
+
 - `organization_id`
 - `recipient_user_id`
 - `notification_kind`
@@ -197,12 +213,14 @@ eligibility evaluation.
 - `created_at`
 
 **New notification kinds**:
+
 - `payment_failed_email`
 - `payment_action_required_email`
 - `past_due_grace_expiring_email`
 - `payment_issue_owner_missing_signal`
 
 **Validation rules**:
+
 - Payment failure and action-required notifications create exactly one immediate notification record per verified
   owner per provider event.
 - Past-due reminder is sent 3 days before grace expiry if unresolved.
@@ -213,6 +231,7 @@ eligibility evaluation.
 **Purpose**: Append-only lifecycle transition history.
 
 **New source kinds**:
+
 - `paid_checkout_started`
 - `payment_method_setup_started`
 - `billing_portal_started`
@@ -226,6 +245,7 @@ eligibility evaluation.
 - `billing_profile_readiness_changed`
 
 **Validation rules**:
+
 - Do not append no-op transition rows unless they explain duplicate/recovery behavior in a separate receipt/signal.
 - Preserve sequence order per organization.
 
@@ -234,6 +254,7 @@ eligibility evaluation.
 **Purpose**: Support-visible diagnostics and recovery state.
 
 **New or extended reasons**:
+
 - `unknown_price`
 - `missing_billing_profile`
 - `billing_profile_unavailable`
@@ -245,6 +266,7 @@ eligibility evaluation.
 - `duplicate_webhook_noop`
 
 **Validation rules**:
+
 - Unknown provider price always creates or keeps support-visible investigation context and stops Premium.
 - Billing profile readiness gaps create guidance/signals but do not independently stop Premium.
 - Signals can be resolved by reconciliation or state recovery.
@@ -254,6 +276,7 @@ eligibility evaluation.
 **Purpose**: Approved mapping between Stripe price ids and product capabilities.
 
 **Fields**:
+
 - `code`: `premium_default`, `premium_growth`, `premium_scale`
 - `label`
 - `billing_interval`: `month` or `year`
@@ -267,6 +290,7 @@ supports moving to a D1-backed catalog later without changing entitlement semant
 ## Derived Entity: Billing Eligibility Decision
 
 **Inputs**:
+
 - `organization_billing.plan_code`
 - `subscription_status`
 - `payment_issue_started_at`
@@ -278,6 +302,7 @@ supports moving to a D1-backed catalog later without changing entitlement semant
 - billing profile readiness
 
 **Outputs**:
+
 - `premium_eligible`
 - `entitlement_state`: `free_only`, `premium_enabled`
 - `reason`
@@ -287,6 +312,7 @@ supports moving to a D1-backed catalog later without changing entitlement semant
 - `current_period_end`
 
 **Rules**:
+
 - `free`: Premium disabled.
 - `trialing`: Premium enabled until `current_period_end`, unless current time is after the end.
 - `active`: Premium enabled. If `cancel_at_period_end`, keep enabled until `current_period_end`.

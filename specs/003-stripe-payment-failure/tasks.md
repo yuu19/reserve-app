@@ -154,8 +154,8 @@
 
 **Purpose**: Documentation, design, release evidence, and full verification.
 
-- [x] T047 [P] Update operational payment failure behavior and rollback notes in `docs/billing.md`
-- [x] T048 [P] Update Stripe Billing E2E and CI expectations in `docs/test-strategy.md`
+- [x] T047 [P] Update operational payment failure behavior and rollback notes in `docs/billing/billing.md`
+- [x] T048 [P] Update Stripe Billing E2E and CI expectations in `docs/operations/test-strategy.md`
 - [x] T049 [P] Verify DESIGN.md accessibility and layout requirements for payment issue UI in `apps/web/src/routes/contracts/+page.svelte`
 - [ ] T050 Run targeted backend verification for `apps/backend/src/billing/organization-billing-policy.test.ts`, `apps/backend/src/billing/organization-billing-notifications.test.ts`, `apps/backend/src/billing/organization-billing-maintenance.test.ts`, and `apps/backend/src/app.test.ts`
 - [ ] T051 Run targeted web and billing E2E verification for `apps/web/src/routes/contracts/page.svelte.spec.ts` and `packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`

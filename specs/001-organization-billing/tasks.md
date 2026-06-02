@@ -223,7 +223,7 @@ organization billing specification and Stripe-hosted subscription behavior.
 - [x] T091 [US2] Process setup-mode Checkout completion by setting Customer and Subscription default payment methods in `apps/backend/src/billing/stripe-webhook-sync.ts`
 - [x] T092 [US2] Complete expired local premium trials from scheduled Worker maintenance in `apps/backend/src/billing/organization-billing-maintenance.ts` and `apps/backend/src/worker.ts`
 - [x] T093 [US2] Add backend regression coverage for Stripe-backed trial creation, setup completion webhook synchronization, scheduled trial completion, and trial reuse denial in `apps/backend/src/app.test.ts`
-- [x] T094 [US5] Update Premium Stripe environment documentation and examples in `apps/backend/.env.example`, `apps/backend/.dev.vars.example`, `apps/backend/README.md`, `docs/README.md`, and `docs/billing.md`
+- [x] T094 [US5] Update Premium Stripe environment documentation and examples in `apps/backend/.env.example`, `apps/backend/.dev.vars.example`, `apps/backend/README.md`, `docs/README.md`, and `docs/billing/billing.md`
 
 ---
 

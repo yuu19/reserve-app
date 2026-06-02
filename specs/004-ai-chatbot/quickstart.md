@@ -8,8 +8,8 @@ tickets, send invitations, or create support tickets.
 
 ## Prerequisites
 
-- `docs/ai-chat-proposal.md` remains the technical source for the V1 stack.
-- `docs/ai-chat-reusable-architecture.md` records the Phase 7 reusable core / backend / infra / web boundary.
+- `docs/history/ai-chat-proposal.md` remains the technical source for the V1 stack.
+- `docs/ai/ai-chat-reusable-architecture.md` records the Phase 7 reusable core / backend / infra / web boundary.
 - Existing backend, web, and D1 setup is working locally.
 - Cloudflare account has Workers AI, AI Gateway, and Vectorize available for the target environment.
 - The embedding model shape has been verified in a dev Worker before creating the Vectorize index.
@@ -189,12 +189,12 @@ Docs and contract sync checks:
 ```bash
 pnpm --filter @apps/backend run typecheck
 pnpm --filter @apps/docs build
-pnpm exec prettier --check docs/README.md docs/ai-chat-reusable-architecture.md specs/004-ai-chatbot/quickstart.md apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
-pnpm exec prettier --check docs/ai-chat-proposal.md docs/ai-chat-reusable-architecture.md specs/004-ai-chatbot apps/docs/src/routes/manuals/common/ai-chatbot
+pnpm exec prettier --check docs/README.md docs/ai/ai-chat-reusable-architecture.md specs/004-ai-chatbot/quickstart.md apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
+pnpm exec prettier --check docs/history/ai-chat-proposal.md docs/ai/ai-chat-reusable-architecture.md specs/004-ai-chatbot apps/docs/src/routes/manuals/common/ai-chatbot
 git diff --check
 ```
 
-For AI-chatbot-only documentation releases, stage only AI chatbot files. Leave unrelated billing, CI, `apps/backend/tmp/`, and `docs/reserve-app-ai-chatbot-reusable-plan.md` changes out of the PR unless the release scope explicitly includes them.
+For AI-chatbot-only documentation releases, stage only AI chatbot files. Leave unrelated billing, CI, `apps/backend/tmp/`, and `docs/history/reserve-app-ai-chatbot-reusable-plan.md` changes out of the PR unless the release scope explicitly includes them.
 
 Broader checks before completion:
 

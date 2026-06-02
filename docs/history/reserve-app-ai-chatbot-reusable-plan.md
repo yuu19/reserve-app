@@ -3,7 +3,7 @@
 ## この文書の扱い
 
 この文書は現行仕様の正本ではなく、AI チャット再利用化の履歴・計画メモです。
-現行の AI チャット責務境界は [ai-chat-reusable-architecture.md](./ai-chat-reusable-architecture.md) を確認してください。
+現行の AI チャット責務境界は [ai-chat-reusable-architecture.md](../ai/ai-chat-reusable-architecture.md) を確認してください。
 
 ## 0. 前提
 
@@ -80,7 +80,7 @@ packages/e2e/tests/e2e/ai/ai-chat-widget.spec.ts
 ### Docs / Specs
 
 ```txt
-docs/ai-chat-proposal.md
+docs/history/ai-chat-proposal.md
 apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
 apps/docs/src/lib/manuals.ts
 apps/docs/static/manuals/common-ai-chatbot/ai-chatbot-rag-flow.mmd
@@ -921,7 +921,7 @@ Web 側はすでに component 分離されているため、作り直しでは�
 ## 9.1 更新対象
 
 ```txt
-docs/ai-chat-proposal.md
+docs/history/ai-chat-proposal.md
 apps/docs/src/routes/manuals/common/ai-chatbot/+page.md
 apps/docs/static/manuals/common-ai-chatbot/ai-chatbot-rag-flow.mmd
 apps/docs/static/manuals/common-ai-chatbot/ai-chatbot-rag-flow.svg
@@ -1184,8 +1184,8 @@ DB / provider / storage / embedding 実装を infra に寄せる。
 ### 作業
 
 ```txt
-1. docs/ai-chat-proposal.md を更新
-2. docs/ai-chat-reusable-architecture.md を追加
+1. docs/history/ai-chat-proposal.md を更新
+2. docs/ai/ai-chat-reusable-architecture.md を追加
 3. specs/004-ai-chatbot/plan.md を更新
 4. specs/004-ai-chatbot/data-model.md を更新
 5. ai-api.openapi.yaml を更新

@@ -14,7 +14,7 @@
 - [x] T001 Review hardening scope and source layout in specs/002-billing-hardening/spec.md, specs/002-billing-hardening/plan.md, and specs/002-billing-hardening/data-model.md
 - [x] T002 [P] Review current billing baseline and completed follow-up tasks in specs/001-organization-billing/tasks.md
 - [x] T003 [P] Review current Stripe billing environment documentation in apps/backend/.env.example and apps/backend/.dev.vars.example
-- [x] T004 [P] Review current operational deployment notes in docs/README.md and docs/billing.md
+- [x] T004 [P] Review current operational deployment notes in docs/README.md and docs/billing/billing.md
 - [x] T005 [P] Review current backend and web billing test coverage in apps/backend/src/app.test.ts and apps/web/src/routes/contracts/page.svelte.spec.ts
 - [x] T006 Add an implementation evidence checklist section for this feature in specs/002-billing-hardening/quickstart.md
 
@@ -197,7 +197,7 @@
 - [x] T086 [P] Update billing API contract with final implementation response fields and run/record contract validation for billing summary, trial, checkout, payment method, portal, and inspection responses in specs/002-billing-hardening/contracts/billing-api.openapi.yaml and specs/002-billing-hardening/quickstart.md
 - [x] T087 [P] Update billing UI contract with final owner, non-owner, document, payment issue, and internal inspection states in specs/002-billing-hardening/contracts/billing-ui-contract.md
 - [x] T088 [P] Update deployment and migration order notes for billing hardening in docs/README.md
-- [x] T089 [P] Update billing operations documentation for Stripe dashboard, webhook events, Customer Portal, invoices, owner emails, and reconciliation in docs/billing.md
+- [x] T089 [P] Update billing operations documentation for Stripe dashboard, webhook events, Customer Portal, invoices, owner emails, and reconciliation in docs/billing/billing.md
 - [x] T090 Record manual release evidence for Stripe webhook, Customer Portal, price ids, document links, owner emails, and scheduled reconciliation in specs/002-billing-hardening/quickstart.md
 - [x] T091 Run backend targeted tests and record results in specs/002-billing-hardening/quickstart.md
 - [x] T092 Run web targeted tests and record results in specs/002-billing-hardening/quickstart.md

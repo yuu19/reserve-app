@@ -81,7 +81,7 @@ Frontend:
 
 9. Update documentation:
    - `docs/README.md` deployment/migration order
-   - `docs/billing.md` operational behavior and Stripe dashboard/webhook requirements
+   - `docs/billing/billing.md` operational behavior and Stripe dashboard/webhook requirements
 
 ## Verification Commands
 

@@ -1,7 +1,7 @@
 # SaaS ランディングページ仕様
 
 この文書は、WakuReserve のトップページを SaaS ランディングページとして改善するときの情報設計とコピー方針をまとめます。
-見た目の原則、色、フォント、余白、コンポーネント仕様は [DESIGN.md](../DESIGN.md) を正とします。
+見た目の原則、色、フォント、余白、コンポーネント仕様は [DESIGN.md](../../DESIGN.md) を正とします。
 
 `preview.html` は見た目の確認や実装イメージの参照に使えます。
 ただし、仕様の原典は `DESIGN.md` です。
@@ -11,12 +11,13 @@
 
 トップページの改善では、文書ごとの責務を分けます。
 
-- [DESIGN.md](../DESIGN.md): 全画面共通のデザインシステム。
-- [docs/saas-landing-page.md](./saas-landing-page.md): トップページの情報設計、コピー、セクション構成、CTA 方針。
-- [preview.html](../preview.html): デザインシステムに基づく静的プレビュー。
-- [apps/web/src/routes/+page.svelte](../apps/web/src/routes/+page.svelte): Web のトップページ実装。
-- [apps/web/src/lib/content/pricing.ts](../apps/web/src/lib/content/pricing.ts): Web 表示用の料金文言。
-- [docs/billing.md](./billing.md): 現行の組織単位課金仕様。
+- [DESIGN.md](../../DESIGN.md): 全画面共通のデザインシステム。
+- [docs/current/saas-landing-page.md](./saas-landing-page.md): トップページの情報設計、コピー、セクション構成、CTA 方針。
+- [preview.html](../../preview.html): デザインシステムに基づく静的プレビュー。
+- [apps/web/src/routes/+page.svelte](../../apps/web/src/routes/+page.svelte): Web のトップページ実装。
+- [apps/web/src/routes/pricing/+page.svelte](../../apps/web/src/routes/pricing/+page.svelte): 料金詳細ページ。
+- [apps/web/src/lib/content/pricing.ts](../../apps/web/src/lib/content/pricing.ts): Web 表示用の料金文言。
+- [docs/billing/billing.md](../billing/billing.md): 現行の組織単位課金仕様。
 
 料金、トライアル、契約管理、法務リンクの文言は、トップページだけで判断しません。
 実装側の料金定義、課金仕様、Stripe 側の設定と突き合わせます。
@@ -78,6 +79,14 @@
 - 副 CTA: 料金を見る
 - 補助導線: 管理者ログイン、予約者ログイン
 
+「無料で始める」は、管理者として初期設定を始める導線にします。
+未ログインの場合は `/admin/login?next=%2Fadmin%2Fonboarding` へ案内します。
+ログイン済みで初期設定が終わっていない場合は、初期設定画面へ案内します。
+ログイン済みで初期設定が終わっている場合は、管理者ダッシュボードへ案内します。
+
+「料金を見る」は `/pricing` へ案内します。
+料金詳細、機能差分、注意事項、法務リンクはトップページではなく `/pricing` に集約します。
+
 ログイン導線は既存利用者に必要です。
 ただし、ヒーローの中心には置きません。
 ヘッダーや補助セクションで、役割ごとの入口として見せます。
@@ -103,11 +112,11 @@
 
 想定リンク:
 
-- 機能
-- 料金
+- 機能: 主要機能セクションへのページ内リンク
+- 料金: `/pricing`
 - 開発者情報
 - ログイン
-- 無料で始める
+- 無料で始める: `/admin/login?next=%2Fadmin%2Fonboarding`
 
 ### 2. ヒーロー
 
@@ -169,6 +178,9 @@ WakuReserve は、個人教室・スクール向けの予約管理 SaaS です�
 - 回数券を管理する
 - 管理者やスタッフを招待する
 
+回数券管理、複数店舗、スタッフ招待など一部の機能は Premium の対象です。
+トップページでは主要な利用シーンとして紹介し、プランごとの利用可否は `/pricing` で確認できるようにします。
+
 実装済みでない機能を断定的に訴求しません。
 トップページを更新するときは、現在の Web 画面、API、課金仕様と突き合わせます。
 
@@ -188,6 +200,7 @@ WakuReserve は、個人教室・スクール向けの予約管理 SaaS です�
 トップページでは、料金の概要と料金ページへの導線を出します。
 詳細な機能差分、注意事項、法務リンクは料金ページに集約します。
 
+料金ページのパスは `/pricing` です。
 料金表示は、実装側の料金定義と課金仕様を確認してから更新します。
 古いランディングページの文言だけを根拠にしません。
 
@@ -217,9 +230,11 @@ WakuReserve は、個人教室・スクール向けの予約管理 SaaS です�
 
 - DESIGN.md の色、フォント、余白、ボタン仕様から外れていない。
 - 主要 CTA が新規導入者向けになっている。
+- 「無料で始める」が管理者ログインから初期設定へ進む導線になっている。
 - ログイン入口が必要以上に主役になっていない。
 - 料金表示が `apps/web/src/lib/content/pricing.ts` と矛盾していない。
-- 課金、契約、トライアルの説明が [docs/billing.md](./billing.md) と矛盾していない。
+- 料金詳細、機能差分、注意事項、法務リンクが `/pricing` に集約されている。
+- 課金、契約、トライアルの説明が [docs/billing/billing.md](../billing/billing.md) と矛盾していない。
 - 実装済みでない機能を断定していない。
 - 法務ページへの導線が残っている。
 - モバイル幅でもヒーロー、CTA、料金導線が読める。
