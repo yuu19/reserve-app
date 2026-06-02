@@ -20,7 +20,7 @@ describe('料金ページ', () => {
 		expect(text).toContain('スタッフ招待と権限管理');
 		expect(text).toContain('注意事項');
 
-		await expect.element(page.getByRole('table', { name: '料金比較' })).toBeInTheDocument();
+		await expect.element(page.getByRole('table', { name: 'プラン比較' })).toBeInTheDocument();
 
 		const commerceLink = Array.from(document.querySelectorAll('a')).find(
 			(element) => element.textContent?.trim() === '特定商取引法に基づく表記'
@@ -30,6 +30,73 @@ describe('料金ページ', () => {
 		);
 		expect(commerceLink?.getAttribute('href')).toBe('/commerce');
 		expect(premiumActionLink?.getAttribute('href')).toBe('/admin/login?next=%2Fadmin%2Fcontracts');
+	});
+
+	it('カテゴリ付きの機能比較表を表示する', async () => {
+		render(PricingPage);
+
+		const comparisonTable = document.querySelector('table[aria-labelledby="comparison-heading"]');
+		expect(comparisonTable).toBeTruthy();
+
+		for (const category of [
+			'予約受付・管理',
+			'店舗・スタッフ運用',
+			'参加者・継続運用',
+			'契約・分析'
+		]) {
+			expect(comparisonTable?.textContent).toContain(category);
+		}
+
+		const expectedFeatureLinks = [
+			{
+				label: '予約受付',
+				href: 'https://docs.wakureserve.com/manuals/admin/one-time-slots'
+			},
+			{
+				label: '店舗管理',
+				href: 'https://docs.wakureserve.com/manuals/admin/organization-and-store'
+			},
+			{
+				label: 'スタッフ権限',
+				href: 'https://docs.wakureserve.com/manuals/admin/admin-invitations'
+			},
+			{
+				label: '参加者管理',
+				href: 'https://docs.wakureserve.com/manuals/admin/participants-and-tickets'
+			},
+			{
+				label: '継続運用',
+				href: 'https://docs.wakureserve.com/manuals/admin/participants-and-tickets'
+			},
+			{
+				label: '契約管理',
+				href: 'https://docs.wakureserve.com/manuals/admin/contracts-and-premium'
+			}
+		];
+
+		for (const expected of expectedFeatureLinks) {
+			const link = Array.from(comparisonTable?.querySelectorAll('a') ?? []).find((element) =>
+				element.textContent?.includes(expected.label)
+			);
+			expect(link?.getAttribute('href')).toBe(expected.href);
+		}
+
+		const bookingReceptionRow = Array.from(comparisonTable?.querySelectorAll('tbody tr') ?? []).find(
+			(element) =>
+				element.textContent?.includes('予約受付') &&
+				element.textContent?.includes('単発予約枠の公開と受付')
+		);
+		expect(bookingReceptionRow).toBeTruthy();
+		expect(
+			bookingReceptionRow
+				?.querySelector('a[href="https://docs.wakureserve.com/manuals/admin/one-time-slots"]')
+				?.textContent
+		).toContain('予約受付');
+		expect(
+			bookingReceptionRow
+				?.querySelector('a[href="https://docs.wakureserve.com/manuals/admin/recurring-schedules"]')
+				?.textContent
+		).toContain('定期スケジュール');
 	});
 
 	it('機能別マニュアルリンクと準備中バッジを表示する', async () => {
@@ -49,10 +116,11 @@ describe('料金ページ', () => {
 			expect(document.querySelector(`a[href="${href}"]`)).toBeTruthy();
 		}
 
-		const preparingManualLink = document.querySelector(
+		const comparisonTable = document.querySelector('table[aria-labelledby="comparison-heading"]');
+		const preparingManualLink = comparisonTable?.querySelector(
 			'a[href="https://docs.wakureserve.com/manuals/admin/one-time-slots"]'
 		);
-		const publishedManualLink = document.querySelector(
+		const publishedManualLink = comparisonTable?.querySelector(
 			'a[href="https://docs.wakureserve.com/manuals/admin/contracts-and-premium"]'
 		);
 

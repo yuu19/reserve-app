@@ -12,9 +12,10 @@
 	import {
 		freePricingPlan,
 		premiumPricingPlan,
-		pricingComparisonRows,
+		pricingComparisonGroups,
 		pricingNotes,
 		pricingPlans,
+		type PricingFeature,
 		type PricingManualLink,
 		type PricingPlan
 	} from '$lib/content/pricing';
@@ -29,8 +30,13 @@
 	const listTileClass = 'rounded-md border border-border/70 bg-stone-01 px-3 py-2';
 	const manualLinkClass =
 		'inline-flex min-h-7 items-center gap-1 rounded-md border border-border bg-card px-2 py-1 font-medium text-link transition-colors hover:bg-secondary hover:no-underline';
+	const comparisonPrimaryManualLinkClass =
+		'inline-flex max-w-full items-center gap-1.5 rounded-sm font-bold text-link underline-offset-2 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+	const comparisonSecondaryManualLinkClass =
+		'inline-flex max-w-full items-center gap-1 rounded-sm border border-border bg-background px-1.5 py-0.5 text-xxs font-medium text-link transition-colors hover:bg-secondary hover:no-underline';
 	const preparingBadgeClass =
 		'rounded-sm border border-warning/50 bg-warning/25 px-1.5 py-0.5 text-xxs font-bold text-foreground';
+	const comparisonValueClass = 'inline-block max-w-[16rem] break-words leading-relaxed';
 	const adminLoginHref = resolve('/admin/login' as Pathname);
 	const adminContractsHref = `${adminLoginHref}?next=${encodeURIComponent('/admin/contracts')}`;
 	const planHref = (plan: PricingPlan) =>
@@ -50,7 +56,7 @@
 	{#if manualLinks.length > 0}
 		<span class="mt-1 flex flex-wrap gap-1.5 text-xs" aria-label="関連マニュアル">
 			{#each manualLinks as manualLink (manualLink.href)}
-				<a class={manualLinkClass} href={manualLink.href}>
+				<a class={manualLinkClass} href={manualLink.href} rel="external">
 					<span>{manualLink.label}</span>
 					{#if manualLink.status === 'preparing'}
 						<span class={preparingBadgeClass}>準備中</span>
@@ -59,6 +65,40 @@
 			{/each}
 		</span>
 	{/if}
+{/snippet}
+
+{#snippet comparisonFeatureCell(feature: PricingFeature)}
+	<div class="flex min-w-0 flex-col gap-1.5">
+		{#if feature.manualLinks.length > 0}
+			{#each feature.manualLinks as manualLink, index (manualLink.href)}
+				{#if index === 0}
+					<a class={comparisonPrimaryManualLinkClass} href={manualLink.href} rel="external">
+						<span class="min-w-0 break-words">{feature.label}</span>
+						<Info class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+						{#if manualLink.status === 'preparing'}
+							<span class={preparingBadgeClass}>準備中</span>
+						{/if}
+					</a>
+				{/if}
+			{/each}
+			{#if feature.manualLinks.length > 1}
+				<span class="flex flex-wrap gap-1.5" aria-label={`${feature.label}の関連マニュアル`}>
+					{#each feature.manualLinks as manualLink, index (manualLink.href)}
+						{#if index > 0}
+							<a class={comparisonSecondaryManualLinkClass} href={manualLink.href} rel="external">
+								<span class="min-w-0 break-words">{manualLink.label}</span>
+								{#if manualLink.status === 'preparing'}
+									<span class={preparingBadgeClass}>準備中</span>
+								{/if}
+							</a>
+						{/if}
+					{/each}
+				</span>
+			{/if}
+		{:else}
+			<span class="font-bold text-foreground">{feature.label}</span>
+		{/if}
+	</div>
 {/snippet}
 
 <svelte:head>
@@ -167,33 +207,74 @@
 				<h2 id="comparison-heading" class={sectionHeadingClass}>プラン比較</h2>
 			</div>
 
-			<Card class={panelClass}>
-				<CardContent class="pt-0">
-					<div class="overflow-x-auto">
-						<table class="w-full min-w-[640px] text-sm" aria-label="料金比較">
-							<thead class="bg-secondary text-muted-foreground">
-								<tr>
-									<th scope="col" class="px-3 py-2 text-left font-medium">項目</th>
-									<th scope="col" class="px-3 py-2 text-left font-medium">Free</th>
-									<th scope="col" class="px-3 py-2 text-left font-medium">Premium</th>
+			<div class="overflow-x-auto rounded-md border border-border/80 bg-card shadow-sm">
+				<table
+					class="w-full min-w-[720px] table-fixed text-sm"
+					aria-labelledby="comparison-heading"
+				>
+					<thead class="bg-secondary text-muted-foreground">
+						<tr>
+							<th scope="col" class="w-[42%] px-4 py-3 text-left font-medium">
+								<span class="sr-only">機能</span>
+							</th>
+							<th scope="col" class="w-[29%] px-4 py-3 text-center font-medium">
+								<div class="flex flex-col items-center gap-2">
+									<span class="font-bold text-foreground">Free</span>
+									<Button
+										href={planHref(freePricingPlan)}
+										variant={freePricingPlan.ctaVariant}
+										size="sm"
+										class="h-8 px-3 text-xs"
+									>
+										<LogIn class="size-3.5" aria-hidden="true" />
+										{freePricingPlan.ctaLabel}
+									</Button>
+								</div>
+							</th>
+							<th scope="col" class="w-[29%] px-4 py-3 text-center font-medium">
+								<div class="flex flex-col items-center gap-2">
+									<span class="font-bold text-foreground">Premium</span>
+									<Button
+										href={planHref(premiumPricingPlan)}
+										variant={premiumPricingPlan.ctaVariant}
+										size="sm"
+										class="h-8 px-3 text-xs"
+									>
+										<LogIn class="size-3.5" aria-hidden="true" />
+										{premiumPricingPlan.ctaLabel}
+									</Button>
+								</div>
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each pricingComparisonGroups as group (group.title)}
+							<tr class="border-t border-border/80 bg-secondary/80">
+								<th
+									scope="colgroup"
+									colspan="3"
+									class="px-4 py-2 text-left text-sm font-bold text-foreground"
+								>
+									{group.title}
+								</th>
+							</tr>
+							{#each group.rows as row (row.feature.label)}
+								<tr class="border-t border-border/70 align-top">
+									<th scope="row" class="px-4 py-3 text-left font-medium text-foreground">
+										{@render comparisonFeatureCell(row.feature)}
+									</th>
+									<td class="px-4 py-3 text-center text-secondary-foreground">
+										<span class={comparisonValueClass}>{row.free}</span>
+									</td>
+									<td class="px-4 py-3 text-center text-secondary-foreground">
+										<span class={comparisonValueClass}>{row.premium}</span>
+									</td>
 								</tr>
-							</thead>
-							<tbody>
-								{#each pricingComparisonRows as row (row.feature.label)}
-									<tr class="border-t border-border/70">
-										<th scope="row" class="px-3 py-2 text-left font-medium text-foreground">
-											<span>{row.feature.label}</span>
-											{@render manualLinkList(row.feature.manualLinks)}
-										</th>
-										<td class="px-3 py-2 text-secondary-foreground">{row.free}</td>
-										<td class="px-3 py-2 text-secondary-foreground">{row.premium}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				</CardContent>
-			</Card>
+							{/each}
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</section>
 
 		<section class="space-y-4" aria-labelledby="notes-heading">

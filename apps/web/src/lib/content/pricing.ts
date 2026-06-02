@@ -29,6 +29,11 @@ export type PricingComparisonRow = {
 	premium: string;
 };
 
+export type PricingComparisonGroup = {
+	title: string;
+	rows: readonly PricingComparisonRow[];
+};
+
 const docsManualBaseUrl = 'https://docs.wakureserve.com/manuals';
 const manualHref = (path: `/${string}`) => `${docsManualBaseUrl}${path}`;
 const manualLink = (
@@ -103,38 +108,62 @@ export const premiumPricingPlan = {
 
 export const pricingPlans: readonly PricingPlan[] = [freePricingPlan, premiumPricingPlan];
 
-export const pricingComparisonRows: PricingComparisonRow[] = [
+export const pricingComparisonGroups = [
 	{
-		feature: feature('予約受付', [oneTimeSlotsManual, recurringSchedulesManual]),
-		free: '単発予約枠の公開と受付',
-		premium: '単発予約枠と定期スケジュール運用'
+		title: '予約受付・管理',
+		rows: [
+			{
+				feature: feature('予約受付', [oneTimeSlotsManual, recurringSchedulesManual]),
+				free: '単発予約枠の公開と受付',
+				premium: '単発予約枠と定期スケジュール運用'
+			}
+		]
 	},
 	{
-		feature: feature('店舗管理', [organizationAndStoreManual]),
-		free: '1組織・1店舗',
-		premium: '複数店舗・複数拠点'
+		title: '店舗・スタッフ運用',
+		rows: [
+			{
+				feature: feature('店舗管理', [organizationAndStoreManual]),
+				free: '1組織・1店舗',
+				premium: '複数店舗・複数拠点'
+			},
+			{
+				feature: feature('スタッフ権限', [adminInvitationsManual]),
+				free: '組織オーナー中心',
+				premium: 'スタッフ招待と権限管理'
+			}
+		]
 	},
 	{
-		feature: feature('スタッフ権限', [adminInvitationsManual]),
-		free: '組織オーナー中心',
-		premium: 'スタッフ招待と権限管理'
+		title: '参加者・継続運用',
+		rows: [
+			{
+				feature: feature('参加者管理', [participantsAndTicketsManual]),
+				free: '基本的な参加者管理',
+				premium: '招待、承認、継続運用の管理'
+			},
+			{
+				feature: feature('継続運用', [participantsAndTicketsManual]),
+				free: '基本運用',
+				premium: '回数券・月額課金などの継続運用'
+			}
+		]
 	},
 	{
-		feature: feature('参加者管理', [participantsAndTicketsManual]),
-		free: '基本的な参加者管理',
-		premium: '招待、承認、継続運用の管理'
-	},
-	{
-		feature: feature('継続運用', [participantsAndTicketsManual]),
-		free: '基本運用',
-		premium: '回数券・月額課金などの継続運用'
-	},
-	{
-		feature: feature('契約管理', [contractsAndPremiumManual]),
-		free: '契約状態の確認',
-		premium: '契約管理と分析機能'
+		title: '契約・分析',
+		rows: [
+			{
+				feature: feature('契約管理', [contractsAndPremiumManual]),
+				free: '契約状態の確認',
+				premium: '契約管理と分析機能'
+			}
+		]
 	}
-];
+] satisfies readonly PricingComparisonGroup[];
+
+export const pricingComparisonRows: PricingComparisonRow[] = pricingComparisonGroups.flatMap(
+	(group) => group.rows
+);
 
 export const pricingNotes = [
 	'表示価格以外に、インターネット接続料金や通信料金は利用者負担です。',
