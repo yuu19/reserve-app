@@ -6,6 +6,8 @@
 
 自動テストの位置づけは [テスト戦略](./test-strategy.md) を参照します。
 
+AI agent を使って課金確認を補助する場合は、[AI agent による課金確認運用ガイド](./ai-agent-billing-verification.md) を参照します。
+
 Stripe secret、カード番号、税務詳細、Stripe の raw payload はこのチェックリストに記録しません。
 
 記録するのは、確認した環境、テスト対象、Stripe test mode の安全な識別子、期待結果、判定だけにします。
