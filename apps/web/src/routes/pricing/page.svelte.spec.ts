@@ -31,4 +31,35 @@ describe('料金ページ', () => {
 		expect(commerceLink?.getAttribute('href')).toBe('/commerce');
 		expect(premiumActionLink?.getAttribute('href')).toBe('/admin/login?next=%2Fadmin%2Fcontracts');
 	});
+
+	it('機能別マニュアルリンクと準備中バッジを表示する', async () => {
+		render(PricingPage);
+
+		const expectedManualHrefs = [
+			'https://docs.wakureserve.com/manuals/admin/getting-started',
+			'https://docs.wakureserve.com/manuals/admin/one-time-slots',
+			'https://docs.wakureserve.com/manuals/admin/recurring-schedules',
+			'https://docs.wakureserve.com/manuals/admin/organization-and-store',
+			'https://docs.wakureserve.com/manuals/admin/admin-invitations',
+			'https://docs.wakureserve.com/manuals/admin/participants-and-tickets',
+			'https://docs.wakureserve.com/manuals/admin/contracts-and-premium'
+		];
+
+		for (const href of expectedManualHrefs) {
+			expect(document.querySelector(`a[href="${href}"]`)).toBeTruthy();
+		}
+
+		const preparingManualLink = document.querySelector(
+			'a[href="https://docs.wakureserve.com/manuals/admin/one-time-slots"]'
+		);
+		const publishedManualLink = document.querySelector(
+			'a[href="https://docs.wakureserve.com/manuals/admin/contracts-and-premium"]'
+		);
+
+		expect(preparingManualLink?.textContent).toContain('準備中');
+		expect(publishedManualLink?.textContent).not.toContain('準備中');
+		await expect
+			.element(page.getByRole('link', { name: /単発予約枠/ }).first())
+			.toBeInTheDocument();
+	});
 });

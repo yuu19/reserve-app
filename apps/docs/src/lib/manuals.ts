@@ -1,16 +1,21 @@
+export type ManualStatus = 'published' | 'preparing';
+
+export type ManualCategoryItem = {
+	href: string;
+	title: string;
+	summary: string;
+	updatedAt: string;
+	audience: string;
+	status: ManualStatus;
+	featured?: boolean;
+};
+
 export type ManualCategory = {
 	id: string;
 	title: string;
 	description: string;
 	plannedTopics: string[];
-	items: Array<{
-		href: string;
-		title: string;
-		summary: string;
-		updatedAt: string;
-		audience: string;
-		featured?: boolean;
-	}>;
+	items: ManualCategoryItem[];
 };
 
 export type ManualItem = ManualCategory['items'][number] & {
@@ -32,6 +37,7 @@ export const manualCategories: ManualCategory[] = [
 				summary: '現在の実装をもとに、どの順番でマニュアルを整備するかを整理した設計ページです。',
 				updatedAt: '2026-04-23',
 				audience: 'ドキュメント担当者',
+				status: 'published',
 				featured: true
 			}
 		]
@@ -49,6 +55,7 @@ export const manualCategories: ManualCategory[] = [
 					'AI チャットに質問できる内容、根拠付き回答、権限による表示範囲、フィードバックの扱いを案内します。',
 				updatedAt: '2026-05-13',
 				audience: 'ログイン済み利用者',
+				status: 'published',
 				featured: true
 			}
 		]
@@ -65,6 +72,7 @@ export const manualCategories: ManualCategory[] = [
 				summary: '新規登録から最初の組織作成、ダッシュボード到達までを画像付きで案内します。',
 				updatedAt: '2026-04-23',
 				audience: '管理者',
+				status: 'published',
 				featured: true
 			},
 			{
@@ -73,7 +81,48 @@ export const manualCategories: ManualCategory[] = [
 				summary:
 					'現在プラン、Premium トライアル、支払い方法、請求書・領収書の確認方法を画像付きで案内します。',
 				updatedAt: '2026-05-04',
-				audience: 'organization owner'
+				audience: 'organization owner',
+				status: 'published'
+			},
+			{
+				href: '/manuals/admin/one-time-slots',
+				title: '単発予約枠',
+				summary: '単発予約枠の公開と受付手順を案内するマニュアルです。現在準備中です。',
+				updatedAt: '2026-06-02',
+				audience: '管理者',
+				status: 'preparing'
+			},
+			{
+				href: '/manuals/admin/recurring-schedules',
+				title: '定期スケジュール',
+				summary: '定期スケジュールの作成と運用手順を案内するマニュアルです。現在準備中です。',
+				updatedAt: '2026-06-02',
+				audience: '管理者',
+				status: 'preparing'
+			},
+			{
+				href: '/manuals/admin/organization-and-store',
+				title: '組織と店舗管理',
+				summary: '組織と店舗の設定、複数店舗運用を案内するマニュアルです。現在準備中です。',
+				updatedAt: '2026-06-02',
+				audience: '管理者',
+				status: 'preparing'
+			},
+			{
+				href: '/manuals/admin/admin-invitations',
+				title: 'スタッフ招待',
+				summary: 'スタッフ招待と権限管理を案内するマニュアルです。現在準備中です。',
+				updatedAt: '2026-06-02',
+				audience: '管理者',
+				status: 'preparing'
+			},
+			{
+				href: '/manuals/admin/participants-and-tickets',
+				title: '参加者管理と回数券',
+				summary: '参加者管理、承認、回数券などの継続運用を案内するマニュアルです。現在準備中です。',
+				updatedAt: '2026-06-02',
+				audience: '管理者',
+				status: 'preparing'
 			}
 		]
 	},
@@ -97,4 +146,6 @@ export const manualItems: ManualItem[] = manualCategories.flatMap((category) =>
 /** 現在の URL から manual metadata を引けるよう、href を key にした lookup を事前構築する。 */
 export const manualLookup = new Map(manualItems.map((item) => [item.href, item]));
 
-export const featuredManuals = manualItems.filter((item) => item.featured);
+export const featuredManuals = manualItems.filter(
+	(item) => item.featured && item.status === 'published'
+);

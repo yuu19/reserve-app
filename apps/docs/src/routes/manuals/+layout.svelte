@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { manualCategories, manualLookup } from '$lib/manuals';
+	import type { Pathname } from '$app/types';
+	import { manualCategories, manualLookup, type ManualStatus } from '$lib/manuals';
 	import { tick } from 'svelte';
 
 	let { children } = $props();
@@ -16,6 +18,8 @@
 	const sidebarLinkBaseClass =
 		'block leading-6 text-soft transition-colors hover:text-primary hover:underline';
 	const breadcrumbClass = 'flex flex-wrap gap-2 text-[0.88rem] text-muted';
+	const preparingBadgeClass =
+		'inline-flex min-h-6 items-center rounded-control border border-primary/20 bg-[#eef6fb] px-2 text-[0.75rem] font-bold text-primary';
 
 	let headings = $state<ManualHeading[]>([]);
 	let manualContentElement = $state<HTMLElement | null>(null);
@@ -83,6 +87,10 @@
 	function outlineLinkClass(level: 2 | 3) {
 		return `${sidebarLinkBaseClass} ${level === 3 ? 'pl-3 text-[0.9rem]' : ''}`;
 	}
+
+	function manualStatusLabel(status: ManualStatus | undefined) {
+		return status === 'preparing' ? '準備中' : '公開中';
+	}
 </script>
 
 <svelte:head>
@@ -125,10 +133,15 @@
 								<li class="mt-2.5 first:mt-0">
 									<a
 										class={manualLinkClass(item.href)}
-										href={item.href}
+										href={resolve(item.href as Pathname)}
 										aria-current={page.url.pathname === item.href ? 'page' : undefined}
 									>
-										<span>{item.title}</span>
+										<span class="flex flex-wrap items-center gap-2">
+											<span>{item.title}</span>
+											{#if item.status === 'preparing'}
+												<span class={preparingBadgeClass}>準備中</span>
+											{/if}
+										</span>
 										<small class="mt-1 block text-[0.78rem] font-normal text-muted">
 											{item.audience}
 										</small>
@@ -157,7 +170,9 @@
 
 			<section class="min-w-0">
 				<nav class={breadcrumbClass} aria-label="パンくず">
-					<a class="font-bold text-link-blue" href="/manuals">ユーザーマニュアル</a>
+					<a class="font-bold text-link-blue" href={resolve('/manuals' as Pathname)}
+						>ユーザーマニュアル</a
+					>
 					{#if currentCategory}
 						<span>/</span>
 						<span>{currentCategory.title}</span>
@@ -171,6 +186,13 @@
 						</span>
 						<span class="inline-flex min-h-7 items-center rounded-full bg-panel-soft px-2.5">
 							最終更新 {currentManual?.updatedAt}
+						</span>
+						<span
+							class={currentManual?.status === 'preparing'
+								? preparingBadgeClass
+								: 'inline-flex min-h-7 items-center rounded-full bg-panel-soft px-2.5'}
+						>
+							{manualStatusLabel(currentManual?.status)}
 						</span>
 					</div>
 

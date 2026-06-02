@@ -1,9 +1,13 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import type { Pathname } from '$app/types';
 	import { featuredManuals, manualCategories } from '$lib/manuals';
 
 	const articleCardClass =
 		'group block rounded-panel border border-line bg-white/92 p-6 shadow-panel transition-all duration-150 hover:-translate-y-0.5 hover:shadow-floating hover:no-underline';
 	const supportCardClass = 'rounded-panel border border-line bg-white/92 p-6 shadow-panel';
+	const preparingBadgeClass =
+		'inline-flex min-h-6 items-center rounded-control border border-primary/20 bg-[#eef6fb] px-2 text-[0.75rem] font-bold text-primary';
 </script>
 
 <svelte:head>
@@ -28,13 +32,13 @@
 	<div class="mt-7 flex flex-wrap gap-3">
 		<a
 			class="inline-flex min-h-[46px] items-center justify-center rounded-control bg-primary px-[18px] text-base font-bold text-white shadow-panel transition-transform hover:-translate-y-0.5 hover:no-underline"
-			href="/manuals"
+			href={resolve('/manuals' as Pathname)}
 		>
 			ユーザーマニュアルを見る
 		</a>
 		<a
 			class="inline-flex min-h-[46px] items-center justify-center rounded-control border border-primary/20 bg-panel px-[18px] text-base font-bold text-primary transition-transform hover:-translate-y-0.5 hover:no-underline"
-			href="/manuals/admin/getting-started"
+			href={resolve('/manuals/admin/getting-started' as Pathname)}
 		>
 			管理者向け初回セットアップ
 		</a>
@@ -47,12 +51,14 @@
 			<p class="mb-2 text-[0.8rem] font-bold tracking-[0.08em] text-primary uppercase">Featured</p>
 			<h2 class="m-0 text-[1.6rem] leading-tight font-bold text-ink">まずはここから</h2>
 		</div>
-		<a class="font-bold text-link-blue" href="/manuals">すべてのマニュアルを見る</a>
+		<a class="font-bold text-link-blue" href={resolve('/manuals' as Pathname)}
+			>すべてのマニュアルを見る</a
+		>
 	</div>
 
 	<div class="grid grid-cols-1 gap-[18px] md:grid-cols-2">
 		{#each featuredManuals as manual (manual.href)}
-			<a class={articleCardClass} href={manual.href}>
+			<a class={articleCardClass} href={resolve(manual.href as Pathname)}>
 				<p class="mb-2 text-[0.8rem] font-bold tracking-[0.08em] text-primary uppercase">
 					{manual.categoryTitle}
 				</p>
@@ -91,9 +97,12 @@
 							<li class="mt-[10px] first:mt-0">
 								<a
 									class="flex items-center justify-between gap-4 rounded-xl bg-panel-soft px-[14px] py-3 font-bold text-ink transition-colors hover:bg-[#eef6fb] hover:text-primary hover:no-underline"
-									href={item.href}
+									href={resolve(item.href as Pathname)}
 								>
-									{item.title}
+									<span>{item.title}</span>
+									{#if item.status === 'preparing'}
+										<span class={preparingBadgeClass}>準備中</span>
+									{/if}
 								</a>
 							</li>
 						{/each}
@@ -105,7 +114,7 @@
 				{/if}
 
 				<div class="mt-[18px] flex flex-wrap gap-2" aria-label="追加予定のトピック">
-					{#each category.plannedTopics as topic}
+					{#each category.plannedTopics as topic (topic)}
 						<span
 							class="inline-flex min-h-8 items-center rounded-full bg-primary/8 px-3 text-[0.85rem] font-bold text-primary"
 						>

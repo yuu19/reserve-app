@@ -15,6 +15,7 @@
 		pricingComparisonRows,
 		pricingNotes,
 		pricingPlans,
+		type PricingManualLink,
 		type PricingPlan
 	} from '$lib/content/pricing';
 	import { ArrowLeft, ArrowRight, CheckCircle2, Info, LogIn, ShieldCheck } from '@lucide/svelte';
@@ -26,6 +27,10 @@
 	const sectionHeadingClass = 'text-xl font-bold text-foreground md:text-2xl';
 	const panelClass = 'surface-panel rounded-md border border-border/80 shadow-sm';
 	const listTileClass = 'rounded-md border border-border/70 bg-stone-01 px-3 py-2';
+	const manualLinkClass =
+		'inline-flex min-h-7 items-center gap-1 rounded-md border border-border bg-card px-2 py-1 font-medium text-link transition-colors hover:bg-secondary hover:no-underline';
+	const preparingBadgeClass =
+		'rounded-sm border border-warning/50 bg-warning/25 px-1.5 py-0.5 text-xxs font-bold text-foreground';
 	const adminLoginHref = resolve('/admin/login' as Pathname);
 	const adminContractsHref = `${adminLoginHref}?next=${encodeURIComponent('/admin/contracts')}`;
 	const planHref = (plan: PricingPlan) =>
@@ -40,6 +45,21 @@
 		}
 	];
 </script>
+
+{#snippet manualLinkList(manualLinks: readonly PricingManualLink[])}
+	{#if manualLinks.length > 0}
+		<span class="mt-1 flex flex-wrap gap-1.5 text-xs" aria-label="関連マニュアル">
+			{#each manualLinks as manualLink (manualLink.href)}
+				<a class={manualLinkClass} href={manualLink.href}>
+					<span>{manualLink.label}</span>
+					{#if manualLink.status === 'preparing'}
+						<span class={preparingBadgeClass}>準備中</span>
+					{/if}
+				</a>
+			{/each}
+		</span>
+	{/if}
+{/snippet}
 
 <svelte:head>
 	<title>{pageTitle}</title>
@@ -121,10 +141,13 @@
 						</CardHeader>
 						<CardContent class="space-y-4 pt-4">
 							<ul class="space-y-2 text-sm text-secondary-foreground">
-								{#each plan.highlights as highlight (highlight)}
-									<li class={listTileClass}>
-										<CheckCircle2 class="mr-2 inline size-4 text-success" aria-hidden="true" />
-										{highlight}
+								{#each plan.highlights as highlight (highlight.label)}
+									<li class={`${listTileClass} flex items-start gap-2`}>
+										<CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
+										<span class="min-w-0">
+											<span>{highlight.label}</span>
+											{@render manualLinkList(highlight.manualLinks)}
+										</span>
 									</li>
 								{/each}
 							</ul>
@@ -156,10 +179,11 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each pricingComparisonRows as row (row.feature)}
+								{#each pricingComparisonRows as row (row.feature.label)}
 									<tr class="border-t border-border/70">
 										<th scope="row" class="px-3 py-2 text-left font-medium text-foreground">
-											{row.feature}
+											<span>{row.feature.label}</span>
+											{@render manualLinkList(row.feature.manualLinks)}
 										</th>
 										<td class="px-3 py-2 text-secondary-foreground">{row.free}</td>
 										<td class="px-3 py-2 text-secondary-foreground">{row.premium}</td>

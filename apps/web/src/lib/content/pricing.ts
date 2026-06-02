@@ -1,5 +1,16 @@
 export type PricingPlanName = 'Free' | 'Premium';
 
+export type PricingManualLink = {
+	label: string;
+	href: string;
+	status: 'published' | 'preparing';
+};
+
+export type PricingFeature = {
+	label: string;
+	manualLinks: readonly PricingManualLink[];
+};
+
 export type PricingPlan = {
 	name: PricingPlanName;
 	price: string;
@@ -7,22 +18,66 @@ export type PricingPlan = {
 	trialLabel?: string;
 	description: string;
 	recommended?: boolean;
-	highlights: readonly string[];
+	highlights: readonly PricingFeature[];
 	ctaLabel: string;
 	ctaVariant: 'default' | 'outline';
 };
 
 export type PricingComparisonRow = {
-	feature: string;
+	feature: PricingFeature;
 	free: string;
 	premium: string;
 };
+
+const docsManualBaseUrl = 'https://docs.wakureserve.com/manuals';
+const manualHref = (path: `/${string}`) => `${docsManualBaseUrl}${path}`;
+const manualLink = (
+	label: string,
+	path: `/${string}`,
+	status: PricingManualLink['status']
+): PricingManualLink => ({
+	label,
+	href: manualHref(path),
+	status
+});
+const feature = (label: string, manualLinks: readonly PricingManualLink[]): PricingFeature => ({
+	label,
+	manualLinks
+});
+
+const gettingStartedManual = manualLink('初回セットアップ', '/admin/getting-started', 'published');
+const oneTimeSlotsManual = manualLink('単発予約枠', '/admin/one-time-slots', 'preparing');
+const recurringSchedulesManual = manualLink(
+	'定期スケジュール',
+	'/admin/recurring-schedules',
+	'preparing'
+);
+const organizationAndStoreManual = manualLink(
+	'組織と店舗管理',
+	'/admin/organization-and-store',
+	'preparing'
+);
+const adminInvitationsManual = manualLink('スタッフ招待', '/admin/admin-invitations', 'preparing');
+const participantsAndTicketsManual = manualLink(
+	'参加者管理と回数券',
+	'/admin/participants-and-tickets',
+	'preparing'
+);
+const contractsAndPremiumManual = manualLink(
+	'契約と Premium',
+	'/admin/contracts-and-premium',
+	'published'
+);
 
 export const freePricingPlan = {
 	name: 'Free',
 	price: '¥0 / 月',
 	description: '小規模運用を始めるための基本機能です。',
-	highlights: ['1組織・1店舗での基本運用', '単発予約枠の公開と受付', '基本的な参加者管理'],
+	highlights: [
+		feature('1組織・1店舗での基本運用', [gettingStartedManual]),
+		feature('単発予約枠の公開と受付', [oneTimeSlotsManual]),
+		feature('基本的な参加者管理', [participantsAndTicketsManual])
+	],
 	ctaLabel: '無料で始める',
 	ctaVariant: 'outline'
 } satisfies PricingPlan;
@@ -35,12 +90,12 @@ export const premiumPricingPlan = {
 	description: '複数店舗、スタッフ招待、定期スケジュールまで運用したい組織向けです。',
 	recommended: true,
 	highlights: [
-		'複数店舗・複数拠点の管理',
-		'スタッフ招待と権限管理',
-		'定期スケジュール運用',
-		'承認制予約フロー',
-		'回数券・月額課金などの継続運用',
-		'契約管理と分析機能'
+		feature('複数店舗・複数拠点の管理', [organizationAndStoreManual]),
+		feature('スタッフ招待と権限管理', [adminInvitationsManual]),
+		feature('定期スケジュール運用', [recurringSchedulesManual]),
+		feature('承認制予約フロー', [oneTimeSlotsManual]),
+		feature('回数券・月額課金などの継続運用', [participantsAndTicketsManual]),
+		feature('契約管理と分析機能', [contractsAndPremiumManual])
 	],
 	ctaLabel: '契約画面で確認',
 	ctaVariant: 'default'
@@ -50,32 +105,32 @@ export const pricingPlans: readonly PricingPlan[] = [freePricingPlan, premiumPri
 
 export const pricingComparisonRows: PricingComparisonRow[] = [
 	{
-		feature: '予約受付',
+		feature: feature('予約受付', [oneTimeSlotsManual, recurringSchedulesManual]),
 		free: '単発予約枠の公開と受付',
 		premium: '単発予約枠と定期スケジュール運用'
 	},
 	{
-		feature: '店舗管理',
+		feature: feature('店舗管理', [organizationAndStoreManual]),
 		free: '1組織・1店舗',
 		premium: '複数店舗・複数拠点'
 	},
 	{
-		feature: 'スタッフ権限',
+		feature: feature('スタッフ権限', [adminInvitationsManual]),
 		free: '組織オーナー中心',
 		premium: 'スタッフ招待と権限管理'
 	},
 	{
-		feature: '参加者管理',
+		feature: feature('参加者管理', [participantsAndTicketsManual]),
 		free: '基本的な参加者管理',
 		premium: '招待、承認、継続運用の管理'
 	},
 	{
-		feature: '継続運用',
+		feature: feature('継続運用', [participantsAndTicketsManual]),
 		free: '基本運用',
 		premium: '回数券・月額課金などの継続運用'
 	},
 	{
-		feature: '契約管理',
+		feature: feature('契約管理', [contractsAndPremiumManual]),
 		free: '契約状態の確認',
 		premium: '契約管理と分析機能'
 	}

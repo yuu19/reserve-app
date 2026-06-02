@@ -1,9 +1,13 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import type { Pathname } from '$app/types';
 	import { featuredManuals, manualCategories } from '$lib/manuals';
 
 	const articleCardClass =
 		'group block rounded-panel border border-line bg-white/92 p-6 shadow-panel transition-all duration-150 hover:-translate-y-0.5 hover:shadow-floating hover:no-underline';
 	const supportCardClass = 'rounded-panel border border-line bg-white/92 p-6 shadow-panel';
+	const preparingBadgeClass =
+		'inline-flex min-h-6 items-center rounded-control border border-primary/20 bg-[#eef6fb] px-2 text-[0.75rem] font-bold text-primary';
 </script>
 
 <section class="pt-2 pb-2">
@@ -28,7 +32,7 @@
 
 	<div class="grid grid-cols-1 gap-[18px] md:grid-cols-2">
 		{#each featuredManuals as manual (manual.href)}
-			<a class={articleCardClass} href={manual.href}>
+			<a class={articleCardClass} href={resolve(manual.href as Pathname)}>
 				<p class="mb-2 text-[0.8rem] font-bold tracking-[0.08em] text-primary uppercase">
 					{manual.categoryTitle}
 				</p>
@@ -65,9 +69,12 @@
 							<li class="mt-[10px] first:mt-0">
 								<a
 									class="flex items-center justify-between gap-4 rounded-xl bg-panel-soft px-[14px] py-3 font-bold text-ink transition-colors hover:bg-[#eef6fb] hover:text-primary hover:no-underline"
-									href={item.href}
+									href={resolve(item.href as Pathname)}
 								>
-									{item.title}
+									<span>{item.title}</span>
+									{#if item.status === 'preparing'}
+										<span class={preparingBadgeClass}>準備中</span>
+									{/if}
 								</a>
 							</li>
 						{/each}
@@ -79,7 +86,7 @@
 				{/if}
 
 				<div class="mt-[18px] flex flex-wrap gap-2" aria-label="追加予定のトピック">
-					{#each category.plannedTopics as topic}
+					{#each category.plannedTopics as topic (topic)}
 						<span
 							class="inline-flex min-h-8 items-center rounded-full bg-primary/8 px-3 text-[0.85rem] font-bold text-primary"
 						>
