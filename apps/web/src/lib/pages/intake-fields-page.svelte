@@ -4,8 +4,9 @@
 	import { page } from '$app/state';
 	import type { Pathname } from '$app/types';
 	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
-	import { ArrowDown, ArrowUp, Plus, Trash2 } from '@lucide/svelte';
+	import { ArrowDown, ArrowLeft, ArrowUp, ExternalLink, Plus, Trash2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -55,9 +56,14 @@
 
 	const routePathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 	const routeScopedContext = $derived(extractScopedRouteContext(page.url.pathname));
-	const publicSitePath = $derived(
-		currentContext ? buildScopedPath(currentContext, '/admin/public-site') : null
+	const navigationContext = $derived(currentContext ?? routeScopedContext);
+	const publicSiteManagementPath = $derived(
+		navigationContext ? buildScopedPath(navigationContext, '/admin/public-site') : null
 	);
+	const publicEventsPath = $derived(
+		navigationContext ? buildScopedPath(navigationContext, '/events') : null
+	);
+	const previewFields = $derived(fields.filter((field) => field.visibleOnPublic));
 	const toScopedRoute = (targetPath: string): ResolvablePath =>
 		preserveScopedRouteContext(targetPath, page.url.pathname) as ResolvablePath;
 
@@ -72,12 +78,9 @@
 		placeholder: ''
 	});
 
-	const fieldTypeLabel = (fieldType: IntakeFieldType): string =>
-		fieldTypeOptions.find((option) => option.value === fieldType)?.label ?? fieldType;
-
 	const optionsFromText = (value: string): string[] => {
 		const options: string[] = [];
-		const seenOptions = new Set<string>();
+		const seenOptions = new SvelteSet<string>();
 		for (const option of value
 			.split('\n')
 			.map((line) => line.trim())
@@ -90,6 +93,14 @@
 		}
 		return options;
 	};
+
+	const previewFieldLabel = (field: IntakeFieldForm, index: number): string =>
+		field.label.trim() || field.fieldId.trim() || `項目 ${index + 1}`;
+
+	const previewPlaceholder = (field: IntakeFieldForm): string | undefined =>
+		field.placeholder.trim() || undefined;
+
+	const previewHelpText = (field: IntakeFieldForm): string => field.helpText.trim();
 
 	const applyFields = (nextFields: PublicSiteIntakeFieldPayload[]) => {
 		fields = nextFields.map((field) => ({
@@ -145,19 +156,19 @@
 	};
 
 	const updateFieldType = (index: number, event: Event) => {
-		updateField(index, 'fieldType', (event.currentTarget as HTMLSelectElement).value as IntakeFieldType);
+		updateField(
+			index,
+			'fieldType',
+			(event.currentTarget as HTMLSelectElement).value as IntakeFieldType
+		);
 	};
 
-	const updateFieldBoolean = (
-		index: number,
-		key: 'required' | 'visibleOnPublic',
-		event: Event
-	) => {
+	const updateFieldBoolean = (index: number, key: 'required' | 'visibleOnPublic', event: Event) => {
 		updateField(index, key, (event.currentTarget as HTMLInputElement).checked);
 	};
 
 	const validateFields = (): boolean => {
-		const fieldIds = new Set<string>();
+		const fieldIds = new SvelteSet<string>();
 		for (const field of fields) {
 			const fieldId = field.fieldId.trim();
 			if (!/^[a-z0-9][a-z0-9_-]*$/u.test(fieldId)) {
@@ -260,11 +271,23 @@
 </script>
 
 <main class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-	<header class="space-y-2">
-		<h1 class="text-3xl font-semibold text-foreground">カスタム入力</h1>
-		<p class="text-sm text-muted-foreground">
-			公開予約フォームで予約者に入力してもらう追加項目を店舗ごとに管理します。
-		</p>
+	<header class="space-y-3">
+		{#if publicSiteManagementPath}
+			<Button
+				type="button"
+				variant="ghost"
+				href={resolve(publicSiteManagementPath as ResolvablePath)}
+			>
+				<ArrowLeft class="size-4" />
+				予約サイト管理へ戻る
+			</Button>
+		{/if}
+		<div class="space-y-2">
+			<h1 class="text-3xl font-semibold text-foreground">カスタム入力</h1>
+			<p class="text-sm text-muted-foreground">
+				公開予約フォームで予約者に入力してもらう追加項目を店舗ごとに管理します。
+			</p>
+		</div>
 	</header>
 
 	{#if loading}
@@ -460,38 +483,124 @@
 							<Button
 								type="button"
 								variant="outline"
-								href={publicSitePath ? resolve(publicSitePath as ResolvablePath) : undefined}
-								disabled={!publicSitePath || busy}
+								href={publicSiteManagementPath
+									? resolve(publicSiteManagementPath as ResolvablePath)
+									: undefined}
+								disabled={!publicSiteManagementPath || busy}
 							>
+								<ArrowLeft class="size-4" />
 								予約サイト管理へ戻る
+							</Button>
+							<Button
+								type="button"
+								variant="outline"
+								href={publicEventsPath ? resolve(publicEventsPath as ResolvablePath) : undefined}
+								target="_blank"
+								rel="noreferrer"
+								disabled={!publicEventsPath || busy}
+							>
+								<ExternalLink class="size-4" />
+								予約ページ一覧を開く
 							</Button>
 						</div>
 					</form>
 				</CardContent>
 			</Card>
 
-			<Card class="surface-panel border-border/80 shadow-lg">
+			<Card
+				class="surface-panel border-border/80 shadow-lg"
+				role="region"
+				aria-labelledby="intake-preview-heading"
+			>
 				<CardHeader class="space-y-2">
-					<h2 class="text-lg font-semibold text-foreground">表示項目</h2>
-					<CardDescription>保存後に公開予約フォームへ反映されます。</CardDescription>
+					<h2 id="intake-preview-heading" class="text-lg font-semibold text-foreground">
+						予約フォームプレビュー
+					</h2>
+					<CardDescription>公開予約フォームに表示する項目だけを確認できます。</CardDescription>
 				</CardHeader>
 				<CardContent>
-					{#if fields.length === 0}
-						<p class="text-sm text-muted-foreground">表示対象の項目はありません。</p>
+					{#if previewFields.length === 0}
+						<div class="rounded-md border border-border/80 bg-secondary/40 p-4">
+							<p class="text-sm text-muted-foreground">
+								公開予約フォームに表示する項目はありません。
+							</p>
+						</div>
 					{:else}
-						<ul class="space-y-3">
-							{#each fields as field (field.fieldId)}
-								<li class="rounded-md border border-border/80 bg-background p-3">
-									<p class="text-sm font-semibold text-foreground">
-										{field.label || field.fieldId}
-									</p>
-									<p class="mt-1 text-xs text-muted-foreground">
-										{fieldTypeLabel(field.fieldType)} / {field.required ? '必須' : '任意'} /
-										{field.visibleOnPublic ? '公開' : '非公開'}
-									</p>
-								</li>
+						<div class="space-y-4 rounded-lg border border-border/80 bg-background p-4">
+							{#each previewFields as field, previewIndex (field.fieldId || previewIndex)}
+								{@const fieldLabel = previewFieldLabel(field, previewIndex)}
+								{@const fieldHelpText = previewHelpText(field)}
+								{@const fieldPlaceholder = previewPlaceholder(field)}
+								{@const fieldOptions = optionsFromText(field.optionsText)}
+								{@const inputId = `intake-preview-field-${previewIndex}`}
+								{@const helpId = `intake-preview-help-${previewIndex}`}
+								<div class="space-y-2">
+									{#if field.fieldType === 'checkbox'}
+										<label
+											class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/40 px-3 py-2 text-sm"
+										>
+											<input
+												type="checkbox"
+												class="size-4 rounded border-input text-primary"
+												aria-describedby={fieldHelpText ? helpId : undefined}
+												required={field.required}
+												disabled
+											/>
+											<span class="min-w-0">
+												<span class="font-medium text-foreground">{fieldLabel}</span>
+												{#if field.required}
+													<span class="ml-2 text-xs font-semibold text-destructive">必須</span>
+												{/if}
+											</span>
+										</label>
+									{:else}
+										<Label for={inputId} class="flex items-center gap-2">
+											<span>{fieldLabel}</span>
+											{#if field.required}
+												<span class="text-xs font-semibold text-destructive">必須</span>
+											{/if}
+										</Label>
+										{#if field.fieldType === 'textarea'}
+											<textarea
+												id={inputId}
+												class="min-h-24 w-full rounded-md border border-input bg-secondary/30 px-3 py-2 text-sm text-foreground shadow-xs disabled:cursor-default disabled:opacity-100"
+												value=""
+												placeholder={fieldPlaceholder}
+												aria-describedby={fieldHelpText ? helpId : undefined}
+												required={field.required}
+												disabled
+											></textarea>
+										{:else if field.fieldType === 'select'}
+											<select
+												id={inputId}
+												class="flex h-10 w-full rounded-md border border-input bg-secondary/30 px-3 py-2 text-sm text-foreground shadow-xs disabled:cursor-default disabled:opacity-100"
+												aria-describedby={fieldHelpText ? helpId : undefined}
+												required={field.required}
+												disabled
+											>
+												<option value="">{fieldPlaceholder ?? '選択してください'}</option>
+												{#each fieldOptions as option (option)}
+													<option value={option}>{option}</option>
+												{/each}
+											</select>
+										{:else}
+											<Input
+												id={inputId}
+												value=""
+												placeholder={fieldPlaceholder}
+												aria-describedby={fieldHelpText ? helpId : undefined}
+												required={field.required}
+												disabled
+												class="bg-secondary/30 disabled:cursor-default disabled:opacity-100"
+											/>
+										{/if}
+									{/if}
+									{#if fieldHelpText}
+										<p id={helpId} class="text-xs text-muted-foreground">{fieldHelpText}</p>
+									{/if}
+								</div>
 							{/each}
-						</ul>
+						</div>
 					{/if}
 				</CardContent>
 			</Card>

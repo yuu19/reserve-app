@@ -168,6 +168,103 @@ describe('カスタム入力ページ', () => {
 		expect(mocks.toastError).toHaveBeenCalledWith('経験年数の選択肢を1つ以上入力してください。');
 	});
 
+	it('公開項目だけを予約フォームプレビューに表示し、確認導線を表示する', async () => {
+		mocks.loadIntakeFields.mockResolvedValueOnce({
+			fields: [
+				{
+					id: 'field-1',
+					fieldId: 'experience',
+					label: '経験年数',
+					fieldType: 'select',
+					required: true,
+					options: ['未経験', '1年以上'],
+					helpText: '該当するものを選択してください。',
+					placeholder: '選択してください',
+					visibleOnPublic: true,
+					sortOrder: 0
+				},
+				{
+					id: 'field-2',
+					fieldId: 'internal_note',
+					label: '内部メモ',
+					fieldType: 'text',
+					required: false,
+					options: [],
+					helpText: '運営だけが確認する項目です。',
+					placeholder: '',
+					visibleOnPublic: false,
+					sortOrder: 1
+				}
+			]
+		});
+
+		render(IntakeFieldsRoute);
+
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '予約フォームプレビュー' }))
+			.toBeInTheDocument();
+
+		const preview = document.querySelector(
+			'[role="region"][aria-labelledby="intake-preview-heading"]'
+		);
+		expect(preview?.textContent).toContain('経験年数');
+		expect(preview?.textContent).toContain('必須');
+		expect(preview?.textContent).toContain('該当するものを選択してください。');
+		expect(preview?.textContent).not.toContain('内部メモ');
+		expect(
+			Array.from(
+				document.querySelectorAll<HTMLInputElement>('input[id^="intake-field-label-"]')
+			).some((input) => input.value === '内部メモ')
+		).toBe(true);
+
+		const select = preview?.querySelector('select');
+		expect(select?.disabled).toBe(true);
+		expect(select?.required).toBe(true);
+		expect(Array.from(select?.options ?? []).map((option) => option.text)).toEqual([
+			'選択してください',
+			'未経験',
+			'1年以上'
+		]);
+
+		await expect
+			.element(page.getByRole('link', { name: '予約サイト管理へ戻る' }).first())
+			.toHaveAttribute('href', '/org-one/room-a/admin/public-site');
+		await expect
+			.element(page.getByRole('link', { name: '予約ページ一覧を開く' }))
+			.toHaveAttribute('href', '/org-one/room-a/events');
+		await expect
+			.element(page.getByRole('link', { name: '予約ページ一覧を開く' }))
+			.toHaveAttribute('target', '_blank');
+		await expect
+			.element(page.getByRole('link', { name: '予約ページ一覧を開く' }))
+			.toHaveAttribute('rel', 'noreferrer');
+	});
+
+	it('公開対象の項目がない場合はプレビューに空状態を表示する', async () => {
+		mocks.loadIntakeFields.mockResolvedValueOnce({
+			fields: [
+				{
+					id: 'field-1',
+					fieldId: 'internal_note',
+					label: '内部メモ',
+					fieldType: 'text',
+					required: false,
+					options: [],
+					helpText: '',
+					placeholder: '',
+					visibleOnPublic: false,
+					sortOrder: 0
+				}
+			]
+		});
+
+		render(IntakeFieldsRoute);
+
+		await expect
+			.element(page.getByText('公開予約フォームに表示する項目はありません。'))
+			.toBeInTheDocument();
+	});
+
 	it('非スコープ管理ルートでは利用中店舗のカスタム入力を取得する', async () => {
 		pageState.url = new URL('https://example.com/admin/intake-fields');
 
