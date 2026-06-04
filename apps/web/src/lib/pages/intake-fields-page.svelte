@@ -67,8 +67,19 @@
 	const toScopedRoute = (targetPath: string): ResolvablePath =>
 		preserveScopedRouteContext(targetPath, page.url.pathname) as ResolvablePath;
 
+	const createUniqueFieldId = (): string => {
+		const fieldIds = new SvelteSet(fields.map((field) => field.fieldId.trim()));
+		let nextIndex = fields.length + 1;
+		let fieldId = `field_${nextIndex}`;
+		while (fieldIds.has(fieldId)) {
+			nextIndex += 1;
+			fieldId = `field_${nextIndex}`;
+		}
+		return fieldId;
+	};
+
 	const createEmptyField = (): IntakeFieldForm => ({
-		fieldId: `field_${fields.length + 1}`,
+		fieldId: createUniqueFieldId(),
 		label: '',
 		fieldType: 'text',
 		required: false,
@@ -149,7 +160,7 @@
 
 	const updateFieldText = (
 		index: number,
-		key: 'fieldId' | 'label' | 'optionsText' | 'helpText' | 'placeholder',
+		key: 'label' | 'optionsText' | 'helpText' | 'placeholder',
 		event: Event
 	) => {
 		updateField(index, key, (event.currentTarget as HTMLInputElement | HTMLTextAreaElement).value);
@@ -332,8 +343,12 @@
 				<CardContent>
 					<form class="space-y-5" onsubmit={submit}>
 						{#if fields.length === 0}
-							<div class="rounded-md border border-border/80 bg-secondary/40 p-4">
+							<div class="space-y-3 rounded-md border border-border/80 bg-secondary/40 p-4">
 								<p class="text-sm text-muted-foreground">追加項目は未設定です。</p>
+								<Button type="button" variant="outline" onclick={addField} disabled={busy}>
+									<Plus class="mr-2 size-4" />
+									項目を追加
+								</Button>
 							</div>
 						{:else}
 							{#each fields as field, index (field.fieldId || index)}
@@ -376,17 +391,6 @@
 									</div>
 
 									<div class="grid gap-4 md:grid-cols-2">
-										<div class="space-y-2">
-											<Label for={`intake-field-id-${index}`}>項目ID</Label>
-											<Input
-												id={`intake-field-id-${index}`}
-												value={field.fieldId}
-												oninput={(event) => updateFieldText(index, 'fieldId', event)}
-												disabled={busy}
-												maxlength={80}
-												required
-											/>
-										</div>
 										<div class="space-y-2">
 											<Label for={`intake-field-label-${index}`}>項目名</Label>
 											<Input
@@ -474,6 +478,14 @@
 									</div>
 								</fieldset>
 							{/each}
+							<div
+								class="flex justify-center rounded-lg border border-dashed border-border/80 bg-secondary/30 p-4"
+							>
+								<Button type="button" variant="outline" onclick={addField} disabled={busy}>
+									<Plus class="mr-2 size-4" />
+									項目を追加
+								</Button>
+							</div>
 						{/if}
 
 						<div class="flex flex-wrap items-center gap-2">

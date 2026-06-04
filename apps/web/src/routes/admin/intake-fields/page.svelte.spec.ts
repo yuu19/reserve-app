@@ -130,9 +130,14 @@ describe('カスタム入力ページ', () => {
 		await expect
 			.element(page.getByRole('heading', { level: 1, name: 'カスタム入力' }))
 			.toBeInTheDocument();
-		await expect.element(page.getByLabelText('項目ID')).toHaveValue('experience');
+		expect(document.querySelector('input[id^="intake-field-id-"]')).toBeNull();
 		await expect.element(page.getByLabelText('項目名')).toHaveValue('経験年数');
 		await expect.element(page.getByLabelText('選択肢')).toHaveValue('未経験\n1年以上');
+		expect(
+			Array.from(document.querySelectorAll('button')).filter((button) =>
+				button.textContent?.includes('項目を追加')
+			)
+		).toHaveLength(2);
 
 		await page.getByRole('button', { name: '保存' }).click();
 
@@ -156,6 +161,44 @@ describe('カスタム入力ページ', () => {
 			);
 		});
 		expect(mocks.toastSuccess).toHaveBeenCalledWith('カスタム入力を保存しました。');
+	});
+
+	it('追加項目のIDを自動採番して保存する', async () => {
+		render(IntakeFieldsRoute);
+
+		await page.getByRole('button', { name: '項目を追加' }).last().click();
+		await page.getByLabelText('項目名').last().fill('緊急連絡先');
+		await page.getByRole('button', { name: '保存' }).click();
+
+		await vi.waitFor(() => {
+			expect(mocks.updateIntakeFields).toHaveBeenCalledWith(
+				{ orgSlug: 'org-one', storeSlug: 'room-a' },
+				{
+					fields: [
+						{
+							fieldId: 'experience',
+							label: '経験年数',
+							fieldType: 'select',
+							required: true,
+							visibleOnPublic: true,
+							options: ['未経験', '1年以上'],
+							helpText: '該当するものを選択してください。',
+							placeholder: '選択してください'
+						},
+						{
+							fieldId: 'field_2',
+							label: '緊急連絡先',
+							fieldType: 'text',
+							required: false,
+							visibleOnPublic: true,
+							options: [],
+							helpText: null,
+							placeholder: null
+						}
+					]
+				}
+			);
+		});
 	});
 
 	it('選択式の選択肢が未入力なら保存しない', async () => {
