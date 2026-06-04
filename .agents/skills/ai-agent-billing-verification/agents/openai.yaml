@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Agent Billing Verification"
+  short_description: "AI agentで課金確認を実行し安全な証跡レポートを作成"
+  default_prompt: "Use $ai-agent-billing-verification to run reserve-app billing verification and prepare a safe evidence report."
