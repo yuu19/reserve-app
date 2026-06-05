@@ -186,6 +186,15 @@ describe('イベント詳細ページ', () => {
 			ticketTypes: [],
 			intakeFields: [
 				{
+					fieldId: 'goal',
+					label: '参加目的',
+					fieldType: 'text',
+					required: true,
+					options: [],
+					helpText: '目的を一言で入力してください。',
+					placeholder: '例: 体力づくり'
+				},
+				{
 					fieldId: 'experience',
 					label: '経験年数',
 					fieldType: 'select',
@@ -198,6 +207,107 @@ describe('イベント詳細ページ', () => {
 					fieldId: 'request',
 					label: '希望内容',
 					fieldType: 'textarea',
+					required: false,
+					options: [],
+					helpText: null,
+					placeholder: null
+				},
+				{
+					fieldId: 'newsletter',
+					label: '案内メールを受け取る',
+					fieldType: 'checkbox',
+					required: false,
+					options: [],
+					helpText: '最新情報をメールで案内します。',
+					placeholder: null
+				}
+			]
+		});
+		mocks.createGuestPublicBooking.mockResolvedValue({
+			ok: true,
+			message: '予約を受け付けました。',
+			booking: {
+				bookingId: 'booking-1',
+				bookingPublicId: 'bk_public_1',
+				status: 'confirmed'
+			}
+		});
+
+		render(EventDetailPage);
+
+		await page.getByLabelText('氏名').fill('Public Guest');
+		await page.getByLabelText('メールアドレス').fill('guest@example.com');
+		await page.getByLabelText('人数').fill('1');
+		await page.getByLabelText('参加目的 *').fill('体力づくり');
+		await page.getByLabelText('経験年数 *').selectOptions('1年以上');
+		await page.getByLabelText('希望内容').fill('初回なのでゆっくり進めたい');
+		await page.getByRole('checkbox', { name: /案内メールを受け取る/ }).click();
+		await page.getByRole('button', { name: '予約する' }).click();
+
+		await vi.waitFor(() => {
+			expect(mocks.createGuestPublicBooking).toHaveBeenCalledWith(
+				{ orgSlug: 'org-one', storeSlug: 'room-one' },
+				expect.objectContaining({
+					answers: [
+						{
+							fieldId: 'goal',
+							labelSnapshot: '参加目的',
+							value: '体力づくり'
+						},
+						{
+							fieldId: 'experience',
+							labelSnapshot: '経験年数',
+							value: '1年以上'
+						},
+						{
+							fieldId: 'request',
+							labelSnapshot: '希望内容',
+							value: '初回なのでゆっくり進めたい'
+						},
+						{
+							fieldId: 'newsletter',
+							labelSnapshot: '案内メールを受け取る',
+							value: true
+						}
+					]
+				})
+			);
+		});
+	});
+
+	it('任意のチェック項目は未チェックをfalseとして送信する', async () => {
+		pageState.params = { orgSlug: 'org-one', storeSlug: 'room-one', slotId: 'slot-1' };
+		mocks.loadPublicEventDetail.mockResolvedValueOnce({
+			organizationId: 'org-1',
+			organizationSlug: 'org-one',
+			storeId: 'room-1',
+			storeSlug: 'room-one',
+			serviceId: 'service-1',
+			serviceName: '公開ヨガ',
+			serviceDescription: '公開イベント説明',
+			serviceImageUrl: null,
+			serviceKind: 'single',
+			bookingPolicy: 'instant',
+			requiresTicket: false,
+			slotId: 'slot-1',
+			startAt: '2026-06-01T01:00:00.000Z',
+			endAt: '2026-06-01T02:00:00.000Z',
+			slotStatus: 'open',
+			slotPublicStatus: 'public',
+			capacity: 8,
+			reservedCount: 1,
+			remainingCount: 7,
+			bookingOpenAt: '2026-05-01T00:00:00.000Z',
+			bookingCloseAt: '2026-06-01T00:00:00.000Z',
+			isBookable: true,
+			staffLabel: null,
+			locationLabel: '第1スタジオ',
+			ticketTypes: [],
+			intakeFields: [
+				{
+					fieldId: 'newsletter',
+					label: '案内メールを受け取る',
+					fieldType: 'checkbox',
 					required: false,
 					options: [],
 					helpText: null,
@@ -220,8 +330,6 @@ describe('イベント詳細ページ', () => {
 		await page.getByLabelText('氏名').fill('Public Guest');
 		await page.getByLabelText('メールアドレス').fill('guest@example.com');
 		await page.getByLabelText('人数').fill('1');
-		await page.getByLabelText('経験年数 *').selectOptions('1年以上');
-		await page.getByLabelText('希望内容').fill('初回なのでゆっくり進めたい');
 		await page.getByRole('button', { name: '予約する' }).click();
 
 		await vi.waitFor(() => {
@@ -230,14 +338,9 @@ describe('イベント詳細ページ', () => {
 				expect.objectContaining({
 					answers: [
 						{
-							fieldId: 'experience',
-							labelSnapshot: '経験年数',
-							value: '1年以上'
-						},
-						{
-							fieldId: 'request',
-							labelSnapshot: '希望内容',
-							value: '初回なのでゆっくり進めたい'
+							fieldId: 'newsletter',
+							labelSnapshot: '案内メールを受け取る',
+							value: false
 						}
 					]
 				})

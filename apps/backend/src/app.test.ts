@@ -11906,6 +11906,30 @@ describe('バックエンドアプリ', () => {
               visibleOnPublic: true,
             },
             {
+              fieldId: 'goal',
+              label: '参加目的',
+              fieldType: 'text',
+              required: false,
+              placeholder: '例: 体力づくり',
+              helpText: '目的を一言で入力してください。',
+              visibleOnPublic: true,
+            },
+            {
+              fieldId: 'request',
+              label: '希望内容',
+              fieldType: 'textarea',
+              required: false,
+              placeholder: '配慮事項など',
+              visibleOnPublic: true,
+            },
+            {
+              fieldId: 'newsletter',
+              label: '案内メールを受け取る',
+              fieldType: 'checkbox',
+              required: false,
+              visibleOnPublic: true,
+            },
+            {
               fieldId: 'private_memo',
               label: '管理メモ',
               fieldType: 'text',
@@ -12032,6 +12056,27 @@ describe('バックエンドアプリ', () => {
         required: true,
         options: ['未経験', '1年以上'],
         placeholder: '選択してください',
+      }),
+      expect.objectContaining({
+        fieldId: 'goal',
+        label: '参加目的',
+        fieldType: 'text',
+        required: false,
+        placeholder: '例: 体力づくり',
+        helpText: '目的を一言で入力してください。',
+      }),
+      expect.objectContaining({
+        fieldId: 'request',
+        label: '希望内容',
+        fieldType: 'textarea',
+        required: false,
+        placeholder: '配慮事項など',
+      }),
+      expect.objectContaining({
+        fieldId: 'newsletter',
+        label: '案内メールを受け取る',
+        fieldType: 'checkbox',
+        required: false,
       }),
     ]);
 
@@ -12176,6 +12221,21 @@ describe('バックエンドアプリ', () => {
               labelSnapshot: '改ざんされたラベル',
               value: '1年以上',
             },
+            {
+              fieldId: 'goal',
+              labelSnapshot: '参加目的',
+              value: '体力づくり',
+            },
+            {
+              fieldId: 'request',
+              labelSnapshot: '希望内容',
+              value: '初回なのでゆっくり進めたい',
+            },
+            {
+              fieldId: 'newsletter',
+              labelSnapshot: '案内メールを受け取る',
+              value: false,
+            },
           ],
         }),
       },
@@ -12201,6 +12261,21 @@ describe('バックエンドアプリ', () => {
         fieldId: 'experience',
         labelSnapshot: '経験年数',
         valueJson: JSON.stringify('1年以上'),
+      },
+      {
+        fieldId: 'goal',
+        labelSnapshot: '参加目的',
+        valueJson: JSON.stringify('体力づくり'),
+      },
+      {
+        fieldId: 'request',
+        labelSnapshot: '希望内容',
+        valueJson: JSON.stringify('初回なのでゆっくり進めたい'),
+      },
+      {
+        fieldId: 'newsletter',
+        labelSnapshot: '案内メールを受け取る',
+        valueJson: JSON.stringify(false),
       },
     ]);
 

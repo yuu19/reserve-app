@@ -95,8 +95,7 @@
 		const nextAnswers: Record<string, string | boolean> = {};
 		for (const field of fields) {
 			const currentValue = intakeAnswers[field.fieldId];
-			nextAnswers[field.fieldId] =
-				currentValue ?? (field.fieldType === 'checkbox' ? false : '');
+			nextAnswers[field.fieldId] = currentValue ?? (field.fieldType === 'checkbox' ? false : '');
 		}
 		intakeAnswers = nextAnswers;
 	};
@@ -136,14 +135,15 @@
 		(detail?.intakeFields ?? [])
 			.map((field) => {
 				const rawValue = intakeAnswers[field.fieldId];
-				const value =
-					field.fieldType === 'checkbox'
-						? rawValue === true
-						: typeof rawValue === 'string'
-							? rawValue.trim()
-							: '';
-				const hasValue =
-					field.fieldType === 'checkbox' ? value === true : typeof value === 'string' && value.length > 0;
+				if (field.fieldType === 'checkbox') {
+					return {
+						fieldId: field.fieldId,
+						labelSnapshot: field.label,
+						value: rawValue === true
+					};
+				}
+				const value = typeof rawValue === 'string' ? rawValue.trim() : '';
+				const hasValue = value.length > 0;
 				return hasValue
 					? {
 							fieldId: field.fieldId,
@@ -455,7 +455,9 @@
 														{field.label}{field.required ? ' *' : ''}
 													</span>
 													{#if field.helpText}
-														<span class="block text-xs text-muted-foreground">{field.helpText}</span>
+														<span class="block text-xs text-muted-foreground">
+															{field.helpText}
+														</span>
 													{/if}
 												</span>
 											</label>

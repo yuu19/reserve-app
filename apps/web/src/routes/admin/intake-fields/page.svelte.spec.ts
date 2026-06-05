@@ -283,6 +283,70 @@ describe('カスタム入力ページ', () => {
 			.toHaveAttribute('rel', 'noreferrer');
 	});
 
+	it('予約フォームプレビューで入力種別ごとのフォーム部品を表示する', async () => {
+		mocks.loadIntakeFields.mockResolvedValueOnce({
+			fields: [
+				{
+					id: 'field-1',
+					fieldId: 'goal',
+					label: '参加目的',
+					fieldType: 'text',
+					required: false,
+					options: [],
+					helpText: '目的を一言で入力してください。',
+					placeholder: '例: 体力づくり',
+					visibleOnPublic: true,
+					sortOrder: 0
+				},
+				{
+					id: 'field-2',
+					fieldId: 'request',
+					label: '希望内容',
+					fieldType: 'textarea',
+					required: false,
+					options: [],
+					helpText: '配慮事項があれば入力してください。',
+					placeholder: '例: 初回なのでゆっくり進めたい',
+					visibleOnPublic: true,
+					sortOrder: 1
+				},
+				{
+					id: 'field-3',
+					fieldId: 'newsletter',
+					label: '案内メールを受け取る',
+					fieldType: 'checkbox',
+					required: true,
+					options: [],
+					helpText: '最新情報をメールで案内します。',
+					placeholder: null,
+					visibleOnPublic: true,
+					sortOrder: 2
+				}
+			]
+		});
+
+		render(IntakeFieldsRoute);
+
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '予約フォームプレビュー' }))
+			.toBeInTheDocument();
+
+		const preview = document.querySelector(
+			'[role="region"][aria-labelledby="intake-preview-heading"]'
+		);
+		const textInput = preview?.querySelector<HTMLInputElement>('#intake-preview-field-0');
+		expect(textInput?.disabled).toBe(true);
+		expect(textInput?.placeholder).toBe('例: 体力づくり');
+		const textarea = preview?.querySelector<HTMLTextAreaElement>('#intake-preview-field-1');
+		expect(textarea?.disabled).toBe(true);
+		expect(textarea?.placeholder).toBe('例: 初回なのでゆっくり進めたい');
+		const checkbox = preview?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+		expect(checkbox?.disabled).toBe(true);
+		expect(checkbox?.required).toBe(true);
+		expect(preview?.textContent).toContain('案内メールを受け取る');
+		expect(preview?.textContent).toContain('最新情報をメールで案内します。');
+	});
+
 	it('公開対象の項目がない場合はプレビューに空状態を表示する', async () => {
 		mocks.loadIntakeFields.mockResolvedValueOnce({
 			fields: [

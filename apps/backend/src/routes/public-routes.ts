@@ -991,20 +991,25 @@ const insertPublicBookingDetails = async ({
 const normalizePublicBookingAnswerValue = (
   field: PublicSiteIntakeField,
   value: unknown,
-): { ok: true; value: unknown; hasValue: boolean } | { ok: false; message: string } => {
+):
+  | { ok: true; value: unknown; hasValue: boolean; shouldStore: boolean }
+  | { ok: false; message: string } => {
   if (field.fieldType === 'checkbox') {
     if (value === true) {
-      return { ok: true, value: true, hasValue: true };
+      return { ok: true, value: true, hasValue: true, shouldStore: true };
     }
-    if (value === false || value === null || value === undefined || value === '') {
-      return { ok: true, value: false, hasValue: false };
+    if (value === false) {
+      return { ok: true, value: false, hasValue: false, shouldStore: true };
+    }
+    if (value === null || value === undefined || value === '') {
+      return { ok: true, value: false, hasValue: false, shouldStore: false };
     }
     return { ok: false, message: 'Checkbox booking answer must be boolean.' };
   }
 
   if (typeof value !== 'string') {
     if (value === null || value === undefined) {
-      return { ok: true, value: '', hasValue: false };
+      return { ok: true, value: '', hasValue: false, shouldStore: false };
     }
     return { ok: false, message: 'Booking answer must be a string.' };
   }
@@ -1012,14 +1017,19 @@ const normalizePublicBookingAnswerValue = (
   const trimmed = value.trim();
   if (field.fieldType === 'select') {
     if (!trimmed) {
-      return { ok: true, value: '', hasValue: false };
+      return { ok: true, value: '', hasValue: false, shouldStore: false };
     }
     if (!field.options.includes(trimmed)) {
       return { ok: false, message: 'Booking answer option is invalid.' };
     }
   }
 
-  return { ok: true, value: trimmed, hasValue: trimmed.length > 0 };
+  return {
+    ok: true,
+    value: trimmed,
+    hasValue: trimmed.length > 0,
+    shouldStore: trimmed.length > 0,
+  };
 };
 
 const buildCanonicalPublicBookingAnswers = ({
@@ -1057,7 +1067,7 @@ const buildCanonicalPublicBookingAnswers = ({
     if (field.required && !normalized.hasValue) {
       return { ok: false, status: 400, message: 'Required booking answer is missing.' };
     }
-    if (normalized.hasValue) {
+    if (normalized.shouldStore) {
       canonicalAnswers.push({
         fieldId: field.fieldId,
         labelSnapshot: field.label,
