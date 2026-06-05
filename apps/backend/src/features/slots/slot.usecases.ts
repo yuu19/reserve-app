@@ -1,5 +1,7 @@
 import { resolveOrganizationId } from '../../domain/booking/authorization.js';
+import { writeBookingAuditLog } from '../../domain/booking/audit.js';
 import {
+  BOOKING_AUDIT_ACTION,
   DEFAULT_TIMEZONE,
   SLOT_PUBLIC_STATUS,
   SLOT_STATUS,
@@ -37,6 +39,12 @@ import type {
   SlotPublicStatusUpdateBody,
   SlotUpdateBody,
 } from './slot.schemas.js';
+
+type CancelledSlotBooking = {
+  id: string;
+  organizationId: string;
+  storeId: string;
+};
 
 const normalizeOptionalText = (value: string | undefined): string | null | undefined => {
   if (value === undefined) {
@@ -409,12 +417,29 @@ export const cancelExistingSlot = async (
     return conflict('Slot is not open.');
   }
 
-  await cancelSlotAndConfirmedBookings({
+  const cancelledBookings = await cancelSlotAndConfirmedBookings({
     database: ctx.database,
     slotId: slot.id,
     actorUserId: identity.userId,
     reason: body.reason,
   });
+  await Promise.all(
+    cancelledBookings.map((booking: CancelledSlotBooking) =>
+      writeBookingAuditLog({
+        database: ctx.database,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        storeId: booking.storeId,
+        actorUserId: identity.userId,
+        action: BOOKING_AUDIT_ACTION.CANCELLED_BY_STAFF,
+        metadata: {
+          reason: body.reason ?? 'slot-canceled',
+          slotId: slot.id,
+        },
+        headers,
+      }),
+    ),
+  );
 
   return jsonResult({ ok: true });
 };

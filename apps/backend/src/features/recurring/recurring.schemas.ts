@@ -1,4 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import {
+  scopedStoreAuthPath,
+  scopedStoreRouteParamsSchema,
+} from '../../shared/scoped-store-route.js';
 
 const isoDateTimeSchema = z
   .string()
@@ -20,8 +24,6 @@ const boolStringSchema = z
  * recurring schedule 作成 API の入力を検証します。
  */
 export const recurringCreateBodySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1),
   timezone: z.string().optional(),
   frequency: z.enum(['weekly', 'monthly']),
@@ -43,8 +45,6 @@ export const recurringCreateBodySchema = z.object({
  * recurring schedule 一覧 API の query を検証します。
  */
 export const recurringListQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   isActive: boolStringSchema,
 });
@@ -54,7 +54,6 @@ export const recurringListQuerySchema = z.object({
  */
 export const recurringUpdateBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   timezone: z.string().optional(),
   frequency: z.enum(['weekly', 'monthly']).optional(),
   interval: z.int().min(1).max(52).optional(),
@@ -77,7 +76,6 @@ export const recurringUpdateBodySchema = z.object({
  */
 export const recurringExceptionBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   date: dateOnlySchema,
   action: z.enum(['skip', 'override']),
   overrideStartTimeLocal: localTimeSchema.optional(),
@@ -94,41 +92,47 @@ export const recurringExceptionBodySchema = z.object({
  */
 export const recurringGenerateBodySchema = z.object({
   recurringScheduleId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
 });
 
+type ScopedStoreInput = {
+  organizationId: string;
+  storeId: string;
+};
+
 /**
  * recurring schedule 作成 usecase が受け取る検証済み body 型です。
  */
-export type RecurringCreateBody = z.infer<typeof recurringCreateBodySchema>;
+export type RecurringCreateBody = z.infer<typeof recurringCreateBodySchema> & ScopedStoreInput;
 /**
  * recurring schedule 一覧 usecase が受け取る検証済み query 型です。
  */
-export type RecurringListQuery = z.infer<typeof recurringListQuerySchema>;
+export type RecurringListQuery = z.infer<typeof recurringListQuerySchema> & ScopedStoreInput;
 /**
  * recurring schedule 更新 usecase が受け取る検証済み body 型です。
  */
-export type RecurringUpdateBody = z.infer<typeof recurringUpdateBodySchema>;
+export type RecurringUpdateBody = z.infer<typeof recurringUpdateBodySchema> & ScopedStoreInput;
 /**
  * recurring exception upsert usecase が受け取る検証済み body 型です。
  */
-export type RecurringExceptionBody = z.infer<typeof recurringExceptionBodySchema>;
+export type RecurringExceptionBody = z.infer<typeof recurringExceptionBodySchema> &
+  ScopedStoreInput;
 /**
  * recurring slot 手動生成 usecase が受け取る検証済み body 型です。
  */
-export type RecurringGenerateBody = z.infer<typeof recurringGenerateBodySchema>;
+export type RecurringGenerateBody = z.infer<typeof recurringGenerateBodySchema> & ScopedStoreInput;
 
 /**
  * recurring schedule を作成し、既定期間の slot を同期生成する OpenAPI 定義です。
  */
 export const createRecurringScheduleRoute = createRoute({
   method: 'post',
-  path: '/organizations/recurring-schedules',
+  path: scopedStoreAuthPath('/recurring-schedules'),
   tags: ['Recurring Schedules'],
   summary: 'Create recurring schedule',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -151,10 +155,11 @@ export const createRecurringScheduleRoute = createRoute({
  */
 export const listRecurringSchedulesRoute = createRoute({
   method: 'get',
-  path: '/organizations/recurring-schedules',
+  path: scopedStoreAuthPath('/recurring-schedules'),
   tags: ['Recurring Schedules'],
   summary: 'List recurring schedules',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: recurringListQuerySchema,
   },
   responses: {
@@ -169,10 +174,11 @@ export const listRecurringSchedulesRoute = createRoute({
  */
 export const updateRecurringScheduleRoute = createRoute({
   method: 'post',
-  path: '/organizations/recurring-schedules/update',
+  path: scopedStoreAuthPath('/recurring-schedules/update'),
   tags: ['Recurring Schedules'],
   summary: 'Update recurring schedule',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -196,10 +202,11 @@ export const updateRecurringScheduleRoute = createRoute({
  */
 export const upsertRecurringExceptionRoute = createRoute({
   method: 'post',
-  path: '/organizations/recurring-schedules/exceptions',
+  path: scopedStoreAuthPath('/recurring-schedules/exceptions'),
   tags: ['Recurring Schedules'],
   summary: 'Create or update recurring schedule exception',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -223,10 +230,11 @@ export const upsertRecurringExceptionRoute = createRoute({
  */
 export const generateRecurringSlotsRoute = createRoute({
   method: 'post',
-  path: '/organizations/recurring-schedules/generate',
+  path: scopedStoreAuthPath('/recurring-schedules/generate'),
   tags: ['Recurring Schedules'],
   summary: 'Generate recurring slots manually',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {

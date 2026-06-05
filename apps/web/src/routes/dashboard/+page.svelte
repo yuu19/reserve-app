@@ -40,6 +40,12 @@
 	};
 	const toResolvablePath = (targetPath: string): Pathname =>
 		resolveDashboardTarget(targetPath) as Pathname;
+	const publicEventsPath = $derived.by((): Pathname | null => {
+		const scopedContext = extractScopedRouteContext(page.url.pathname);
+		return scopedContext
+			? (replacePortalPathWithScopedContext('/events', scopedContext) as Pathname)
+			: null;
+	});
 
 	const refreshDashboard = async () => {
 		const { session } = await loadSession();
@@ -227,11 +233,11 @@
 			</CardHeader>
 			<CardContent class="space-y-3">
 				<div class="flex flex-wrap gap-2">
-					<Button
-						type="button"
-						variant="outline"
-						onclick={() => goto(resolve(toResolvablePath('/events')))}>イベント一覧へ移動</Button
-					>
+					{#if publicEventsPath}
+						<Button type="button" variant="outline" onclick={() => goto(resolve(publicEventsPath))}
+							>イベント一覧へ移動</Button
+						>
+					{/if}
 					<Button
 						type="button"
 						variant="outline"

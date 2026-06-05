@@ -1,5 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { TICKET_PURCHASE_METHOD, TICKET_PURCHASE_STATUS } from '../../domain/booking/constants.js';
+import {
+  scopedStoreAuthPath,
+  scopedStoreRouteParamsSchema,
+} from '../../shared/scoped-store-route.js';
 
 const isoDateTimeSchema = z
   .string()
@@ -22,8 +26,6 @@ const hasSpecificServiceScopeWithoutServices = (value: {
  * organization と任意の store scope を受け取る共通 query を検証します。
  */
 export const orgQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
 });
 
 /**
@@ -31,8 +33,6 @@ export const orgQuerySchema = z.object({
  */
 export const ticketTypeCreateBodySchema = z
   .object({
-    organizationId: z.string().min(1).optional(),
-    storeId: z.string().min(1).optional(),
     name: z.string().trim().min(1).max(120),
     serviceScope: ticketServiceScopeSchema.optional(),
     serviceIds: ticketServiceIdsSchema.optional(),
@@ -52,8 +52,6 @@ export const ticketTypeCreateBodySchema = z
  */
 export const ticketTypeUpdateBodySchema = z
   .object({
-    organizationId: z.string().min(1).optional(),
-    storeId: z.string().min(1).optional(),
     ticketTypeId: z.string().min(1),
     name: z.string().trim().min(1).max(120).optional(),
     serviceScope: ticketServiceScopeSchema.optional(),
@@ -83,8 +81,6 @@ export const ticketTypeUpdateBodySchema = z
  * staff 向け ticket type 一覧 query を検証します。
  */
 export const ticketTypeListQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   isActive: boolStringSchema,
 });
 
@@ -92,8 +88,6 @@ export const ticketTypeListQuerySchema = z.object({
  * staff が participant に ticket pack を付与する入力を検証します。
  */
 export const ticketPackGrantBodySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   participantId: z.string().min(1),
   ticketTypeId: z.string().min(1),
   count: z.int().min(1).max(1000).optional(),
@@ -104,16 +98,12 @@ export const ticketPackGrantBodySchema = z.object({
  * participant 自身の ticket pack 一覧 query を検証します。
  */
 export const ticketPackMineQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
 });
 
 /**
  * staff 向け ticket pack 一覧 query を検証します。
  */
 export const ticketPackListQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   participantId: z.string().min(1),
 });
 
@@ -123,7 +113,6 @@ export const ticketPackListQuerySchema = z.object({
 export const ticketPackAdjustBodySchema = z
   .object({
     ticketPackId: z.string().min(1),
-    storeId: z.string().min(1).optional(),
     remainingCount: z.int().min(0).max(1000).optional(),
     expiresAt: isoDateTimeSchema.nullable().optional(),
     reason: z.string().trim().min(1).max(500),
@@ -151,8 +140,6 @@ const ticketPurchaseStatusSchema = z.enum([
  * participant が ticket purchase を作成する入力を検証します。
  */
 export const ticketPurchaseCreateBodySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   ticketTypeId: z.string().min(1),
   paymentMethod: ticketPurchaseMethodSchema,
 });
@@ -161,8 +148,6 @@ export const ticketPurchaseCreateBodySchema = z.object({
  * participant 自身の ticket purchase 一覧 query を検証します。
  */
 export const ticketPurchaseMineQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   status: ticketPurchaseStatusSchema.optional(),
 });
 
@@ -170,8 +155,6 @@ export const ticketPurchaseMineQuerySchema = z.object({
  * staff 向け ticket purchase 一覧 query を検証します。
  */
 export const ticketPurchaseListQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   participantId: z.string().min(1).optional(),
   paymentMethod: ticketPurchaseMethodSchema.optional(),
   status: ticketPurchaseStatusSchema.optional(),
@@ -182,7 +165,6 @@ export const ticketPurchaseListQuerySchema = z.object({
  */
 export const ticketPurchaseApproveBodySchema = z.object({
   purchaseId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
 });
 
 /**
@@ -190,7 +172,6 @@ export const ticketPurchaseApproveBodySchema = z.object({
  */
 export const ticketPurchaseRejectBodySchema = z.object({
   purchaseId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
@@ -199,75 +180,86 @@ export const ticketPurchaseRejectBodySchema = z.object({
  */
 export const ticketPurchaseCancelBodySchema = z.object({
   purchaseId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
 });
+
+type ScopedStoreInput = {
+  organizationId: string;
+  storeId: string;
+};
 
 /**
  * organization/store scope を受け取る参加者向け query 型です。
  */
-export type OrgQuery = z.infer<typeof orgQuerySchema>;
+export type OrgQuery = z.infer<typeof orgQuerySchema> & ScopedStoreInput;
 /**
  * ticket type 作成 usecase が受け取る検証済み body 型です。
  */
-export type TicketTypeCreateBody = z.infer<typeof ticketTypeCreateBodySchema>;
+export type TicketTypeCreateBody = z.infer<typeof ticketTypeCreateBodySchema> & ScopedStoreInput;
 /**
  * ticket type 更新 usecase が受け取る検証済み body 型です。
  */
-export type TicketTypeUpdateBody = z.infer<typeof ticketTypeUpdateBodySchema>;
+export type TicketTypeUpdateBody = z.infer<typeof ticketTypeUpdateBodySchema> & ScopedStoreInput;
 /**
  * ticket type 一覧 usecase が受け取る検証済み query 型です。
  */
-export type TicketTypeListQuery = z.infer<typeof ticketTypeListQuerySchema>;
+export type TicketTypeListQuery = z.infer<typeof ticketTypeListQuerySchema> & ScopedStoreInput;
 /**
  * ticket pack 手動付与 usecase が受け取る検証済み body 型です。
  */
-export type TicketPackGrantBody = z.infer<typeof ticketPackGrantBodySchema>;
+export type TicketPackGrantBody = z.infer<typeof ticketPackGrantBodySchema> & ScopedStoreInput;
 /**
  * participant 自身の ticket pack 一覧 usecase が受け取る検証済み query 型です。
  */
-export type TicketPackMineQuery = z.infer<typeof ticketPackMineQuerySchema>;
+export type TicketPackMineQuery = z.infer<typeof ticketPackMineQuerySchema> & ScopedStoreInput;
 /**
  * staff 向け ticket pack 一覧 usecase が受け取る検証済み query 型です。
  */
-export type TicketPackListQuery = z.infer<typeof ticketPackListQuerySchema>;
+export type TicketPackListQuery = z.infer<typeof ticketPackListQuerySchema> & ScopedStoreInput;
 /**
  * ticket pack 調整 usecase が受け取る検証済み body 型です。
  */
-export type TicketPackAdjustBody = z.infer<typeof ticketPackAdjustBodySchema>;
+export type TicketPackAdjustBody = z.infer<typeof ticketPackAdjustBodySchema> & ScopedStoreInput;
 /**
  * ticket purchase 作成 usecase が受け取る検証済み body 型です。
  */
-export type TicketPurchaseCreateBody = z.infer<typeof ticketPurchaseCreateBodySchema>;
+export type TicketPurchaseCreateBody = z.infer<typeof ticketPurchaseCreateBodySchema> &
+  ScopedStoreInput;
 /**
  * participant 自身の ticket purchase 一覧 usecase が受け取る検証済み query 型です。
  */
-export type TicketPurchaseMineQuery = z.infer<typeof ticketPurchaseMineQuerySchema>;
+export type TicketPurchaseMineQuery = z.infer<typeof ticketPurchaseMineQuerySchema> &
+  ScopedStoreInput;
 /**
  * staff 向け ticket purchase 一覧 usecase が受け取る検証済み query 型です。
  */
-export type TicketPurchaseListQuery = z.infer<typeof ticketPurchaseListQuerySchema>;
+export type TicketPurchaseListQuery = z.infer<typeof ticketPurchaseListQuerySchema> &
+  ScopedStoreInput;
 /**
  * ticket purchase 承認 usecase が受け取る検証済み body 型です。
  */
-export type TicketPurchaseApproveBody = z.infer<typeof ticketPurchaseApproveBodySchema>;
+export type TicketPurchaseApproveBody = z.infer<typeof ticketPurchaseApproveBodySchema> &
+  ScopedStoreInput;
 /**
  * ticket purchase 却下 usecase が受け取る検証済み body 型です。
  */
-export type TicketPurchaseRejectBody = z.infer<typeof ticketPurchaseRejectBodySchema>;
+export type TicketPurchaseRejectBody = z.infer<typeof ticketPurchaseRejectBodySchema> &
+  ScopedStoreInput;
 /**
  * ticket purchase 取り消し usecase が受け取る検証済み body 型です。
  */
-export type TicketPurchaseCancelBody = z.infer<typeof ticketPurchaseCancelBodySchema>;
+export type TicketPurchaseCancelBody = z.infer<typeof ticketPurchaseCancelBodySchema> &
+  ScopedStoreInput;
 
 /**
  * staff が ticket type を作成する OpenAPI 定義です。
  */
 export const createTicketTypeRoute = createRoute({
   method: 'post',
-  path: '/organizations/ticket-types',
+  path: scopedStoreAuthPath('/ticket-types'),
   tags: ['Tickets'],
   summary: 'Create ticket type',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -290,10 +282,11 @@ export const createTicketTypeRoute = createRoute({
  */
 export const updateTicketTypeRoute = createRoute({
   method: 'post',
-  path: '/organizations/ticket-types/update',
+  path: scopedStoreAuthPath('/ticket-types/update'),
   tags: ['Tickets'],
   summary: 'Update ticket type',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -317,10 +310,11 @@ export const updateTicketTypeRoute = createRoute({
  */
 export const listTicketTypesRoute = createRoute({
   method: 'get',
-  path: '/organizations/ticket-types',
+  path: scopedStoreAuthPath('/ticket-types'),
   tags: ['Tickets'],
   summary: 'List ticket types',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: ticketTypeListQuerySchema,
   },
   responses: {
@@ -335,10 +329,11 @@ export const listTicketTypesRoute = createRoute({
  */
 export const grantTicketPackRoute = createRoute({
   method: 'post',
-  path: '/organizations/ticket-packs/grant',
+  path: scopedStoreAuthPath('/ticket-packs/grant'),
   tags: ['Tickets'],
   summary: 'Grant ticket pack',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -362,10 +357,11 @@ export const grantTicketPackRoute = createRoute({
  */
 export const listMyTicketPacksRoute = createRoute({
   method: 'get',
-  path: '/organizations/ticket-packs/mine',
+  path: scopedStoreAuthPath('/ticket-packs/mine'),
   tags: ['Tickets'],
   summary: 'List my ticket packs',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: ticketPackMineQuerySchema,
   },
   responses: {
@@ -380,10 +376,11 @@ export const listMyTicketPacksRoute = createRoute({
  */
 export const listTicketPacksRoute = createRoute({
   method: 'get',
-  path: '/organizations/ticket-packs',
+  path: scopedStoreAuthPath('/ticket-packs'),
   tags: ['Tickets'],
   summary: 'List ticket packs for staff',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: ticketPackListQuerySchema,
   },
   responses: {
@@ -399,10 +396,11 @@ export const listTicketPacksRoute = createRoute({
  */
 export const adjustTicketPackRoute = createRoute({
   method: 'post',
-  path: '/organizations/ticket-packs/adjust',
+  path: scopedStoreAuthPath('/ticket-packs/adjust'),
   tags: ['Tickets'],
   summary: 'Adjust ticket pack',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -427,10 +425,11 @@ export const adjustTicketPackRoute = createRoute({
  */
 export const listPurchasableTicketTypesRoute = createRoute({
   method: 'get',
-  path: '/organizations/ticket-types/purchasable',
+  path: scopedStoreAuthPath('/ticket-types/purchasable'),
   tags: ['Tickets'],
   summary: 'List purchasable ticket types',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: orgQuerySchema,
   },
   responses: {
@@ -445,10 +444,11 @@ export const listPurchasableTicketTypesRoute = createRoute({
  */
 export const createTicketPurchaseRoute = createRoute({
   method: 'post',
-  path: '/organizations/ticket-purchases',
+  path: scopedStoreAuthPath('/ticket-purchases'),
   tags: ['Tickets'],
   summary: 'Create ticket purchase',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -473,10 +473,11 @@ export const createTicketPurchaseRoute = createRoute({
  */
 export const listMyTicketPurchasesRoute = createRoute({
   method: 'get',
-  path: '/organizations/ticket-purchases/mine',
+  path: scopedStoreAuthPath('/ticket-purchases/mine'),
   tags: ['Tickets'],
   summary: 'List my ticket purchases',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: ticketPurchaseMineQuerySchema,
   },
   responses: {
@@ -491,10 +492,11 @@ export const listMyTicketPurchasesRoute = createRoute({
  */
 export const listTicketPurchasesRoute = createRoute({
   method: 'get',
-  path: '/organizations/ticket-purchases',
+  path: scopedStoreAuthPath('/ticket-purchases'),
   tags: ['Tickets'],
   summary: 'List ticket purchases for staff',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: ticketPurchaseListQuerySchema,
   },
   responses: {
@@ -509,10 +511,11 @@ export const listTicketPurchasesRoute = createRoute({
  */
 export const approveTicketPurchaseRoute = createRoute({
   method: 'post',
-  path: '/organizations/ticket-purchases/approve',
+  path: scopedStoreAuthPath('/ticket-purchases/approve'),
   tags: ['Tickets'],
   summary: 'Approve ticket purchase',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -536,10 +539,11 @@ export const approveTicketPurchaseRoute = createRoute({
  */
 export const rejectTicketPurchaseRoute = createRoute({
   method: 'post',
-  path: '/organizations/ticket-purchases/reject',
+  path: scopedStoreAuthPath('/ticket-purchases/reject'),
   tags: ['Tickets'],
   summary: 'Reject ticket purchase',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -563,10 +567,11 @@ export const rejectTicketPurchaseRoute = createRoute({
  */
 export const cancelTicketPurchaseRoute = createRoute({
   method: 'post',
-  path: '/organizations/ticket-purchases/cancel',
+  path: scopedStoreAuthPath('/ticket-purchases/cancel'),
   tags: ['Tickets'],
   summary: 'Cancel ticket purchase by participant',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {

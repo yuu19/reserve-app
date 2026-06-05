@@ -734,12 +734,14 @@
 		completed: '終了'
 	};
 	const bookingStatusLabelMap: Record<BookingPayload['status'], string> = {
-		confirmed: '予約確定',
 		pending_approval: '承認待ち',
-		rejected_by_staff: '運営却下',
-		cancelled_by_participant: 'キャンセル済み',
-		cancelled_by_staff: '運営キャンセル',
-		no_show: '不参加'
+		confirmed: '予約確定',
+		rejected: '却下',
+		cancelled: 'キャンセル済み',
+		no_show: '不参加',
+		completed: '完了',
+		pending_payment: '決済待ち',
+		expired: '期限切れ'
 	};
 	const bookingAttendanceLabelMap: Record<BookingAttendanceDisplayStatus, string> = {
 		not_checked: '未確認',
@@ -3132,14 +3134,14 @@
 														bind:value={operationsFilter.status}
 													>
 														<option value="all">all</option>
-														<option value="confirmed">confirmed</option>
 														<option value="pending_approval">pending_approval</option>
-														<option value="rejected_by_staff">rejected_by_staff</option>
-														<option value="cancelled_by_participant">
-															cancelled_by_participant
-														</option>
-														<option value="cancelled_by_staff">cancelled_by_staff</option>
+														<option value="confirmed">confirmed</option>
+														<option value="rejected">rejected</option>
+														<option value="cancelled">cancelled</option>
 														<option value="no_show">no_show</option>
+														<option value="completed">completed</option>
+														<option value="pending_payment">pending_payment</option>
+														<option value="expired">expired</option>
 													</select>
 												</div>
 												<div class="space-y-2">
@@ -3264,6 +3266,9 @@
 														<tbody>
 															{#each filteredOperationRows as row (row.booking.id)}
 																{@const isConfirmed = row.booking.status === 'confirmed'}
+																{@const canUpdateAttendance =
+																	row.booking.status === 'confirmed' ||
+																	row.booking.status === 'completed'}
 																{@const isPendingApproval =
 																	row.booking.status === 'pending_approval'}
 																{@const attendanceStatus = getBookingAttendanceStatus(row.booking)}
@@ -3324,10 +3329,13 @@
 																	</td>
 																	<td class="px-3 py-3">
 																		<Badge
-																			variant={row.booking.status === 'confirmed'
+																			variant={row.booking.status === 'confirmed' ||
+																			row.booking.status === 'completed'
 																				? 'outline'
-																				: row.booking.status === 'cancelled_by_staff' ||
-																					  row.booking.status === 'rejected_by_staff'
+																				: row.booking.status === 'cancelled' ||
+																					  row.booking.status === 'rejected' ||
+																					  row.booking.status === 'no_show' ||
+																					  row.booking.status === 'expired'
 																					? 'destructive'
 																					: 'secondary'}
 																		>
@@ -3361,7 +3369,7 @@
 																						: '却下'}
 																				</Button>
 																			</div>
-																		{:else if isConfirmed}
+																		{:else if canUpdateAttendance}
 																			<div class="flex flex-wrap items-center gap-2">
 																				{#if attendanceStatus !== 'checked_in'}
 																					<Button
@@ -3410,40 +3418,42 @@
 																							: '未確認'}
 																					</Button>
 																				{/if}
-																				<Button
-																					type="button"
-																					variant="outline"
-																					size="sm"
-																					onclick={() => selectBookingForReschedule(row)}
-																					disabled={busy || !!staffAction}
-																				>
-																					<CalendarClock class="mr-1 size-4" />
-																					{isStaffActionInProgress('reschedule', row.booking.id)
-																						? '処理中…'
-																						: '日程変更'}
-																				</Button>
-																				<Button
-																					type="button"
-																					variant="destructive"
-																					size="sm"
-																					onclick={() => submitCancelBookingByStaff(row.booking.id)}
-																					disabled={busy || !!staffAction}
-																				>
-																					{isStaffActionInProgress('cancel', row.booking.id)
-																						? '処理中…'
-																						: '運営キャンセル'}
-																				</Button>
-																				<Button
-																					type="button"
-																					variant="outline"
-																					size="sm"
-																					onclick={() => submitMarkBookingNoShow(row.booking.id)}
-																					disabled={busy || !!staffAction}
-																				>
-																					{isStaffActionInProgress('no_show', row.booking.id)
-																						? '処理中…'
-																						: 'No-show'}
-																				</Button>
+																				{#if isConfirmed}
+																					<Button
+																						type="button"
+																						variant="outline"
+																						size="sm"
+																						onclick={() => selectBookingForReschedule(row)}
+																						disabled={busy || !!staffAction}
+																					>
+																						<CalendarClock class="mr-1 size-4" />
+																						{isStaffActionInProgress('reschedule', row.booking.id)
+																							? '処理中…'
+																							: '日程変更'}
+																					</Button>
+																					<Button
+																						type="button"
+																						variant="destructive"
+																						size="sm"
+																						onclick={() => submitCancelBookingByStaff(row.booking.id)}
+																						disabled={busy || !!staffAction}
+																					>
+																						{isStaffActionInProgress('cancel', row.booking.id)
+																							? '処理中…'
+																							: '運営キャンセル'}
+																					</Button>
+																					<Button
+																						type="button"
+																						variant="outline"
+																						size="sm"
+																						onclick={() => submitMarkBookingNoShow(row.booking.id)}
+																						disabled={busy || !!staffAction}
+																					>
+																						{isStaffActionInProgress('no_show', row.booking.id)
+																							? '処理中…'
+																							: 'No-show'}
+																					</Button>
+																				{/if}
 																			</div>
 																		{:else}
 																			<span class="text-xs text-muted-foreground">操作不可</span>

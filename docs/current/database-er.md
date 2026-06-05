@@ -1,6 +1,6 @@
 # DB説明とER（Org + Store）
 
-最終更新: 2026-06-02
+最終更新: 2026-06-06
 参照: `apps/backend/src/infra/db/schema.ts`
 
 現行DBの全テーブル、リレーション、静的ER図は [database-er-reference.html](./database-er-reference.html) を参照。
@@ -49,9 +49,14 @@
 - `recurring_schedule_exception`
 - `slot`
 - `booking`
-- `booking_answer`
 - `booking_companion`
 - `booking_public_action_token`
+- `form_templates`
+- `form_fields`
+- `form_template_versions`
+- `form_assignments`
+- `form_submissions`
+- `form_answers`
 - `booking_audit_log`
 - `public_site_notification_setting`
 - `notification_log`
@@ -71,6 +76,16 @@
   - `(organization_id, recurring_schedule_id, start_at)`
 - `booking` unique:
   - `(slot_id, participant_id)`
+- `form_fields` unique:
+  - `(form_template_id, field_key)`
+- `form_template_versions` unique:
+  - `(form_template_id, version_number)`
+- `form_assignments` unique:
+  - `(organization_id, store_id, form_type, target_type, target_id)`
+- `form_submissions` unique:
+  - `(booking_id, form_template_id)`
+- `form_answers` unique:
+  - `(form_submission_id, field_key)`
 - `service` public visibility:
   - `public_status`: `public | private | suspended`
   - `service_store_public_status_idx`: `(store_id, public_status, is_active)`
@@ -125,10 +140,19 @@ erDiagram
   STORE ||--o{ BOOKING : has
   SLOT ||--o{ BOOKING : receives
   PARTICIPANT ||--o{ BOOKING : makes
-  BOOKING ||--o{ BOOKING_ANSWER : records
   BOOKING ||--o{ BOOKING_COMPANION : includes
   BOOKING ||--o{ BOOKING_PUBLIC_ACTION_TOKEN : issues
   BOOKING ||--o{ BOOKING_AUDIT_LOG : logged
+
+  ORGANIZATION ||--o{ FORM_TEMPLATE : has
+  STORE ||--o{ FORM_TEMPLATE : owns
+  FORM_TEMPLATE ||--o{ FORM_FIELD : defines
+  FORM_TEMPLATE ||--o{ FORM_TEMPLATE_VERSION : publishes
+  FORM_TEMPLATE ||--o{ FORM_ASSIGNMENT : assigns
+  BOOKING ||--o{ FORM_SUBMISSION : receives
+  FORM_TEMPLATE_VERSION ||--o{ FORM_SUBMISSION : snapshots
+  FORM_SUBMISSION ||--o{ FORM_ANSWER : contains
+
   STORE ||--o| PUBLIC_SITE_NOTIFICATION_SETTING : configures
   BOOKING ||--o{ NOTIFICATION_LOG : emits
   SERVICE ||--o{ REMINDER_POLICY : configures

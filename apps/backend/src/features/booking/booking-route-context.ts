@@ -13,6 +13,7 @@ import {
 } from '../../domain/booking/authorization.js';
 import * as dbSchema from '../../infra/db/schema.js';
 import type { ServiceImageUploadService } from '../../infra/storage/service-image-upload-service.js';
+import type { ScopedStoreRouteParams } from '../../shared/scoped-store-route.js';
 
 /**
  * Better Auth middleware が route context に保存する user/session 変数の型です。
@@ -40,6 +41,14 @@ export type BookingRouteDeps = {
  */
 export type BookingRouteContext = BookingRouteDeps & {
   requireIdentity: (headers: Headers) => Promise<SessionIdentity | null>;
+  resolveScopedStoreContext: (params: ScopedStoreRouteParams) => Promise<{
+    organizationId: string;
+    organizationSlug: string;
+    organizationName: string;
+    storeId: string;
+    storeSlug: string;
+    storeName: string;
+  } | null>;
   resolveRequestedStoreContext: (input: {
     organizationId: string;
     storeId?: string | null;
@@ -98,6 +107,10 @@ export type BookingRouteContext = BookingRouteDeps & {
   }) => ReturnType<typeof readOrganizationEntitlementGate>;
 };
 
+export type ScopedStoreContext = NonNullable<
+  Awaited<ReturnType<BookingRouteContext['resolveScopedStoreContext']>>
+>;
+
 /**
  * Hono route と usecase の間で共有する予約系コンテキストを生成します。
  *
@@ -109,6 +122,17 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
 
   const requireIdentity = async (headers: Headers) => {
     return getSessionIdentity(auth, headers);
+  };
+
+  const resolveScopedStoreContext: BookingRouteContext['resolveScopedStoreContext'] = async ({
+    orgSlug,
+    storeSlug,
+  }) => {
+    return resolveOrganizationStoreContext({
+      database,
+      organizationSlug: orgSlug,
+      storeSlug,
+    });
   };
 
   const resolveRequestedStoreContext: BookingRouteContext['resolveRequestedStoreContext'] = async ({
@@ -289,6 +313,7 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
   return {
     ...deps,
     requireIdentity,
+    resolveScopedStoreContext,
     resolveRequestedStoreContext,
     resolveRequestedStoreAccess,
     canManageStoreScope,

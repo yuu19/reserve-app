@@ -286,10 +286,10 @@ export const cancelSlotAndConfirmedBookings = async ({
     })
     .where(eq(dbSchema.slot.id, slotId));
 
-  await database
+  const cancelledBookings = await database
     .update(dbSchema.booking)
     .set({
-      status: BOOKING_STATUS.CANCELED_BY_STAFF,
+      status: BOOKING_STATUS.CANCELLED,
       cancelReason: reason ?? 'slot-canceled',
       cancelledAt: new Date(),
       cancelledByUserId: actorUserId,
@@ -299,5 +299,11 @@ export const cancelSlotAndConfirmedBookings = async ({
         eq(dbSchema.booking.slotId, slotId),
         eq(dbSchema.booking.status, BOOKING_STATUS.CONFIRMED),
       ),
-    );
+    )
+    .returning({
+      id: dbSchema.booking.id,
+      organizationId: dbSchema.booking.organizationId,
+      storeId: dbSchema.booking.storeId,
+    });
+  return cancelledBookings;
 };

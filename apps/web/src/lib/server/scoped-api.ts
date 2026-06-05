@@ -94,6 +94,10 @@ export type ScopedAccessContext = ScopedApiIdentifiers & {
 export const buildScopedInvitationPath = (context: ScopedApiContext) =>
 	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/stores/${encodeURIComponent(context.storeSlug)}/invitations`;
 
+/** scoped routing 用の slug context から認証済み store API path を組み立てる。 */
+export const buildScopedAuthPath = (context: ScopedApiContext, suffix: `/${string}`) =>
+	`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/stores/${encodeURIComponent(context.storeSlug)}${suffix}`;
+
 /** slug ベースの scoped route から backend API が要求する organizationId/storeId を解決する。 */
 export const resolveScopedApiIdentifiers = async (
 	getApi: ReturnType<typeof createApiGetter>,

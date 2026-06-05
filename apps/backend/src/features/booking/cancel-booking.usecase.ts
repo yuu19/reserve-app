@@ -1,9 +1,12 @@
 import { findParticipantByUserAndOrganization } from '../../domain/booking/authorization.js';
 import { writeBookingAuditLog } from '../../domain/booking/audit.js';
 import {
+  BOOKING_AUDIT_ACTION,
+  BOOKING_ATTENDANCE_STATUS,
   BOOKING_STATUS,
   DEFAULT_CANCELLATION_DEADLINE_MINUTES,
 } from '../../domain/booking/constants.js';
+import { canTransitionBookingStatus, isBookingStatus } from '../../domain/booking/state.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import {
   conflict,
@@ -66,7 +69,11 @@ export const cancelBookingByParticipant = async (
   }
 
   const isPendingApproval = booking.status === BOOKING_STATUS.PENDING_APPROVAL;
-  if (!isPendingApproval && booking.status !== BOOKING_STATUS.CONFIRMED) {
+  if (
+    !isBookingStatus(booking.status) ||
+    (!isPendingApproval && booking.status !== BOOKING_STATUS.CONFIRMED) ||
+    !canTransitionBookingStatus(booking.status, BOOKING_STATUS.CANCELLED)
+  ) {
     return conflict('Booking cannot be canceled.');
   }
 
@@ -87,12 +94,15 @@ export const cancelBookingByParticipant = async (
     }
   }
 
-  await cancelBookingByParticipantState({
+  const updated = await cancelBookingByParticipantState({
     database: ctx.database,
     bookingId: booking.id,
     reason: body.reason,
     actorUserId: identity.userId,
   });
+  if (!updated) {
+    return conflict('Booking cannot be canceled.');
+  }
 
   if (!isPendingApproval) {
     await releaseConfirmedBookingSlotCapacity({
@@ -121,7 +131,7 @@ export const cancelBookingByParticipant = async (
     organizationId: booking.organizationId,
     storeId: booking.storeId,
     actorUserId: identity.userId,
-    action: 'booking.cancelled_by_participant',
+    action: BOOKING_AUDIT_ACTION.CANCELLED_BY_CUSTOMER,
     metadata: {
       reason: body.reason ?? null,
     },
@@ -170,16 +180,23 @@ export const cancelBookingByStaff = async (
     return forbidden();
   }
 
-  if (booking.status !== BOOKING_STATUS.CONFIRMED) {
+  if (
+    !isBookingStatus(booking.status) ||
+    booking.status !== BOOKING_STATUS.CONFIRMED ||
+    !canTransitionBookingStatus(booking.status, BOOKING_STATUS.CANCELLED)
+  ) {
     return conflict('Booking cannot be canceled.');
   }
 
-  await cancelBookingByStaffState({
+  const updated = await cancelBookingByStaffState({
     database: ctx.database,
     bookingId: booking.id,
     reason: body.reason,
     actorUserId: identity.userId,
   });
+  if (!updated) {
+    return conflict('Booking cannot be canceled.');
+  }
 
   await releaseConfirmedBookingSlotCapacity({
     database: ctx.database,
@@ -193,7 +210,7 @@ export const cancelBookingByStaff = async (
     organizationId: booking.organizationId,
     storeId: booking.storeId,
     actorUserId: identity.userId,
-    action: 'booking.cancelled_by_staff',
+    action: BOOKING_AUDIT_ACTION.CANCELLED_BY_STAFF,
     metadata: {
       reason: body.reason ?? null,
     },
@@ -242,15 +259,22 @@ export const markBookingNoShow = async (
     return forbidden();
   }
 
-  if (booking.status !== BOOKING_STATUS.CONFIRMED) {
+  if (
+    !isBookingStatus(booking.status) ||
+    booking.status !== BOOKING_STATUS.CONFIRMED ||
+    !canTransitionBookingStatus(booking.status, BOOKING_STATUS.NO_SHOW)
+  ) {
     return conflict('Only confirmed booking can be marked as no-show.');
   }
 
-  await markConfirmedBookingNoShow({
+  const updated = await markConfirmedBookingNoShow({
     database: ctx.database,
     bookingId: booking.id,
     actorUserId: identity.userId,
   });
+  if (!updated) {
+    return conflict('Only confirmed booking can be marked as no-show.');
+  }
 
   await writeBookingAuditLog({
     database: ctx.database,
@@ -258,7 +282,7 @@ export const markBookingNoShow = async (
     organizationId: booking.organizationId,
     storeId: booking.storeId,
     actorUserId: identity.userId,
-    action: 'booking.no_show',
+    action: BOOKING_AUDIT_ACTION.NO_SHOW_MARKED,
     headers,
   });
 
@@ -303,8 +327,16 @@ export const markBookingAttendance = async (
     return forbidden();
   }
 
-  if (booking.status !== BOOKING_STATUS.CONFIRMED) {
-    return conflict('Only confirmed booking can be marked attendance.');
+  const nextBookingStatus =
+    body.attendanceStatus === BOOKING_ATTENDANCE_STATUS.CHECKED_IN
+      ? BOOKING_STATUS.COMPLETED
+      : BOOKING_STATUS.CONFIRMED;
+  if (
+    !isBookingStatus(booking.status) ||
+    (booking.status !== nextBookingStatus &&
+      !canTransitionBookingStatus(booking.status, nextBookingStatus))
+  ) {
+    return conflict('Only active booking can be marked attendance.');
   }
 
   const updated = await markConfirmedBookingAttendance({
@@ -314,21 +346,23 @@ export const markBookingAttendance = async (
     actorUserId: identity.userId,
   });
   if (!updated) {
-    return conflict('Only confirmed booking can be marked attendance.');
+    return conflict('Only active booking can be marked attendance.');
   }
 
-  await writeBookingAuditLog({
-    database: ctx.database,
-    bookingId: booking.id,
-    organizationId: booking.organizationId,
-    storeId: booking.storeId,
-    actorUserId: identity.userId,
-    action: 'booking.attendance_marked',
-    metadata: {
-      attendanceStatus: body.attendanceStatus,
-    },
-    headers,
-  });
+  if (body.attendanceStatus === BOOKING_ATTENDANCE_STATUS.CHECKED_IN) {
+    await writeBookingAuditLog({
+      database: ctx.database,
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      storeId: booking.storeId,
+      actorUserId: identity.userId,
+      action: BOOKING_AUDIT_ACTION.CHECKED_IN,
+      metadata: {
+        attendanceStatus: body.attendanceStatus,
+      },
+      headers,
+    });
+  }
 
   return jsonResult({ ok: true });
 };

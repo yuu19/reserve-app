@@ -181,42 +181,6 @@ export const publicSiteSetting = sqliteTable(
   ],
 );
 
-export const publicSiteIntakeField = sqliteTable(
-  'public_site_intake_field',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    storeId: text('store_id')
-      .notNull()
-      .references(() => store.id, { onDelete: 'cascade' }),
-    fieldKey: text('field_key').notNull(),
-    label: text('label').notNull(),
-    fieldType: text('field_type').notNull(),
-    required: integer('required', { mode: 'boolean' }).default(false).notNull(),
-    optionsJson: text('options_json'),
-    helpText: text('help_text'),
-    placeholder: text('placeholder'),
-    visibleOnPublic: integer('visible_on_public', { mode: 'boolean' }).default(true).notNull(),
-    sortOrder: integer('sort_order').default(0).notNull(),
-    createdAt: defaultTimestampMs(),
-    updatedAt: defaultUpdatedTimestampMs(),
-  },
-  (table) => [
-    index('public_site_intake_field_store_order_idx').on(
-      table.organizationId,
-      table.storeId,
-      table.sortOrder,
-    ),
-    uniqueIndex('public_site_intake_field_store_key_uidx').on(
-      table.organizationId,
-      table.storeId,
-      table.fieldKey,
-    ),
-  ],
-);
-
 export const storeMember = sqliteTable(
   'store_member',
   {
@@ -365,9 +329,7 @@ export const invitationAuditLog = sqliteTable(
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
     storeId: text('store_id').references(() => store.id, { onDelete: 'set null' }),
-    actorUserId: text('actor_user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
     targetEmail: text('target_email').notNull(),
     eventType: text('action').notNull(),
     metadata: text('metadata'),
@@ -633,19 +595,193 @@ export const booking = sqliteTable(
   ],
 );
 
-export const bookingAnswer = sqliteTable(
-  'booking_answer',
+export const formTemplate = sqliteTable(
+  'form_templates',
   {
     id: text('id').primaryKey(),
-    bookingId: text('booking_id')
+    organizationId: text('organization_id')
       .notNull()
-      .references(() => booking.id, { onDelete: 'cascade' }),
-    fieldId: text('field_id').notNull(),
-    labelSnapshot: text('label_snapshot').notNull(),
-    valueJson: text('value_json').notNull(),
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    formType: text('form_type').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    status: text('status').default('draft').notNull(),
+    currentPublishedVersionId: text('current_published_version_id'),
+    createdByUserId: text('created_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    updatedByUserId: text('updated_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+    archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    index('form_templates_store_type_idx').on(
+      table.organizationId,
+      table.storeId,
+      table.formType,
+      table.status,
+    ),
+  ],
+);
+
+export const formField = sqliteTable(
+  'form_fields',
+  {
+    id: text('id').primaryKey(),
+    formTemplateId: text('form_template_id')
+      .notNull()
+      .references(() => formTemplate.id, { onDelete: 'cascade' }),
+    fieldKey: text('field_key').notNull(),
+    fieldType: text('field_type').notNull(),
+    label: text('label').notNull(),
+    description: text('description'),
+    placeholder: text('placeholder'),
+    required: integer('required', { mode: 'boolean' }).default(false).notNull(),
+    optionsJson: text('options_json'),
+    validationJson: text('validation_json'),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('form_fields_template_key_uidx').on(table.formTemplateId, table.fieldKey),
+    index('form_fields_template_order_idx').on(table.formTemplateId, table.sortOrder),
+  ],
+);
+
+export const formTemplateVersion = sqliteTable(
+  'form_template_versions',
+  {
+    id: text('id').primaryKey(),
+    formTemplateId: text('form_template_id')
+      .notNull()
+      .references(() => formTemplate.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    formType: text('form_type').notNull(),
+    versionNumber: integer('version_number').notNull(),
+    nameSnapshot: text('name_snapshot').notNull(),
+    descriptionSnapshot: text('description_snapshot'),
+    fieldsSnapshotJson: text('fields_snapshot_json').notNull(),
+    publishedByUserId: text('published_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    publishedAt: integer('published_at', { mode: 'timestamp_ms' }).notNull(),
     createdAt: defaultTimestampMs(),
   },
-  (table) => [index('booking_answer_booking_idx').on(table.bookingId)],
+  (table) => [
+    uniqueIndex('form_template_versions_template_version_uidx').on(
+      table.formTemplateId,
+      table.versionNumber,
+    ),
+    index('form_template_versions_store_idx').on(
+      table.organizationId,
+      table.storeId,
+      table.formType,
+    ),
+  ],
+);
+
+export const formAssignment = sqliteTable(
+  'form_assignments',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    formType: text('form_type').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id').notNull(),
+    formTemplateId: text('form_template_id')
+      .notNull()
+      .references(() => formTemplate.id, { onDelete: 'cascade' }),
+    createdByUserId: text('created_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('form_assignments_target_type_uidx').on(
+      table.organizationId,
+      table.storeId,
+      table.formType,
+      table.targetType,
+      table.targetId,
+    ),
+    index('form_assignments_template_idx').on(table.formTemplateId),
+  ],
+);
+
+export const formSubmission = sqliteTable(
+  'form_submissions',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    formTemplateId: text('form_template_id')
+      .notNull()
+      .references(() => formTemplate.id, { onDelete: 'restrict' }),
+    formTemplateVersionId: text('form_template_version_id')
+      .notNull()
+      .references(() => formTemplateVersion.id, { onDelete: 'restrict' }),
+    formType: text('form_type').notNull(),
+    bookingId: text('booking_id').references(() => booking.id, { onDelete: 'cascade' }),
+    participantId: text('participant_id').references(() => participant.id, {
+      onDelete: 'set null',
+    }),
+    customerNameSnapshot: text('customer_name_snapshot'),
+    customerEmailSnapshot: text('customer_email_snapshot'),
+    source: text('source').notNull(),
+    submittedByUserId: text('submitted_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    submittedAt: integer('submitted_at', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: defaultTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('form_submissions_booking_template_uidx').on(table.bookingId, table.formTemplateId),
+    index('form_submissions_booking_idx').on(table.bookingId),
+    index('form_submissions_template_idx').on(table.formTemplateId, table.submittedAt),
+    index('form_submissions_store_idx').on(table.organizationId, table.storeId, table.submittedAt),
+  ],
+);
+
+export const formAnswer = sqliteTable(
+  'form_answers',
+  {
+    id: text('id').primaryKey(),
+    formSubmissionId: text('form_submission_id')
+      .notNull()
+      .references(() => formSubmission.id, { onDelete: 'cascade' }),
+    fieldKey: text('field_key').notNull(),
+    fieldType: text('field_type').notNull(),
+    labelSnapshot: text('label_snapshot').notNull(),
+    valueJson: text('value_json').notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: defaultTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('form_answers_submission_field_uidx').on(table.formSubmissionId, table.fieldKey),
+    index('form_answers_submission_idx').on(table.formSubmissionId, table.sortOrder),
+  ],
 );
 
 export const bookingCompanion = sqliteTable(
@@ -1305,6 +1441,15 @@ export const userRelations = relations(user, ({ many }) => ({
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
   bookingsCancelledBy: many(booking),
+  formTemplatesCreated: many(formTemplate, {
+    relationName: 'formTemplateCreatedBy',
+  }),
+  formTemplatesUpdated: many(formTemplate, {
+    relationName: 'formTemplateUpdatedBy',
+  }),
+  formTemplateVersionsPublished: many(formTemplateVersion),
+  formAssignmentsCreated: many(formAssignment),
+  formSubmissionsSubmitted: many(formSubmission),
   ticketLedgers: many(ticketLedger),
   ticketPurchasesApproved: many(ticketPurchase, {
     relationName: 'ticketPurchaseApprovedBy',
@@ -1425,6 +1570,10 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   ticketPurchases: many(ticketPurchase),
   ticketLedgers: many(ticketLedger),
   bookingAuditLogs: many(bookingAuditLog),
+  formTemplates: many(formTemplate),
+  formTemplateVersions: many(formTemplateVersion),
+  formAssignments: many(formAssignment),
+  formSubmissions: many(formSubmission),
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
   aiKnowledgeDocuments: many(aiKnowledgeDocument),
@@ -1448,6 +1597,10 @@ export const storeRelations = relations(store, ({ one, many }) => ({
   ticketPurchases: many(ticketPurchase),
   ticketLedgers: many(ticketLedger),
   bookingAuditLogs: many(bookingAuditLog),
+  formTemplates: many(formTemplate),
+  formTemplateVersions: many(formTemplateVersion),
+  formAssignments: many(formAssignment),
+  formSubmissions: many(formSubmission),
   invitations: many(invitation),
   invitationAuditLogs: many(invitationAuditLog),
   aiKnowledgeDocuments: many(aiKnowledgeDocument),
@@ -1492,6 +1645,7 @@ export const participantRelations = relations(participant, ({ one, many }) => ({
     references: [user.id],
   }),
   bookings: many(booking),
+  formSubmissions: many(formSubmission),
   ticketPacks: many(ticketPack),
   ticketPurchases: many(ticketPurchase),
 }));
@@ -1597,6 +1751,117 @@ export const bookingRelations = relations(booking, ({ one, many }) => ({
   ticketLedgers: many(ticketLedger),
   auditLogs: many(bookingAuditLog),
   changeLogs: many(bookingChangeLog),
+  formSubmissions: many(formSubmission),
+}));
+
+export const formTemplateRelations = relations(formTemplate, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [formTemplate.organizationId],
+    references: [organization.id],
+  }),
+  store: one(store, {
+    fields: [formTemplate.storeId],
+    references: [store.id],
+  }),
+  createdByUser: one(user, {
+    fields: [formTemplate.createdByUserId],
+    references: [user.id],
+    relationName: 'formTemplateCreatedBy',
+  }),
+  updatedByUser: one(user, {
+    fields: [formTemplate.updatedByUserId],
+    references: [user.id],
+    relationName: 'formTemplateUpdatedBy',
+  }),
+  fields: many(formField),
+  versions: many(formTemplateVersion),
+  assignments: many(formAssignment),
+  submissions: many(formSubmission),
+}));
+
+export const formFieldRelations = relations(formField, ({ one }) => ({
+  template: one(formTemplate, {
+    fields: [formField.formTemplateId],
+    references: [formTemplate.id],
+  }),
+}));
+
+export const formTemplateVersionRelations = relations(formTemplateVersion, ({ one, many }) => ({
+  template: one(formTemplate, {
+    fields: [formTemplateVersion.formTemplateId],
+    references: [formTemplate.id],
+  }),
+  organization: one(organization, {
+    fields: [formTemplateVersion.organizationId],
+    references: [organization.id],
+  }),
+  store: one(store, {
+    fields: [formTemplateVersion.storeId],
+    references: [store.id],
+  }),
+  publishedByUser: one(user, {
+    fields: [formTemplateVersion.publishedByUserId],
+    references: [user.id],
+  }),
+  submissions: many(formSubmission),
+}));
+
+export const formAssignmentRelations = relations(formAssignment, ({ one }) => ({
+  organization: one(organization, {
+    fields: [formAssignment.organizationId],
+    references: [organization.id],
+  }),
+  store: one(store, {
+    fields: [formAssignment.storeId],
+    references: [store.id],
+  }),
+  template: one(formTemplate, {
+    fields: [formAssignment.formTemplateId],
+    references: [formTemplate.id],
+  }),
+  createdByUser: one(user, {
+    fields: [formAssignment.createdByUserId],
+    references: [user.id],
+  }),
+}));
+
+export const formSubmissionRelations = relations(formSubmission, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [formSubmission.organizationId],
+    references: [organization.id],
+  }),
+  store: one(store, {
+    fields: [formSubmission.storeId],
+    references: [store.id],
+  }),
+  template: one(formTemplate, {
+    fields: [formSubmission.formTemplateId],
+    references: [formTemplate.id],
+  }),
+  version: one(formTemplateVersion, {
+    fields: [formSubmission.formTemplateVersionId],
+    references: [formTemplateVersion.id],
+  }),
+  booking: one(booking, {
+    fields: [formSubmission.bookingId],
+    references: [booking.id],
+  }),
+  participant: one(participant, {
+    fields: [formSubmission.participantId],
+    references: [participant.id],
+  }),
+  submittedByUser: one(user, {
+    fields: [formSubmission.submittedByUserId],
+    references: [user.id],
+  }),
+  answers: many(formAnswer),
+}));
+
+export const formAnswerRelations = relations(formAnswer, ({ one }) => ({
+  submission: one(formSubmission, {
+    fields: [formAnswer.formSubmissionId],
+    references: [formSubmission.id],
+  }),
 }));
 
 export const bookingChangeLogRelations = relations(bookingChangeLog, ({ one }) => ({

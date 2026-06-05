@@ -1,14 +1,17 @@
 import { page } from 'vitest/browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import EventsPage from './+page.svelte';
+import EventsPage from '$lib/pages/events-page.svelte';
 
 const mocks = vi.hoisted(() => ({
 	loadPublicEvents: vi.fn()
 }));
 
 const pageState = vi.hoisted(() => ({
-	params: {} as Record<string, string | undefined>
+	params: {
+		orgSlug: 'org-one',
+		storeSlug: 'room-one'
+	} as Record<string, string | undefined>
 }));
 
 vi.mock('$app/state', () => ({
@@ -25,7 +28,7 @@ vi.mock('$lib/features/events.svelte', () => ({
 
 describe('公開イベント一覧ページ', () => {
 	beforeEach(() => {
-		pageState.params = {};
+		pageState.params = { orgSlug: 'org-one', storeSlug: 'room-one' };
 		mocks.loadPublicEvents.mockReset();
 
 		mocks.loadPublicEvents.mockResolvedValue({

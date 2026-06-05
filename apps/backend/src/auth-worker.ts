@@ -102,7 +102,6 @@ export type BackendWorkerEnv = AuthRuntimeEnv & {
   AI_ANSWER_MODEL?: string;
   AI_KNOWLEDGE_INDEX_NAME?: string;
   BETTER_AUTH_COOKIE_DOMAIN?: string;
-  PUBLIC_EVENTS_ORGANIZATION_SLUG?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PREMIUM_MONTHLY_PRICE_ID?: string;

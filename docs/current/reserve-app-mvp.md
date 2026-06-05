@@ -30,7 +30,7 @@ reserve-app では、hacomono ほど大規模施設向けに広げず、**小規
 | 項目                    | 状態     | 実装済みの範囲                                                                                                           | 残り作業                                                       |
 | ----------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | 店舗ごとの公開予約成立  | 実装済み | `/{orgSlug}/{storeSlug}` と公開イベント詳細からログイン不要で予約できる                                                  | 回数券必須サービスはゲスト予約不可。参加者画面の予約導線を使う |
-| 予約者情報入力          | 実装済み | 氏名、メール、電話番号、人数、同伴者、備考、店舗ごとのカスタム入力を保存する                                             | 同意チェック、サービス単位または予約ページ単位のカスタム入力   |
+| 予約者情報入力          | 実装済み | 氏名、メール、電話番号、人数、同伴者、備考、フォーム回答を保存する                                                       | ファイル添付、条件分岐                                         |
 | 運営側通知              | 一部実装 | 予約作成・キャンセル等で予約者向けメールと運営側メールを送る。通知先も店舗ごとに設定できる                               | LINE・Slack・Webhook                                           |
 | 前日・当日リマインド    | 一部実装 | 15分間隔の scheduled handler で、店舗とサービス別の有効状態、24時間前/3時間前の設定に従って送る                          | 運営向けリマインド、任意タイミング                             |
 | 管理者による代理予約    | 実装済み | `/admin/bookings/new` で電話・LINE・店頭・管理画面経由の確定予約を作成できる                                             | 代理予約専用の通知文面や、さらに細かい受付経路設定             |
@@ -84,9 +84,8 @@ MVP の完成状態は以下です。
 
 ### 目的
 
-以前の課題は、公開ページが `/{orgSlug}/{storeSlug}` で見られる一方で、公開予約の作成が環境変数の既定組織に寄ってしまう点でした。
-現在のゲスト公開予約 API は、URL の `orgSlug` / `storeSlug` を正として組織と店舗を解決します。
-ただし、ログイン済み利用者の自己参加登録 API と未スコープの公開イベント導線では、互換導線として `PUBLIC_EVENTS_ORG_SLUG` / `PUBLIC_EVENTS_STORE_SLUG` をまだ使います。
+公開ページ、公開予約、ログイン済み利用者の参加者登録は、URL の `orgSlug` / `storeSlug` を正として組織と店舗を解決します。
+未スコープの公開イベント導線と、`organizationId` / `storeId` を受け取る予約ドメイン API は提供しません。
 
 ### 仕様
 
@@ -207,28 +206,33 @@ Web から常に `participantsCount = 1` 固定だと、店舗運用では不足
 | 利用目的       |                任意 | セレクト式にできる               |
 | 同意チェック   |         任意/設定可 | キャンセルポリシー等             |
 
-### カスタム入力項目
+### フォーム管理
 
 実装状況: 実装済み。
-店舗ごとの `public_site_intake_field` で入力項目を管理し、公開予約フォームに動的表示します。
-回答はサーバー側の定義で必須項目と選択肢を検証し、`booking_answer` に label snapshot と値を保存します。
-予約一覧では追加回答を予約者情報とあわせて確認できます。
 
-現時点では店舗単位の入力項目です。
-サービス単位または予約ページ単位の入力項目は、MVP 後の拡張候補です。
+店舗は、予約時入力、事前アンケート、同意事項の3種類のフォームを管理できます。
+フォームは店舗全体、サービス、予約枠へ割り当てられます。
+予約画面では、予約枠、サービス、店舗の順で対象フォームを解決し、必要な質問を表示します。
+
+公開予約では、表示時点のフォーム構成をハッシュで送信します。
+予約作成時にサーバーがフォームを再解決し、構成の差分、必須未回答、選択肢不正、同意漏れを検証します。
+スタッフの代理予約では、フォーム回答は任意です。
+回答された内容だけをスタッフ入力として保存します。
+
+予約詳細では、回答時点のフォーム名、公開版、項目ラベル、同意日時を確認できます。
 
 ```ts
-type IntakeFieldType = 'text' | 'textarea' | 'select' | 'checkbox';
+type FormType = 'reservation_input' | 'pre_survey' | 'consent';
+type FormFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'consent';
 
-type IntakeField = {
-  fieldId: string;
+type FormField = {
+  fieldKey: string;
+  fieldType: FormFieldType;
   label: string;
-  fieldType: IntakeFieldType;
   required: boolean;
   options?: string[];
-  helpText?: string;
+  description?: string;
   placeholder?: string;
-  visibleOnPublic: boolean;
   sortOrder: number;
 };
 ```
@@ -251,29 +255,77 @@ booking
 - note
 - createdAt
 
-booking_answer
-- id
-- bookingId
-- fieldId
-- labelSnapshot
-- valueJson
-- createdAt
-
-public_site_intake_field
+form_templates
 - id
 - organizationId
 - storeId
+- formType
+- name
+- description
+- status
+- currentPublishedVersionId
+- createdAt
+- updatedAt
+
+form_fields
+- id
+- formTemplateId
 - fieldKey
-- label
 - fieldType
+- label
+- description
+- placeholder
 - required
 - optionsJson
-- helpText
-- placeholder
-- visibleOnPublic
+- validationJson
 - sortOrder
 - createdAt
 - updatedAt
+
+form_template_versions
+- id
+- formTemplateId
+- versionNumber
+- nameSnapshot
+- fieldsSnapshotJson
+- publishedAt
+- createdAt
+
+form_assignments
+- id
+- organizationId
+- storeId
+- formType
+- targetType
+- targetId
+- formTemplateId
+- createdAt
+- updatedAt
+
+form_submissions
+- id
+- organizationId
+- storeId
+- formTemplateId
+- formTemplateVersionId
+- formType
+- bookingId
+- participantId
+- customerNameSnapshot
+- customerEmailSnapshot
+- source
+- submittedAt
+- createdAt
+
+form_answers
+- id
+- formSubmissionId
+- fieldKey
+- fieldType
+- labelSnapshot
+- valueJson
+- sortOrder
+- createdAt
 
 booking_companion
 - id
@@ -300,14 +352,18 @@ MVPでは、参加者への確認メールよりも「運営が予約に気づ�
 ### 通知イベント
 
 ```txt
-booking.created
-booking.pending_approval
-booking.confirmed
-booking.cancelled_by_participant
-booking.cancelled_by_staff
-booking.rescheduled
+created
+approved
+rejected
+cancelled_by_customer
+cancelled_by_staff
+rescheduled
+checked_in
+no_show_marked
+payment_started
+payment_confirmed
+payment_expired
 booking.reminder_sent
-booking.no_show_marked
 ```
 
 ### 通知先
@@ -465,12 +521,13 @@ type BookingSource =
 
 ### 監査ログ
 
-代理予約は必ず audit log に残します。
+代理予約、参加者操作、公開予約、運営操作は予約の操作イベントとして監査ログに残します。
+予約状態は `booking.status` に保存し、誰がどの操作をしたかは `booking_audit_log.action` と `metadata` で確認します。
 
 ```txt
 audit_log
 - actorUserId
-- action: booking.staff_created
+- action: created | approved | rejected | cancelled_by_customer | cancelled_by_staff | rescheduled | checked_in | no_show_marked | payment_started | payment_confirmed | payment_expired
 - targetBookingId
 - organizationId
 - storeId
@@ -542,9 +599,9 @@ MVPでは、まず「店舗公開サイト単位」と「サービス単位」�
 
 ### ステータス
 
-現行の予約ステータスは維持します。
+予約の状態は予約者・運営者・決済の理由を混ぜず、単一の lifecycle status として扱います。
 日程変更は `booking.status` を `confirmed` のままにし、変更履歴と監査ログに記録します。
-キャンセルや却下は既存の `cancelled_by_staff` / `rejected_by_staff` を使います。
+キャンセル理由や操作主体は `booking_audit_log.action` と `metadata` で確認します。
 
 ### 変更時の処理
 
@@ -782,17 +839,35 @@ slot_assignment
 
 # 6. 予約ステータス設計
 
-MVPでは現行ステータスを維持します。
-新しい状態名へ置き換える必要はありません。
+予約の状態は状態遷移として扱います。
+キャンセルした主体や操作理由は status に混ぜません。
+それらは監査ログの action と metadata に残します。
 
 ```ts
 type BookingStatus =
   | 'pending_approval' // 承認待ち
   | 'confirmed' // 確定
-  | 'cancelled_by_participant' // 参加者キャンセル
-  | 'cancelled_by_staff' // 運営キャンセル
-  | 'rejected_by_staff' // 運営却下
-  | 'no_show'; // 無断欠席
+  | 'rejected' // 却下
+  | 'cancelled' // キャンセル済み
+  | 'no_show' // 無断欠席
+  | 'completed' // 来店・出席完了
+  | 'pending_payment' // 決済待ち
+  | 'expired'; // 期限切れ
+```
+
+```ts
+type BookingAuditAction =
+  | 'created'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled_by_customer'
+  | 'cancelled_by_staff'
+  | 'rescheduled'
+  | 'checked_in'
+  | 'no_show_marked'
+  | 'payment_started'
+  | 'payment_confirmed'
+  | 'payment_expired';
 ```
 
 ### 即時確定フロー
@@ -803,7 +878,7 @@ public_site booking
 -> confirmation email to customer
 -> notification email to staff
 -> reminder email
--> checked_in / no_show
+-> completed / no_show
 ```
 
 ### 承認制フロー
@@ -971,36 +1046,45 @@ reminder_log
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/site
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events/{slotId}
+GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/forms/required
 GET  /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/ticket-types/{ticketTypeId}
 
 POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings
 POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings/{bookingPublicId}/cancel
 ```
 
-`/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/...` は現行の店舗スコープ付き facade として扱います。backend 内部では `/api/v1/auth/organizations/...` に `organizationId` と `storeId` を付与して転送されます。
+認証済みの予約ドメイン API は `/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/...` を正とします。
+予約、サービス、予約枠、定期スケジュール、参加者、回数券、回数券購入申請は、この URL の組織・店舗スコープで処理します。
+旧 `/api/v1/auth/organizations/...` の予約ドメイン endpoint は提供しません。
 
 ### 予約作成リクエスト
 
 実装状況: 実装済み。
 公開予約作成 API は以下の項目を受け取ります。
 `companions` は同伴者として保存します。
-`answers` は店舗ごとのカスタム入力定義に照合し、必須項目と選択肢を検証してから保存します。
+`formSubmissions` は公開済みフォームの定義に照合し、必須項目、選択肢、同意を検証してから保存します。
 
 ```json
 {
   "serviceId": "svc_xxx",
   "slotId": "slot_xxx",
-  "customerName": "山田太郎",
-  "customerEmail": "taro@example.com",
-  "customerPhone": "090-xxxx-xxxx",
+  "customer": {
+    "name": "山田太郎",
+    "email": "taro@example.com",
+    "phone": "090-xxxx-xxxx"
+  },
   "participantsCount": 2,
   "companions": [{ "name": "山田花子" }],
   "note": "体験希望です",
-  "answers": [
+  "formContextHash": "sha256...",
+  "formSubmissions": [
     {
-      "fieldId": "experience",
-      "labelSnapshot": "経験年数",
-      "value": "体験レッスン"
+      "formTemplateId": "form_xxx",
+      "formTemplateVersionId": "formver_xxx",
+      "answers": {
+        "experience": "体験レッスン",
+        "policy": true
+      }
     }
   ]
 }
@@ -1009,13 +1093,23 @@ POST /api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/bookings/{bookingPublicId}
 ## Admin API
 
 実装状況: 一部実装。
-店舗スコープ付き API で、予約一覧、運営キャンセル、承認、却下、No-show、出席/欠席チェックイン、代理予約作成、運営側の日程変更を利用できます。
+店舗スコープ付き API で、予約一覧、フォーム管理、運営キャンセル、承認、却下、No-show、出席/欠席チェックイン、代理予約作成、運営側の日程変更を利用できます。
 専用の日次運用 API は未実装です。
 
 ```txt
 GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings
-GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/intake-fields
-PATCH /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/intake-fields
+GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms
+POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms
+GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}
+PATCH /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}
+POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}/publish
+POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}/archive
+GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}/assignments
+POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}/assignments
+DELETE /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}/assignments/{assignmentId}
+GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}/submissions
+GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/submissions/{submissionId}
+GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/required
 POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/cancel-by-staff
 POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/approve
 POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/reject
@@ -1036,9 +1130,9 @@ GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/operations/day?date=YYYY-MM-
 
 実装状況: 一部実装。
 公開サイト、イベント一覧、イベント詳細、予約フォーム、予約完了表示、公開キャンセルページは実装済みです。
-店舗ごとのカスタム入力は予約フォームに表示できます。
+対象フォームを予約フォームに表示できます。
 サービス単位の公開状態により、非公開サービスは公開ページから隠し、受付停止サービスは予約不可として表示できます。
-確認画面、同意チェックは未実装です。
+確認画面は未実装です。
 
 ```txt
 /{orgSlug}/{storeSlug}
@@ -1057,7 +1151,7 @@ GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/operations/day?date=YYYY-MM-
 - サービス一覧
 - 予約可能日時
 - 予約者情報入力
-- 店舗ごとのカスタム入力
+- 予約時入力・事前アンケート・同意事項フォーム
 - 完了画面
 ```
 
@@ -1065,21 +1159,26 @@ GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/operations/day?date=YYYY-MM-
 
 ```txt
 - 確認画面
-- サービス単位または予約ページ単位のカスタム入力
-- キャンセルポリシー同意チェック
+- ファイル添付
+- 条件分岐
 ```
 
 ## 管理画面
 
 実装状況: 一部実装。
-予約一覧、代理予約作成、公開サイト設定、カスタム入力設定、通知先設定は実装済みです。
+予約一覧、代理予約作成、予約詳細、公開サイト設定、フォーム管理、通知先設定は実装済みです。
 専用の日次運用ページは未実装です。
 
 ```txt
 /{orgSlug}/{storeSlug}/admin/bookings
 /{orgSlug}/{storeSlug}/admin/bookings/new
+/{orgSlug}/{storeSlug}/admin/bookings/{bookingId}
 /{orgSlug}/{storeSlug}/admin/public-site
-/{orgSlug}/{storeSlug}/admin/intake-fields
+/{orgSlug}/{storeSlug}/admin/forms
+/{orgSlug}/{storeSlug}/admin/forms/new
+/{orgSlug}/{storeSlug}/admin/forms/{formId}
+/{orgSlug}/{storeSlug}/admin/forms/{formId}/assignments
+/{orgSlug}/{storeSlug}/admin/forms/{formId}/submissions
 /{orgSlug}/{storeSlug}/admin/notification-settings
 
 未実装:
@@ -1114,7 +1213,7 @@ GET  /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/operations/day?date=YYYY-MM-
 - 回数券
 - CSV出力
 - 日次運用ビュー
-- カスタム入力項目
+- フォーム管理
 ```
 
 STORES予約もフリーでは月間予約件数・公開ページ数を小さくし、有料プランでページ数・スタッフ数・予約件数を増やす構造になっているため、reserve-app でも「複数店舗」「スタッフ管理」「回数券」「承認制」を Premium に寄せる設計が自然です。([STORES][1])
@@ -1138,13 +1237,13 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 ## Step 2: 予約者情報入力
 
 実装状況: 実装済み。
-標準項目、人数による残席チェック、店舗ごとのカスタム入力 UI を実装済みです。
-カスタム入力は管理画面で定義し、公開予約フォームで回答を受け取り、予約一覧で確認できます。
+標準項目、人数による残席チェック、フォーム管理 UI を実装済みです。
+フォームは管理画面で定義し、公開予約フォームで回答を受け取り、予約詳細で確認できます。
 
 ```txt
 - participantsCount をWebフォームから入力可能にする
-- phone/note/answers を追加
-- booking_answer を保存
+- customer.phone / note / formSubmissions を追加
+- form_submissions / form_answers を保存
 - 人数による残席チェックを修正
 ```
 
@@ -1155,7 +1254,7 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 通知先設定の管理 UI で、owner / admin / 店舗 manager / 店舗 staff と追加メールアドレスを店舗ごとに設定できます。
 
 ```txt
-- booking.created イベントを発火
+- `created` イベントを発火
 - notification_log を作成
 - store manager / staff / additionalEmails に送信
 - 失敗時にログで確認可能にする
@@ -1210,7 +1309,7 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 | ------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------ |
 | `/{orgSlug}/{storeSlug}` から店舗ごとの予約ページが表示できる      | 実装済み | 公開状態の店舗だけ表示される                                                   |
 | 別 organization / 別 store の slot を予約できない                  | 実装済み | URL の organization/store と service/slot の所属を検証する                     |
-| 予約者が氏名・メール・電話・人数・備考を入力して予約できる         | 実装済み | 同伴者と店舗ごとのカスタム入力も保存できる                                     |
+| 予約者が氏名・メール・電話・人数・備考を入力して予約できる         | 実装済み | 同伴者とフォーム回答も保存できる                                               |
 | `participantsCount` が残席計算に反映される                         | 実装済み | 予約作成時に人数分の残席を確認する                                             |
 | 予約完了時に予約者へ確認メールが送られる                           | 一部実装 | メール設定がある環境で送信する。送信失敗はログに残る                           |
 | 予約完了時に運営側へ通知メールが送られる                           | 一部実装 | 店舗ごとの通知先設定に従って送信する。メール以外の通知は未実装                 |
@@ -1225,10 +1324,10 @@ STORES予約もフリーでは月間予約件数・公開ページ数を小さ�
 
 P0 のうち、公開予約成立、予約者情報入力、管理者代理予約は実装済みです。
 通知、リマインド、日次運用ビュー、公開/非公開制御は基本導線まで入っています。
-MVPとして残っている主な作業は、公開制御・入力項目・運用補助の拡張です。
+MVPとして残っている主な作業は、公開制御・フォーム項目・運用補助の拡張です。
 
 ```txt
-1. サービス単位または予約ページ単位のカスタム入力
+1. フォーム項目のファイル添付・条件分岐
 2. 参加者へのメール再送
 3. 予約変更の対象拡大（サービス変更、人数変更、参加者からの変更申請）
 4. 運営向けリマインド、任意タイミング、LINE/Slack/Webhook 通知

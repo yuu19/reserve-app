@@ -17,10 +17,10 @@
 
 	type ResolvablePath = Pathname;
 
-	const publicEventsContext = $derived.by((): ScopedRouteContext | undefined => {
+	const publicEventsContext = $derived.by((): ScopedRouteContext | null => {
 		const orgSlug = page.params.orgSlug?.trim();
 		const storeSlug = page.params.storeSlug?.trim();
-		return orgSlug && storeSlug ? { orgSlug, storeSlug } : undefined;
+		return orgSlug && storeSlug ? { orgSlug, storeSlug } : null;
 	});
 
 	const toExceptionMessage = (error: unknown, fallback: string): string => {
@@ -43,15 +43,16 @@
 		ticketType.expiresInDays ? `${ticketType.expiresInDays}日` : '期限なし';
 
 	const getEventDetailHref = (event: PublicEventListItemPayload): string =>
-		event.organizationSlug && event.storeSlug
-			? `/${event.organizationSlug}/${event.storeSlug}/events/${event.slotId}`
-			: `/events/${event.slotId}`;
+		`/${event.organizationSlug}/${event.storeSlug}/events/${event.slotId}`;
 
 	onMount(() => {
 		void (async () => {
 			loading = true;
 			errorMessage = null;
 			try {
+				if (!publicEventsContext) {
+					throw new Error('公開イベントの店舗コンテキストが指定されていません。');
+				}
 				const publicEventsPage = await loadPublicEvents(publicEventsContext);
 				events = publicEventsPage.events;
 				ticketTypes = publicEventsPage.ticketTypes;

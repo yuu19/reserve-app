@@ -28,12 +28,29 @@ import {
  * 画像 upload/download は R2 連携サービスの有無で 503 を返し、通常の service CRUD は usecase 層へ委譲します。
  */
 export const registerServiceRoutes = (ctx: BookingRouteContext) => {
-  ctx.authRoutes.openapi(createServiceImageUploadUrlRoute, async (c) =>
-    jsonRouteResult(
+  const withScope = <T extends Record<string, unknown>>(
+    scope: NonNullable<Awaited<ReturnType<BookingRouteContext['resolveScopedStoreContext']>>>,
+    input: T,
+  ) => ({
+    ...input,
+    organizationId: scope.organizationId,
+    storeId: scope.storeId,
+  });
+
+  ctx.authRoutes.openapi(createServiceImageUploadUrlRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await createServiceImageUploadUrl(ctx, c.req.valid('json'), c.req.raw.headers),
-    ),
-  );
+      await createServiceImageUploadUrl(
+        ctx,
+        withScope(scope, c.req.valid('json')),
+        c.req.raw.headers,
+      ),
+    );
+  });
 
   ctx.authRoutes.openapi(uploadServiceImageBySignedUrlRoute, async (c) =>
     jsonRouteResult(
@@ -46,19 +63,47 @@ export const registerServiceRoutes = (ctx: BookingRouteContext) => {
     return getServiceImage(ctx, c.req.valid('param').key);
   });
 
-  ctx.authRoutes.openapi(createServiceRoute, async (c) =>
-    jsonRouteResult(c, await createService(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(createServiceRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await createService(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(listServicesRoute, async (c) =>
-    jsonRouteResult(c, await listManageableServices(ctx, c.req.valid('query'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(listServicesRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listManageableServices(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(updateServiceRoute, async (c) =>
-    jsonRouteResult(c, await updateExistingService(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(updateServiceRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await updateExistingService(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(archiveServiceRoute, async (c) =>
-    jsonRouteResult(c, await archiveExistingService(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(archiveServiceRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await archiveExistingService(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 };

@@ -1,5 +1,6 @@
 import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
 import * as dbSchema from '../../infra/db/schema.js';
+import type { BookingAuditAction } from './constants.js';
 
 export const getIpAddress = (headers: Headers): string | null => {
   const cfConnectingIp = headers.get('cf-connecting-ip');
@@ -30,8 +31,8 @@ export const writeBookingAuditLog = async ({
   bookingId: string;
   organizationId: string;
   storeId?: string;
-  actorUserId: string;
-  action: string;
+  actorUserId?: string | null;
+  action: BookingAuditAction;
   metadata?: Record<string, unknown>;
   headers: Headers;
 }) => {
@@ -40,7 +41,7 @@ export const writeBookingAuditLog = async ({
     bookingId,
     organizationId,
     storeId: storeId ?? organizationId,
-    actorUserId,
+    actorUserId: actorUserId ?? null,
     action,
     metadata: metadata ? JSON.stringify(metadata) : null,
     ipAddress: getIpAddress(headers),

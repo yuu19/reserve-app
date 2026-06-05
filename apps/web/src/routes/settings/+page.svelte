@@ -57,9 +57,7 @@
 	const notificationSettingsPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/notification-settings') : null
 	);
-	const intakeFieldsPath = $derived(
-		scopedContext ? buildScopedPath(scopedContext, '/admin/intake-fields') : null
-	);
+	const formsPath = $derived(scopedContext ? buildScopedPath(scopedContext, '/admin/forms') : null);
 	const reminderSettingsPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/reminder-settings') : null
 	);
@@ -344,10 +342,10 @@
 						<Button
 							type="button"
 							variant="outline"
-							href={intakeFieldsPath ? resolve(intakeFieldsPath as Pathname) : undefined}
-							disabled={!intakeFieldsPath}
+							href={formsPath ? resolve(formsPath as Pathname) : undefined}
+							disabled={!formsPath}
 						>
-							カスタム入力へ移動
+							フォーム管理へ移動
 						</Button>
 						<Button
 							type="button"

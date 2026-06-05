@@ -12,11 +12,6 @@ import { parseResponseBody, toErrorMessage } from './auth-session.svelte';
 
 type JsonRecord = Record<string, unknown>;
 
-type PublicEventsContext = {
-	orgSlug?: string;
-	storeSlug?: string;
-};
-
 const isRecord = (value: unknown): value is JsonRecord =>
 	typeof value === 'object' && value !== null;
 
@@ -34,29 +29,20 @@ const toSelfEnrollErrorMessage = (status: number, payload: unknown): string => {
 };
 
 export const loadPublicEvents = async (
-	context?: PublicEventsContext
+	context: ScopedApiContext
 ): Promise<PublicEventsPagePayload> => {
-	return getPublicEvents(context ?? {});
+	return getPublicEvents(context);
 };
 
 export const loadPublicEventDetail = async (
 	slotId: string,
-	context?: PublicEventsContext
+	context: ScopedApiContext
 ): Promise<PublicEventDetailPayload> => {
-	return getPublicEventDetail({ slotId, ...(context ?? {}) });
+	return getPublicEventDetail({ slotId, ...context });
 };
 
-export const ensureParticipantSelfEnrollment = async ({
-	organizationId,
-	storeId
-}: {
-	organizationId: string;
-	storeId?: string | null;
-}) => {
-	const response = await authRpc.selfEnrollParticipant({
-		organizationId,
-		storeId: storeId ?? undefined
-	});
+export const ensureParticipantSelfEnrollment = async (context: ScopedApiContext) => {
+	const response = await authRpc.selfEnrollParticipantScoped(context);
 	const payload = await parseResponseBody(response);
 	if (!response.ok) {
 		return {
@@ -75,15 +61,13 @@ export const ensureParticipantSelfEnrollment = async ({
 };
 
 export const reservePublicEvent = async ({
-	organizationId,
-	storeId,
+	context,
 	slotId
 }: {
-	organizationId: string;
-	storeId?: string | null;
+	context: ScopedApiContext;
 	slotId: string;
 }) => {
-	const enrollmentResult = await ensureParticipantSelfEnrollment({ organizationId, storeId });
+	const enrollmentResult = await ensureParticipantSelfEnrollment(context);
 	if (!enrollmentResult.ok) {
 		return {
 			ok: false,
@@ -106,6 +90,23 @@ const isPublicBookingResult = (value: unknown): value is PublicBookingResultPayl
 	typeof value.bookingPublicId === 'string' &&
 	(value.status === 'confirmed' || value.status === 'pending_approval');
 
+const toPublicBookingErrorMessage = (status: number, payload: unknown): string => {
+	const message = toErrorMessage(payload, '予約の作成に失敗しました。');
+	if (
+		status === 409 &&
+		(message === 'FORM_CONTEXT_OUTDATED' || message === 'FORM_VERSION_OUTDATED')
+	) {
+		return '予約フォームが更新されました。ページを再読み込みして入力し直してください。';
+	}
+	if (message === 'FORM_REQUIRED_FIELD_MISSING') {
+		return '必須項目を入力してください。';
+	}
+	if (message === 'FORM_INVALID_VALUE' || message === 'FORM_INVALID_FIELD') {
+		return 'フォームの入力内容を確認してください。';
+	}
+	return message;
+};
+
 export const createGuestPublicBooking = async (
 	context: ScopedApiContext,
 	input: CreatePublicBookingInput
@@ -118,7 +119,7 @@ export const createGuestPublicBooking = async (
 		status: response.status,
 		message: response.ok
 			? '予約を受け付けました。'
-			: toErrorMessage(payload, '予約の作成に失敗しました。'),
+			: toPublicBookingErrorMessage(response.status, payload),
 		booking
 	};
 };

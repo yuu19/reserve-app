@@ -1,5 +1,10 @@
 import { writeBookingAuditLog } from '../../domain/booking/audit.js';
-import { BOOKING_STATUS, SLOT_STATUS } from '../../domain/booking/constants.js';
+import {
+  BOOKING_AUDIT_ACTION,
+  BOOKING_STATUS,
+  SLOT_STATUS,
+} from '../../domain/booking/constants.js';
+import { isBookingStatus } from '../../domain/booking/state.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import {
   conflict,
@@ -65,7 +70,7 @@ export const rescheduleBookingByStaff = async (
     return forbidden();
   }
 
-  if (booking.status !== BOOKING_STATUS.CONFIRMED) {
+  if (!isBookingStatus(booking.status) || booking.status !== BOOKING_STATUS.CONFIRMED) {
     return conflict('Only confirmed booking can be rescheduled.');
   }
 
@@ -173,7 +178,7 @@ export const rescheduleBookingByStaff = async (
       organizationId: booking.organizationId,
       storeId: booking.storeId,
       actorUserId: identity.userId,
-      action: 'booking.rescheduled',
+      action: BOOKING_AUDIT_ACTION.RESCHEDULED,
       metadata: {
         fromSlotId: booking.slotId,
         toSlotId: targetSlot.id,

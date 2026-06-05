@@ -115,7 +115,7 @@ describe('予約日程変更ユースケース', () => {
     );
     expect(auditMocks.writeBookingAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: 'booking.rescheduled',
+        action: 'rescheduled',
         bookingId: 'booking-1',
       }),
     );

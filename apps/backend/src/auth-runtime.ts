@@ -18,9 +18,6 @@ export type AuthRuntimeEnv = {
   BETTER_AUTH_TRUSTED_ORIGINS?: string;
   BETTER_AUTH_COOKIE_DOMAIN?: string;
   INTERNAL_OPERATOR_EMAILS?: string;
-  PUBLIC_EVENTS_ORG_SLUG?: string;
-  PUBLIC_EVENTS_ORGANIZATION_SLUG?: string;
-  PUBLIC_EVENTS_STORE_SLUG?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PREMIUM_MONTHLY_PRICE_ID?: string;
@@ -31,26 +28,6 @@ export type AuthRuntimeEnv = {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
 } & ResendEnv;
-
-/**
- * 公開イベント用 organization slug を、現行名と旧 alias の両方から解決する。
- *
- * @param env - Backend runtime の環境変数。
- * @returns 設定済み slug。空文字または未設定の場合は `undefined`。
- */
-export const resolvePublicEventsOrganizationSlug = (env: AuthRuntimeEnv): string | undefined =>
-  env.PUBLIC_EVENTS_ORG_SLUG?.trim() || env.PUBLIC_EVENTS_ORGANIZATION_SLUG?.trim() || undefined;
-
-/**
- * 公開イベント用 store slug を解決する。
- *
- * store slug が未設定の場合は、既存の単一店舗運用との互換性のため organization slug を fallback にする。
- *
- * @param env - Backend runtime の環境変数。
- * @returns 設定済み store slug または fallback slug。どちらも未設定の場合は `undefined`。
- */
-export const resolvePublicEventsStoreSlug = (env: AuthRuntimeEnv): string | undefined =>
-  env.PUBLIC_EVENTS_STORE_SLUG?.trim() || resolvePublicEventsOrganizationSlug(env);
 
 type DrizzleDatabase = Parameters<typeof drizzleAdapter>[0];
 

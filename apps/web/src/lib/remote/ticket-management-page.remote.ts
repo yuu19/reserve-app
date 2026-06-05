@@ -8,6 +8,7 @@ import type {
 	TicketTypePayload
 } from '$lib/rpc-client';
 import {
+	buildScopedAuthPath,
 	createApiGetter,
 	resolveScopedAccessContext,
 	type ApiResult,
@@ -180,20 +181,15 @@ export const getTicketManagementPageData = query(
 			};
 		}
 
-		const scopedQuery = {
-			organizationId: scopedAccess.organizationId,
-			storeId: scopedAccess.storeId
-		};
-
 		const [participantsResult, servicesResult, ticketTypesResult, ticketPurchasesResult] =
 			await Promise.all([
-				getApi('/api/v1/auth/organizations/participants', scopedQuery),
+				getApi(buildScopedAuthPath(activeContext, '/participants')),
 				canManageStore
-					? getApi('/api/v1/auth/organizations/services', scopedQuery)
+					? getApi(buildScopedAuthPath(activeContext, '/services'))
 					: createSkippedApiResult(),
-				getApi('/api/v1/auth/organizations/ticket-types', scopedQuery),
+				getApi(buildScopedAuthPath(activeContext, '/ticket-types')),
 				canManageParticipants
-					? getApi('/api/v1/auth/organizations/ticket-purchases', scopedQuery)
+					? getApi(buildScopedAuthPath(activeContext, '/ticket-purchases'))
 					: createSkippedApiResult()
 			]);
 

@@ -140,7 +140,7 @@
 			| '/admin/stores'
 			| '/admin/services'
 			| '/admin/public-site'
-			| '/admin/intake-fields'
+			| '/admin/forms'
 			| '/admin/notification-settings'
 			| '/admin/reminder-settings'
 			| '/admin/schedules/slots'
@@ -186,7 +186,7 @@
 				{ href: '/admin/stores', label: '店舗管理', icon: Building2 },
 				{ href: '/admin/services', label: 'サービス一覧', icon: CalendarDays },
 				{ href: '/admin/public-site', label: '予約サイト管理', icon: Globe2 },
-				{ href: '/admin/intake-fields', label: 'カスタム入力', icon: ListChecks },
+				{ href: '/admin/forms', label: 'フォーム管理', icon: ListChecks },
 				{ href: '/admin/notification-settings', label: '通知先設定', icon: BellRing },
 				{ href: '/admin/reminder-settings', label: 'リマインド設定', icon: Clock3 },
 				{ href: '/admin/schedules/slots', label: '単発予約枠', icon: CalendarDays },
@@ -241,7 +241,7 @@
 			case '/admin/bookings':
 				return portalAccess.hasOrganizationAdminAccess || portalAccess.canManageBookings;
 			case '/admin/services':
-			case '/admin/intake-fields':
+			case '/admin/forms':
 			case '/admin/notification-settings':
 			case '/admin/reminder-settings':
 			case '/admin/schedules/slots':
@@ -279,12 +279,16 @@
 		if (!portalAccess.hasParticipantAccess) {
 			return [];
 		}
+		const scopedContext = getCurrentScopedContext();
+		const participantItems = navSectionsByPortal.participant.items
+			.filter((item) => item.href !== '/events' || scopedContext)
+			.map((item) =>
+				item.href === '/participant/admin-invitations' ? { ...item, label: '運営招待' } : item
+			);
 		return [
 			{
 				...navSectionsByPortal.participant,
-				items: navSectionsByPortal.participant.items.map((item) =>
-					item.href === '/participant/admin-invitations' ? { ...item, label: '運営招待' } : item
-				)
+				items: participantItems
 			}
 		];
 	});
@@ -457,7 +461,7 @@
 		if (pathname.startsWith('/admin/notification-settings')) {
 			return '/admin/settings';
 		}
-		if (pathname.startsWith('/admin/intake-fields')) {
+		if (pathname.startsWith('/admin/forms')) {
 			return '/admin/settings';
 		}
 		if (pathname.startsWith('/admin/reminder-settings')) {

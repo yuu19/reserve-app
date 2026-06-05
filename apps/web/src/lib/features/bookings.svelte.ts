@@ -99,8 +99,11 @@ export const toReservationErrorMessage = (status: number, payload: unknown, fall
 		if (message === 'Only confirmed booking can be marked as no-show.') {
 			return 'No-show にできるのは予約確定済みの予約のみです。';
 		}
-		if (message === 'Only confirmed booking can be marked attendance.') {
-			return '出欠を記録できるのは予約確定済みの予約のみです。';
+		if (
+			message === 'Only confirmed booking can be marked attendance.' ||
+			message === 'Only active booking can be marked attendance.'
+		) {
+			return '出欠を記録できるのは予約確定中または完了済みの予約のみです。';
 		}
 		if (message === 'Only confirmed booking can be rescheduled.') {
 			return '日程変更できるのは予約確定済みの予約のみです。';

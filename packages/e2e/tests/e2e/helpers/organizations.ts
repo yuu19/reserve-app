@@ -81,6 +81,11 @@ export type TestParticipant = {
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 
+const authStorePath = (organization: TestOrganization, suffix: `/${string}`): string =>
+  `${backendUrl}/api/v1/auth/orgs/${encodeURIComponent(
+    organization.slug,
+  )}/stores/${encodeURIComponent(organization.storeSlug)}${suffix}`;
+
 /**
  * ログイン済み owner の request context で organization と primary store を作成する。
  *
@@ -260,10 +265,8 @@ export const createService = async ({
   requiresTicket?: boolean;
   isActive?: boolean;
 }): Promise<TestService> => {
-  const response = await request.post(`${backendUrl}/api/v1/auth/organizations/services`, {
+  const response = await request.post(authStorePath(organization, '/services'), {
     data: {
-      organizationId: organization.id,
-      storeId: organization.storeId,
       name,
       description: `${name} description`,
       kind,
@@ -337,10 +340,8 @@ export const createSlot = async ({
   staffLabel?: string;
   locationLabel?: string;
 }): Promise<TestSlot> => {
-  const response = await request.post(`${backendUrl}/api/v1/auth/organizations/slots`, {
+  const response = await request.post(authStorePath(organization, '/slots'), {
     data: {
-      organizationId: organization.id,
-      storeId: organization.storeId,
       serviceId: service.id,
       startAt,
       endAt,
@@ -488,10 +489,8 @@ export const createTicketType = async ({
   isActive?: boolean;
   isForSale?: boolean;
 }): Promise<TestTicketType> => {
-  const response = await request.post(`${backendUrl}/api/v1/auth/organizations/ticket-types`, {
+  const response = await request.post(authStorePath(organization, '/ticket-types'), {
     data: {
-      organizationId: organization.id,
-      storeId: organization.storeId,
       name,
       serviceScope,
       serviceIds,
@@ -533,13 +532,7 @@ export const findTicketTypeByName = async ({
   organization: TestOrganization;
   name: string;
 }): Promise<TestTicketType> => {
-  const query = new URLSearchParams({
-    organizationId: organization.id,
-    storeId: organization.storeId,
-  });
-  const response = await request.get(
-    `${backendUrl}/api/v1/auth/organizations/ticket-types?${query.toString()}`,
-  );
+  const response = await request.get(authStorePath(organization, '/ticket-types'));
   const payload = await parseResponseBody(response);
   expect(
     response.ok(),
@@ -730,15 +723,7 @@ export const selfEnrollParticipant = async ({
   request: APIRequestContext;
   organization: TestOrganization;
 }): Promise<TestParticipant> => {
-  const response = await request.post(
-    `${backendUrl}/api/v1/auth/organizations/participants/self-enroll`,
-    {
-      data: {
-        organizationId: organization.id,
-        storeId: organization.storeId,
-      },
-    },
-  );
+  const response = await request.post(authStorePath(organization, '/participants/self-enroll'));
   const payload = await expectOkJson(response, `self-enroll participant for ${organization.slug}`);
   const participant = payload.participant;
   expect(
@@ -776,10 +761,8 @@ export const createTicketPurchase = async ({
   ticketType: TestTicketType;
   paymentMethod?: 'cash_on_site' | 'bank_transfer';
 }): Promise<TestTicketPurchase> => {
-  const response = await request.post(`${backendUrl}/api/v1/auth/organizations/ticket-purchases`, {
+  const response = await request.post(authStorePath(organization, '/ticket-purchases'), {
     data: {
-      organizationId: organization.id,
-      storeId: organization.storeId,
       ticketTypeId: ticketType.id,
       paymentMethod,
     },
@@ -811,15 +794,11 @@ export const approveTicketPurchase = async ({
   organization: TestOrganization;
   purchase: TestTicketPurchase;
 }) => {
-  const response = await request.post(
-    `${backendUrl}/api/v1/auth/organizations/ticket-purchases/approve`,
-    {
-      data: {
-        purchaseId: purchase.id,
-        storeId: organization.storeId,
-      },
+  const response = await request.post(authStorePath(organization, '/ticket-purchases/approve'), {
+    data: {
+      purchaseId: purchase.id,
     },
-  );
+  });
   await expectOkJson(response, `approve ticket purchase ${purchase.id}`);
 };
 

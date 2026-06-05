@@ -1,5 +1,5 @@
 <script lang="ts">
-	import EventsPage from '../../../events/+page.svelte';
+	import EventsPage from '$lib/pages/events-page.svelte';
 </script>
 
 <EventsPage />

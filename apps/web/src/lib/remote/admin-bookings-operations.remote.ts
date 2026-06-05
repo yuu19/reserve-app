@@ -8,6 +8,7 @@ import type {
 } from '$lib/rpc-client';
 import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import {
+	buildScopedAuthPath,
 	createApiGetter,
 	resolveScopedAccessContext,
 	type ApiResult
@@ -106,26 +107,20 @@ export const getAdminBookingsOperationsPageData = query(
 			};
 		}
 
-		const scopedQuery = {
-			organizationId: scopedAccess.organizationId,
-			storeId: scopedAccess.storeId
-		};
 		const [servicesResult, slotsResult, staffBookingsResult, participantsResult] =
 			await Promise.all([
-				getApi('/api/v1/auth/organizations/services', scopedQuery),
-				getApi('/api/v1/auth/organizations/slots', {
-					...scopedQuery,
+				getApi(buildScopedAuthPath(activeContext, '/services')),
+				getApi(buildScopedAuthPath(activeContext, '/slots'), {
 					from,
 					to,
 					serviceId
 				}),
-				getApi('/api/v1/auth/organizations/bookings', {
-					...scopedQuery,
+				getApi(buildScopedAuthPath(activeContext, '/bookings'), {
 					from,
 					to,
 					serviceId
 				}),
-				getApi('/api/v1/auth/organizations/participants', scopedQuery)
+				getApi(buildScopedAuthPath(activeContext, '/participants'))
 			]);
 
 		const premiumRestriction =

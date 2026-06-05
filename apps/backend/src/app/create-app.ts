@@ -79,7 +79,7 @@ export const createApp = ({
     '/api/*',
     cors({
       origin: authTrustedOrigins,
-      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization'],
       credentials: true,
     }),

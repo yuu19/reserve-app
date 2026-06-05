@@ -508,11 +508,11 @@
   <body>
     <header>
       <div class="logo">Reserve App DB <span>/</span> schema</div>
-      <div class="v-badge">schema.ts / 2026-06-02</div>
+      <div class="v-badge">schema.ts / 2026-06-06</div>
       <div class="summary">
         <div class="pill">外部リソースなし</div>
-        <div class="pill">48 tables</div>
-        <div class="pill">106 relations</div>
+        <div class="pill">53 tables</div>
+        <div class="pill">126 relations</div>
         <div class="pill warn">現行 Drizzle schema 由来</div>
       </div>
     </header>
@@ -558,9 +558,20 @@
           >
           <a class="sb-link" href="#table-slot"><span class="sb-dot"></span>slot</a>
           <a class="sb-link" href="#table-booking"><span class="sb-dot"></span>booking</a>
-          <a class="sb-link" href="#table-booking_answer"
-            ><span class="sb-dot"></span>booking_answer</a
+          <a class="sb-link" href="#table-form_templates"
+            ><span class="sb-dot"></span>form_templates</a
           >
+          <a class="sb-link" href="#table-form_fields"><span class="sb-dot"></span>form_fields</a>
+          <a class="sb-link" href="#table-form_template_versions"
+            ><span class="sb-dot"></span>form_template_versions</a
+          >
+          <a class="sb-link" href="#table-form_assignments"
+            ><span class="sb-dot"></span>form_assignments</a
+          >
+          <a class="sb-link" href="#table-form_submissions"
+            ><span class="sb-dot"></span>form_submissions</a
+          >
+          <a class="sb-link" href="#table-form_answers"><span class="sb-dot"></span>form_answers</a>
           <a class="sb-link" href="#table-booking_companion"
             ><span class="sb-dot"></span>booking_companion</a
           >
@@ -576,9 +587,7 @@
           <a class="sb-link" href="#table-reminder_policy"
             ><span class="sb-dot"></span>reminder_policy</a
           >
-          <a class="sb-link" href="#table-reminder_log"
-            ><span class="sb-dot"></span>reminder_log</a
-          >
+          <a class="sb-link" href="#table-reminder_log"><span class="sb-dot"></span>reminder_log</a>
           <a class="sb-link" href="#table-booking_audit_log"
             ><span class="sb-dot"></span>booking_audit_log</a
           >
@@ -678,11 +687,15 @@
                 >storeInvitation</code
               >
               と <code>participantInvitation</code> は <code>invitation</code> の参照 alias
-              であり、独立テーブルとしては数えていません。現在の Drizzle schema と <code>apps/backend/drizzle/0035_slot_public_status.sql</code>
+              であり、独立テーブルとしては数えていません。現在の Drizzle schema と
+              <code>apps/backend/drizzle/0036_form_management_mvp.sql</code>
               までの公開予約MVPテーブルを反映し、旧課金テーブルは含めていません。サービス単位の公開状態は
-              <code>service.public_status</code> と <code>service_store_public_status_idx</code>
-              を反映しています。枠単位の公開状態は <code>slot.public_status</code> と
-              <code>slot_store_public_status_idx</code> を反映しています。
+              <code>service.public_status</code> と
+              <code>service_store_public_status_idx</code> を反映しています。枠単位の公開状態は
+              <code>slot.public_status</code> と
+              <code>slot_store_public_status_idx</code> を反映しています。フォーム管理は
+              <code>form_templates</code> から
+              <code>form_answers</code> までの6テーブルを反映しています。
             </div>
             <section class="table-group">
               <h3>認証</h3>
@@ -1090,12 +1103,17 @@
                     <div class="fdesc">主キー。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="fname">
+                      organization_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-uk">UK</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">store_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="fname">
+                      store_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
                   </div>
@@ -1120,7 +1138,9 @@
                     <div class="fdesc">公開サイトに表示する電話番号。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">business_hours<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      business_hours<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">公開サイトに表示する営業時間。</div>
                   </div>
@@ -1135,7 +1155,9 @@
                     <div class="fdesc">公開サイトの公開状態。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">accept_bookings<span class="ftag tag-meta">default</span></div>
+                    <div class="fname">
+                      accept_bookings<span class="ftag tag-meta">default</span>
+                    </div>
                     <div class="ftype">integer(boolean)</div>
                     <div class="fdesc">公開予約を受け付けるかどうか。</div>
                   </div>
@@ -1624,13 +1646,11 @@
                     <div class="fdesc">真偽値。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      public_status<span class="ftag tag-meta">default</span>
-                    </div>
+                    <div class="fname">public_status<span class="ftag tag-meta">default</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">
-                      公開ページでの表示・受付状態。public / private /
-                      suspended。検索用 index は service_store_public_status_idx。
+                      公開ページでの表示・受付状態。public / private / suspended。検索用 index は
+                      service_store_public_status_idx。
                     </div>
                   </div>
                   <div class="frow">
@@ -1935,13 +1955,11 @@
                     <div class="fdesc">状態値。値域はドメイン層またはユースケース層を参照。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">
-                      public_status<span class="ftag tag-meta">default</span>
-                    </div>
+                    <div class="fname">public_status<span class="ftag tag-meta">default</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">
-                      公開ページでの表示・受付状態。public / private /
-                      suspended。検索用 index は slot_store_public_status_idx。
+                      公開ページでの表示・受付状態。public / private / suspended。検索用 index は
+                      slot_store_public_status_idx。
                     </div>
                   </div>
                   <div class="frow">
@@ -1985,7 +2003,9 @@
                       ><span class="tbadge">2 UK</span>
                     </div>
                   </div>
-                  <div class="tdesc">公開予約を含む予約。参加者紐づけがないゲスト予約、連絡先、公開操作IDを保持する。</div>
+                  <div class="tdesc">
+                    公開予約を含む予約。参加者紐づけがないゲスト予約、連絡先、公開操作IDを保持する。
+                  </div>
                   <div class="col-header">
                     <div>column</div>
                     <div>type</div>
@@ -2007,7 +2027,9 @@
                     <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">slot_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="fname">
+                      slot_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">slot.id への必須参照。削除時は cascade。</div>
                   </div>
@@ -2017,12 +2039,19 @@
                     <div class="fdesc">service.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">participant_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      participant_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-uk">UK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">participant.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">public_id<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      public_id<span class="ftag tag-uk">UK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">公開予約の照会・操作で使う一意な公開ID。</div>
                   </div>
@@ -2032,22 +2061,30 @@
                     <div class="fdesc">予約作成経路。participant / public など。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">participants_count<span class="ftag tag-meta">default</span></div>
+                    <div class="fname">
+                      participants_count<span class="ftag tag-meta">default</span>
+                    </div>
                     <div class="ftype">integer</div>
                     <div class="fdesc">予約人数。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">customer_name<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      customer_name<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">公開予約者名。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">customer_email<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      customer_email<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">公開予約者メールアドレス。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">customer_phone<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      customer_phone<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">公開予約者電話番号。</div>
                   </div>
@@ -2057,7 +2094,10 @@
                     <div class="fdesc">予約者または運営側の補足メモ。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">created_by_user_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      created_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">user.id への任意参照。削除時は set null。</div>
                   </div>
@@ -2067,7 +2107,9 @@
                     <div class="fdesc">予約状態。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">cancel_reason<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      cancel_reason<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">キャンセル理由。</div>
                   </div>
@@ -2077,17 +2119,25 @@
                     <div class="fdesc">キャンセル日時。timestamp_ms。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">cancelled_by_user_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      cancelled_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">user.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">no_show_marked_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      no_show_marked_at<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">integer(timestamp_ms)</div>
                     <div class="fdesc">無断欠席として記録した日時。timestamp_ms。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">ticket_pack_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      ticket_pack_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">ticket_pack.id への任意参照。削除時は set null。</div>
                   </div>
@@ -2102,15 +2152,17 @@
                     <div class="fdesc">更新日時。timestamp_ms。</div>
                   </div>
                 </article>
-                <article class="tcard" id="table-booking_answer">
+                <article class="tcard" id="table-form_templates">
                   <div class="tcard-header">
-                    <div class="tname">booking_answer</div>
+                    <div class="tname">form_templates</div>
                     <div class="tcard-badges">
-                      <span class="tbadge">6 cols</span><span class="tbadge">1 FK</span
+                      <span class="tbadge">13 cols</span><span class="tbadge">4 FK</span
                       ><span class="tbadge">0 UK</span>
                     </div>
                   </div>
-                  <div class="tdesc">公開予約フォームの回答スナップショット。</div>
+                  <div class="tdesc">
+                    店舗で管理するフォームの編集対象。予約時入力、事前アンケート、同意事項を表す。
+                  </div>
                   <div class="col-header">
                     <div>column</div>
                     <div>type</div>
@@ -2122,24 +2174,469 @@
                     <div class="fdesc">主キー。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">booking_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span></div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">booking.id への必須参照。削除時は cascade。</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">field_id</div>
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span></div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">フォーム項目ID。</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">
+                      フォーム種別。reservation_input / pre_survey / consent。
+                    </div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">name</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">管理画面と予約詳細で表示するフォーム名。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">description<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">フォーム説明。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">status<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">draft / published / archived。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      current_published_version_id<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">現在公開中の form_template_versions.id。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      created_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">user.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      updated_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">user.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">archived_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">アーカイブ日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-form_fields">
+                  <div class="tcard-header">
+                    <div class="tname">form_fields</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">13 cols</span><span class="tbadge">1 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">
+                    フォーム編集画面で管理する項目定義。公開時に version snapshot へ固定される。
+                  </div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_template_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">form_templates.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">field_key<span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">フォーム内で一意な項目キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">field_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">入力型。text / textarea / select / checkbox / consent。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">label</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">項目ラベル。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">description<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">項目説明。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">placeholder<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">入力補助文。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">required<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(boolean)</div>
+                    <div class="fdesc">必須項目かどうか。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">options_json<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">選択肢の JSON。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      validation_json<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">入力検証ルールの JSON。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">sort_order<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer</div>
+                    <div class="fdesc">表示順。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-form_template_versions">
+                  <div class="tcard-header">
+                    <div class="tname">form_template_versions</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">12 cols</span><span class="tbadge">4 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">
+                    公開済みフォームのスナップショット。予約時の検証と履歴表示で使う。
+                  </div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_template_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">form_templates.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開時点のフォーム種別。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">version_number<span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">integer</div>
+                    <div class="fdesc">フォームごとの公開版番号。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">name_snapshot</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開時点のフォーム名。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      description_snapshot<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開時点の説明。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">fields_snapshot_json</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開時点の項目定義 JSON。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      published_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">user.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">published_at</div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">公開日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-form_assignments">
+                  <div class="tcard-header">
+                    <div class="tname">form_assignments</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">10 cols</span><span class="tbadge">4 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">
+                    公開予約で使うフォームの割り当て。店舗、サービス、予約枠の優先順位で解決する。
+                  </div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">フォーム種別。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">target_type<span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">割り当て先。store / service / slot。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">target_id<span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">
+                      割り当て先 ID。store_id、service_id、slot_id のいずれか。
+                    </div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_template_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">form_templates.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      created_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">user.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-form_submissions">
+                  <div class="tcard-header">
+                    <div class="tname">form_submissions</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">14 cols</span><span class="tbadge">7 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">
+                    予約に紐づくフォーム送信。公開予約またはスタッフ代理予約の回答単位。
+                  </div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_template_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">form_templates.id への必須参照。削除時は restrict。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      form_template_version_id<span class="ftag tag-fk">FK</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">
+                      form_template_versions.id への必須参照。削除時は restrict。
+                    </div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">回答したフォーム種別。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      booking_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span
+                      ><span class="ftag tag-uk">UK</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">booking.id への任意参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      participant_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">participant.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      customer_name_snapshot<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">回答時点の予約者名。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      customer_email_snapshot<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">回答時点の予約者メールアドレス。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">source</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">回答経路。public / staff。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      submitted_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">user.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">submitted_at</div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">回答日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-form_answers">
+                  <div class="tcard-header">
+                    <div class="tname">form_answers</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">8 cols</span><span class="tbadge">1 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">
+                    フォーム送信に含まれる項目ごとの回答。表示名と値を回答時点の内容で保存する。
+                  </div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">form_submission_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">form_submissions.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">field_key<span class="ftag tag-uk">UK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">回答項目キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">field_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">回答時点の項目型。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">label_snapshot</div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">予約時点の項目ラベル。</div>
+                    <div class="fdesc">回答時点の項目ラベル。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">value_json</div>
                     <div class="ftype">text</div>
-                    <div class="fdesc">回答値のJSON文字列。</div>
+                    <div class="fdesc">回答値の JSON 文字列。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">sort_order<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer</div>
+                    <div class="fdesc">表示順。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
@@ -2262,12 +2759,17 @@
                     <div class="fdesc">主キー。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="fname">
+                      organization_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-uk">UK</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">store_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div>
+                    <div class="fname">
+                      store_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
                   </div>
@@ -2282,7 +2784,9 @@
                     <div class="fdesc">Org admin へ通知するかどうか。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">notify_store_managers<span class="ftag tag-meta">default</span></div>
+                    <div class="fname">
+                      notify_store_managers<span class="ftag tag-meta">default</span>
+                    </div>
                     <div class="ftype">integer(boolean)</div>
                     <div class="fdesc">店舗 manager へ通知するかどうか。</div>
                   </div>
@@ -2292,7 +2796,9 @@
                     <div class="fdesc">店舗 staff へ通知するかどうか。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">additional_emails_json<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      additional_emails_json<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">追加通知先メールアドレスのJSON文字列。</div>
                   </div>
@@ -2337,7 +2843,10 @@
                     <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">booking_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      booking_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">booking.id への任意参照。削除時は set null。</div>
                   </div>
@@ -2367,7 +2876,9 @@
                     <div class="fdesc">重複送信防止キー。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">error_message<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      error_message<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">送信失敗時のエラー概要。</div>
                   </div>
@@ -2412,7 +2923,10 @@
                     <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">service_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      service_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">service.id への任意参照。削除時は cascade。</div>
                   </div>
@@ -2422,7 +2936,9 @@
                     <div class="fdesc">リマインダーを有効にするかどうか。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">minutes_before<span class="ftag tag-meta">default</span></div>
+                    <div class="fname">
+                      minutes_before<span class="ftag tag-meta">default</span>
+                    </div>
                     <div class="ftype">integer</div>
                     <div class="fdesc">予約開始何分前に送るか。</div>
                   </div>
@@ -2477,7 +2993,10 @@
                     <div class="fdesc">booking.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">reminder_policy_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      reminder_policy_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">reminder_policy.id への任意参照。削除時は set null。</div>
                   </div>
@@ -2502,7 +3021,9 @@
                     <div class="fdesc">重複送信防止キー。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">error_message<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      error_message<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">送信失敗時のエラー概要。</div>
                   </div>
@@ -2693,7 +3214,9 @@
                       ><span class="tbadge">0 UK</span>
                     </div>
                   </div>
-                  <div class="tdesc">参加者が保有する回数券残高。サービス範囲のスナップショットを含む。</div>
+                  <div class="tdesc">
+                    参加者が保有する回数券残高。サービス範囲のスナップショットを含む。
+                  </div>
                   <div class="col-header">
                     <div>column</div>
                     <div>type</div>
@@ -2725,7 +3248,9 @@
                     <div class="fdesc">ticket_type.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">service_ids_json<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      service_ids_json<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">利用可能サービスIDのJSONスナップショット。</div>
                   </div>
@@ -2768,7 +3293,9 @@
                       ><span class="tbadge">1 UK</span>
                     </div>
                   </div>
-                  <div class="tdesc">回数券購入または承認フロー。Stripe Checkout とサービス範囲の対応を含む。</div>
+                  <div class="tdesc">
+                    回数券購入または承認フロー。Stripe Checkout とサービス範囲の対応を含む。
+                  </div>
                   <div class="col-header">
                     <div>column</div>
                     <div>type</div>
@@ -2800,7 +3327,9 @@
                     <div class="fdesc">ticket_type.id への必須参照。削除時は cascade。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">service_ids_json<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      service_ids_json<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">購入対象サービスIDのJSONスナップショット。</div>
                   </div>
@@ -2815,17 +3344,26 @@
                     <div class="fdesc">購入状態。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">ticket_pack_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      ticket_pack_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">ticket_pack.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">stripe_checkout_session_id<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      stripe_checkout_session_id<span class="ftag tag-uk">UK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">Stripe Checkout Session ID。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">approved_by_user_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      approved_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">user.id への任意参照。削除時は set null。</div>
                   </div>
@@ -2835,7 +3373,10 @@
                     <div class="fdesc">承認日時。timestamp_ms。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">rejected_by_user_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      rejected_by_user_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">user.id への任意参照。削除時は set null。</div>
                   </div>
@@ -2845,7 +3386,9 @@
                     <div class="fdesc">却下日時。timestamp_ms。</div>
                   </div>
                   <div class="frow">
-                    <div class="fname">reject_reason<span class="ftag tag-meta">nullable</span></div>
+                    <div class="fname">
+                      reject_reason<span class="ftag tag-meta">nullable</span>
+                    </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">却下理由。</div>
                   </div>
@@ -5358,10 +5901,130 @@
                 <span class="rel-note">ticket_pack_id optional / onDelete set null</span>
               </div>
               <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_templates</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_templates</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">user</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_templates</span>
+                <span class="rel-note">created_by_user_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">user</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_templates</span>
+                <span class="rel-note">updated_by_user_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">form_templates</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_fields</span>
+                <span class="rel-note">form_template_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">form_templates</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_template_versions</span>
+                <span class="rel-note">form_template_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_template_versions</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_template_versions</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">user</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_template_versions</span>
+                <span class="rel-note">published_by_user_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_assignments</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_assignments</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">form_templates</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_assignments</span>
+                <span class="rel-note">form_template_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">user</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_assignments</span>
+                <span class="rel-note">created_by_user_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_submissions</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_submissions</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">form_templates</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_submissions</span>
+                <span class="rel-note">form_template_id / onDelete restrict</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">form_template_versions</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_submissions</span>
+                <span class="rel-note">form_template_version_id / onDelete restrict</span>
+              </div>
+              <div class="rel-row">
                 <span class="rel-entity">booking</span>
                 <span class="rel-conn">||--o{</span>
-                <span class="rel-entity">booking_answer</span>
-                <span class="rel-note">booking_id / onDelete cascade</span>
+                <span class="rel-entity">form_submissions</span>
+                <span class="rel-note">booking_id optional / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">participant</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_submissions</span>
+                <span class="rel-note">participant_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">user</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_submissions</span>
+                <span class="rel-note">submitted_by_user_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">form_submissions</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">form_answers</span>
+                <span class="rel-note">form_submission_id / onDelete cascade</span>
               </div>
               <div class="rel-row">
                 <span class="rel-entity">booking</span>
@@ -5777,316 +6440,903 @@
                 <path class="edge" d="M 258 90 C 314 90, 314 274, 258 274" marker-end="url(#arrow)">
                   <title>user ||--o{ account: user_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 668 90, 668 182, 598 182" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 668 90, 668 182, 598 182"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ store: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 682 90, 682 274, 598 274" marker-end="url(#arrow)">
-                  <title>organization ||--o{ public_site_setting: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 682 90, 682 274, 598 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ public_site_setting: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 640 182, 640 274, 598 274" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 640 182, 640 274, 598 274"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o| public_site_setting: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 654 90, 654 366, 598 366" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 654 90, 654 366, 598 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ member: organization_id / onDelete cascade</title>
                 </path>
                 <path class="edge" d="M 258 90 C 312 90, 312 366, 380 366" marker-end="url(#arrow)">
                   <title>user ||--o{ member: user_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 682 182, 682 458, 598 458" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 682 182, 682 458, 598 458"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ store_member: store_id / onDelete cascade</title>
                 </path>
                 <path class="edge" d="M 258 90 C 326 90, 326 458, 380 458" marker-end="url(#arrow)">
                   <title>user ||--o{ store_member: user_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 654 90, 654 550, 598 550" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 654 90, 654 550, 598 550"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ participant: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 668 182, 668 550, 598 550" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 668 182, 668 550, 598 550"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ participant: store_id / onDelete cascade</title>
                 </path>
                 <path class="edge" d="M 258 90 C 312 90, 312 550, 380 550" marker-end="url(#arrow)">
                   <title>user ||--o{ participant: user_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 659 90, 659 90, 720 90" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 659 90, 659 90, 720 90"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ invitation: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 666 182, 666 90, 720 90" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 666 182, 666 90, 720 90"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ invitation: store_id optional / onDelete set null</title>
                 </path>
                 <path class="edge" d="M 258 90 C 503 90, 503 90, 720 90" marker-end="url(#arrow)">
-                  <title>user ||--o{ invitation: responded_by_user_id optional / onDelete set null</title>
+                  <title>
+                    user ||--o{ invitation: responded_by_user_id optional / onDelete set null
+                  </title>
                 </path>
                 <path class="edge" d="M 598 366 C 645 366, 645 90, 720 90" marker-end="url(#arrow)">
-                  <title>member ||--o{ invitation: accepted_member_id optional / onDelete set null</title>
+                  <title>
+                    member ||--o{ invitation: accepted_member_id optional / onDelete set null
+                  </title>
                 </path>
                 <path class="edge" d="M 598 458 C 652 458, 652 90, 720 90" marker-end="url(#arrow)">
-                  <title>store_member ||--o{ invitation: accepted_store_member_id optional / onDelete set null</title>
+                  <title>
+                    store_member ||--o{ invitation: accepted_store_member_id optional / onDelete set
+                    null
+                  </title>
                 </path>
                 <path class="edge" d="M 598 550 C 659 550, 659 90, 720 90" marker-end="url(#arrow)">
-                  <title>participant ||--o{ invitation: accepted_participant_id optional / onDelete set null</title>
+                  <title>
+                    participant ||--o{ invitation: accepted_participant_id optional / onDelete set
+                    null
+                  </title>
                 </path>
                 <path class="edge" d="M 258 90 C 496 90, 496 90, 720 90" marker-end="url(#arrow)">
                   <title>user ||--o{ invitation: inviter_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 938 90 C 1022 90, 1022 182, 938 182" marker-end="url(#arrow)">
-                  <title>invitation ||--o{ invitation_audit_log: invitation_id / onDelete cascade</title>
+                <path
+                  class="edge"
+                  d="M 938 90 C 1022 90, 1022 182, 938 182"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    invitation ||--o{ invitation_audit_log: invitation_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 645 90, 645 182, 720 182" marker-end="url(#arrow)">
-                  <title>organization ||--o{ invitation_audit_log: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 645 90, 645 182, 720 182"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ invitation_audit_log: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 652 182, 652 182, 720 182" marker-end="url(#arrow)">
-                  <title>store ||--o{ invitation_audit_log: store_id optional / onDelete set null</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 652 182, 652 182, 720 182"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    store ||--o{ invitation_audit_log: store_id optional / onDelete set null
+                  </title>
                 </path>
                 <path class="edge" d="M 258 90 C 489 90, 489 182, 720 182" marker-end="url(#arrow)">
                   <title>user ||--o{ invitation_audit_log: actor_user_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 836 90, 836 90, 1060 90" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 836 90, 836 90, 1060 90"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ service: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 843 182, 843 90, 1060 90" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 843 182, 843 90, 1060 90"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ service: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 815 90, 815 182, 1060 182" marker-end="url(#arrow)">
-                  <title>organization ||--o{ recurring_schedule: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 815 90, 815 182, 1060 182"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ recurring_schedule: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 822 182, 822 182, 1060 182" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 822 182, 822 182, 1060 182"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ recurring_schedule: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1278 90 C 1362 90, 1362 182, 1278 182" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 1278 90 C 1362 90, 1362 182, 1278 182"
+                  marker-end="url(#arrow)"
+                >
                   <title>service ||--o{ recurring_schedule: service_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1278 182 C 1320 182, 1320 274, 1278 274" marker-end="url(#arrow)">
-                  <title>recurring_schedule ||--o{ recurring_schedule_exception: recurring_schedule_id / onDelete cascade</title>
+                <path
+                  class="edge"
+                  d="M 1278 182 C 1320 182, 1320 274, 1278 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    recurring_schedule ||--o{ recurring_schedule_exception: recurring_schedule_id /
+                    onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 843 90, 843 274, 1060 274" marker-end="url(#arrow)">
-                  <title>organization ||--o{ recurring_schedule_exception: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 843 90, 843 274, 1060 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ recurring_schedule_exception: organization_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 815 182, 815 274, 1060 274" marker-end="url(#arrow)">
-                  <title>store ||--o{ recurring_schedule_exception: store_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 815 182, 815 274, 1060 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    store ||--o{ recurring_schedule_exception: store_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 822 90, 822 366, 1060 366" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 822 90, 822 366, 1060 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ slot: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 829 182, 829 366, 1060 366" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 829 182, 829 366, 1060 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ slot: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1278 90 C 1334 90, 1334 366, 1278 366" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 1278 90 C 1334 90, 1334 366, 1278 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>service ||--o{ slot: service_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1278 182 C 1348 182, 1348 366, 1278 366" marker-end="url(#arrow)">
-                  <title>recurring_schedule ||--o{ slot: recurring_schedule_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 1278 182 C 1348 182, 1348 366, 1278 366"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    recurring_schedule ||--o{ slot: recurring_schedule_id optional / onDelete set
+                    null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 815 90, 815 458, 1060 458" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 815 90, 815 458, 1060 458"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ booking: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 822 182, 822 458, 1060 458" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 822 182, 822 458, 1060 458"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ booking: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1278 366 C 1334 366, 1334 458, 1278 458" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 1278 366 C 1334 366, 1334 458, 1278 458"
+                  marker-end="url(#arrow)"
+                >
                   <title>slot ||--o{ booking: slot_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1278 90 C 1348 90, 1348 458, 1278 458" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 1278 90 C 1348 90, 1348 458, 1278 458"
+                  marker-end="url(#arrow)"
+                >
                   <title>service ||--o{ booking: service_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 598 550 C 843 550, 843 458, 1060 458" marker-end="url(#arrow)">
-                  <title>participant ||--o{ booking: participant_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 598 550 C 843 550, 843 458, 1060 458"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    participant ||--o{ booking: participant_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge" d="M 258 90 C 645 90, 645 458, 1060 458" marker-end="url(#arrow)">
-                  <title>user ||--o{ booking: created_by_user_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 258 90 C 645 90, 645 458, 1060 458"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    user ||--o{ booking: created_by_user_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge" d="M 258 90 C 652 90, 652 458, 1060 458" marker-end="url(#arrow)">
-                  <title>user ||--o{ booking: cancelled_by_user_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 258 90 C 652 90, 652 458, 1060 458"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    user ||--o{ booking: cancelled_by_user_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge" d="M 1400 182 C 1339 182, 1339 458, 1278 458" marker-end="url(#arrow)">
-                  <title>ticket_pack ||--o{ booking: ticket_pack_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 1400 182 C 1339 182, 1339 458, 1278 458"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    ticket_pack ||--o{ booking: ticket_pack_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1278 458 C 1362 458, 1362 550, 1278 550" marker-end="url(#arrow)">
-                  <title>booking ||--o{ booking_answer: booking_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1278 458 C 1362 458, 1362 550, 1278 550"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    booking ||--o{ form_submissions: booking_id optional / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1278 458 C 1320 458, 1320 642, 1278 642" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 982 90, 982 458, 1400 458"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ form_templates: organization_id / onDelete cascade
+                  </title>
+                </path>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 982 182, 982 458, 1400 458"
+                  marker-end="url(#arrow)"
+                >
+                  <title>store ||--o{ form_templates: store_id / onDelete cascade</title>
+                </path>
+                <path
+                  class="edge"
+                  d="M 1618 458 C 1662 458, 1662 550, 1618 550"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    form_templates ||--o{ form_fields: form_template_id / onDelete cascade
+                  </title>
+                </path>
+                <path
+                  class="edge"
+                  d="M 1618 458 C 1680 458, 1680 642, 1618 642"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    form_templates ||--o{ form_template_versions: form_template_id / onDelete
+                    cascade
+                  </title>
+                </path>
+                <path
+                  class="edge"
+                  d="M 1618 458 C 1698 458, 1698 734, 1618 734"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    form_templates ||--o{ form_assignments: form_template_id / onDelete cascade
+                  </title>
+                </path>
+                <path
+                  class="edge edge-strong"
+                  d="M 1400 458 C 1348 458, 1348 550, 1278 550"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    form_templates ||--o{ form_submissions: form_template_id / onDelete restrict
+                  </title>
+                </path>
+                <path
+                  class="edge edge-strong"
+                  d="M 1400 642 C 1320 642, 1320 550, 1278 550"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    form_template_versions ||--o{ form_submissions: form_template_version_id /
+                    onDelete restrict
+                  </title>
+                </path>
+                <path
+                  class="edge"
+                  d="M 1278 550 C 1362 550, 1362 826, 1400 826"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    form_submissions ||--o{ form_answers: form_submission_id / onDelete cascade
+                  </title>
+                </path>
+                <path
+                  class="edge edge-strong"
+                  d="M 1278 458 C 1320 458, 1320 642, 1278 642"
+                  marker-end="url(#arrow)"
+                >
                   <title>booking ||--o{ booking_companion: booking_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 1278 458 C 1334 458, 1334 734, 1278 734" marker-end="url(#arrow)">
-                  <title>booking ||--o{ booking_public_action_token: booking_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1278 458 C 1334 458, 1334 734, 1278 734"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    booking ||--o{ booking_public_action_token: booking_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 822 90, 822 826, 1060 826" marker-end="url(#arrow)">
-                  <title>organization ||--o{ public_site_notification_setting: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 822 90, 822 826, 1060 826"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ public_site_notification_setting: organization_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 829 182, 829 826, 1060 826" marker-end="url(#arrow)">
-                  <title>store ||--o| public_site_notification_setting: store_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 829 182, 829 826, 1060 826"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    store ||--o| public_site_notification_setting: store_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 836 90, 836 918, 1060 918" marker-end="url(#arrow)">
-                  <title>organization ||--o{ notification_log: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 836 90, 836 918, 1060 918"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ notification_log: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 843 182, 843 918, 1060 918" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 843 182, 843 918, 1060 918"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ notification_log: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 1278 458 C 1348 458, 1348 918, 1278 918" marker-end="url(#arrow)">
-                  <title>booking ||--o{ notification_log: booking_id optional / onDelete set null</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1278 458 C 1348 458, 1348 918, 1278 918"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    booking ||--o{ notification_log: booking_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 822 90, 822 1010, 1060 1010" marker-end="url(#arrow)">
-                  <title>organization ||--o{ reminder_policy: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 822 90, 822 1010, 1060 1010"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ reminder_policy: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 829 182, 829 1010, 1060 1010" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 829 182, 829 1010, 1060 1010"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ reminder_policy: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1278 90 C 1334 90, 1334 1010, 1278 1010" marker-end="url(#arrow)">
-                  <title>service ||--o{ reminder_policy: service_id optional / onDelete cascade</title>
+                <path
+                  class="edge"
+                  d="M 1278 90 C 1334 90, 1334 1010, 1278 1010"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    service ||--o{ reminder_policy: service_id optional / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 843 90, 843 1102, 1060 1102" marker-end="url(#arrow)">
-                  <title>organization ||--o{ reminder_log: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 843 90, 843 1102, 1060 1102"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ reminder_log: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 815 182, 815 1102, 1060 1102" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 815 182, 815 1102, 1060 1102"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ reminder_log: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 1278 458 C 1320 458, 1320 1102, 1278 1102" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 1278 458 C 1320 458, 1320 1102, 1278 1102"
+                  marker-end="url(#arrow)"
+                >
                   <title>booking ||--o{ reminder_log: booking_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1278 1010 C 1334 1010, 1334 1102, 1278 1102" marker-end="url(#arrow)">
-                  <title>reminder_policy ||--o{ reminder_log: reminder_policy_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 1278 1010 C 1334 1010, 1334 1102, 1278 1102"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    reminder_policy ||--o{ reminder_log: reminder_policy_id optional / onDelete set
+                    null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1278 458 C 1348 458, 1348 1194, 1278 1194" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 1278 458 C 1348 458, 1348 1194, 1278 1194"
+                  marker-end="url(#arrow)"
+                >
                   <title>booking ||--o{ booking_audit_log: booking_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 843 90, 843 1194, 1060 1194" marker-end="url(#arrow)">
-                  <title>organization ||--o{ booking_audit_log: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 843 90, 843 1194, 1060 1194"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ booking_audit_log: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 815 182, 815 1194, 1060 1194" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 815 182, 815 1194, 1060 1194"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ booking_audit_log: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 258 90 C 652 90, 652 1194, 1060 1194" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 258 90 C 652 90, 652 1194, 1060 1194"
+                  marker-end="url(#arrow)"
+                >
                   <title>user ||--o{ booking_audit_log: actor_user_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 999 90, 999 90, 1400 90" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 999 90, 999 90, 1400 90"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ ticket_type: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 1006 182, 1006 90, 1400 90" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 1006 182, 1006 90, 1400 90"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ ticket_type: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 1013 90, 1013 182, 1400 182" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 1013 90, 1013 182, 1400 182"
+                  marker-end="url(#arrow)"
+                >
                   <title>organization ||--o{ ticket_pack: organization_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 985 182, 985 182, 1400 182" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 985 182, 985 182, 1400 182"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ ticket_pack: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 598 550 C 992 550, 992 182, 1400 182" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 598 550 C 992 550, 992 182, 1400 182"
+                  marker-end="url(#arrow)"
+                >
                   <title>participant ||--o{ ticket_pack: participant_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1618 90 C 1702 90, 1702 182, 1618 182" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 1618 90 C 1702 90, 1702 182, 1618 182"
+                  marker-end="url(#arrow)"
+                >
                   <title>ticket_type ||--o{ ticket_pack: ticket_type_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 1006 90, 1006 274, 1400 274" marker-end="url(#arrow)">
-                  <title>organization ||--o{ ticket_purchase: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 1006 90, 1006 274, 1400 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ ticket_purchase: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 1013 182, 1013 274, 1400 274" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 1013 182, 1013 274, 1400 274"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ ticket_purchase: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 598 550 C 985 550, 985 274, 1400 274" marker-end="url(#arrow)">
-                  <title>participant ||--o{ ticket_purchase: participant_id / onDelete cascade</title>
+                <path
+                  class="edge"
+                  d="M 598 550 C 985 550, 985 274, 1400 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    participant ||--o{ ticket_purchase: participant_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge" d="M 1618 90 C 1702 90, 1702 274, 1618 274" marker-end="url(#arrow)">
-                  <title>ticket_type ||--o{ ticket_purchase: ticket_type_id / onDelete cascade</title>
+                <path
+                  class="edge"
+                  d="M 1618 90 C 1702 90, 1702 274, 1618 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    ticket_type ||--o{ ticket_purchase: ticket_type_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge" d="M 1618 182 C 1660 182, 1660 274, 1618 274" marker-end="url(#arrow)">
-                  <title>ticket_pack ||--o{ ticket_purchase: ticket_pack_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 1618 182 C 1660 182, 1660 274, 1618 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    ticket_pack ||--o{ ticket_purchase: ticket_pack_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge" d="M 258 90 C 836 90, 836 274, 1400 274" marker-end="url(#arrow)">
-                  <title>user ||--o{ ticket_purchase: approved_by_user_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 258 90 C 836 90, 836 274, 1400 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    user ||--o{ ticket_purchase: approved_by_user_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge" d="M 258 90 C 843 90, 843 274, 1400 274" marker-end="url(#arrow)">
-                  <title>user ||--o{ ticket_purchase: rejected_by_user_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 258 90 C 843 90, 843 274, 1400 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    user ||--o{ ticket_purchase: rejected_by_user_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 985 90, 985 366, 1400 366" marker-end="url(#arrow)">
-                  <title>organization ||--o{ ticket_ledger: organization_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 985 90, 985 366, 1400 366"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ ticket_ledger: organization_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 992 182, 992 366, 1400 366" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 992 182, 992 366, 1400 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ ticket_ledger: store_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 1618 182 C 1674 182, 1674 366, 1618 366" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 1618 182 C 1674 182, 1674 366, 1618 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>ticket_pack ||--o{ ticket_ledger: ticket_pack_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 1278 458 C 1346 458, 1346 366, 1400 366" marker-end="url(#arrow)">
-                  <title>booking ||--o{ ticket_ledger: booking_id optional / onDelete set null</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1278 458 C 1346 458, 1346 366, 1400 366"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    booking ||--o{ ticket_ledger: booking_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge" d="M 258 90 C 843 90, 843 366, 1400 366" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 258 90 C 843 90, 843 366, 1400 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>user ||--o{ ticket_ledger: actor_user_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2000 90, 2000 182, 1958 182" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_subscription: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2000 90, 2000 182, 1958 182"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_subscription: billing_account_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2014 90, 2014 274, 1958 274" marker-end="url(#arrow)">
-                  <title>billing_account ||--o| billing_payment_issue: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2014 90, 2014 274, 1958 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o| billing_payment_issue: billing_account_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge" d="M 1958 182 C 2028 182, 2028 274, 1958 274" marker-end="url(#arrow)">
-                  <title>billing_subscription ||--o{ billing_payment_issue: billing_subscription_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 1958 182 C 2028 182, 2028 274, 1958 274"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_subscription ||--o{ billing_payment_issue: billing_subscription_id
+                    optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2042 90, 2042 366, 1958 366" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_invoice_event: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2042 90, 2042 366, 1958 366"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_invoice_event: billing_account_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge" d="M 1958 182 C 2000 182, 2000 366, 1958 366" marker-end="url(#arrow)">
-                  <title>billing_subscription ||--o{ billing_invoice_event: billing_subscription_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 1958 182 C 2000 182, 2000 366, 1958 366"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_subscription ||--o{ billing_invoice_event: billing_subscription_id
+                    optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2014 90, 2014 458, 1958 458" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_entitlement: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2014 90, 2014 458, 1958 458"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_entitlement: billing_account_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2028 90, 2028 550, 1958 550" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_provider_event: billing_account_id optional / onDelete set null</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2028 90, 2028 550, 1958 550"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_provider_event: billing_account_id optional /
+                    onDelete set null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2042 90, 2042 642, 1958 642" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_operation_attempt: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2042 90, 2042 642, 1958 642"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_operation_attempt: billing_account_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2000 90, 2000 734, 1958 734" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_audit_event: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2000 90, 2000 734, 1958 734"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_audit_event: billing_account_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2014 90, 2014 826, 1958 826" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_signal: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2014 90, 2014 826, 1958 826"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_signal: billing_account_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2028 90, 2028 918, 1958 918" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_notification: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2028 90, 2028 918, 1958 918"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_notification: billing_account_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 1958 90 C 2042 90, 2042 1010, 1958 1010" marker-end="url(#arrow)">
-                  <title>billing_account ||--o{ billing_document_reference: billing_account_id / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 1958 90 C 2042 90, 2042 1010, 1958 1010"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    billing_account ||--o{ billing_document_reference: billing_account_id / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 1339 90, 1339 90, 2080 90" marker-end="url(#arrow)">
-                  <title>organization ||--o{ ai_knowledge_document: organization_id optional / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 1339 90, 1339 90, 2080 90"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ ai_knowledge_document: organization_id optional / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 1346 182, 1346 90, 2080 90" marker-end="url(#arrow)">
-                  <title>store ||--o{ ai_knowledge_document: store_id optional / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 1346 182, 1346 90, 2080 90"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    store ||--o{ ai_knowledge_document: store_id optional / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge" d="M 2298 90 C 2368 90, 2368 182, 2298 182" marker-end="url(#arrow)">
-                  <title>ai_knowledge_document ||--o{ ai_knowledge_chunk: document_id / onDelete cascade</title>
+                <path
+                  class="edge"
+                  d="M 2298 90 C 2368 90, 2368 182, 2298 182"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    ai_knowledge_document ||--o{ ai_knowledge_chunk: document_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 90 C 1325 90, 1325 182, 2080 182" marker-end="url(#arrow)">
-                  <title>organization ||--o{ ai_knowledge_chunk: organization_id optional / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 90 C 1325 90, 1325 182, 2080 182"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ ai_knowledge_chunk: organization_id optional / onDelete
+                    cascade
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 1332 182, 1332 182, 2080 182" marker-end="url(#arrow)">
-                  <title>store ||--o{ ai_knowledge_chunk: store_id optional / onDelete cascade</title>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 1332 182, 1332 182, 2080 182"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    store ||--o{ ai_knowledge_chunk: store_id optional / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge" d="M 258 90 C 1169 90, 1169 366, 2080 366" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 258 90 C 1169 90, 1169 366, 2080 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>user ||--o{ ai_conversation: actor_user_id / onDelete cascade</title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 1346 182, 1346 366, 2080 366" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 1346 182, 1346 366, 2080 366"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ ai_conversation: store_id optional / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 2298 366 C 2382 366, 2382 458, 2298 458" marker-end="url(#arrow)">
-                  <title>ai_conversation ||--o{ ai_message: conversation_id / onDelete cascade</title>
+                <path
+                  class="edge"
+                  d="M 2298 366 C 2382 366, 2382 458, 2298 458"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    ai_conversation ||--o{ ai_message: conversation_id / onDelete cascade
+                  </title>
                 </path>
-                <path class="edge" d="M 258 90 C 1155 90, 1155 550, 2080 550" marker-end="url(#arrow)">
-                  <title>user ||--o{ ai_usage_event: actor_user_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 258 90 C 1155 90, 1155 550, 2080 550"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    user ||--o{ ai_usage_event: actor_user_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge edge-strong" d="M 598 182 C 1332 182, 1332 550, 2080 550" marker-end="url(#arrow)">
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 1332 182, 1332 550, 2080 550"
+                  marker-end="url(#arrow)"
+                >
                   <title>store ||--o{ ai_usage_event: store_id optional / onDelete set null</title>
                 </path>
-                <path class="edge" d="M 2298 366 C 2368 366, 2368 550, 2298 550" marker-end="url(#arrow)">
-                  <title>ai_conversation ||--o{ ai_usage_event: conversation_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 2298 366 C 2368 366, 2368 550, 2298 550"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    ai_conversation ||--o{ ai_usage_event: conversation_id optional / onDelete set
+                    null
+                  </title>
                 </path>
-                <path class="edge" d="M 2298 458 C 2382 458, 2382 550, 2298 550" marker-end="url(#arrow)">
-                  <title>ai_message ||--o{ ai_usage_event: message_id optional / onDelete set null</title>
+                <path
+                  class="edge"
+                  d="M 2298 458 C 2382 458, 2382 550, 2298 550"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    ai_message ||--o{ ai_usage_event: message_id optional / onDelete set null
+                  </title>
                 </path>
-                <path class="edge" d="M 2298 458 C 2340 458, 2340 642, 2298 642" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 2298 458 C 2340 458, 2340 642, 2298 642"
+                  marker-end="url(#arrow)"
+                >
                   <title>ai_message ||--o{ ai_feedback: message_id / onDelete cascade</title>
                 </path>
-                <path class="edge" d="M 258 90 C 1155 90, 1155 642, 2080 642" marker-end="url(#arrow)">
+                <path
+                  class="edge"
+                  d="M 258 90 C 1155 90, 1155 642, 2080 642"
+                  marker-end="url(#arrow)"
+                >
                   <title>user ||--o{ ai_feedback: user_id / onDelete cascade</title>
                 </path>
                 <g class="node" transform="translate(40, 54)">
@@ -6210,10 +7460,10 @@
                 </g>
                 <g class="node" transform="translate(1060, 514)">
                   <rect class="node-box" width="218" height="72" rx="8" />
-                  <text class="node-title" x="12" y="23">booking_answer</text>
-                  <text class="node-sub" x="12" y="43">6 columns</text>
+                  <text class="node-title" x="12" y="23">form_submissions</text>
+                  <text class="node-sub" x="12" y="43">14 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
-                  <text class="node-fk" x="118" y="59">FK 1</text>
+                  <text class="node-fk" x="118" y="59">FK 7</text>
                 </g>
                 <g class="node" transform="translate(1060, 606)">
                   <rect class="node-box" width="218" height="72" rx="8" />
@@ -6239,7 +7489,7 @@
                 <g class="node" transform="translate(1060, 882)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">notification_log</text>
-                  <text class="node-sub" x="12" y="43">12 columns</text>
+                  <text class="node-sub" x="12" y="43">13 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 3</text>
                 </g>
@@ -6288,9 +7538,44 @@
                 <g class="node" transform="translate(1400, 330)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">ticket_ledger</text>
-                  <text class="node-sub" x="12" y="43">11 columns</text>
+                  <text class="node-sub" x="12" y="43">10 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 5</text>
+                </g>
+                <g class="node" transform="translate(1400, 422)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">form_templates</text>
+                  <text class="node-sub" x="12" y="43">13 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 4</text>
+                </g>
+                <g class="node" transform="translate(1400, 514)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">form_fields</text>
+                  <text class="node-sub" x="12" y="43">12 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 1</text>
+                </g>
+                <g class="node" transform="translate(1400, 606)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">form_template_versions</text>
+                  <text class="node-sub" x="12" y="43">12 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 4</text>
+                </g>
+                <g class="node" transform="translate(1400, 698)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">form_assignments</text>
+                  <text class="node-sub" x="12" y="43">11 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 4</text>
+                </g>
+                <g class="node" transform="translate(1400, 790)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">form_answers</text>
+                  <text class="node-sub" x="12" y="43">8 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 1</text>
                 </g>
                 <g class="node" transform="translate(1740, 54)">
                   <rect class="node-box" width="218" height="72" rx="8" />
@@ -6683,12 +7968,91 @@ erDiagram
         int updated_at "更新日時。timestamp_ms。"
     }
 
-    booking_answer {
+    form_templates {
         varchar id PK "主キー。"
-        varchar booking_id FK "booking.id への必須参照。削除時は cascade。"
-        varchar field_id "フォーム項目ID。"
-        varchar label_snapshot "予約時点の項目ラベル。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar form_type "フォーム種別。reservation_input / pre_survey / consent。"
+        varchar name "フォーム名。"
+        varchar description "フォーム説明。"
+        varchar status "draft / published / archived。"
+        varchar current_published_version_id "現在公開中の form_template_versions.id。"
+        varchar created_by_user_id FK "user.id への任意参照。削除時は set null。"
+        varchar updated_by_user_id FK "user.id への任意参照。削除時は set null。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+        int archived_at "アーカイブ日時。timestamp_ms。"
+    }
+
+    form_fields {
+        varchar id PK "主キー。"
+        varchar form_template_id FK "form_templates.id への必須参照。削除時は cascade。"
+        varchar field_key UK "フォーム内で一意な項目キー。"
+        varchar field_type "入力型。"
+        varchar label "項目ラベル。"
+        varchar description "項目説明。"
+        varchar placeholder "入力補助文。"
+        boolean required "必須項目かどうか。"
+        varchar options_json "選択肢のJSON。"
+        varchar validation_json "入力検証ルールのJSON。"
+        int sort_order "表示順。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+    }
+
+    form_template_versions {
+        varchar id PK "主キー。"
+        varchar form_template_id FK "form_templates.id への必須参照。削除時は cascade。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar form_type "公開時点のフォーム種別。"
+        int version_number UK "フォームごとの公開版番号。"
+        varchar name_snapshot "公開時点のフォーム名。"
+        varchar description_snapshot "公開時点の説明。"
+        varchar fields_snapshot_json "公開時点の項目定義JSON。"
+        varchar published_by_user_id FK "user.id への任意参照。削除時は set null。"
+        int published_at "公開日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+    }
+
+    form_assignments {
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar form_type "フォーム種別。"
+        varchar target_type UK "割り当て先。store / service / slot。"
+        varchar target_id UK "割り当て先ID。"
+        varchar form_template_id FK "form_templates.id への必須参照。削除時は cascade。"
+        varchar created_by_user_id FK "user.id への任意参照。削除時は set null。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+    }
+
+    form_submissions {
+        varchar id PK "主キー。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar form_template_id FK "form_templates.id への必須参照。削除時は restrict。"
+        varchar form_template_version_id FK "form_template_versions.id への必須参照。削除時は restrict。"
+        varchar form_type "回答したフォーム種別。"
+        varchar booking_id FK "booking.id への任意参照。削除時は cascade。"
+        varchar participant_id FK "participant.id への任意参照。削除時は set null。"
+        varchar customer_name_snapshot "回答時点の予約者名。"
+        varchar customer_email_snapshot "回答時点の予約者メールアドレス。"
+        varchar source "回答経路。public / staff。"
+        varchar submitted_by_user_id FK "user.id への任意参照。削除時は set null。"
+        int submitted_at "回答日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+    }
+
+    form_answers {
+        varchar id PK "主キー。"
+        varchar form_submission_id FK "form_submissions.id への必須参照。削除時は cascade。"
+        varchar field_key UK "回答項目キー。"
+        varchar field_type "回答時点の項目型。"
+        varchar label_snapshot "回答時点の項目ラベル。"
         varchar value_json "回答値のJSON文字列。"
+        int sort_order "表示順。"
         int created_at "作成日時。timestamp_ms。"
     }
 
@@ -7224,7 +8588,27 @@ erDiagram
     user ||--o{ booking : "created_by_user_id optional / onDelete set null"
     user ||--o{ booking : "cancelled_by_user_id optional / onDelete set null"
     ticket_pack ||--o{ booking : "ticket_pack_id optional / onDelete set null"
-    booking ||--o{ booking_answer : "booking_id / onDelete cascade"
+    organization ||--o{ form_templates : "organization_id / onDelete cascade"
+    store ||--o{ form_templates : "store_id / onDelete cascade"
+    user ||--o{ form_templates : "created_by_user_id optional / onDelete set null"
+    user ||--o{ form_templates : "updated_by_user_id optional / onDelete set null"
+    form_templates ||--o{ form_fields : "form_template_id / onDelete cascade"
+    form_templates ||--o{ form_template_versions : "form_template_id / onDelete cascade"
+    organization ||--o{ form_template_versions : "organization_id / onDelete cascade"
+    store ||--o{ form_template_versions : "store_id / onDelete cascade"
+    user ||--o{ form_template_versions : "published_by_user_id optional / onDelete set null"
+    organization ||--o{ form_assignments : "organization_id / onDelete cascade"
+    store ||--o{ form_assignments : "store_id / onDelete cascade"
+    form_templates ||--o{ form_assignments : "form_template_id / onDelete cascade"
+    user ||--o{ form_assignments : "created_by_user_id optional / onDelete set null"
+    organization ||--o{ form_submissions : "organization_id / onDelete cascade"
+    store ||--o{ form_submissions : "store_id / onDelete cascade"
+    form_templates ||--o{ form_submissions : "form_template_id / onDelete restrict"
+    form_template_versions ||--o{ form_submissions : "form_template_version_id / onDelete restrict"
+    booking ||--o{ form_submissions : "booking_id optional / onDelete cascade"
+    participant ||--o{ form_submissions : "participant_id optional / onDelete set null"
+    user ||--o{ form_submissions : "submitted_by_user_id optional / onDelete set null"
+    form_submissions ||--o{ form_answers : "form_submission_id / onDelete cascade"
     booking ||--o{ booking_companion : "booking_id / onDelete cascade"
     booking ||--o{ booking_public_action_token : "booking_id / onDelete cascade"
     organization ||--o{ public_site_notification_setting : "organization_id / onDelete cascade"

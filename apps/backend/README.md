@@ -64,11 +64,6 @@ pnpm --filter @apps/backend run dev
 - `SENTRY_ENVIRONMENT` (default: `production`)
 - `SENTRY_RELEASE`
 
-任意 (公開イベント固定コンテキスト):
-
-- `PUBLIC_EVENTS_ORG_SLUG`
-- `PUBLIC_EVENTS_STORE_SLUG`
-
 ## API endpoints
 
 - OpenAPI JSON: `/api/openapi.json`
@@ -79,9 +74,9 @@ pnpm --filter @apps/backend run dev
   - Google OIDC start endpoint: `/api/v1/auth/oidc/google`
   - Organization logo upload endpoint: `POST /api/v1/auth/organizations/logo` (multipart form-data)
   - Organization logo delivery endpoint: `GET /api/v1/auth/organizations/logo/:key`
-  - Service image signed upload URL endpoint: `POST /api/v1/auth/organizations/services/images/upload-url`
-  - Service image upload endpoint: `PUT /api/v1/auth/organizations/services/images/upload/:token`
-  - Service image delivery endpoint: `GET /api/v1/auth/organizations/services/images/:key`
+  - Service image signed upload URL endpoint: `POST /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/services/images/upload-url`
+  - Service image upload endpoint: `PUT /api/v1/auth/services/images/upload/:token`
+  - Service image delivery endpoint: `GET /api/v1/auth/services/images/:key`
   - Access tree endpoint: `GET /api/v1/auth/orgs/access-tree`
   - Organization invitation endpoint: `POST/GET /api/v1/auth/orgs/{orgSlug}/invitations`
   - Store invitation endpoint: `POST/GET /api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations`

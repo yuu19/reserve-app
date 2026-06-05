@@ -172,7 +172,7 @@ const resolveImageUrl = ({
   }
 
   const backendBaseUrl = trimTrailingSlash(env.BETTER_AUTH_URL ?? DEFAULT_BACKEND_BASE_URL);
-  return `${backendBaseUrl}/api/v1/auth/organizations/services/images/${encodeURIComponent(key)}`;
+  return `${backendBaseUrl}/api/v1/auth/services/images/${encodeURIComponent(key)}`;
 };
 
 const parseUploadToken = (token: string): { payloadBase64: string; signatureHex: string } => {
@@ -304,7 +304,7 @@ export const createServiceImageUploadService = (
 
       return {
         key,
-        uploadUrl: `${uploadUrlBase}/api/v1/auth/organizations/services/images/upload/${token}`,
+        uploadUrl: `${uploadUrlBase}/api/v1/auth/services/images/upload/${token}`,
         imageUrl: resolveImageUrl({ key, env }),
         expiresAt: new Date(expiresAtMs).toISOString(),
         contentType: normalizedContentType,

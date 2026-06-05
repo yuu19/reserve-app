@@ -21,33 +21,83 @@ import {
  * slot の作成・更新・一覧・参加者向け空き枠・キャンセル route を登録します。
  */
 export const registerSlotRoutes = (ctx: BookingRouteContext) => {
-  ctx.authRoutes.openapi(createSlotRoute, async (c) =>
-    jsonRouteResult(c, await createSlot(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  const withScope = <T extends Record<string, unknown>>(
+    scope: NonNullable<Awaited<ReturnType<BookingRouteContext['resolveScopedStoreContext']>>>,
+    input: T,
+  ) => ({
+    ...input,
+    organizationId: scope.organizationId,
+    storeId: scope.storeId,
+  });
 
-  ctx.authRoutes.openapi(updateSlotRoute, async (c) =>
-    jsonRouteResult(c, await updateExistingSlot(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(createSlotRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(c, await createSlot(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers));
+  });
 
-  ctx.authRoutes.openapi(updateSlotPublicStatusRoute, async (c) =>
-    jsonRouteResult(
+  ctx.authRoutes.openapi(updateSlotRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await updateExistingSlotPublicStatus(ctx, c.req.valid('json'), c.req.raw.headers),
-    ),
-  );
+      await updateExistingSlot(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(listSlotsRoute, async (c) =>
-    jsonRouteResult(c, await listStaffSlots(ctx, c.req.valid('query'), c.req.raw.headers)),
-  );
-
-  ctx.authRoutes.openapi(listAvailableSlotsRoute, async (c) =>
-    jsonRouteResult(
+  ctx.authRoutes.openapi(updateSlotPublicStatusRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await listParticipantAvailableSlots(ctx, c.req.valid('query'), c.req.raw.headers),
-    ),
-  );
+      await updateExistingSlotPublicStatus(
+        ctx,
+        withScope(scope, c.req.valid('json')),
+        c.req.raw.headers,
+      ),
+    );
+  });
 
-  ctx.authRoutes.openapi(cancelSlotRoute, async (c) =>
-    jsonRouteResult(c, await cancelExistingSlot(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(listSlotsRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listStaffSlots(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
+
+  ctx.authRoutes.openapi(listAvailableSlotsRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listParticipantAvailableSlots(
+        ctx,
+        withScope(scope, c.req.valid('query')),
+        c.req.raw.headers,
+      ),
+    );
+  });
+
+  ctx.authRoutes.openapi(cancelSlotRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await cancelExistingSlot(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 };

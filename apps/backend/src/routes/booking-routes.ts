@@ -1,4 +1,5 @@
 import { registerBookingLifecycleRoutes } from '../features/booking/booking.routes.js';
+import { registerFormRoutes } from '../features/forms/form.routes.js';
 import { registerRecurringRoutes } from '../features/recurring/recurring.routes.js';
 import {
   createBookingRouteContext,
@@ -14,6 +15,7 @@ export const registerBookingRoutes = (deps: BookingRouteDeps) => {
   registerServiceRoutes(ctx);
   registerSlotRoutes(ctx);
   registerRecurringRoutes(ctx);
+  registerFormRoutes(ctx);
   registerBookingLifecycleRoutes(ctx);
   registerTicketRoutes(ctx);
 };

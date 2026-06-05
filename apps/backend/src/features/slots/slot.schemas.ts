@@ -1,5 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { SLOT_PUBLIC_STATUS, SLOT_STATUS } from '../../domain/booking/constants.js';
+import {
+  scopedStoreAuthPath,
+  scopedStoreRouteParamsSchema,
+} from '../../shared/scoped-store-route.js';
 
 const isoDateTimeSchema = z
   .string()
@@ -17,8 +21,6 @@ const slotPublicStatusSchema = z.enum([
  * slot 作成 API の入力を検証します。
  */
 export const slotCreateBodySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1),
   startAt: isoDateTimeSchema,
   endAt: isoDateTimeSchema,
@@ -33,7 +35,6 @@ export const slotCreateBodySchema = z.object({
  */
 export const slotUpdateBodySchema = z.object({
   slotId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   startAt: isoDateTimeSchema,
   endAt: isoDateTimeSchema,
   capacity: z.int().min(1).max(500).optional(),
@@ -46,7 +47,6 @@ export const slotUpdateBodySchema = z.object({
  */
 export const slotPublicStatusUpdateBodySchema = z.object({
   slotId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   publicStatus: slotPublicStatusSchema,
 });
 
@@ -54,8 +54,6 @@ export const slotPublicStatusUpdateBodySchema = z.object({
  * staff 向け slot 一覧 API の query を検証します。
  */
 export const slotListQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema,
   to: isoDateTimeSchema,
@@ -66,8 +64,6 @@ export const slotListQuerySchema = z.object({
  * participant 向け空き slot 一覧 API の query を検証します。
  */
 export const slotAvailableQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema,
   to: isoDateTimeSchema,
@@ -78,44 +74,50 @@ export const slotAvailableQuerySchema = z.object({
  */
 export const slotCancelBodySchema = z.object({
   slotId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
+
+type ScopedStoreInput = {
+  organizationId: string;
+  storeId: string;
+};
 
 /**
  * slot 作成 usecase が受け取る検証済み body 型です。
  */
-export type SlotCreateBody = z.infer<typeof slotCreateBodySchema>;
+export type SlotCreateBody = z.infer<typeof slotCreateBodySchema> & ScopedStoreInput;
 /**
  * slot 更新 usecase が受け取る検証済み body 型です。
  */
-export type SlotUpdateBody = z.infer<typeof slotUpdateBodySchema>;
+export type SlotUpdateBody = z.infer<typeof slotUpdateBodySchema> & ScopedStoreInput;
 /**
  * slot 公開状態更新 usecase が受け取る検証済み body 型です。
  */
-export type SlotPublicStatusUpdateBody = z.infer<typeof slotPublicStatusUpdateBodySchema>;
+export type SlotPublicStatusUpdateBody = z.infer<typeof slotPublicStatusUpdateBodySchema> &
+  ScopedStoreInput;
 /**
  * staff 向け slot 一覧 usecase が受け取る検証済み query 型です。
  */
-export type SlotListQuery = z.infer<typeof slotListQuerySchema>;
+export type SlotListQuery = z.infer<typeof slotListQuerySchema> & ScopedStoreInput;
 /**
  * participant 向け空き slot 一覧 usecase が受け取る検証済み query 型です。
  */
-export type SlotAvailableQuery = z.infer<typeof slotAvailableQuerySchema>;
+export type SlotAvailableQuery = z.infer<typeof slotAvailableQuerySchema> & ScopedStoreInput;
 /**
  * slot キャンセル usecase が受け取る検証済み body 型です。
  */
-export type SlotCancelBody = z.infer<typeof slotCancelBodySchema>;
+export type SlotCancelBody = z.infer<typeof slotCancelBodySchema> & ScopedStoreInput;
 
 /**
  * service に紐づく単発 slot を作成する OpenAPI 定義です。
  */
 export const createSlotRoute = createRoute({
   method: 'post',
-  path: '/organizations/slots',
+  path: scopedStoreAuthPath('/slots'),
   tags: ['Slots'],
   summary: 'Create slot',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -139,10 +141,11 @@ export const createSlotRoute = createRoute({
  */
 export const updateSlotRoute = createRoute({
   method: 'post',
-  path: '/organizations/slots/update',
+  path: scopedStoreAuthPath('/slots/update'),
   tags: ['Slots'],
   summary: 'Update slot',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -167,10 +170,11 @@ export const updateSlotRoute = createRoute({
  */
 export const updateSlotPublicStatusRoute = createRoute({
   method: 'post',
-  path: '/organizations/slots/public-status',
+  path: scopedStoreAuthPath('/slots/public-status'),
   tags: ['Slots'],
   summary: 'Update slot public status',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -195,10 +199,11 @@ export const updateSlotPublicStatusRoute = createRoute({
  */
 export const listSlotsRoute = createRoute({
   method: 'get',
-  path: '/organizations/slots',
+  path: scopedStoreAuthPath('/slots'),
   tags: ['Slots'],
   summary: 'List slots for staff',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: slotListQuerySchema,
   },
   responses: {
@@ -213,10 +218,11 @@ export const listSlotsRoute = createRoute({
  */
 export const listAvailableSlotsRoute = createRoute({
   method: 'get',
-  path: '/organizations/slots/available',
+  path: scopedStoreAuthPath('/slots/available'),
   tags: ['Slots'],
   summary: 'List available slots for participant',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: slotAvailableQuerySchema,
   },
   responses: {
@@ -231,10 +237,11 @@ export const listAvailableSlotsRoute = createRoute({
  */
 export const cancelSlotRoute = createRoute({
   method: 'post',
-  path: '/organizations/slots/cancel',
+  path: scopedStoreAuthPath('/slots/cancel'),
   tags: ['Slots'],
   summary: 'Cancel slot',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {

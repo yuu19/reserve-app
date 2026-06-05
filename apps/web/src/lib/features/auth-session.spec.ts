@@ -69,9 +69,9 @@ describe('認証セッション処理', () => {
 			}
 		});
 
-		redirectToLoginWithNext('/events/slot-1?from=public#reserve');
+		redirectToLoginWithNext('/org-one/room-one/events/slot-1?from=public#reserve');
 		expect(assign).toHaveBeenCalledWith(
-			'/participant/login?next=%2Fevents%2Fslot-1%3Ffrom%3Dpublic%23reserve'
+			'/participant/login?next=%2Forg-one%2Froom-one%2Fevents%2Fslot-1%3Ffrom%3Dpublic%23reserve'
 		);
 	});
 

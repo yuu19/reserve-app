@@ -23,13 +23,34 @@ export const SLOT_PUBLIC_STATUS = {
 
 /** 予約 lifecycle で永続化する status 値。 */
 export const BOOKING_STATUS = {
-  CONFIRMED: 'confirmed',
   PENDING_APPROVAL: 'pending_approval',
-  CANCELED_BY_PARTICIPANT: 'cancelled_by_participant',
-  CANCELED_BY_STAFF: 'cancelled_by_staff',
-  REJECTED_BY_STAFF: 'rejected_by_staff',
+  CONFIRMED: 'confirmed',
+  REJECTED: 'rejected',
+  CANCELLED: 'cancelled',
   NO_SHOW: 'no_show',
+  COMPLETED: 'completed',
+  PENDING_PAYMENT: 'pending_payment',
+  EXPIRED: 'expired',
 } as const;
+
+export type BookingStatus = (typeof BOOKING_STATUS)[keyof typeof BOOKING_STATUS];
+
+/** 予約 lifecycle 操作として監査ログに保存する action 値。 */
+export const BOOKING_AUDIT_ACTION = {
+  CREATED: 'created',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  CANCELLED_BY_CUSTOMER: 'cancelled_by_customer',
+  CANCELLED_BY_STAFF: 'cancelled_by_staff',
+  RESCHEDULED: 'rescheduled',
+  CHECKED_IN: 'checked_in',
+  NO_SHOW_MARKED: 'no_show_marked',
+  PAYMENT_STARTED: 'payment_started',
+  PAYMENT_CONFIRMED: 'payment_confirmed',
+  PAYMENT_EXPIRED: 'payment_expired',
+} as const;
+
+export type BookingAuditAction = (typeof BOOKING_AUDIT_ACTION)[keyof typeof BOOKING_AUDIT_ACTION];
 
 /** 予約来店時に staff が記録する出欠 status 値。 */
 export const BOOKING_ATTENDANCE_STATUS = {

@@ -4,6 +4,10 @@ import {
   BOOKING_SOURCE,
   BOOKING_STATUS,
 } from '../../domain/booking/constants.js';
+import {
+  scopedStoreAuthPath,
+  scopedStoreRouteParamsSchema,
+} from '../../shared/scoped-store-route.js';
 
 const isoDateTimeSchema = z
   .string()
@@ -11,12 +15,14 @@ const isoDateTimeSchema = z
   .refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid ISO datetime');
 
 const bookingStatusSchema = z.enum([
-  BOOKING_STATUS.CONFIRMED,
   BOOKING_STATUS.PENDING_APPROVAL,
-  BOOKING_STATUS.CANCELED_BY_PARTICIPANT,
-  BOOKING_STATUS.CANCELED_BY_STAFF,
-  BOOKING_STATUS.REJECTED_BY_STAFF,
+  BOOKING_STATUS.CONFIRMED,
+  BOOKING_STATUS.REJECTED,
+  BOOKING_STATUS.CANCELLED,
   BOOKING_STATUS.NO_SHOW,
+  BOOKING_STATUS.COMPLETED,
+  BOOKING_STATUS.PENDING_PAYMENT,
+  BOOKING_STATUS.EXPIRED,
 ]);
 
 const bookingAttendanceStatusSchema = z.enum([
@@ -30,7 +36,6 @@ const bookingAttendanceStatusSchema = z.enum([
  */
 export const bookingCreateBodySchema = z.object({
   slotId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   participantsCount: z.int().min(1).max(20).optional(),
 });
 
@@ -38,8 +43,6 @@ export const bookingCreateBodySchema = z.object({
  * participant 自身の予約一覧 query を検証します。
  */
 export const bookingMineQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
   status: bookingStatusSchema.optional(),
@@ -49,8 +52,6 @@ export const bookingMineQuerySchema = z.object({
  * staff 向け予約一覧 query を検証します。
  */
 export const bookingListQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
   from: isoDateTimeSchema.optional(),
   to: isoDateTimeSchema.optional(),
@@ -63,7 +64,6 @@ export const bookingListQuerySchema = z.object({
  */
 export const bookingActionBodySchema = z.object({
   bookingId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
@@ -72,7 +72,6 @@ export const bookingActionBodySchema = z.object({
  */
 export const bookingNoShowBodySchema = z.object({
   bookingId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
 });
 
 /**
@@ -80,7 +79,6 @@ export const bookingNoShowBodySchema = z.object({
  */
 export const bookingAttendanceBodySchema = z.object({
   bookingId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   attendanceStatus: bookingAttendanceStatusSchema,
 });
 
@@ -89,7 +87,6 @@ export const bookingAttendanceBodySchema = z.object({
  */
 export const bookingApproveBodySchema = z.object({
   bookingId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
 });
 
 /**
@@ -98,7 +95,6 @@ export const bookingApproveBodySchema = z.object({
 export const bookingRescheduleBodySchema = z.object({
   bookingId: z.string().min(1),
   targetSlotId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
@@ -107,16 +103,18 @@ const bookingCompanionBodySchema = z.object({
   note: z.string().trim().max(500).nullable().optional(),
 });
 
-const bookingAnswerBodySchema = z.object({
-  fieldId: z.string().trim().min(1).max(120),
-  labelSnapshot: z.string().trim().min(1).max(200),
+const bookingFormAnswerBodySchema = z.object({
+  fieldKey: z.string().trim().min(1).max(120),
   value: z.unknown(),
 });
 
-export const staffCreateBookingParamsSchema = z.object({
-  orgSlug: z.string().min(1),
-  storeSlug: z.string().min(1),
+const bookingFormSubmissionBodySchema = z.object({
+  formTemplateId: z.string().trim().min(1).max(120),
+  formTemplateVersionId: z.string().trim().min(1).max(120),
+  answers: z.array(bookingFormAnswerBodySchema).max(100).optional(),
 });
+
+export const staffCreateBookingParamsSchema = scopedStoreRouteParamsSchema;
 
 export const staffCreateBookingBodySchema = z.object({
   slotId: z.string().min(1),
@@ -137,41 +135,46 @@ export const staffCreateBookingBodySchema = z.object({
   notifyCustomer: z.boolean().default(false),
   companions: z.array(bookingCompanionBodySchema).max(19).optional(),
   note: z.string().trim().max(1000).optional(),
-  answers: z.array(bookingAnswerBodySchema).max(50).optional(),
+  formSubmissions: z.array(bookingFormSubmissionBodySchema).max(10).optional(),
 });
+
+type ScopedStoreInput = {
+  organizationId: string;
+  storeId: string;
+};
 
 /**
  * 予約作成 usecase が受け取る検証済み body 型です。
  */
-export type BookingCreateBody = z.infer<typeof bookingCreateBodySchema>;
+export type BookingCreateBody = z.infer<typeof bookingCreateBodySchema> & ScopedStoreInput;
 /**
  * participant 自身の予約一覧 usecase が受け取る検証済み query 型です。
  */
-export type BookingMineQuery = z.infer<typeof bookingMineQuerySchema>;
+export type BookingMineQuery = z.infer<typeof bookingMineQuerySchema> & ScopedStoreInput;
 /**
  * staff 向け予約一覧 usecase が受け取る検証済み query 型です。
  */
-export type BookingListQuery = z.infer<typeof bookingListQuerySchema>;
+export type BookingListQuery = z.infer<typeof bookingListQuerySchema> & ScopedStoreInput;
 /**
  * 予約キャンセル・却下 usecase が受け取る検証済み body 型です。
  */
-export type BookingActionBody = z.infer<typeof bookingActionBodySchema>;
+export type BookingActionBody = z.infer<typeof bookingActionBodySchema> & ScopedStoreInput;
 /**
  * no-show 登録 usecase が受け取る検証済み body 型です。
  */
-export type BookingNoShowBody = z.infer<typeof bookingNoShowBodySchema>;
+export type BookingNoShowBody = z.infer<typeof bookingNoShowBodySchema> & ScopedStoreInput;
 /**
  * 出席・欠席記録 usecase が受け取る検証済み body 型です。
  */
-export type BookingAttendanceBody = z.infer<typeof bookingAttendanceBodySchema>;
+export type BookingAttendanceBody = z.infer<typeof bookingAttendanceBodySchema> & ScopedStoreInput;
 /**
  * 予約承認 usecase が受け取る検証済み body 型です。
  */
-export type BookingApproveBody = z.infer<typeof bookingApproveBodySchema>;
+export type BookingApproveBody = z.infer<typeof bookingApproveBodySchema> & ScopedStoreInput;
 /**
  * 予約日程変更 usecase が受け取る検証済み body 型です。
  */
-export type BookingRescheduleBody = z.infer<typeof bookingRescheduleBodySchema>;
+export type BookingRescheduleBody = z.infer<typeof bookingRescheduleBodySchema> & ScopedStoreInput;
 export type StaffCreateBookingParams = z.infer<typeof staffCreateBookingParamsSchema>;
 export type StaffCreateBookingBody = z.infer<typeof staffCreateBookingBodySchema>;
 
@@ -180,10 +183,11 @@ export type StaffCreateBookingBody = z.infer<typeof staffCreateBookingBodySchema
  */
 export const createBookingRoute = createRoute({
   method: 'post',
-  path: '/organizations/bookings',
+  path: scopedStoreAuthPath('/bookings'),
   tags: ['Bookings'],
   summary: 'Create booking',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -207,10 +211,11 @@ export const createBookingRoute = createRoute({
  */
 export const listMyBookingsRoute = createRoute({
   method: 'get',
-  path: '/organizations/bookings/mine',
+  path: scopedStoreAuthPath('/bookings/mine'),
   tags: ['Bookings'],
   summary: 'List my bookings',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: bookingMineQuerySchema,
   },
   responses: {
@@ -225,10 +230,11 @@ export const listMyBookingsRoute = createRoute({
  */
 export const cancelBookingRoute = createRoute({
   method: 'post',
-  path: '/organizations/bookings/cancel',
+  path: scopedStoreAuthPath('/bookings/cancel'),
   tags: ['Bookings'],
   summary: 'Cancel booking by participant',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -252,10 +258,11 @@ export const cancelBookingRoute = createRoute({
  */
 export const listBookingsRoute = createRoute({
   method: 'get',
-  path: '/organizations/bookings',
+  path: scopedStoreAuthPath('/bookings'),
   tags: ['Bookings'],
   summary: 'List bookings for staff',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: bookingListQuerySchema,
   },
   responses: {
@@ -270,10 +277,11 @@ export const listBookingsRoute = createRoute({
  */
 export const cancelBookingByStaffRoute = createRoute({
   method: 'post',
-  path: '/organizations/bookings/cancel-by-staff',
+  path: scopedStoreAuthPath('/bookings/cancel-by-staff'),
   tags: ['Bookings'],
   summary: 'Cancel booking by staff',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -297,10 +305,11 @@ export const cancelBookingByStaffRoute = createRoute({
  */
 export const approveBookingByStaffRoute = createRoute({
   method: 'post',
-  path: '/organizations/bookings/approve',
+  path: scopedStoreAuthPath('/bookings/approve'),
   tags: ['Bookings'],
   summary: 'Approve booking by staff',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -324,10 +333,11 @@ export const approveBookingByStaffRoute = createRoute({
  */
 export const rejectBookingByStaffRoute = createRoute({
   method: 'post',
-  path: '/organizations/bookings/reject',
+  path: scopedStoreAuthPath('/bookings/reject'),
   tags: ['Bookings'],
   summary: 'Reject booking by staff',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -351,10 +361,11 @@ export const rejectBookingByStaffRoute = createRoute({
  */
 export const rescheduleBookingByStaffRoute = createRoute({
   method: 'post',
-  path: '/organizations/bookings/reschedule',
+  path: scopedStoreAuthPath('/bookings/reschedule'),
   tags: ['Bookings'],
   summary: 'Reschedule booking by staff',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -378,10 +389,11 @@ export const rescheduleBookingByStaffRoute = createRoute({
  */
 export const markNoShowRoute = createRoute({
   method: 'post',
-  path: '/organizations/bookings/no-show',
+  path: scopedStoreAuthPath('/bookings/no-show'),
   tags: ['Bookings'],
   summary: 'Mark booking as no show',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {
@@ -405,10 +417,11 @@ export const markNoShowRoute = createRoute({
  */
 export const markAttendanceRoute = createRoute({
   method: 'post',
-  path: '/organizations/bookings/check-in',
+  path: scopedStoreAuthPath('/bookings/check-in'),
   tags: ['Bookings'],
   summary: 'Mark booking attendance',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: {

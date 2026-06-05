@@ -6,6 +6,7 @@ import type {
 } from '$lib/rpc-client';
 import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import {
+	buildScopedAuthPath,
 	buildScopedInvitationPath,
 	createApiGetter,
 	resolveScopedAccessContext,
@@ -136,14 +137,9 @@ export const getParticipantsPageData = query(
 			};
 		}
 
-		const scopedQuery = {
-			organizationId: scopedAccess.organizationId,
-			storeId: scopedAccess.storeId
-		};
-
 		const [participantsResult, sentInvitationsResult, receivedInvitationsResult] =
 			await Promise.all([
-				getApi('/api/v1/auth/organizations/participants', scopedQuery),
+				getApi(buildScopedAuthPath(activeContext, '/participants')),
 				getApi(buildScopedInvitationPath(activeContext)),
 				getApi('/api/v1/auth/invitations/user')
 			]);

@@ -31,48 +31,128 @@ import { createBookingByStaff } from './staff-create-booking.usecase.js';
  * 予約の申込から承認、キャンセル、無断欠席までの lifecycle route を登録します。
  */
 export const registerBookingLifecycleRoutes = (ctx: BookingRouteContext) => {
-  ctx.authRoutes.openapi(createBookingRoute, async (c) =>
-    jsonRouteResult(c, await createBooking(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  const withScope = <T extends Record<string, unknown>>(
+    scope: NonNullable<Awaited<ReturnType<BookingRouteContext['resolveScopedStoreContext']>>>,
+    input: T,
+  ) => ({
+    ...input,
+    organizationId: scope.organizationId,
+    storeId: scope.storeId,
+  });
 
-  ctx.authRoutes.openapi(listMyBookingsRoute, async (c) =>
-    jsonRouteResult(c, await listMyBookings(ctx, c.req.valid('query'), c.req.raw.headers)),
-  );
-
-  ctx.authRoutes.openapi(cancelBookingRoute, async (c) =>
-    jsonRouteResult(
+  ctx.authRoutes.openapi(createBookingRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await cancelBookingByParticipant(ctx, c.req.valid('json'), c.req.raw.headers),
-    ),
-  );
+      await createBooking(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(listBookingsRoute, async (c) =>
-    jsonRouteResult(c, await listStaffBookings(ctx, c.req.valid('query'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(listMyBookingsRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listMyBookings(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(cancelBookingByStaffRoute, async (c) =>
-    jsonRouteResult(c, await cancelBookingByStaff(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(cancelBookingRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await cancelBookingByParticipant(
+        ctx,
+        withScope(scope, c.req.valid('json')),
+        c.req.raw.headers,
+      ),
+    );
+  });
 
-  ctx.authRoutes.openapi(approveBookingByStaffRoute, async (c) =>
-    jsonRouteResult(c, await approveBookingByStaff(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(listBookingsRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listStaffBookings(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(rejectBookingByStaffRoute, async (c) =>
-    jsonRouteResult(c, await rejectBookingByStaff(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(cancelBookingByStaffRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await cancelBookingByStaff(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(rescheduleBookingByStaffRoute, async (c) =>
-    jsonRouteResult(c, await rescheduleBookingByStaff(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(approveBookingByStaffRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await approveBookingByStaff(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(markNoShowRoute, async (c) =>
-    jsonRouteResult(c, await markBookingNoShow(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(rejectBookingByStaffRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await rejectBookingByStaff(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(markAttendanceRoute, async (c) =>
-    jsonRouteResult(c, await markBookingAttendance(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(rescheduleBookingByStaffRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await rescheduleBookingByStaff(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
+
+  ctx.authRoutes.openapi(markNoShowRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await markBookingNoShow(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
+
+  ctx.authRoutes.openapi(markAttendanceRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await markBookingAttendance(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
   ctx.authRoutes.openapi(staffCreateBookingRoute, async (c) =>
     jsonRouteResult(

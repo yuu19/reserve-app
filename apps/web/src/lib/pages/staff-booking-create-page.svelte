@@ -16,10 +16,17 @@
 		loadAdminBookingsOperationsData,
 		toDayBoundaryIso
 	} from '$lib/features/bookings.svelte';
-	import { preserveScopedRouteContext } from '$lib/features/scoped-routing';
+	import { loadRequiredFormsForStaff } from '$lib/features/forms';
+	import {
+		preserveScopedRouteContext,
+		readWindowScopedRouteContext
+	} from '$lib/features/scoped-routing';
 	import type {
 		BookingSource,
+		FormSubmissionInput,
 		ParticipantPayload,
+		RequiredFormPayload,
+		RequiredFormsPayload,
 		ServicePayload,
 		SlotPayload
 	} from '$lib/rpc-client';
@@ -34,6 +41,9 @@
 	let services = $state<ServicePayload[]>([]);
 	let slots = $state<SlotPayload[]>([]);
 	let participants = $state<ParticipantPayload[]>([]);
+	let requiredForms = $state<RequiredFormsPayload | null>(null);
+	let formAnswers = $state<Record<string, string | boolean | string[]>>({});
+	let formLoading = $state(false);
 	let form = $state({
 		slotId: '',
 		participantId: '',
@@ -78,6 +88,9 @@
 			return;
 		}
 		form[field] = target.value as never;
+		if (field === 'slotId') {
+			void loadSelectedSlotForms(target.value);
+		}
 	};
 
 	const buildCompanions = () =>
@@ -86,6 +99,129 @@
 			.map((name) => name.trim())
 			.filter((name) => name.length > 0)
 			.map((name) => ({ name }));
+
+	const answerKey = (requiredForm: RequiredFormPayload, fieldKey: string): string =>
+		`${requiredForm.formTemplateId}:${fieldKey}`;
+
+	const defaultFieldValue = (field: RequiredFormPayload['fields'][number]) => {
+		if (field.fieldType === 'checkbox') {
+			return [];
+		}
+		if (field.fieldType === 'consent') {
+			return false;
+		}
+		return '';
+	};
+
+	const syncFormAnswers = (forms: RequiredFormPayload[]) => {
+		const nextAnswers: Record<string, string | boolean | string[]> = {};
+		for (const requiredForm of forms) {
+			for (const field of requiredForm.fields) {
+				const key = answerKey(requiredForm, field.fieldKey);
+				nextAnswers[key] = formAnswers[key] ?? defaultFieldValue(field);
+			}
+		}
+		formAnswers = nextAnswers;
+	};
+
+	const updateFormTextAnswer = (
+		requiredForm: RequiredFormPayload,
+		fieldKey: string,
+		event: Event
+	) => {
+		formAnswers[answerKey(requiredForm, fieldKey)] = (
+			event.currentTarget as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+		).value;
+	};
+
+	const updateFormBooleanAnswer = (
+		requiredForm: RequiredFormPayload,
+		fieldKey: string,
+		event: Event
+	) => {
+		formAnswers[answerKey(requiredForm, fieldKey)] = (
+			event.currentTarget as HTMLInputElement
+		).checked;
+	};
+
+	const updateFormCheckboxAnswer = (
+		requiredForm: RequiredFormPayload,
+		fieldKey: string,
+		optionValue: string,
+		event: Event
+	) => {
+		const key = answerKey(requiredForm, fieldKey);
+		const currentValue = formAnswers[key];
+		const current = Array.isArray(currentValue) ? currentValue : [];
+		const checked = (event.currentTarget as HTMLInputElement).checked;
+		formAnswers[key] = checked
+			? Array.from(new Set([...current, optionValue]))
+			: current.filter((value) => value !== optionValue);
+	};
+
+	const getTextAnswer = (requiredForm: RequiredFormPayload, fieldKey: string): string => {
+		const value = formAnswers[answerKey(requiredForm, fieldKey)];
+		return typeof value === 'string' ? value : '';
+	};
+
+	const getBooleanAnswer = (requiredForm: RequiredFormPayload, fieldKey: string): boolean =>
+		formAnswers[answerKey(requiredForm, fieldKey)] === true;
+
+	const getCheckboxAnswers = (requiredForm: RequiredFormPayload, fieldKey: string): string[] => {
+		const value = formAnswers[answerKey(requiredForm, fieldKey)];
+		return Array.isArray(value) ? value : [];
+	};
+
+	const shouldStoreAnswer = (value: unknown): boolean => {
+		if (Array.isArray(value)) {
+			return value.length > 0;
+		}
+		if (typeof value === 'boolean') {
+			return value;
+		}
+		return typeof value === 'string' && value.trim().length > 0;
+	};
+
+	const buildFormSubmissions = (): FormSubmissionInput[] => {
+		const submissions: FormSubmissionInput[] = [];
+		for (const requiredForm of requiredForms?.forms ?? []) {
+			const answers = requiredForm.fields
+				.map((field) => ({
+					fieldKey: field.fieldKey,
+					value: formAnswers[answerKey(requiredForm, field.fieldKey)] ?? defaultFieldValue(field)
+				}))
+				.filter((answer) => shouldStoreAnswer(answer.value));
+			if (answers.length > 0) {
+				submissions.push({
+					formTemplateId: requiredForm.formTemplateId,
+					formTemplateVersionId: requiredForm.formTemplateVersionId,
+					answers
+				});
+			}
+		}
+		return submissions;
+	};
+
+	const loadSelectedSlotForms = async (slotId = form.slotId) => {
+		const context = readWindowScopedRouteContext();
+		const slot = slots.find((item) => item.id === slotId);
+		if (!context || !slot) {
+			requiredForms = null;
+			formAnswers = {};
+			return;
+		}
+		formLoading = true;
+		try {
+			const payload = await loadRequiredFormsForStaff(context, {
+				serviceId: slot.serviceId,
+				slotId: slot.id
+			});
+			requiredForms = payload;
+			syncFormAnswers(payload.forms);
+		} finally {
+			formLoading = false;
+		}
+	};
 
 	const refresh = async () => {
 		const { fromDate, toDate } = getMonthDateRange(new Date());
@@ -103,6 +239,7 @@
 		if (!form.slotId && availableSlots[0]) {
 			form.slotId = availableSlots[0].id;
 		}
+		await loadSelectedSlotForms(form.slotId);
 	};
 
 	const submit = async () => {
@@ -131,7 +268,8 @@
 				source: form.source,
 				notifyCustomer: form.notifyCustomer,
 				companions: buildCompanions(),
-				note: form.note || undefined
+				note: form.note || undefined,
+				formSubmissions: buildFormSubmissions()
 			});
 			if (!result.ok) {
 				toast.error(result.message);
@@ -317,6 +455,143 @@
 							maxlength={1000}
 						></textarea>
 					</div>
+					{#if formLoading}
+						<p class="text-sm text-muted-foreground md:col-span-2">フォームを読み込み中…</p>
+					{:else if (requiredForms?.forms.length ?? 0) > 0}
+						<div class="space-y-4 md:col-span-2">
+							{#each requiredForms?.forms ?? [] as requiredForm (requiredForm.formTemplateId)}
+								<fieldset class="space-y-4 rounded-md border border-border/80 bg-background p-4">
+									<legend class="px-1 text-sm font-semibold text-foreground">
+										{requiredForm.name}
+									</legend>
+									<div class="grid gap-4 md:grid-cols-2">
+										{#each requiredForm.fields as field (field.fieldKey)}
+											{@const inputId = `staff-form-${requiredForm.formTemplateId}-${field.fieldKey}`}
+											<div
+												class={field.fieldType === 'textarea' ||
+												field.fieldType === 'checkbox' ||
+												field.fieldType === 'consent'
+													? 'space-y-2 md:col-span-2'
+													: 'space-y-2'}
+											>
+												{#if field.fieldType === 'consent'}
+													<label
+														class="flex items-start gap-3 rounded-md border border-border/80 bg-secondary/30 p-3 text-sm"
+													>
+														<input
+															id={inputId}
+															type="checkbox"
+															checked={getBooleanAnswer(requiredForm, field.fieldKey)}
+															onchange={(event) =>
+																updateFormBooleanAnswer(requiredForm, field.fieldKey, event)}
+															disabled={busy}
+														/>
+														<span>
+															<span class="block font-medium text-foreground">{field.label}</span>
+															{#if field.description}
+																<span class="block text-xs text-muted-foreground">
+																	{field.description}
+																</span>
+															{/if}
+														</span>
+													</label>
+												{:else if field.fieldType === 'checkbox'}
+													<div class="space-y-2">
+														<p class="text-sm font-medium text-foreground">{field.label}</p>
+														<div class="grid gap-2 md:grid-cols-2">
+															{#each field.options as option (option.value)}
+																<label
+																	class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/30 px-3 py-2 text-sm"
+																>
+																	<input
+																		type="checkbox"
+																		value={option.value}
+																		checked={getCheckboxAnswers(
+																			requiredForm,
+																			field.fieldKey
+																		).includes(option.value)}
+																		onchange={(event) =>
+																			updateFormCheckboxAnswer(
+																				requiredForm,
+																				field.fieldKey,
+																				option.value,
+																				event
+																			)}
+																		disabled={busy}
+																	/>
+																	<span>{option.label}</span>
+																</label>
+															{/each}
+														</div>
+													</div>
+												{:else if field.fieldType === 'textarea'}
+													<Label for={inputId}>{field.label}</Label>
+													<textarea
+														id={inputId}
+														class="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+														value={getTextAnswer(requiredForm, field.fieldKey)}
+														oninput={(event) =>
+															updateFormTextAnswer(requiredForm, field.fieldKey, event)}
+														disabled={busy}
+														placeholder={field.placeholder ?? undefined}
+													></textarea>
+												{:else if field.fieldType === 'radio'}
+													<div class="space-y-2">
+														<p class="text-sm font-medium text-foreground">{field.label}</p>
+														<div class="grid gap-2 md:grid-cols-2">
+															{#each field.options as option (option.value)}
+																<label
+																	class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/30 px-3 py-2 text-sm"
+																>
+																	<input
+																		type="radio"
+																		name={inputId}
+																		value={option.value}
+																		checked={getTextAnswer(requiredForm, field.fieldKey) ===
+																			option.value}
+																		onchange={(event) =>
+																			updateFormTextAnswer(requiredForm, field.fieldKey, event)}
+																		disabled={busy}
+																	/>
+																	<span>{option.label}</span>
+																</label>
+															{/each}
+														</div>
+													</div>
+												{:else if field.fieldType === 'select'}
+													<Label for={inputId}>{field.label}</Label>
+													<select
+														id={inputId}
+														class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+														value={getTextAnswer(requiredForm, field.fieldKey)}
+														onchange={(event) =>
+															updateFormTextAnswer(requiredForm, field.fieldKey, event)}
+														disabled={busy}
+													>
+														<option value="">{field.placeholder ?? '選択してください'}</option>
+														{#each field.options as option (option.value)}
+															<option value={option.value}>{option.label}</option>
+														{/each}
+													</select>
+												{:else}
+													<Label for={inputId}>{field.label}</Label>
+													<Input
+														id={inputId}
+														type={field.fieldType === 'date' ? 'date' : 'text'}
+														value={getTextAnswer(requiredForm, field.fieldKey)}
+														oninput={(event) =>
+															updateFormTextAnswer(requiredForm, field.fieldKey, event)}
+														disabled={busy}
+														placeholder={field.placeholder ?? undefined}
+													/>
+												{/if}
+											</div>
+										{/each}
+									</div>
+								</fieldset>
+							{/each}
+						</div>
+					{/if}
 					<label class="flex items-center gap-2 text-sm text-foreground md:col-span-2">
 						<input
 							type="checkbox"

@@ -10,10 +10,12 @@
 	import { Label } from '$lib/components/ui/label';
 	import { formatJaDateTime } from '$lib/date/format';
 	import { createGuestPublicBooking, loadPublicEventDetail } from '$lib/features/events.svelte';
+	import { loadRequiredForms } from '$lib/features/forms';
 	import type { ScopedRouteContext } from '$lib/features/scoped-routing';
 	import type {
 		PublicEventDetailPayload,
-		PublicSiteIntakeFieldPayload,
+		RequiredFormPayload,
+		RequiredFormsPayload,
 		PublicTicketTypePayload
 	} from '$lib/rpc-client';
 	import { toast } from 'svelte-sonner';
@@ -21,18 +23,19 @@
 	type ResolvablePath = Pathname;
 
 	const slotId = $derived(page.params.slotId ?? '');
-	const publicEventsContext = $derived.by((): ScopedRouteContext | undefined => {
+	const publicEventsContext = $derived.by((): ScopedRouteContext | null => {
 		const orgSlug = page.params.orgSlug?.trim();
 		const storeSlug = page.params.storeSlug?.trim();
-		return orgSlug && storeSlug ? { orgSlug, storeSlug } : undefined;
+		return orgSlug && storeSlug ? { orgSlug, storeSlug } : null;
 	});
 
 	let loading = $state(true);
 	let busy = $state(false);
 	let detail = $state<PublicEventDetailPayload | null>(null);
+	let requiredForms = $state<RequiredFormsPayload | null>(null);
 	let errorMessage = $state<string | null>(null);
 	let completedBookingPublicId = $state<string | null>(null);
-	let intakeAnswers = $state<Record<string, string | boolean>>({});
+	let formAnswers = $state<Record<string, string | boolean | string[]>>({});
 	let bookingForm = $state({
 		customerName: '',
 		customerEmail: '',
@@ -52,6 +55,7 @@
 				ticketType.serviceScope === 'all' || ticketType.serviceIds.includes(currentDetail.serviceId)
 		);
 	});
+	const bookingContext = $derived(publicEventsContext);
 
 	const toExceptionMessage = (error: unknown, fallback: string): string => {
 		if (error instanceof Error && error.message) {
@@ -88,42 +92,91 @@
 			.filter((name) => name.length > 0)
 			.map((name) => ({ name }));
 
-	const getIntakeAnswerId = (field: PublicSiteIntakeFieldPayload): string =>
-		`public-booking-intake-${field.fieldId}`;
+	const answerKey = (form: RequiredFormPayload, fieldKey: string): string =>
+		`${form.formTemplateId}:${fieldKey}`;
 
-	const syncIntakeAnswers = (fields: PublicSiteIntakeFieldPayload[]) => {
-		const nextAnswers: Record<string, string | boolean> = {};
-		for (const field of fields) {
-			const currentValue = intakeAnswers[field.fieldId];
-			nextAnswers[field.fieldId] = currentValue ?? (field.fieldType === 'checkbox' ? false : '');
+	const getFieldInputId = (form: RequiredFormPayload, fieldKey: string): string =>
+		`public-form-${form.formTemplateId}-${fieldKey}`;
+
+	const defaultFieldValue = (field: RequiredFormPayload['fields'][number]) => {
+		if (field.fieldType === 'checkbox') {
+			return [];
 		}
-		intakeAnswers = nextAnswers;
+		if (field.fieldType === 'consent') {
+			return false;
+		}
+		return '';
 	};
 
-	const updateIntakeTextAnswer = (fieldId: string, event: Event) => {
-		intakeAnswers[fieldId] = (event.currentTarget as HTMLInputElement | HTMLTextAreaElement).value;
+	const syncFormAnswers = (forms: RequiredFormPayload[]) => {
+		const nextAnswers: Record<string, string | boolean | string[]> = {};
+		for (const form of forms) {
+			for (const field of form.fields) {
+				const key = answerKey(form, field.fieldKey);
+				nextAnswers[key] = formAnswers[key] ?? defaultFieldValue(field);
+			}
+		}
+		formAnswers = nextAnswers;
 	};
 
-	const updateIntakeCheckboxAnswer = (fieldId: string, event: Event) => {
-		intakeAnswers[fieldId] = (event.currentTarget as HTMLInputElement).checked;
+	const updateFormTextAnswer = (form: RequiredFormPayload, fieldKey: string, event: Event) => {
+		formAnswers[answerKey(form, fieldKey)] = (
+			event.currentTarget as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+		).value;
 	};
 
-	const getIntakeTextAnswer = (fieldId: string): string => {
-		const value = intakeAnswers[fieldId];
+	const updateFormConsentAnswer = (form: RequiredFormPayload, fieldKey: string, event: Event) => {
+		formAnswers[answerKey(form, fieldKey)] = (event.currentTarget as HTMLInputElement).checked;
+	};
+
+	const updateFormCheckboxAnswer = (
+		form: RequiredFormPayload,
+		fieldKey: string,
+		optionValue: string,
+		event: Event
+	) => {
+		const key = answerKey(form, fieldKey);
+		const currentValue = formAnswers[key];
+		const current = Array.isArray(currentValue) ? currentValue : [];
+		const checked = (event.currentTarget as HTMLInputElement).checked;
+		formAnswers[key] = checked
+			? Array.from(new Set([...current, optionValue]))
+			: current.filter((value) => value !== optionValue);
+	};
+
+	const getTextAnswer = (form: RequiredFormPayload, fieldKey: string): string => {
+		const value = formAnswers[answerKey(form, fieldKey)];
 		return typeof value === 'string' ? value : '';
 	};
 
-	const hasRequiredIntakeValue = (field: PublicSiteIntakeFieldPayload): boolean => {
-		const value = intakeAnswers[field.fieldId];
+	const getBooleanAnswer = (form: RequiredFormPayload, fieldKey: string): boolean =>
+		formAnswers[answerKey(form, fieldKey)] === true;
+
+	const getCheckboxAnswers = (form: RequiredFormPayload, fieldKey: string): string[] => {
+		const value = formAnswers[answerKey(form, fieldKey)];
+		return Array.isArray(value) ? value : [];
+	};
+
+	const hasRequiredFormValue = (
+		form: RequiredFormPayload,
+		field: RequiredFormPayload['fields'][number]
+	): boolean => {
+		const value = formAnswers[answerKey(form, field.fieldKey)];
 		if (field.fieldType === 'checkbox') {
+			return Array.isArray(value) && value.length > 0;
+		}
+		if (field.fieldType === 'consent') {
 			return value === true;
 		}
 		return typeof value === 'string' && value.trim().length > 0;
 	};
 
-	const validateIntakeAnswers = (): boolean => {
-		for (const field of detail?.intakeFields ?? []) {
-			if (field.required && !hasRequiredIntakeValue(field)) {
+	const validateFormAnswers = (): boolean => {
+		for (const form of requiredForms?.forms ?? []) {
+			for (const field of form.fields) {
+				if (!field.required || hasRequiredFormValue(form, field)) {
+					continue;
+				}
 				toast.error(`${field.label}を入力してください。`);
 				return false;
 			}
@@ -131,31 +184,15 @@
 		return true;
 	};
 
-	const buildIntakeAnswers = () =>
-		(detail?.intakeFields ?? [])
-			.map((field) => {
-				const rawValue = intakeAnswers[field.fieldId];
-				if (field.fieldType === 'checkbox') {
-					return {
-						fieldId: field.fieldId,
-						labelSnapshot: field.label,
-						value: rawValue === true
-					};
-				}
-				const value = typeof rawValue === 'string' ? rawValue.trim() : '';
-				const hasValue = value.length > 0;
-				return hasValue
-					? {
-							fieldId: field.fieldId,
-							labelSnapshot: field.label,
-							value
-						}
-					: null;
-			})
-			.filter(
-				(answer): answer is { fieldId: string; labelSnapshot: string; value: string | boolean } =>
-					answer !== null
-			);
+	const buildFormSubmissions = () =>
+		(requiredForms?.forms ?? []).map((form) => ({
+			formTemplateId: form.formTemplateId,
+			formTemplateVersionId: form.formTemplateVersionId,
+			answers: form.fields.map((field) => ({
+				fieldKey: field.fieldKey,
+				value: formAnswers[answerKey(form, field.fieldKey)] ?? defaultFieldValue(field)
+			}))
+		}));
 
 	const refresh = async () => {
 		if (!slotId) {
@@ -163,21 +200,32 @@
 			errorMessage = 'イベントIDが指定されていません。';
 			return;
 		}
+		if (!publicEventsContext) {
+			detail = null;
+			errorMessage = '公開イベントの店舗コンテキストが指定されていません。';
+			return;
+		}
 
 		errorMessage = null;
 		try {
 			const nextDetail = await loadPublicEventDetail(slotId, publicEventsContext);
 			detail = nextDetail;
-			syncIntakeAnswers(nextDetail.intakeFields);
+			const nextRequiredForms = await loadRequiredForms(publicEventsContext, {
+				serviceId: nextDetail.serviceId,
+				slotId: nextDetail.slotId
+			});
+			requiredForms = nextRequiredForms;
+			syncFormAnswers(nextRequiredForms.forms);
 		} catch (error) {
 			detail = null;
-			intakeAnswers = {};
+			requiredForms = null;
+			formAnswers = {};
 			errorMessage = toExceptionMessage(error, '公開イベント詳細の取得に失敗しました。');
 		}
 	};
 
 	const submitReserve = async () => {
-		if (!detail || busy || !publicEventsContext) {
+		if (!detail || busy || !bookingContext || !requiredForms) {
 			return;
 		}
 		if (detail.requiresTicket) {
@@ -189,22 +237,25 @@
 			toast.error('人数が残枠を超えています。');
 			return;
 		}
-		if (!validateIntakeAnswers()) {
+		if (!validateFormAnswers()) {
 			return;
 		}
 
 		busy = true;
 		try {
-			const answers = buildIntakeAnswers();
-			const result = await createGuestPublicBooking(publicEventsContext, {
+			const result = await createGuestPublicBooking(bookingContext, {
 				slotId: detail.slotId,
-				customerName: bookingForm.customerName,
-				customerEmail: bookingForm.customerEmail,
-				customerPhone: bookingForm.customerPhone,
+				serviceId: detail.serviceId,
+				customer: {
+					name: bookingForm.customerName,
+					email: bookingForm.customerEmail,
+					phone: bookingForm.customerPhone || undefined
+				},
 				participantsCount,
 				companions: buildCompanions(),
 				note: bookingForm.note,
-				...(answers.length > 0 ? { answers } : {})
+				formContextHash: requiredForms.formContextHash,
+				formSubmissions: buildFormSubmissions()
 			});
 			if (!result.ok) {
 				toast.error(result.message);
@@ -425,98 +476,173 @@
 							maxlength={1000}
 						></textarea>
 					</div>
-					{#if detail.intakeFields.length > 0}
-						<fieldset class="space-y-4 md:col-span-2">
-							<legend class="text-sm font-semibold text-foreground">追加情報</legend>
-							<div class="grid gap-4 md:grid-cols-2">
-								{#each detail.intakeFields as field (field.fieldId)}
-									{@const fieldInputId = getIntakeAnswerId(field)}
-									<div
-										class={field.fieldType === 'textarea' || field.fieldType === 'checkbox'
-											? 'space-y-2 md:col-span-2'
-											: 'space-y-2'}
-									>
-										{#if field.fieldType === 'checkbox'}
-											<label
-												class="flex items-start gap-3 rounded-md border border-border/80 bg-background p-3 text-sm"
+					{#if (requiredForms?.forms.length ?? 0) > 0}
+						<div class="space-y-5 md:col-span-2">
+							{#each requiredForms?.forms ?? [] as form (form.formTemplateId)}
+								<fieldset class="space-y-4 rounded-md border border-border/80 bg-background p-4">
+									<legend class="px-1 text-sm font-semibold text-foreground">{form.name}</legend>
+									{#if form.description}
+										<p class="text-sm text-muted-foreground">{form.description}</p>
+									{/if}
+									<div class="grid gap-4 md:grid-cols-2">
+										{#each form.fields as field (field.fieldKey)}
+											{@const fieldInputId = getFieldInputId(form, field.fieldKey)}
+											<div
+												class={field.fieldType === 'textarea' ||
+												field.fieldType === 'checkbox' ||
+												field.fieldType === 'consent'
+													? 'space-y-2 md:col-span-2'
+													: 'space-y-2'}
 											>
-												<input
-													id={fieldInputId}
-													name={field.fieldId}
-													type="checkbox"
-													class="mt-1 size-4 rounded border-input text-primary focus:ring-2 focus:ring-ring"
-													checked={intakeAnswers[field.fieldId] === true}
-													onchange={(event) => updateIntakeCheckboxAnswer(field.fieldId, event)}
-													disabled={busy || !detail.isBookable}
-													required={field.required}
-												/>
-												<span class="min-w-0 space-y-1">
-													<span class="block font-medium text-foreground">
-														{field.label}{field.required ? ' *' : ''}
-													</span>
-													{#if field.helpText}
-														<span class="block text-xs text-muted-foreground">
-															{field.helpText}
+												{#if field.fieldType === 'consent'}
+													<label
+														class="flex items-start gap-3 rounded-md border border-border/80 bg-secondary/30 p-3 text-sm"
+													>
+														<input
+															id={fieldInputId}
+															name={field.fieldKey}
+															type="checkbox"
+															class="mt-1 size-4 rounded border-input text-primary focus:ring-2 focus:ring-ring"
+															checked={getBooleanAnswer(form, field.fieldKey)}
+															onchange={(event) =>
+																updateFormConsentAnswer(form, field.fieldKey, event)}
+															disabled={busy || !detail.isBookable}
+															required={field.required}
+														/>
+														<span class="min-w-0 space-y-1">
+															<span class="block font-medium text-foreground">
+																{field.label}{field.required ? ' *' : ''}
+															</span>
+															{#if field.description}
+																<span class="block text-xs text-muted-foreground">
+																	{field.description}
+																</span>
+															{/if}
 														</span>
+													</label>
+												{:else if field.fieldType === 'checkbox'}
+													<div class="space-y-2">
+														<p class="text-sm font-medium text-foreground">
+															{field.label}{field.required ? ' *' : ''}
+														</p>
+														<div class="grid gap-2 md:grid-cols-2">
+															{#each field.options as option (option.value)}
+																<label
+																	class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/30 px-3 py-2 text-sm"
+																>
+																	<input
+																		type="checkbox"
+																		name={`${field.fieldKey}[]`}
+																		value={option.value}
+																		checked={getCheckboxAnswers(form, field.fieldKey).includes(
+																			option.value
+																		)}
+																		onchange={(event) =>
+																			updateFormCheckboxAnswer(
+																				form,
+																				field.fieldKey,
+																				option.value,
+																				event
+																			)}
+																		disabled={busy || !detail.isBookable}
+																	/>
+																	<span>{option.label}</span>
+																</label>
+															{/each}
+														</div>
+														{#if field.description}
+															<p class="text-xs text-muted-foreground">{field.description}</p>
+														{/if}
+													</div>
+												{:else if field.fieldType === 'textarea'}
+													<Label for={fieldInputId}>{field.label}{field.required ? ' *' : ''}</Label
+													>
+													<textarea
+														id={fieldInputId}
+														name={field.fieldKey}
+														class="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+														value={getTextAnswer(form, field.fieldKey)}
+														oninput={(event) => updateFormTextAnswer(form, field.fieldKey, event)}
+														disabled={busy || !detail.isBookable}
+														placeholder={field.placeholder ?? undefined}
+														required={field.required}
+														maxlength={1000}
+													></textarea>
+													{#if field.description}
+														<p class="text-xs text-muted-foreground">{field.description}</p>
 													{/if}
-												</span>
-											</label>
-										{:else if field.fieldType === 'textarea'}
-											<Label for={fieldInputId}>{field.label}{field.required ? ' *' : ''}</Label>
-											<textarea
-												id={fieldInputId}
-												name={field.fieldId}
-												class="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-												value={getIntakeTextAnswer(field.fieldId)}
-												oninput={(event) => updateIntakeTextAnswer(field.fieldId, event)}
-												disabled={busy || !detail.isBookable}
-												placeholder={field.placeholder ?? undefined}
-												required={field.required}
-												maxlength={1000}
-											></textarea>
-											{#if field.helpText}
-												<p class="text-xs text-muted-foreground">{field.helpText}</p>
-											{/if}
-										{:else if field.fieldType === 'select'}
-											<Label for={fieldInputId}>{field.label}{field.required ? ' *' : ''}</Label>
-											<select
-												id={fieldInputId}
-												name={field.fieldId}
-												class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-												value={getIntakeTextAnswer(field.fieldId)}
-												onchange={(event) => updateIntakeTextAnswer(field.fieldId, event)}
-												disabled={busy || !detail.isBookable}
-												required={field.required}
-											>
-												<option value="">{field.placeholder ?? '選択してください'}</option>
-												{#each field.options as option (option)}
-													<option value={option}>{option}</option>
-												{/each}
-											</select>
-											{#if field.helpText}
-												<p class="text-xs text-muted-foreground">{field.helpText}</p>
-											{/if}
-										{:else}
-											<Label for={fieldInputId}>{field.label}{field.required ? ' *' : ''}</Label>
-											<Input
-												id={fieldInputId}
-												name={field.fieldId}
-												type="text"
-												value={getIntakeTextAnswer(field.fieldId)}
-												oninput={(event) => updateIntakeTextAnswer(field.fieldId, event)}
-												disabled={busy || !detail.isBookable}
-												placeholder={field.placeholder ?? undefined}
-												required={field.required}
-												maxlength={200}
-											/>
-											{#if field.helpText}
-												<p class="text-xs text-muted-foreground">{field.helpText}</p>
-											{/if}
-										{/if}
+												{:else if field.fieldType === 'radio'}
+													<div class="space-y-2">
+														<p class="text-sm font-medium text-foreground">
+															{field.label}{field.required ? ' *' : ''}
+														</p>
+														<div class="grid gap-2 md:grid-cols-2">
+															{#each field.options as option (option.value)}
+																<label
+																	class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/30 px-3 py-2 text-sm"
+																>
+																	<input
+																		type="radio"
+																		name={fieldInputId}
+																		value={option.value}
+																		checked={getTextAnswer(form, field.fieldKey) === option.value}
+																		onchange={(event) =>
+																			updateFormTextAnswer(form, field.fieldKey, event)}
+																		disabled={busy || !detail.isBookable}
+																		required={field.required}
+																	/>
+																	<span>{option.label}</span>
+																</label>
+															{/each}
+														</div>
+														{#if field.description}
+															<p class="text-xs text-muted-foreground">{field.description}</p>
+														{/if}
+													</div>
+												{:else if field.fieldType === 'select'}
+													<Label for={fieldInputId}>{field.label}{field.required ? ' *' : ''}</Label
+													>
+													<select
+														id={fieldInputId}
+														name={field.fieldKey}
+														class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+														value={getTextAnswer(form, field.fieldKey)}
+														onchange={(event) => updateFormTextAnswer(form, field.fieldKey, event)}
+														disabled={busy || !detail.isBookable}
+														required={field.required}
+													>
+														<option value="">{field.placeholder ?? '選択してください'}</option>
+														{#each field.options as option (option.value)}
+															<option value={option.value}>{option.label}</option>
+														{/each}
+													</select>
+													{#if field.description}
+														<p class="text-xs text-muted-foreground">{field.description}</p>
+													{/if}
+												{:else}
+													<Label for={fieldInputId}>{field.label}{field.required ? ' *' : ''}</Label
+													>
+													<Input
+														id={fieldInputId}
+														name={field.fieldKey}
+														type={field.fieldType === 'date' ? 'date' : 'text'}
+														value={getTextAnswer(form, field.fieldKey)}
+														oninput={(event) => updateFormTextAnswer(form, field.fieldKey, event)}
+														disabled={busy || !detail.isBookable}
+														placeholder={field.placeholder ?? undefined}
+														required={field.required}
+														maxlength={200}
+													/>
+													{#if field.description}
+														<p class="text-xs text-muted-foreground">{field.description}</p>
+													{/if}
+												{/if}
+											</div>
+										{/each}
 									</div>
-								{/each}
-							</div>
-						</fieldset>
+								</fieldset>
+							{/each}
+						</div>
 					{/if}
 					<div class="md:col-span-2">
 						<Button type="submit" disabled={busy || !detail.isBookable}>

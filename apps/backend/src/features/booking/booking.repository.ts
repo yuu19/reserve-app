@@ -136,30 +136,6 @@ export const insertBookingCompanions = async ({
   );
 };
 
-export const insertBookingAnswers = async ({
-  database,
-  bookingId,
-  answers,
-}: {
-  database: AuthRuntimeDatabase;
-  bookingId: string;
-  answers: Array<{ fieldId: string; labelSnapshot: string; valueJson: string }>;
-}) => {
-  if (answers.length === 0) {
-    return;
-  }
-
-  await database.insert(dbSchema.bookingAnswer).values(
-    answers.map((answer) => ({
-      id: crypto.randomUUID(),
-      bookingId,
-      fieldId: answer.fieldId,
-      labelSnapshot: answer.labelSnapshot,
-      valueJson: answer.valueJson,
-    })),
-  );
-};
-
 /**
  * 予約の最新行を ID で取得します。
  */
@@ -438,15 +414,25 @@ export const cancelBookingByParticipantState = async ({
   reason?: string;
   actorUserId: string;
 }) => {
-  await database
+  const updatedRows = await database
     .update(dbSchema.booking)
     .set({
-      status: BOOKING_STATUS.CANCELED_BY_PARTICIPANT,
+      status: BOOKING_STATUS.CANCELLED,
       cancelReason: reason ?? null,
       cancelledAt: new Date(),
       cancelledByUserId: actorUserId,
     })
-    .where(eq(dbSchema.booking.id, bookingId));
+    .where(
+      and(
+        eq(dbSchema.booking.id, bookingId),
+        inArray(dbSchema.booking.status, [
+          BOOKING_STATUS.PENDING_APPROVAL,
+          BOOKING_STATUS.CONFIRMED,
+        ]),
+      ),
+    )
+    .returning({ id: dbSchema.booking.id });
+  return updatedRows.length > 0;
 };
 
 /**
@@ -463,15 +449,19 @@ export const cancelBookingByStaffState = async ({
   reason?: string;
   actorUserId: string;
 }) => {
-  await database
+  const updatedRows = await database
     .update(dbSchema.booking)
     .set({
-      status: BOOKING_STATUS.CANCELED_BY_STAFF,
+      status: BOOKING_STATUS.CANCELLED,
       cancelReason: reason ?? null,
       cancelledAt: new Date(),
       cancelledByUserId: actorUserId,
     })
-    .where(eq(dbSchema.booking.id, bookingId));
+    .where(
+      and(eq(dbSchema.booking.id, bookingId), eq(dbSchema.booking.status, BOOKING_STATUS.CONFIRMED)),
+    )
+    .returning({ id: dbSchema.booking.id });
+  return updatedRows.length > 0;
 };
 
 /**
@@ -689,7 +679,7 @@ export const rejectPendingBooking = async ({
   const updatedRows = await database
     .update(dbSchema.booking)
     .set({
-      status: BOOKING_STATUS.REJECTED_BY_STAFF,
+      status: BOOKING_STATUS.REJECTED,
       cancelReason: reason ?? null,
       cancelledAt: new Date(),
       cancelledByUserId: actorUserId,
@@ -717,7 +707,7 @@ export const markConfirmedBookingNoShow = async ({
   actorUserId: string;
 }) => {
   const markedAt = new Date();
-  await database
+  const updatedRows = await database
     .update(dbSchema.booking)
     .set({
       status: BOOKING_STATUS.NO_SHOW,
@@ -726,7 +716,11 @@ export const markConfirmedBookingNoShow = async ({
       attendanceMarkedAt: markedAt,
       attendanceMarkedByUserId: actorUserId,
     })
-    .where(eq(dbSchema.booking.id, bookingId));
+    .where(
+      and(eq(dbSchema.booking.id, bookingId), eq(dbSchema.booking.status, BOOKING_STATUS.CONFIRMED)),
+    )
+    .returning({ id: dbSchema.booking.id });
+  return updatedRows.length > 0;
 };
 
 /**
@@ -747,9 +741,18 @@ export const markConfirmedBookingAttendance = async ({
   actorUserId: string;
 }) => {
   const shouldClearMark = attendanceStatus === BOOKING_ATTENDANCE_STATUS.NOT_CHECKED;
+  const nextBookingStatus =
+    attendanceStatus === BOOKING_ATTENDANCE_STATUS.CHECKED_IN
+      ? BOOKING_STATUS.COMPLETED
+      : BOOKING_STATUS.CONFIRMED;
+  const allowedBookingStatuses =
+    attendanceStatus === BOOKING_ATTENDANCE_STATUS.CHECKED_IN
+      ? [BOOKING_STATUS.CONFIRMED]
+      : [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.COMPLETED];
   const updatedRows = await database
     .update(dbSchema.booking)
     .set({
+      status: nextBookingStatus,
       attendanceStatus,
       attendanceMarkedAt: shouldClearMark ? null : new Date(),
       attendanceMarkedByUserId: shouldClearMark ? null : actorUserId,
@@ -757,7 +760,7 @@ export const markConfirmedBookingAttendance = async ({
     .where(
       and(
         eq(dbSchema.booking.id, bookingId),
-        eq(dbSchema.booking.status, BOOKING_STATUS.CONFIRMED),
+        inArray(dbSchema.booking.status, allowedBookingStatuses),
       ),
     )
     .returning({ id: dbSchema.booking.id });
@@ -831,14 +834,18 @@ export const listBookingAnswersByBookingIds = async ({
 
   return database
     .select({
-      id: dbSchema.bookingAnswer.id,
-      bookingId: dbSchema.bookingAnswer.bookingId,
-      fieldId: dbSchema.bookingAnswer.fieldId,
-      labelSnapshot: dbSchema.bookingAnswer.labelSnapshot,
-      valueJson: dbSchema.bookingAnswer.valueJson,
-      createdAt: dbSchema.bookingAnswer.createdAt,
+      id: dbSchema.formAnswer.id,
+      bookingId: dbSchema.formSubmission.bookingId,
+      fieldId: dbSchema.formAnswer.fieldKey,
+      labelSnapshot: dbSchema.formAnswer.labelSnapshot,
+      valueJson: dbSchema.formAnswer.valueJson,
+      createdAt: dbSchema.formAnswer.createdAt,
     })
-    .from(dbSchema.bookingAnswer)
-    .where(inArray(dbSchema.bookingAnswer.bookingId, bookingIds))
-    .orderBy(asc(dbSchema.bookingAnswer.createdAt));
+    .from(dbSchema.formSubmission)
+    .innerJoin(
+      dbSchema.formAnswer,
+      eq(dbSchema.formAnswer.formSubmissionId, dbSchema.formSubmission.id),
+    )
+    .where(inArray(dbSchema.formSubmission.bookingId, bookingIds))
+    .orderBy(asc(dbSchema.formSubmission.submittedAt), asc(dbSchema.formAnswer.sortOrder));
 };

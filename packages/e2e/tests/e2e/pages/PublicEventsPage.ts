@@ -11,9 +11,15 @@ export class PublicEventsPage extends BasePage {
     super(page);
   }
 
-  /** 公開イベント一覧へ移動し、heading が表示されることを検証する。 */
-  async gotoEvents() {
-    await this.goto('/events');
+  /**
+   * 公開イベント一覧へ移動し、heading が表示されることを検証する。
+   *
+   * @param input - 公開イベント一覧の scope。
+   * @param input.orgSlug - organization slug。
+   * @param input.storeSlug - store slug。
+   */
+  async gotoEvents({ orgSlug, storeSlug }: { orgSlug: string; storeSlug: string }) {
+    await this.goto(`/${encodeURIComponent(orgSlug)}/${encodeURIComponent(storeSlug)}/events`);
     await expect(this.page.getByRole('heading', { name: '公開イベント' })).toBeVisible();
   }
 

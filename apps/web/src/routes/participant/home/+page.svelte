@@ -14,15 +14,26 @@
 		redirectToLoginWithNext
 	} from '$lib/features/auth-session.svelte';
 	import {
+		extractScopedRouteContext,
 		preserveScopedRouteContext,
 		replacePortalPathWithScopedContext
 	} from '$lib/features/scoped-routing';
+	import type { ScopedApiContext } from '$lib/rpc-client';
 
 	let loading = $state(true);
 	let canUseParticipantBooking = $state(false);
+	let publicEventsPath = $state<Pathname | null>(null);
 
 	const toScopedRoute = (targetPath: string): Pathname =>
 		preserveScopedRouteContext(targetPath, page.url.pathname) as Pathname;
+
+	const goToPublicEvents = () => {
+		const targetPath = publicEventsPath;
+		if (!targetPath) {
+			return;
+		}
+		void goto(resolve(targetPath));
+	};
 
 	onMount(() => {
 		void (async () => {
@@ -34,6 +45,11 @@
 					return;
 				}
 				const portalAccess = await loadPortalAccess();
+				const publicEventsContext: ScopedApiContext | null =
+					portalAccess.activeContext ?? extractScopedRouteContext(page.url.pathname);
+				publicEventsPath = publicEventsContext
+					? (replacePortalPathWithScopedContext('/events', publicEventsContext) as Pathname)
+					: null;
 				const homePath = resolvePortalHomePath(portalAccess);
 				if (homePath?.startsWith('/admin')) {
 					const nextPath = portalAccess.activeContext
@@ -63,9 +79,9 @@
 				<CardDescription>公開イベントの確認と予約画面への移動。</CardDescription>
 			</CardHeader>
 			<CardContent class="flex flex-wrap gap-2">
-				<Button type="button" variant="outline" onclick={() => goto(resolve(toScopedRoute('/events')))}
-					>イベント一覧へ移動</Button
-				>
+				{#if publicEventsPath}
+					<Button type="button" variant="outline" onclick={goToPublicEvents}>イベント一覧へ移動</Button>
+				{/if}
 				<Button
 					type="button"
 					variant="outline"

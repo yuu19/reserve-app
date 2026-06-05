@@ -92,6 +92,6 @@ describe('参加者ログインページ', () => {
 
 		render(ParticipantLoginPage);
 
-		await expect.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null).toBe('/events');
+		await expect.poll(() => mocks.goto.mock.calls.at(-1)?.[0] ?? null).toBe('/dashboard');
 	});
 });

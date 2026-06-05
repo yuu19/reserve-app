@@ -1,6 +1,11 @@
 import { findParticipantByUserAndOrganization } from '../../domain/booking/authorization.js';
 import { writeBookingAuditLog } from '../../domain/booking/audit.js';
-import { BOOKING_STATUS, SLOT_STATUS } from '../../domain/booking/constants.js';
+import {
+  BOOKING_AUDIT_ACTION,
+  BOOKING_SOURCE,
+  BOOKING_STATUS,
+  SLOT_STATUS,
+} from '../../domain/booking/constants.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import { serializeBooking } from '../../shared/serializers.js';
 import {
@@ -106,9 +111,11 @@ export const createBooking = async (
         organizationId: slot.organizationId,
         storeId: slot.storeId,
         actorUserId: identity.userId,
-        action: 'booking.application_received',
+        action: BOOKING_AUDIT_ACTION.CREATED,
         metadata: {
+          initialStatus: BOOKING_STATUS.PENDING_APPROVAL,
           participantsCount,
+          source: BOOKING_SOURCE.PARTICIPANT,
         },
         headers,
       });
@@ -224,9 +231,11 @@ export const createBooking = async (
       organizationId: slot.organizationId,
       storeId: slot.storeId,
       actorUserId: identity.userId,
-      action: 'booking.created',
+      action: BOOKING_AUDIT_ACTION.CREATED,
       metadata: {
+        initialStatus: BOOKING_STATUS.CONFIRMED,
         participantsCount,
+        source: BOOKING_SOURCE.PARTICIPANT,
       },
       headers,
     });

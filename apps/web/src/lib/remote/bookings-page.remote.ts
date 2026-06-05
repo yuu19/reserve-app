@@ -12,6 +12,7 @@ import type {
 } from '$lib/rpc-client';
 import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import {
+	buildScopedAuthPath,
 	buildScopedInvitationPath,
 	createApiGetter,
 	resolveScopedApiIdentifiers,
@@ -151,10 +152,6 @@ export const getBookingsPageData = query(
 		if (!scopedIdentifiers) {
 			throw new Error('組織または店舗コンテキストの解決に失敗しました。');
 		}
-		const scopedQuery = {
-			organizationId: scopedIdentifiers.organizationId,
-			storeId: scopedIdentifiers.storeId
-		};
 
 		const [
 			servicesResult,
@@ -168,32 +165,28 @@ export const getBookingsPageData = query(
 			participantsResult,
 			participantInvitationsResult
 		] = await Promise.all([
-			getApi('/api/v1/auth/organizations/services', scopedQuery),
-			getApi('/api/v1/auth/organizations/recurring-schedules', {
-				...scopedQuery,
+			getApi(buildScopedAuthPath(activeContext, '/services')),
+			getApi(buildScopedAuthPath(activeContext, '/recurring-schedules'), {
 				isActive: true
 			}),
-			getApi('/api/v1/auth/organizations/slots', {
-				...scopedQuery,
+			getApi(buildScopedAuthPath(activeContext, '/slots'), {
 				from,
 				to
 			}),
-			getApi('/api/v1/auth/organizations/slots/available', {
-				...scopedQuery,
+			getApi(buildScopedAuthPath(activeContext, '/slots/available'), {
 				from,
 				to,
 				serviceId
 			}),
-			getApi('/api/v1/auth/organizations/bookings/mine', {
-				...scopedQuery,
+			getApi(buildScopedAuthPath(activeContext, '/bookings/mine'), {
 				from,
 				to,
 				serviceId
 			}),
-			getApi('/api/v1/auth/organizations/ticket-packs/mine', scopedQuery),
-			getApi('/api/v1/auth/organizations/ticket-types/purchasable', scopedQuery),
-			getApi('/api/v1/auth/organizations/ticket-purchases/mine', scopedQuery),
-			getApi('/api/v1/auth/organizations/participants', scopedQuery),
+			getApi(buildScopedAuthPath(activeContext, '/ticket-packs/mine')),
+			getApi(buildScopedAuthPath(activeContext, '/ticket-types/purchasable')),
+			getApi(buildScopedAuthPath(activeContext, '/ticket-purchases/mine')),
+			getApi(buildScopedAuthPath(activeContext, '/participants')),
 			getApi(buildScopedInvitationPath(activeContext))
 		]);
 
@@ -254,17 +247,15 @@ export const getBookingsPageData = query(
 
 		if (canManage) {
 			const [staffBookingsResult, staffServicesResult, staffRecurringResult] = await Promise.all([
-				getApi('/api/v1/auth/organizations/bookings', {
-					...scopedQuery,
+				getApi(buildScopedAuthPath(activeContext, '/bookings'), {
 					from,
 					to,
 					serviceId
 				}),
-				getApi('/api/v1/auth/organizations/services', {
-					...scopedQuery,
+				getApi(buildScopedAuthPath(activeContext, '/services'), {
 					includeArchived: true
 				}),
-				getApi('/api/v1/auth/organizations/recurring-schedules', scopedQuery)
+				getApi(buildScopedAuthPath(activeContext, '/recurring-schedules'))
 			]);
 
 			assertAllowedFailure(staffBookingsResult, '運営予約一覧の取得に失敗しました。');

@@ -42,9 +42,7 @@
 	const notificationSettingsPath = $derived(
 		scopedContext ? buildScopedPath(scopedContext, '/admin/notification-settings') : null
 	);
-	const intakeFieldsPath = $derived(
-		scopedContext ? buildScopedPath(scopedContext, '/admin/intake-fields') : null
-	);
+	const formsPath = $derived(scopedContext ? buildScopedPath(scopedContext, '/admin/forms') : null);
 	const toScopedRoute = (targetPath: string): ResolvablePath =>
 		preserveScopedRouteContext(targetPath, page.url.pathname) as ResolvablePath;
 
@@ -217,10 +215,10 @@
 						<Button
 							type="button"
 							variant="outline"
-							href={intakeFieldsPath ? resolve(intakeFieldsPath as ResolvablePath) : undefined}
-							disabled={!intakeFieldsPath}
+							href={formsPath ? resolve(formsPath as ResolvablePath) : undefined}
+							disabled={!formsPath}
 						>
-							カスタム入力へ移動
+							フォーム管理へ移動
 						</Button>
 						<Button
 							type="button"

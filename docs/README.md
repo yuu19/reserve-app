@@ -12,6 +12,7 @@
 - [architecture.md](./current/architecture.md): 組織、店舗、参加者、招待、公開予約の全体構成。
 - [authorization.md](./current/authorization.md): 組織、店舗、参加者の認可モデル。
 - [reserve-app-mvp.md](./current/reserve-app-mvp.md): 公開予約 MVP の実装状況と残作業。
+- [form-management-mvp.md](./current/form-management-mvp.md): フォーム管理機能の MVP 仕様。
 - [saas-landing-page.md](./current/saas-landing-page.md): SaaS ランディングページの情報設計、コピー、CTA 方針。
 - [database-er.md](./current/database-er.md): DB の概要と簡略 ER。
 - [database-er-reference.html](./current/database-er-reference.html): 現行 DB のテーブル定義、リレーション、静的 ER 図。
@@ -59,7 +60,7 @@
 - Backend/DB は `organization + store` の2階層へ移行済みです。予約ドメインの主要データは `store_id` を持ちます。
 - 公開予約ページと公開予約 API は、`/{orgSlug}/{storeSlug}` と `/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}` を正として店舗を解決します。
 - 管理・参加者画面は、組織と店舗のスコープ付き URL を基本導線にしています。
-- 未スコープの公開イベント導線と、ログイン済み利用者の自己参加登録 API は互換導線として残っています。この範囲では `PUBLIC_EVENTS_ORG_SLUG` / `PUBLIC_EVENTS_STORE_SLUG` を使います。
+- 認証済みの予約 API は `/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}` 配下を正として店舗を解決します。公開イベント導線も `/{orgSlug}/{storeSlug}/events` 配下だけを提供します。
 - 店舗公開サイトは `public_site_setting` で公開状態、予約受付、検索除外を管理します。
 - サービス単位の公開制御は `service.public_status` で管理します。`public`、`private`、`suspended` を扱い、公開ページの表示と予約可否に反映します。
 - 枠単位の公開制御は `slot.public_status` で管理します。単発予約枠ごとに公開中、非公開、受付停止を扱えます。

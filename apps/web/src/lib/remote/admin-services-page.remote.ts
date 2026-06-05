@@ -2,6 +2,7 @@ import { query } from '$app/server';
 import type { ScopedApiContext, ServicePayload } from '$lib/rpc-client';
 import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import {
+	buildScopedAuthPath,
 	createApiGetter,
 	resolveScopedAccessContext,
 	type ApiResult
@@ -81,14 +82,9 @@ export const getAdminServicesPageData = query(
 			};
 		}
 
-		const scopedQuery = {
-			organizationId: scopedAccess.organizationId,
-			storeId: scopedAccess.storeId
-		};
 		const [servicesResult, staffServicesResult] = await Promise.all([
-			getApi('/api/v1/auth/organizations/services', scopedQuery),
-			getApi('/api/v1/auth/organizations/services', {
-				...scopedQuery,
+			getApi(buildScopedAuthPath(activeContext, '/services')),
+			getApi(buildScopedAuthPath(activeContext, '/services'), {
 				includeArchived: true
 			})
 		]);

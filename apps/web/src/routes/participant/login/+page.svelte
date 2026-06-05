@@ -83,7 +83,7 @@
 			const invitationHomePath = await loadPendingInvitationHomePath();
 			writeLastAuthPortal('participant');
 			emitAuthSessionUpdated();
-			await goto(resolve((invitationHomePath ?? '/events') as ResolvablePath));
+			await goto(resolve((invitationHomePath ?? '/dashboard') as ResolvablePath));
 			return;
 		}
 

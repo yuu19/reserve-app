@@ -1,19 +1,22 @@
 import { page } from 'vitest/browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import EventDetailPage from './+page.svelte';
+import EventDetailPage from '$lib/pages/event-detail-page.svelte';
 
 const mocks = vi.hoisted(() => ({
 	loadPublicEventDetail: vi.fn(),
 	reservePublicEvent: vi.fn(),
 	createGuestPublicBooking: vi.fn(),
+	loadRequiredForms: vi.fn(),
 	loadSession: vi.fn(),
 	redirectToLoginWithNext: vi.fn(),
-	getCurrentPathWithSearch: vi.fn(() => '/events/slot-1')
+	getCurrentPathWithSearch: vi.fn(() => '/org-one/room-one/events/slot-1')
 }));
 
 const pageState = vi.hoisted(() => ({
 	params: {
+		orgSlug: 'org-one',
+		storeSlug: 'room-one',
 		slotId: 'slot-1'
 	} as Record<string, string | undefined>
 }));
@@ -28,6 +31,10 @@ vi.mock('$lib/features/events.svelte', () => ({
 	createGuestPublicBooking: mocks.createGuestPublicBooking
 }));
 
+vi.mock('$lib/features/forms', () => ({
+	loadRequiredForms: mocks.loadRequiredForms
+}));
+
 vi.mock('$lib/features/auth-session.svelte', () => ({
 	loadSession: mocks.loadSession,
 	redirectToLoginWithNext: mocks.redirectToLoginWithNext,
@@ -36,10 +43,11 @@ vi.mock('$lib/features/auth-session.svelte', () => ({
 
 describe('イベント詳細ページ', () => {
 	beforeEach(() => {
-		pageState.params = { slotId: 'slot-1' };
+		pageState.params = { orgSlug: 'org-one', storeSlug: 'room-one', slotId: 'slot-1' };
 		mocks.loadPublicEventDetail.mockReset();
 		mocks.reservePublicEvent.mockReset();
 		mocks.createGuestPublicBooking.mockReset();
+		mocks.loadRequiredForms.mockReset();
 		mocks.loadSession.mockReset();
 		mocks.redirectToLoginWithNext.mockReset();
 		mocks.getCurrentPathWithSearch.mockReset();
@@ -100,8 +108,11 @@ describe('イベント詳細ページ', () => {
 					serviceNames: ['別サービス'],
 					href: '/org-one/room-one/tickets/ticket-other'
 				}
-			],
-			intakeFields: []
+			]
+		});
+		mocks.loadRequiredForms.mockResolvedValue({
+			formContextHash: 'ctx_default',
+			forms: []
 		});
 		mocks.loadSession.mockResolvedValue({
 			session: null,
@@ -144,19 +155,24 @@ describe('イベント詳細ページ', () => {
 				{ orgSlug: 'org-one', storeSlug: 'room-one' },
 				{
 					slotId: 'slot-1',
-					customerName: 'Public Guest',
-					customerEmail: 'guest@example.com',
-					customerPhone: '090-0000-0000',
+					customer: {
+						name: 'Public Guest',
+						email: 'guest@example.com',
+						phone: '090-0000-0000'
+					},
+					serviceId: 'service-1',
 					participantsCount: 2,
 					companions: [{ name: 'Friend One' }],
-					note: '窓際希望'
+					note: '窓際希望',
+					formContextHash: 'ctx_default',
+					formSubmissions: []
 				}
 			);
 		});
 		await expect.element(page.getByText('bk_public_1')).toBeInTheDocument();
 	});
 
-	it('公開予約フォームのカスタム入力回答を送信する', async () => {
+	it('公開予約フォームのフォーム回答を送信する', async () => {
 		pageState.params = { orgSlug: 'org-one', storeSlug: 'room-one', slotId: 'slot-1' };
 		mocks.loadPublicEventDetail.mockResolvedValueOnce({
 			organizationId: 'org-1',
@@ -183,43 +199,63 @@ describe('イベント詳細ページ', () => {
 			isBookable: true,
 			staffLabel: null,
 			locationLabel: '第1スタジオ',
-			ticketTypes: [],
-			intakeFields: [
+			ticketTypes: []
+		});
+		mocks.loadRequiredForms.mockResolvedValueOnce({
+			formContextHash: 'ctx_answers',
+			forms: [
 				{
-					fieldId: 'goal',
-					label: '参加目的',
-					fieldType: 'text',
-					required: true,
-					options: [],
-					helpText: '目的を一言で入力してください。',
-					placeholder: '例: 体力づくり'
-				},
-				{
-					fieldId: 'experience',
-					label: '経験年数',
-					fieldType: 'select',
-					required: true,
-					options: ['未経験', '1年以上'],
-					helpText: null,
-					placeholder: '選択してください'
-				},
-				{
-					fieldId: 'request',
-					label: '希望内容',
-					fieldType: 'textarea',
-					required: false,
-					options: [],
-					helpText: null,
-					placeholder: null
-				},
-				{
-					fieldId: 'newsletter',
-					label: '案内メールを受け取る',
-					fieldType: 'checkbox',
-					required: false,
-					options: [],
-					helpText: '最新情報をメールで案内します。',
-					placeholder: null
+					formTemplateId: 'form-1',
+					formTemplateVersionId: 'version-1',
+					formType: 'reservation_input',
+					name: '体験予約フォーム',
+					description: null,
+					versionNumber: 1,
+					fields: [
+						{
+							fieldKey: 'goal',
+							label: '参加目的',
+							fieldType: 'text',
+							required: true,
+							options: [],
+							description: '目的を一言で入力してください。',
+							placeholder: '例: 体力づくり',
+							sortOrder: 0
+						},
+						{
+							fieldKey: 'experience',
+							label: '経験年数',
+							fieldType: 'select',
+							required: true,
+							options: [
+								{ value: 'none', label: '未経験' },
+								{ value: 'over_1_year', label: '1年以上' }
+							],
+							description: null,
+							placeholder: '選択してください',
+							sortOrder: 1
+						},
+						{
+							fieldKey: 'request',
+							label: '希望内容',
+							fieldType: 'textarea',
+							required: false,
+							options: [],
+							description: null,
+							placeholder: null,
+							sortOrder: 2
+						},
+						{
+							fieldKey: 'newsletter',
+							label: '案内メールを受け取る',
+							fieldType: 'checkbox',
+							required: false,
+							options: [{ value: 'subscribe', label: '受け取る' }],
+							description: '最新情報をメールで案内します。',
+							placeholder: null,
+							sortOrder: 3
+						}
+					]
 				}
 			]
 		});
@@ -239,35 +275,38 @@ describe('イベント詳細ページ', () => {
 		await page.getByLabelText('メールアドレス').fill('guest@example.com');
 		await page.getByLabelText('人数').fill('1');
 		await page.getByLabelText('参加目的 *').fill('体力づくり');
-		await page.getByLabelText('経験年数 *').selectOptions('1年以上');
+		await page.getByLabelText('経験年数 *').selectOptions('over_1_year');
 		await page.getByLabelText('希望内容').fill('初回なのでゆっくり進めたい');
-		await page.getByRole('checkbox', { name: /案内メールを受け取る/ }).click();
+		await page.getByRole('checkbox', { name: /受け取る/ }).click();
 		await page.getByRole('button', { name: '予約する' }).click();
 
 		await vi.waitFor(() => {
 			expect(mocks.createGuestPublicBooking).toHaveBeenCalledWith(
 				{ orgSlug: 'org-one', storeSlug: 'room-one' },
 				expect.objectContaining({
-					answers: [
+					formContextHash: 'ctx_answers',
+					formSubmissions: [
 						{
-							fieldId: 'goal',
-							labelSnapshot: '参加目的',
-							value: '体力づくり'
-						},
-						{
-							fieldId: 'experience',
-							labelSnapshot: '経験年数',
-							value: '1年以上'
-						},
-						{
-							fieldId: 'request',
-							labelSnapshot: '希望内容',
-							value: '初回なのでゆっくり進めたい'
-						},
-						{
-							fieldId: 'newsletter',
-							labelSnapshot: '案内メールを受け取る',
-							value: true
+							formTemplateId: 'form-1',
+							formTemplateVersionId: 'version-1',
+							answers: [
+								{
+									fieldKey: 'goal',
+									value: '体力づくり'
+								},
+								{
+									fieldKey: 'experience',
+									value: 'over_1_year'
+								},
+								{
+									fieldKey: 'request',
+									value: '初回なのでゆっくり進めたい'
+								},
+								{
+									fieldKey: 'newsletter',
+									value: ['subscribe']
+								}
+							]
 						}
 					]
 				})
@@ -275,7 +314,7 @@ describe('イベント詳細ページ', () => {
 		});
 	});
 
-	it('任意のチェック項目は未チェックをfalseとして送信する', async () => {
+	it('任意のチェック項目は未チェックを空配列として送信する', async () => {
 		pageState.params = { orgSlug: 'org-one', storeSlug: 'room-one', slotId: 'slot-1' };
 		mocks.loadPublicEventDetail.mockResolvedValueOnce({
 			organizationId: 'org-1',
@@ -302,16 +341,30 @@ describe('イベント詳細ページ', () => {
 			isBookable: true,
 			staffLabel: null,
 			locationLabel: '第1スタジオ',
-			ticketTypes: [],
-			intakeFields: [
+			ticketTypes: []
+		});
+		mocks.loadRequiredForms.mockResolvedValueOnce({
+			formContextHash: 'ctx_checkbox',
+			forms: [
 				{
-					fieldId: 'newsletter',
-					label: '案内メールを受け取る',
-					fieldType: 'checkbox',
-					required: false,
-					options: [],
-					helpText: null,
-					placeholder: null
+					formTemplateId: 'form-checkbox',
+					formTemplateVersionId: 'version-checkbox',
+					formType: 'reservation_input',
+					name: '確認フォーム',
+					description: null,
+					versionNumber: 1,
+					fields: [
+						{
+							fieldKey: 'newsletter',
+							label: '案内メールを受け取る',
+							fieldType: 'checkbox',
+							required: false,
+							options: [{ value: 'subscribe', label: '受け取る' }],
+							description: null,
+							placeholder: null,
+							sortOrder: 0
+						}
+					]
 				}
 			]
 		});
@@ -336,11 +389,17 @@ describe('イベント詳細ページ', () => {
 			expect(mocks.createGuestPublicBooking).toHaveBeenCalledWith(
 				{ orgSlug: 'org-one', storeSlug: 'room-one' },
 				expect.objectContaining({
-					answers: [
+					formContextHash: 'ctx_checkbox',
+					formSubmissions: [
 						{
-							fieldId: 'newsletter',
-							labelSnapshot: '案内メールを受け取る',
-							value: false
+							formTemplateId: 'form-checkbox',
+							formTemplateVersionId: 'version-checkbox',
+							answers: [
+								{
+									fieldKey: 'newsletter',
+									value: []
+								}
+							]
 						}
 					]
 				})
@@ -413,8 +472,7 @@ describe('イベント詳細ページ', () => {
 					serviceNames: ['別サービス'],
 					href: '/org-one/room-one/tickets/ticket-other'
 				}
-			],
-			intakeFields: []
+			]
 		});
 		render(EventDetailPage);
 

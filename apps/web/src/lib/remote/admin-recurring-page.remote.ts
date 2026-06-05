@@ -2,6 +2,7 @@ import { query } from '$app/server';
 import type { RecurringSchedulePayload, ScopedApiContext, ServicePayload } from '$lib/rpc-client';
 import { readOrganizationPremiumRestriction } from '$lib/features/premium-restrictions';
 import {
+	buildScopedAuthPath,
 	createApiGetter,
 	resolveScopedAccessContext,
 	type ApiResult
@@ -82,17 +83,12 @@ export const getAdminRecurringPageData = query(
 			};
 		}
 
-		const scopedQuery = {
-			organizationId: scopedAccess.organizationId,
-			storeId: scopedAccess.storeId
-		};
 		const [servicesResult, recurringResult, staffRecurringResult] = await Promise.all([
-			getApi('/api/v1/auth/organizations/services', scopedQuery),
-			getApi('/api/v1/auth/organizations/recurring-schedules', {
-				...scopedQuery,
+			getApi(buildScopedAuthPath(activeContext, '/services')),
+			getApi(buildScopedAuthPath(activeContext, '/recurring-schedules'), {
 				isActive: true
 			}),
-			getApi('/api/v1/auth/organizations/recurring-schedules', scopedQuery)
+			getApi(buildScopedAuthPath(activeContext, '/recurring-schedules'))
 		]);
 
 		const premiumRestriction =

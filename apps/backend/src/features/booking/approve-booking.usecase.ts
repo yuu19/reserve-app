@@ -1,5 +1,6 @@
 import { writeBookingAuditLog } from '../../domain/booking/audit.js';
-import { BOOKING_STATUS } from '../../domain/booking/constants.js';
+import { BOOKING_AUDIT_ACTION, BOOKING_STATUS } from '../../domain/booking/constants.js';
+import { canTransitionBookingStatus, isBookingStatus } from '../../domain/booking/state.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import {
   conflict,
@@ -61,7 +62,11 @@ export const approveBookingByStaff = async (
     return forbidden();
   }
 
-  if (booking.status !== BOOKING_STATUS.PENDING_APPROVAL) {
+  if (
+    !isBookingStatus(booking.status) ||
+    booking.status !== BOOKING_STATUS.PENDING_APPROVAL ||
+    !canTransitionBookingStatus(booking.status, BOOKING_STATUS.CONFIRMED)
+  ) {
     return conflict('Only pending approval booking can be approved.');
   }
 
@@ -161,7 +166,7 @@ export const approveBookingByStaff = async (
       organizationId: booking.organizationId,
       storeId: booking.storeId,
       actorUserId: identity.userId,
-      action: 'booking.approved',
+      action: BOOKING_AUDIT_ACTION.APPROVED,
       metadata: {
         ticketPackId: consumedTicketPackId,
       },
@@ -230,7 +235,11 @@ export const rejectBookingByStaff = async (
     return forbidden();
   }
 
-  if (booking.status !== BOOKING_STATUS.PENDING_APPROVAL) {
+  if (
+    !isBookingStatus(booking.status) ||
+    booking.status !== BOOKING_STATUS.PENDING_APPROVAL ||
+    !canTransitionBookingStatus(booking.status, BOOKING_STATUS.REJECTED)
+  ) {
     return conflict('Only pending approval booking can be rejected.');
   }
 
@@ -258,7 +267,7 @@ export const rejectBookingByStaff = async (
     organizationId: booking.organizationId,
     storeId: booking.storeId,
     actorUserId: identity.userId,
-    action: 'booking.rejected_by_staff',
+    action: BOOKING_AUDIT_ACTION.REJECTED,
     metadata: {
       reason: body.reason ?? null,
     },

@@ -1,4 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import {
+  scopedStoreAuthPath,
+  scopedStoreRouteParamsSchema,
+} from '../../shared/scoped-store-route.js';
 
 const boolStringSchema = z
   .enum(['true', 'false'])
@@ -13,8 +17,6 @@ const servicePublicStatusSchema = z.enum(['public', 'private', 'suspended']);
  * service 作成 API の入力を検証します。
  */
 export const serviceCreateBodySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema,
@@ -50,8 +52,6 @@ export const serviceCreateBodySchema = z.object({
  * service 一覧 API の query を検証します。
  */
 export const serviceListQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   includeArchived: boolStringSchema,
 });
 
@@ -60,7 +60,6 @@ export const serviceListQuerySchema = z.object({
  */
 export const serviceUpdateBodySchema = z.object({
   serviceId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(500).nullable().optional(),
   kind: serviceKindSchema.optional(),
@@ -97,8 +96,6 @@ export const serviceUpdateBodySchema = z.object({
  * service image の署名付き upload URL 発行に必要な入力を検証します。
  */
 export const serviceImageUploadUrlBodySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
   fileName: z.string().trim().min(1).max(255).optional(),
   contentType: z.string().trim().min(1).max(120),
   size: z.int().min(1),
@@ -128,39 +125,45 @@ export const serviceImageKeyParamSchema = z.object({
  */
 export const serviceArchiveBodySchema = z.object({
   serviceId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
 });
+
+type ScopedStoreInput = {
+  organizationId: string;
+  storeId: string;
+};
 
 /**
  * service 作成 usecase が受け取る検証済み body 型です。
  */
-export type ServiceCreateBody = z.infer<typeof serviceCreateBodySchema>;
+export type ServiceCreateBody = z.infer<typeof serviceCreateBodySchema> & ScopedStoreInput;
 /**
  * service 一覧 usecase が受け取る検証済み query 型です。
  */
-export type ServiceListQuery = z.infer<typeof serviceListQuerySchema>;
+export type ServiceListQuery = z.infer<typeof serviceListQuerySchema> & ScopedStoreInput;
 /**
  * service 更新 usecase が受け取る検証済み body 型です。
  */
-export type ServiceUpdateBody = z.infer<typeof serviceUpdateBodySchema>;
+export type ServiceUpdateBody = z.infer<typeof serviceUpdateBodySchema> & ScopedStoreInput;
 /**
  * service archive usecase が受け取る検証済み body 型です。
  */
-export type ServiceArchiveBody = z.infer<typeof serviceArchiveBodySchema>;
+export type ServiceArchiveBody = z.infer<typeof serviceArchiveBodySchema> & ScopedStoreInput;
 /**
  * service image upload URL 発行 route が受け取る検証済み body 型です。
  */
-export type ServiceImageUploadUrlBody = z.infer<typeof serviceImageUploadUrlBodySchema>;
+export type ServiceImageUploadUrlBody = z.infer<typeof serviceImageUploadUrlBodySchema> &
+  ScopedStoreInput;
 
 /**
  * service を作成する OpenAPI 定義です。
  */
 export const createServiceRoute = createRoute({
   method: 'post',
-  path: '/organizations/services',
+  path: scopedStoreAuthPath('/services'),
   tags: ['Services'],
   summary: 'Create service',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: { 'application/json': { schema: serviceCreateBodySchema } },
@@ -179,10 +182,10 @@ export const createServiceRoute = createRoute({
  */
 export const listServicesRoute = createRoute({
   method: 'get',
-  path: '/organizations/services',
+  path: scopedStoreAuthPath('/services'),
   tags: ['Services'],
   summary: 'List services',
-  request: { query: serviceListQuerySchema },
+  request: { params: scopedStoreRouteParamsSchema, query: serviceListQuerySchema },
   responses: {
     200: { description: 'Service list' },
     401: { description: 'Unauthorized' },
@@ -195,10 +198,11 @@ export const listServicesRoute = createRoute({
  */
 export const createServiceImageUploadUrlRoute = createRoute({
   method: 'post',
-  path: '/organizations/services/images/upload-url',
+  path: scopedStoreAuthPath('/services/images/upload-url'),
   tags: ['Services'],
   summary: 'Create signed upload URL for service image',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: { 'application/json': { schema: serviceImageUploadUrlBodySchema } },
@@ -218,7 +222,7 @@ export const createServiceImageUploadUrlRoute = createRoute({
  */
 export const uploadServiceImageBySignedUrlRoute = createRoute({
   method: 'put',
-  path: '/organizations/services/images/upload/{token}',
+  path: '/services/images/upload/{token}',
   tags: ['Services'],
   summary: 'Upload service image using signed URL',
   request: { params: serviceImageUploadTokenParamSchema },
@@ -236,7 +240,7 @@ export const uploadServiceImageBySignedUrlRoute = createRoute({
  */
 export const getServiceImageRoute = createRoute({
   method: 'get',
-  path: '/organizations/services/images/{key}',
+  path: '/services/images/{key}',
   tags: ['Services'],
   summary: 'Get service image by key',
   request: { params: serviceImageKeyParamSchema },
@@ -253,10 +257,11 @@ export const getServiceImageRoute = createRoute({
  */
 export const updateServiceRoute = createRoute({
   method: 'post',
-  path: '/organizations/services/update',
+  path: scopedStoreAuthPath('/services/update'),
   tags: ['Services'],
   summary: 'Update service',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: { 'application/json': { schema: serviceUpdateBodySchema } },
@@ -276,10 +281,11 @@ export const updateServiceRoute = createRoute({
  */
 export const archiveServiceRoute = createRoute({
   method: 'post',
-  path: '/organizations/services/archive',
+  path: scopedStoreAuthPath('/services/archive'),
   tags: ['Services'],
   summary: 'Archive service',
   request: {
+    params: scopedStoreRouteParamsSchema,
     body: {
       required: true,
       content: { 'application/json': { schema: serviceArchiveBodySchema } },

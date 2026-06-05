@@ -37,74 +37,178 @@ import {
  * ticket type、purchase、pack の管理・参加者向け route を登録します。
  */
 export const registerTicketRoutes = (ctx: BookingRouteContext) => {
-  ctx.authRoutes.openapi(createTicketTypeRoute, async (c) =>
-    jsonRouteResult(c, await createTicketType(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  const withScope = <T extends Record<string, unknown>>(
+    scope: NonNullable<Awaited<ReturnType<BookingRouteContext['resolveScopedStoreContext']>>>,
+    input: T,
+  ) => ({
+    ...input,
+    organizationId: scope.organizationId,
+    storeId: scope.storeId,
+  });
 
-  ctx.authRoutes.openapi(updateTicketTypeRoute, async (c) =>
-    jsonRouteResult(c, await updateExistingTicketType(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
-
-  ctx.authRoutes.openapi(listTicketTypesRoute, async (c) =>
-    jsonRouteResult(
+  ctx.authRoutes.openapi(createTicketTypeRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await listManageableTicketTypes(ctx, c.req.valid('query'), c.req.raw.headers),
-    ),
-  );
+      await createTicketType(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(listPurchasableTicketTypesRoute, async (c) =>
-    jsonRouteResult(
+  ctx.authRoutes.openapi(updateTicketTypeRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await listPurchasableTicketTypeOptions(ctx, c.req.valid('query'), c.req.raw.headers),
-    ),
-  );
+      await updateExistingTicketType(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(createTicketPurchaseRoute, async (c) =>
-    jsonRouteResult(c, await createTicketPurchase(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
-
-  ctx.authRoutes.openapi(listMyTicketPurchasesRoute, async (c) =>
-    jsonRouteResult(c, await listMyTicketPurchases(ctx, c.req.valid('query'), c.req.raw.headers)),
-  );
-
-  ctx.authRoutes.openapi(listTicketPurchasesRoute, async (c) =>
-    jsonRouteResult(
+  ctx.authRoutes.openapi(listTicketTypesRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await listStaffTicketPurchases(ctx, c.req.valid('query'), c.req.raw.headers),
-    ),
-  );
+      await listManageableTicketTypes(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(approveTicketPurchaseRoute, async (c) =>
-    jsonRouteResult(c, await approveTicketPurchase(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
-
-  ctx.authRoutes.openapi(rejectTicketPurchaseRoute, async (c) =>
-    jsonRouteResult(
+  ctx.authRoutes.openapi(listPurchasableTicketTypesRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await rejectExistingTicketPurchase(ctx, c.req.valid('json'), c.req.raw.headers),
-    ),
-  );
+      await listPurchasableTicketTypeOptions(
+        ctx,
+        withScope(scope, c.req.valid('query')),
+        c.req.raw.headers,
+      ),
+    );
+  });
 
-  ctx.authRoutes.openapi(cancelTicketPurchaseRoute, async (c) =>
-    jsonRouteResult(
+  ctx.authRoutes.openapi(createTicketPurchaseRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
       c,
-      await cancelExistingTicketPurchase(ctx, c.req.valid('json'), c.req.raw.headers),
-    ),
-  );
+      await createTicketPurchase(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(grantTicketPackRoute, async (c) =>
-    jsonRouteResult(c, await grantTicketPack(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(listMyTicketPurchasesRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listMyTicketPurchases(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(listTicketPacksRoute, async (c) =>
-    jsonRouteResult(c, await listStaffTicketPacks(ctx, c.req.valid('query'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(listTicketPurchasesRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listStaffTicketPurchases(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(adjustTicketPackRoute, async (c) =>
-    jsonRouteResult(c, await adjustExistingTicketPack(ctx, c.req.valid('json'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(approveTicketPurchaseRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await approveTicketPurchase(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
 
-  ctx.authRoutes.openapi(listMyTicketPacksRoute, async (c) =>
-    jsonRouteResult(c, await listMyTicketPacks(ctx, c.req.valid('query'), c.req.raw.headers)),
-  );
+  ctx.authRoutes.openapi(rejectTicketPurchaseRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await rejectExistingTicketPurchase(
+        ctx,
+        withScope(scope, c.req.valid('json')),
+        c.req.raw.headers,
+      ),
+    );
+  });
+
+  ctx.authRoutes.openapi(cancelTicketPurchaseRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await cancelExistingTicketPurchase(
+        ctx,
+        withScope(scope, c.req.valid('json')),
+        c.req.raw.headers,
+      ),
+    );
+  });
+
+  ctx.authRoutes.openapi(grantTicketPackRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await grantTicketPack(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
+
+  ctx.authRoutes.openapi(listTicketPacksRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listStaffTicketPacks(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
+
+  ctx.authRoutes.openapi(adjustTicketPackRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await adjustExistingTicketPack(ctx, withScope(scope, c.req.valid('json')), c.req.raw.headers),
+    );
+  });
+
+  ctx.authRoutes.openapi(listMyTicketPacksRoute, async (c) => {
+    const scope = await ctx.resolveScopedStoreContext(c.req.valid('param'));
+    if (!scope) {
+      return c.json({ message: 'Organization or store not found.' }, 404);
+    }
+    return jsonRouteResult(
+      c,
+      await listMyTicketPacks(ctx, withScope(scope, c.req.valid('query')), c.req.raw.headers),
+    );
+  });
 };

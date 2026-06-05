@@ -98,7 +98,10 @@ describe('予約ユースケース', () => {
     repositoryMocks.reserveSlotCapacityForApproval.mockResolvedValue(true);
     repositoryMocks.releaseSlotCapacity.mockResolvedValue(undefined);
     repositoryMocks.releaseConfirmedBookingSlotCapacity.mockResolvedValue(undefined);
-    repositoryMocks.cancelBookingByParticipantState.mockResolvedValue(undefined);
+    repositoryMocks.cancelBookingByParticipantState.mockResolvedValue(true);
+    repositoryMocks.cancelBookingByStaffState.mockResolvedValue(true);
+    repositoryMocks.markConfirmedBookingAttendance.mockResolvedValue(true);
+    repositoryMocks.markConfirmedBookingNoShow.mockResolvedValue(true);
     repositoryMocks.approvePendingBooking.mockResolvedValue(true);
     repositoryMocks.consumeBookingTicketLedger.mockResolvedValue(undefined);
     ticketStateMocks.consumeTicketPackForParticipant.mockResolvedValue({
@@ -213,7 +216,7 @@ describe('予約ユースケース', () => {
     });
     expect(auditMocks.writeBookingAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: 'booking.cancelled_by_participant',
+        action: 'cancelled_by_customer',
         bookingId: 'booking-1',
       }),
     );

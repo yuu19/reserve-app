@@ -298,12 +298,14 @@ export type BookingPayload = {
 	note?: string | null;
 	createdByUserId?: string | null;
 	status:
-		| 'confirmed'
 		| 'pending_approval'
-		| 'rejected_by_staff'
-		| 'cancelled_by_participant'
-		| 'cancelled_by_staff'
-		| 'no_show';
+		| 'confirmed'
+		| 'rejected'
+		| 'cancelled'
+		| 'no_show'
+		| 'completed'
+		| 'pending_payment'
+		| 'expired';
 	cancelReason?: string | null;
 	cancelledAt?: string | null;
 	cancelledByUserId?: string | null;
@@ -427,23 +429,8 @@ export type PublicEventsPagePayload = {
 	ticketTypes: PublicTicketTypePayload[];
 };
 
-export type PublicSiteIntakeFieldPayload = {
-	id?: string;
-	fieldId: string;
-	label: string;
-	fieldType: 'text' | 'textarea' | 'select' | 'checkbox';
-	required: boolean;
-	options: string[];
-	helpText?: string | null;
-	placeholder?: string | null;
-	visibleOnPublic?: boolean;
-	sortOrder?: number;
-	[key: string]: unknown;
-};
-
 export type PublicEventDetailPayload = PublicEventListItemPayload & {
 	ticketTypes: PublicTicketTypePayload[];
-	intakeFields: PublicSiteIntakeFieldPayload[];
 };
 
 export type PublicSiteProfilePayload = {
@@ -487,11 +474,6 @@ export type ReminderSettingsPayload = {
 	enabled: boolean;
 	timingsMinutes: number[];
 	serviceOverrides: ReminderServiceOverridePayload[];
-	[key: string]: unknown;
-};
-
-export type PublicSiteIntakeFieldsPayload = {
-	fields: PublicSiteIntakeFieldPayload[];
 	[key: string]: unknown;
 };
 
@@ -581,6 +563,170 @@ export type AccessTreePayload = {
 	orgs: AccessTreeOrganizationPayload[];
 	[key: string]: unknown;
 };
+
+export type FormType = 'reservation_input' | 'pre_survey' | 'consent';
+export type FormFieldType =
+	| 'text'
+	| 'textarea'
+	| 'radio'
+	| 'checkbox'
+	| 'select'
+	| 'date'
+	| 'consent';
+export type FormTargetType = 'store' | 'service' | 'slot';
+export type FormStatus = 'draft' | 'published' | 'archived';
+
+export type FormOptionPayload = {
+	value: string;
+	label: string;
+};
+
+export type FormFieldPayload = {
+	id?: string;
+	fieldKey: string;
+	fieldType: FormFieldType;
+	label: string;
+	description: string | null;
+	placeholder: string | null;
+	required: boolean;
+	options: FormOptionPayload[];
+	sortOrder: number;
+};
+
+export type FormAssignmentPayload = {
+	id: string;
+	formType: FormType;
+	targetType: FormTargetType;
+	targetId: string;
+	formTemplateId: string;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type FormPayload = {
+	id: string;
+	organizationId: string;
+	storeId: string;
+	formType: FormType;
+	name: string;
+	description: string | null;
+	status: FormStatus;
+	currentPublishedVersionId: string | null;
+	currentPublishedVersion: {
+		id: string;
+		versionNumber: number;
+		publishedAt: string;
+	} | null;
+	fields: FormFieldPayload[];
+	assignments: FormAssignmentPayload[];
+	createdAt: string;
+	updatedAt: string;
+	archivedAt: string | null;
+};
+
+export type FormListPayload = {
+	forms: FormPayload[];
+};
+
+export type RequiredFormPayload = {
+	formTemplateId: string;
+	formTemplateVersionId: string;
+	formType: FormType;
+	name: string;
+	description: string | null;
+	versionNumber: number;
+	fields: Omit<FormFieldPayload, 'id'>[];
+};
+
+export type RequiredFormsPayload = {
+	formContextHash: string;
+	forms: RequiredFormPayload[];
+};
+
+export type FormAnswerInput = {
+	fieldKey: string;
+	value: unknown;
+};
+
+export type FormSubmissionInput = {
+	formTemplateId: string;
+	formTemplateVersionId: string;
+	answers?: FormAnswerInput[];
+};
+
+export type FormSubmissionSummaryPayload = {
+	id: string;
+	formTemplateId: string;
+	formTemplateVersionId: string;
+	formType: FormType;
+	bookingId: string | null;
+	participantId: string | null;
+	customerNameSnapshot: string | null;
+	customerEmailSnapshot: string | null;
+	source: string;
+	submittedAt: string;
+	answerCount: number;
+};
+
+export type FormSubmissionsPayload = {
+	submissions: FormSubmissionSummaryPayload[];
+};
+
+export type FormSubmissionDetailPayload = Omit<FormSubmissionSummaryPayload, 'answerCount'> & {
+	formName: string;
+	versionNumber: number;
+	answers: Array<{
+		id: string;
+		fieldKey: string;
+		fieldType: FormFieldType;
+		labelSnapshot: string;
+		value: unknown;
+		sortOrder: number;
+		createdAt: string;
+	}>;
+};
+
+export type FormFieldInput = {
+	id?: string;
+	fieldKey: string;
+	fieldType: FormFieldType;
+	label: string;
+	description?: string | null;
+	placeholder?: string | null;
+	required: boolean;
+	options?: FormOptionPayload[];
+	sortOrder?: number;
+};
+
+export type CreateFormInput = {
+	formType: FormType;
+	name: string;
+	description?: string | null;
+	fields: FormFieldInput[];
+};
+
+export type UpdateFormInput = Partial<
+	Pick<CreateFormInput, 'formType' | 'name' | 'description'>
+> & {
+	fields?: FormFieldInput[];
+};
+
+export type CreateFormAssignmentInput = {
+	targetType: FormTargetType;
+	targetId: string;
+};
+
+export type ListFormsQuery = {
+	formType?: FormType;
+	status?: FormStatus;
+	targetType?: FormTargetType;
+};
+
+export type RequiredFormsQuery = {
+	serviceId?: string;
+	slotId?: string;
+};
+
 export type OrganizationLogoUploadPayload = {
 	key: string;
 	logoUrl: string;
@@ -654,19 +800,6 @@ export type UpdatePublicSiteSettingsInput = {
 	status?: 'public' | 'private' | 'suspended';
 	acceptBookings?: boolean;
 	noindex?: boolean;
-};
-
-export type UpdatePublicSiteIntakeFieldsInput = {
-	fields: Array<{
-		fieldId: string;
-		label: string;
-		fieldType: 'text' | 'textarea' | 'select' | 'checkbox';
-		required: boolean;
-		options?: string[];
-		helpText?: string | null;
-		placeholder?: string | null;
-		visibleOnPublic: boolean;
-	}>;
 };
 
 export type UpdateNotificationSettingsInput = {
@@ -883,21 +1016,19 @@ export type BookingCompanionInput = {
 	note?: string | null;
 };
 
-export type BookingAnswerInput = {
-	fieldId: string;
-	labelSnapshot: string;
-	value: unknown;
-};
-
 export type CreatePublicBookingInput = {
 	slotId: string;
-	customerName: string;
-	customerEmail: string;
-	customerPhone?: string;
+	serviceId?: string;
+	customer: {
+		name: string;
+		email: string;
+		phone?: string;
+	};
 	participantsCount?: number;
 	companions?: BookingCompanionInput[];
 	note?: string;
-	answers?: BookingAnswerInput[];
+	formContextHash: string;
+	formSubmissions?: FormSubmissionInput[];
 };
 
 export type PublicBookingResultPayload = {
@@ -922,7 +1053,7 @@ export type StaffCreateBookingInput = {
 	notifyCustomer?: boolean;
 	companions?: BookingCompanionInput[];
 	note?: string;
-	answers?: BookingAnswerInput[];
+	formSubmissions?: FormSubmissionInput[];
 };
 
 type BookingActionInput = {
@@ -959,12 +1090,14 @@ type ListBookingsQuery = {
 	to?: string;
 	participantId?: string;
 	status?:
-		| 'confirmed'
 		| 'pending_approval'
-		| 'rejected_by_staff'
-		| 'cancelled_by_participant'
-		| 'cancelled_by_staff'
-		| 'no_show';
+		| 'confirmed'
+		| 'rejected'
+		| 'cancelled'
+		| 'no_show'
+		| 'completed'
+		| 'pending_payment'
+		| 'expired';
 };
 
 type CreateTicketTypeInput = {
@@ -1287,7 +1420,7 @@ const buildOrgAuthPath = (orgSlug: string, suffix = ''): `/api/v1/auth/orgs/${st
 const authFetch = (
 	path: string,
 	options: {
-		method?: 'GET' | 'POST' | 'PATCH';
+		method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
 		query?: Record<string, QueryValue>;
 		json?: unknown;
 		body?: BodyInit;
@@ -1330,155 +1463,15 @@ const publicFetch = (
 	});
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === 'object' && value !== null;
-
-const isAccessEffectivePayload = (value: unknown): value is AccessEffectivePayload =>
-	isRecord(value) &&
-	typeof value.canManageOrganization === 'boolean' &&
-	typeof value.canManageStore === 'boolean' &&
-	typeof value.canManageBookings === 'boolean' &&
-	typeof value.canManageParticipants === 'boolean' &&
-	typeof value.canUseParticipantBooking === 'boolean';
-
-type ScopedIdentifiers = {
-	organizationId: string;
-	storeId: string;
-};
-
-const scopedIdentifiersCache = new Map<string, Promise<ScopedIdentifiers | null>>();
-
-const scopedIdentifiersCacheKey = (context: ScopedApiContext) =>
-	`${context.orgSlug}::${context.storeSlug}`;
-
-const parseJsonResponse = async (response: Response): Promise<unknown> => {
-	const contentType = response.headers.get('content-type') ?? '';
-	if (contentType.includes('application/json')) {
-		return response.json();
-	}
-	const text = await response.text();
-	if (!text) {
-		return null;
-	}
-	try {
-		return JSON.parse(text);
-	} catch {
-		return text;
-	}
-};
-
-const createScopedResolutionErrorResponse = (message: string, status = 404) =>
-	new Response(JSON.stringify({ message }), {
-		status,
+const createStoreScopeRequiredResponse = () =>
+	new Response(JSON.stringify({ message: 'Store scoped route context is required.' }), {
+		status: 400,
 		headers: {
 			'content-type': 'application/json'
 		}
 	});
 
-const resolveScopedIdentifiers = async (
-	context: ScopedApiContext
-): Promise<ScopedIdentifiers | null> => {
-	const cacheKey = scopedIdentifiersCacheKey(context);
-	const cached = scopedIdentifiersCache.get(cacheKey);
-	if (cached) {
-		return cached;
-	}
-
-	const pending = (async () => {
-		// access-tree で slug から id を解決できる場合は追加 API を避ける。
-		// 旧 payload や部分的な権限だけの user では stores endpoint に fallback する。
-		const response = await authFetch('/api/v1/auth/orgs/access-tree');
-		const payload = await parseJsonResponse(response);
-		if (!response.ok || !isRecord(payload) || !Array.isArray(payload.orgs)) {
-			return null;
-		}
-
-		let organizationId: string | null = null;
-
-		for (const orgEntry of payload.orgs) {
-			if (!isRecord(orgEntry) || !isRecord(orgEntry.org) || !Array.isArray(orgEntry.stores)) {
-				continue;
-			}
-			if (orgEntry.org.slug !== context.orgSlug || typeof orgEntry.org.id !== 'string') {
-				continue;
-			}
-			organizationId = orgEntry.org.id;
-			for (const store of orgEntry.stores) {
-				if (isRecord(store) && store.slug === context.storeSlug && typeof store.id === 'string') {
-					return {
-						organizationId: orgEntry.org.id,
-						storeId: store.id
-					};
-				}
-			}
-		}
-
-		if (!organizationId) {
-			return null;
-		}
-
-		const storesResponse = await authFetch(
-			`/api/v1/auth/orgs/${encodeURIComponent(context.orgSlug)}/stores`
-		);
-		const storesPayload = await parseJsonResponse(storesResponse);
-		if (!storesResponse.ok || !Array.isArray(storesPayload)) {
-			return null;
-		}
-
-		for (const store of storesPayload) {
-			if (
-				isRecord(store) &&
-				store.slug === context.storeSlug &&
-				typeof store.id === 'string' &&
-				isAccessEffectivePayload(store.effective)
-			) {
-				return {
-					organizationId,
-					storeId: store.id
-				};
-			}
-		}
-
-		return null;
-	})();
-
-	scopedIdentifiersCache.set(cacheKey, pending);
-	const resolved = await pending;
-	if (!resolved) {
-		scopedIdentifiersCache.delete(cacheKey);
-	}
-	return resolved;
-};
-
-const withScopedQuery = async <TQuery extends Record<string, QueryValue>>(
-	context: ScopedApiContext,
-	query: TQuery | undefined,
-	request: (resolvedQuery: TQuery & ScopedIdentifiers) => Promise<Response>
-) => {
-	const identifiers = await resolveScopedIdentifiers(context);
-	if (!identifiers) {
-		return createScopedResolutionErrorResponse('組織または店舗コンテキストの解決に失敗しました。');
-	}
-	return request({
-		...(query ?? ({} as TQuery)),
-		...identifiers
-	});
-};
-
-const withScopedJson = async <TJson extends Record<string, unknown>>(
-	context: ScopedApiContext,
-	json: TJson,
-	request: (resolvedJson: TJson & ScopedIdentifiers) => Promise<Response>
-) => {
-	const identifiers = await resolveScopedIdentifiers(context);
-	if (!identifiers) {
-		return createScopedResolutionErrorResponse('組織または店舗コンテキストの解決に失敗しました。');
-	}
-	return request({
-		...json,
-		...identifiers
-	});
-};
+const storeScopeRequired = () => Promise.resolve(createStoreScopeRequiredResponse());
 
 /**
  * web UI が backend auth API を呼ぶための集約 client。
@@ -1513,15 +1506,7 @@ export const authRpc = {
 			credentials: 'include'
 		});
 	},
-	createServiceImageUploadUrl: (json: CreateServiceImageUploadUrlInput) =>
-		fetch(new URL('/api/v1/auth/organizations/services/images/upload-url', backendUrl), {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json'
-			},
-			body: JSON.stringify(json),
-			credentials: 'include'
-		}),
+	createServiceImageUploadUrl: (_json: CreateServiceImageUploadUrlInput) => storeScopeRequired(),
 	uploadServiceImageBySignedUrl: (uploadUrl: string, file: File, contentType: string) =>
 		fetch(uploadUrl, {
 			method: 'PUT',
@@ -1552,16 +1537,58 @@ export const authRpc = {
 			method: 'PATCH',
 			json
 		}),
-	getPublicSiteIntakeFields: (context: ScopedApiContext) =>
-		authFetch(buildScopedAuthPath(context, '/intake-fields')),
-	updatePublicSiteIntakeFields: (
-		context: ScopedApiContext,
-		json: UpdatePublicSiteIntakeFieldsInput
-	) =>
-		authFetch(buildScopedAuthPath(context, '/intake-fields'), {
+	listFormsScoped: (context: ScopedApiContext, query?: ListFormsQuery) =>
+		authFetch(buildScopedAuthPath(context, '/forms'), { query }),
+	createFormScoped: (context: ScopedApiContext, json: CreateFormInput) =>
+		authFetch(buildScopedAuthPath(context, '/forms'), { json }),
+	getFormScoped: (context: ScopedApiContext, formId: string) =>
+		authFetch(buildScopedAuthPath(context, `/forms/${encodeURIComponent(formId)}`)),
+	updateFormScoped: (context: ScopedApiContext, formId: string, json: UpdateFormInput) =>
+		authFetch(buildScopedAuthPath(context, `/forms/${encodeURIComponent(formId)}`), {
 			method: 'PATCH',
 			json
 		}),
+	publishFormScoped: (context: ScopedApiContext, formId: string) =>
+		authFetch(buildScopedAuthPath(context, `/forms/${encodeURIComponent(formId)}/publish`), {
+			json: {}
+		}),
+	archiveFormScoped: (context: ScopedApiContext, formId: string) =>
+		authFetch(buildScopedAuthPath(context, `/forms/${encodeURIComponent(formId)}/archive`), {
+			json: {}
+		}),
+	listFormAssignmentsScoped: (context: ScopedApiContext, formId: string) =>
+		authFetch(buildScopedAuthPath(context, `/forms/${encodeURIComponent(formId)}/assignments`)),
+	createFormAssignmentScoped: (
+		context: ScopedApiContext,
+		formId: string,
+		json: CreateFormAssignmentInput
+	) =>
+		authFetch(buildScopedAuthPath(context, `/forms/${encodeURIComponent(formId)}/assignments`), {
+			json
+		}),
+	deleteFormAssignmentScoped: (context: ScopedApiContext, formId: string, assignmentId: string) =>
+		authFetch(
+			buildScopedAuthPath(
+				context,
+				`/forms/${encodeURIComponent(formId)}/assignments/${encodeURIComponent(assignmentId)}`
+			),
+			{ method: 'DELETE' }
+		),
+	listFormSubmissionsScoped: (context: ScopedApiContext, formId: string) =>
+		authFetch(buildScopedAuthPath(context, `/forms/${encodeURIComponent(formId)}/submissions`)),
+	getFormSubmissionScoped: (context: ScopedApiContext, submissionId: string) =>
+		authFetch(
+			buildScopedAuthPath(context, `/form-submissions/${encodeURIComponent(submissionId)}`)
+		),
+	getRequiredFormsScoped: (context: ScopedApiContext, query?: RequiredFormsQuery) =>
+		authFetch(buildScopedAuthPath(context, '/forms/required'), { query }),
+	getPublicRequiredForms: (context: ScopedApiContext, query?: RequiredFormsQuery) =>
+		publicFetch(
+			`/api/v1/public/orgs/${encodeURIComponent(context.orgSlug)}/stores/${encodeURIComponent(
+				context.storeSlug
+			)}/forms/required`,
+			{ query }
+		),
 	getNotificationSettings: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/notification-settings')),
 	updateNotificationSettings: (context: ScopedApiContext, json: UpdateNotificationSettingsInput) =>
@@ -1627,12 +1654,8 @@ export const authRpc = {
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/reject`, { json: {} }),
 	cancelInvitation: ({ invitationId }: InvitationActionInput) =>
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/cancel`, { json: {} }),
-	listParticipants: (organizationId?: string) =>
-		rpcClient.api.v1.auth.organizations.participants.$get(
-			organizationId ? { query: { organizationId } } : undefined
-		),
-	selfEnrollParticipant: (json: SelfEnrollParticipantInput) =>
-		rpcClient.api.v1.auth.organizations.participants['self-enroll'].$post({ json }),
+	listParticipants: (_organizationId?: string) => storeScopeRequired(),
+	selfEnrollParticipant: (_json: SelfEnrollParticipantInput) => storeScopeRequired(),
 	listUserParticipantInvitations: () => authFetch('/api/v1/auth/invitations/user'),
 	getParticipantInvitationDetail: (invitationId: string) =>
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}`),
@@ -1642,98 +1665,52 @@ export const authRpc = {
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/reject`, { json: {} }),
 	cancelParticipantInvitation: ({ invitationId }: InvitationActionInput) =>
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/cancel`, { json: {} }),
-	listServices: (query?: ListServicesQuery) =>
-		rpcClient.api.v1.auth.organizations.services.$get(query ? { query } : undefined),
-	createService: (json: CreateServiceInput) =>
-		rpcClient.api.v1.auth.organizations.services.$post({ json }),
-	updateService: (json: UpdateServiceInput) =>
-		rpcClient.api.v1.auth.organizations.services.update.$post({ json }),
-	archiveService: (json: ArchiveServiceInput) =>
-		rpcClient.api.v1.auth.organizations.services.archive.$post({ json }),
-	listSlots: (query: ListSlotsQuery) => rpcClient.api.v1.auth.organizations.slots.$get({ query }),
-	createSlot: (json: CreateSlotInput) => rpcClient.api.v1.auth.organizations.slots.$post({ json }),
-	updateSlot: (json: UpdateSlotInput) =>
-		rpcClient.api.v1.auth.organizations.slots.update.$post({ json }),
-	listAvailableSlots: (query: ListSlotsQuery) =>
-		rpcClient.api.v1.auth.organizations.slots.available.$get({ query }),
-	cancelSlot: (json: CancelSlotInput) =>
-		rpcClient.api.v1.auth.organizations.slots.cancel.$post({ json }),
-	listRecurringSchedules: (query?: ListRecurringSchedulesQuery) =>
-		rpcClient.api.v1.auth.organizations['recurring-schedules'].$get(query ? { query } : undefined),
-	createRecurringSchedule: (json: CreateRecurringScheduleInput) =>
-		rpcClient.api.v1.auth.organizations['recurring-schedules'].$post({ json }),
-	updateRecurringSchedule: (json: UpdateRecurringScheduleInput) =>
-		rpcClient.api.v1.auth.organizations['recurring-schedules'].update.$post({ json }),
-	upsertRecurringScheduleException: (json: UpsertRecurringExceptionInput) =>
-		rpcClient.api.v1.auth.organizations['recurring-schedules'].exceptions.$post({ json }),
-	generateRecurringSlots: (json: GenerateRecurringSlotsInput) =>
-		rpcClient.api.v1.auth.organizations['recurring-schedules'].generate.$post({ json }),
-	createBooking: (json: CreateBookingInput) =>
-		rpcClient.api.v1.auth.organizations.bookings.$post({ json }),
-	listMyBookings: (query?: ListBookingsQuery) =>
-		rpcClient.api.v1.auth.organizations.bookings.mine.$get(query ? { query } : undefined),
-	cancelBooking: (json: BookingActionInput) =>
-		rpcClient.api.v1.auth.organizations.bookings.cancel.$post({ json }),
-	listBookings: (query?: ListBookingsQuery) =>
-		rpcClient.api.v1.auth.organizations.bookings.$get(query ? { query } : undefined),
-	cancelBookingByStaff: (json: BookingActionInput) =>
-		rpcClient.api.v1.auth.organizations.bookings['cancel-by-staff'].$post({ json }),
-	approveBooking: (bookingId: string) =>
-		rpcClient.api.v1.auth.organizations.bookings.approve.$post({ json: { bookingId } }),
-	rejectBooking: (json: BookingActionInput) =>
-		rpcClient.api.v1.auth.organizations.bookings.reject.$post({ json }),
-	rescheduleBooking: (json: BookingRescheduleInput) =>
-		rpcClient.api.v1.auth.organizations.bookings.reschedule.$post({ json }),
-	markBookingNoShow: (json: BookingNoShowInput) =>
-		rpcClient.api.v1.auth.organizations.bookings['no-show'].$post({ json }),
-	markBookingAttendance: (json: BookingAttendanceInput) =>
-		rpcClient.api.v1.auth.organizations.bookings['check-in'].$post({ json }),
-	createTicketType: (json: CreateTicketTypeInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-types'].$post({ json }),
-	updateTicketType: (json: UpdateTicketTypeInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-types'].update.$post({ json }),
-	listTicketTypes: (query?: ListTicketTypesQuery) =>
-		rpcClient.api.v1.auth.organizations['ticket-types'].$get(query ? { query } : undefined),
-	listPurchasableTicketTypes: (organizationId?: string) =>
-		rpcClient.api.v1.auth.organizations['ticket-types'].purchasable.$get(
-			organizationId ? { query: { organizationId } } : undefined
-		),
-	grantTicketPack: (json: GrantTicketPackInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-packs'].grant.$post({ json }),
-	listTicketPacks: (query: ListTicketPacksQuery) =>
-		rpcClient.api.v1.auth.organizations['ticket-packs'].$get({ query }),
-	adjustTicketPack: (json: AdjustTicketPackInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-packs'].adjust.$post({ json }),
-	listMyTicketPacks: (organizationId?: string) =>
-		rpcClient.api.v1.auth.organizations['ticket-packs'].mine.$get(
-			organizationId ? { query: { organizationId } } : undefined
-		),
-	createTicketPurchase: (json: CreateTicketPurchaseInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-purchases'].$post({ json }),
-	listMyTicketPurchases: (query?: ListMyTicketPurchasesQuery) =>
-		rpcClient.api.v1.auth.organizations['ticket-purchases'].mine.$get(
-			query ? { query } : undefined
-		),
-	listTicketPurchases: (query?: ListTicketPurchasesQuery) =>
-		rpcClient.api.v1.auth.organizations['ticket-purchases'].$get(query ? { query } : undefined),
-	approveTicketPurchase: (json: TicketPurchaseApproveInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-purchases'].approve.$post({ json }),
-	rejectTicketPurchase: (json: TicketPurchaseRejectInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-purchases'].reject.$post({ json }),
-	cancelTicketPurchase: (json: TicketPurchaseCancelInput) =>
-		rpcClient.api.v1.auth.organizations['ticket-purchases'].cancel.$post({ json }),
+	listServices: (_query?: ListServicesQuery) => storeScopeRequired(),
+	createService: (_json: CreateServiceInput) => storeScopeRequired(),
+	updateService: (_json: UpdateServiceInput) => storeScopeRequired(),
+	archiveService: (_json: ArchiveServiceInput) => storeScopeRequired(),
+	listSlots: (_query: ListSlotsQuery) => storeScopeRequired(),
+	createSlot: (_json: CreateSlotInput) => storeScopeRequired(),
+	updateSlot: (_json: UpdateSlotInput) => storeScopeRequired(),
+	listAvailableSlots: (_query: ListSlotsQuery) => storeScopeRequired(),
+	cancelSlot: (_json: CancelSlotInput) => storeScopeRequired(),
+	listRecurringSchedules: (_query?: ListRecurringSchedulesQuery) => storeScopeRequired(),
+	createRecurringSchedule: (_json: CreateRecurringScheduleInput) => storeScopeRequired(),
+	updateRecurringSchedule: (_json: UpdateRecurringScheduleInput) => storeScopeRequired(),
+	upsertRecurringScheduleException: (_json: UpsertRecurringExceptionInput) => storeScopeRequired(),
+	generateRecurringSlots: (_json: GenerateRecurringSlotsInput) => storeScopeRequired(),
+	createBooking: (_json: CreateBookingInput) => storeScopeRequired(),
+	listMyBookings: (_query?: ListBookingsQuery) => storeScopeRequired(),
+	cancelBooking: (_json: BookingActionInput) => storeScopeRequired(),
+	listBookings: (_query?: ListBookingsQuery) => storeScopeRequired(),
+	cancelBookingByStaff: (_json: BookingActionInput) => storeScopeRequired(),
+	approveBooking: (_bookingId: string) => storeScopeRequired(),
+	rejectBooking: (_json: BookingActionInput) => storeScopeRequired(),
+	rescheduleBooking: (_json: BookingRescheduleInput) => storeScopeRequired(),
+	markBookingNoShow: (_json: BookingNoShowInput) => storeScopeRequired(),
+	markBookingAttendance: (_json: BookingAttendanceInput) => storeScopeRequired(),
+	createTicketType: (_json: CreateTicketTypeInput) => storeScopeRequired(),
+	updateTicketType: (_json: UpdateTicketTypeInput) => storeScopeRequired(),
+	listTicketTypes: (_query?: ListTicketTypesQuery) => storeScopeRequired(),
+	listPurchasableTicketTypes: (_organizationId?: string) => storeScopeRequired(),
+	grantTicketPack: (_json: GrantTicketPackInput) => storeScopeRequired(),
+	listTicketPacks: (_query: ListTicketPacksQuery) => storeScopeRequired(),
+	adjustTicketPack: (_json: AdjustTicketPackInput) => storeScopeRequired(),
+	listMyTicketPacks: (_organizationId?: string) => storeScopeRequired(),
+	createTicketPurchase: (_json: CreateTicketPurchaseInput) => storeScopeRequired(),
+	listMyTicketPurchases: (_query?: ListMyTicketPurchasesQuery) => storeScopeRequired(),
+	listTicketPurchases: (_query?: ListTicketPurchasesQuery) => storeScopeRequired(),
+	approveTicketPurchase: (_json: TicketPurchaseApproveInput) => storeScopeRequired(),
+	rejectTicketPurchase: (_json: TicketPurchaseRejectInput) => storeScopeRequired(),
+	cancelTicketPurchase: (_json: TicketPurchaseCancelInput) => storeScopeRequired(),
 	listInvitationsScoped: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/invitations')),
 	createInvitationScoped: (context: ScopedApiContext, json: CreateStoreInvitationInput) =>
 		authFetch(buildScopedAuthPath(context, '/invitations'), { json }),
 	listParticipantsScoped: (context: ScopedApiContext) =>
-		withScopedQuery(context, undefined, (query) =>
-			authFetch('/api/v1/auth/organizations/participants', { query })
-		),
+		authFetch(buildScopedAuthPath(context, '/participants')),
 	selfEnrollParticipantScoped: (context: ScopedApiContext) =>
-		withScopedJson(context, {} as Record<string, never>, (json) =>
-			authFetch('/api/v1/auth/organizations/participants/self-enroll', { json })
-		),
+		authFetch(buildScopedAuthPath(context, '/participants/self-enroll'), { method: 'POST' }),
 	listParticipantInvitationsScoped: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/invitations')),
 	createParticipantInvitationScoped: (
@@ -1751,196 +1728,105 @@ export const authRpc = {
 	listServicesScoped: (
 		context: ScopedApiContext,
 		query?: Omit<ListServicesQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/services', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/services'), { query }),
 	createServiceScoped: (context: ScopedApiContext, json: CreateServiceInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/services', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/services'), { json }),
 	updateServiceScoped: (context: ScopedApiContext, json: UpdateServiceInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/services/update', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/services/update'), { json }),
 	archiveServiceScoped: (context: ScopedApiContext, json: ArchiveServiceInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/services/archive', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/services/archive'), { json }),
 	createServiceImageUploadUrlScoped: (
 		context: ScopedApiContext,
 		json: CreateServiceImageUploadUrlInput
-	) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/services/images/upload-url', { json: resolvedJson })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/services/images/upload-url'), { json }),
 	listSlotsScoped: (context: ScopedApiContext, query: Omit<ListSlotsQuery, 'organizationId'>) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/slots', { query: resolvedQuery })
-		),
+		authFetch(buildScopedAuthPath(context, '/slots'), { query }),
 	createSlotScoped: (context: ScopedApiContext, json: CreateSlotInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/slots', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/slots'), { json }),
 	updateSlotScoped: (context: ScopedApiContext, json: UpdateSlotInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/slots/update', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/slots/update'), { json }),
 	updateSlotPublicStatusScoped: (context: ScopedApiContext, json: UpdateSlotPublicStatusInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/slots/public-status', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/slots/public-status'), { json }),
 	listAvailableSlotsScoped: (
 		context: ScopedApiContext,
 		query: Omit<ListSlotsQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/slots/available', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/slots/available'), { query }),
 	cancelSlotScoped: (context: ScopedApiContext, json: CancelSlotInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/slots/cancel', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/slots/cancel'), { json }),
 	listRecurringSchedulesScoped: (
 		context: ScopedApiContext,
 		query?: Omit<ListRecurringSchedulesQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/recurring-schedules', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/recurring-schedules'), { query }),
 	createRecurringScheduleScoped: (context: ScopedApiContext, json: CreateRecurringScheduleInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/recurring-schedules', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/recurring-schedules'), { json }),
 	updateRecurringScheduleScoped: (context: ScopedApiContext, json: UpdateRecurringScheduleInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/recurring-schedules/update', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/recurring-schedules/update'), { json }),
 	upsertRecurringScheduleExceptionScoped: (
 		context: ScopedApiContext,
 		json: UpsertRecurringExceptionInput
-	) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/recurring-schedules/exceptions', { json: resolvedJson })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/recurring-schedules/exceptions'), { json }),
 	generateRecurringSlotsScoped: (context: ScopedApiContext, json: GenerateRecurringSlotsInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/recurring-schedules/generate', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/recurring-schedules/generate'), { json }),
 	createBookingScoped: (context: ScopedApiContext, json: CreateBookingInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/bookings', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/bookings'), { json }),
 	listMyBookingsScoped: (
 		context: ScopedApiContext,
 		query?: Omit<ListBookingsQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/bookings/mine', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/bookings/mine'), { query }),
 	cancelBookingScoped: (context: ScopedApiContext, json: BookingActionInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/bookings/cancel', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/bookings/cancel'), { json }),
 	listBookingsScoped: (
 		context: ScopedApiContext,
 		query?: Omit<ListBookingsQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/bookings', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/bookings'), { query }),
 	cancelBookingByStaffScoped: (context: ScopedApiContext, json: BookingActionInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/bookings/cancel-by-staff', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/bookings/cancel-by-staff'), { json }),
 	approveBookingScoped: (context: ScopedApiContext, bookingId: string) =>
-		withScopedJson(context, { bookingId }, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/bookings/approve', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/bookings/approve'), { json: { bookingId } }),
 	rejectBookingScoped: (context: ScopedApiContext, json: BookingActionInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/bookings/reject', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/bookings/reject'), { json }),
 	rescheduleBookingScoped: (context: ScopedApiContext, json: BookingRescheduleInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/bookings/reschedule', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/bookings/reschedule'), { json }),
 	markBookingNoShowScoped: (context: ScopedApiContext, json: BookingNoShowInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/bookings/no-show', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/bookings/no-show'), { json }),
 	markBookingAttendanceScoped: (context: ScopedApiContext, json: BookingAttendanceInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/bookings/check-in', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/bookings/check-in'), { json }),
 	staffCreateBookingScoped: (context: ScopedApiContext, json: StaffCreateBookingInput) =>
 		authFetch(buildScopedAuthPath(context, '/bookings/staff-create'), { json }),
 	createTicketTypeScoped: (context: ScopedApiContext, json: CreateTicketTypeInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/ticket-types', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-types'), { json }),
 	updateTicketTypeScoped: (context: ScopedApiContext, json: UpdateTicketTypeInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/ticket-types/update', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-types/update'), { json }),
 	listTicketTypesScoped: (
 		context: ScopedApiContext,
 		query?: Omit<ListTicketTypesQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/ticket-types', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/ticket-types'), { query }),
 	listPurchasableTicketTypesScoped: (context: ScopedApiContext) =>
-		withScopedQuery(context, undefined, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/ticket-types/purchasable', { query: resolvedQuery })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-types/purchasable')),
 	grantTicketPackScoped: (context: ScopedApiContext, json: GrantTicketPackInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/ticket-packs/grant', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-packs/grant'), { json }),
 	listTicketPacksScoped: (
 		context: ScopedApiContext,
 		query: Omit<ListTicketPacksQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/ticket-packs', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/ticket-packs'), { query }),
 	adjustTicketPackScoped: (context: ScopedApiContext, json: AdjustTicketPackInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/ticket-packs/adjust', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-packs/adjust'), { json }),
 	listMyTicketPacksScoped: (context: ScopedApiContext) =>
-		withScopedQuery(context, undefined, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/ticket-packs/mine', { query: resolvedQuery })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-packs/mine')),
 	createTicketPurchaseScoped: (context: ScopedApiContext, json: CreateTicketPurchaseInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/ticket-purchases', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-purchases'), { json }),
 	listMyTicketPurchasesScoped: (
 		context: ScopedApiContext,
 		query?: Omit<ListMyTicketPurchasesQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/ticket-purchases/mine', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/ticket-purchases/mine'), { query }),
 	listTicketPurchasesScoped: (
 		context: ScopedApiContext,
 		query?: Omit<ListTicketPurchasesQuery, 'organizationId'>
-	) =>
-		withScopedQuery(context, query, (resolvedQuery) =>
-			authFetch('/api/v1/auth/organizations/ticket-purchases', { query: resolvedQuery })
-		),
+	) => authFetch(buildScopedAuthPath(context, '/ticket-purchases'), { query }),
 	approveTicketPurchaseScoped: (context: ScopedApiContext, json: TicketPurchaseApproveInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/ticket-purchases/approve', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-purchases/approve'), { json }),
 	rejectTicketPurchaseScoped: (context: ScopedApiContext, json: TicketPurchaseRejectInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/ticket-purchases/reject', { json: resolvedJson })
-		),
+		authFetch(buildScopedAuthPath(context, '/ticket-purchases/reject'), { json }),
 	cancelTicketPurchaseScoped: (context: ScopedApiContext, json: TicketPurchaseCancelInput) =>
-		withScopedJson(context, json, (resolvedJson) =>
-			authFetch('/api/v1/auth/organizations/ticket-purchases/cancel', { json: resolvedJson })
-		)
+		authFetch(buildScopedAuthPath(context, '/ticket-purchases/cancel'), { json })
 };

@@ -64,15 +64,187 @@ const createAuthAgent = (application: ReturnType<typeof createApp>) => {
     }
   };
 
+  const resolveDefaultStoreSlug = async (organizationId: string, storeId?: string | null) => {
+    const row = await d1
+      .prepare(
+        `SELECT organization.slug AS orgSlug, store.slug AS storeSlug
+         FROM organization
+         INNER JOIN store ON store.organization_id = organization.id
+         WHERE organization.id = ?
+           AND (? IS NULL OR store.id = ?)
+         ORDER BY
+           CASE
+             WHEN store.slug = organization.slug THEN 0
+             WHEN store.id = organization.id THEN 1
+             ELSE 2
+           END,
+           store.created_at ASC
+         LIMIT 1`,
+      )
+      .bind(organizationId, storeId ?? null, storeId ?? null)
+      .first<{ orgSlug: string; storeSlug: string }>();
+
+    return row ?? null;
+  };
+
+  const resolveStoreSlugByResource = async (
+    tableName:
+      | 'service'
+      | 'slot'
+      | 'recurring_schedule'
+      | 'booking'
+      | 'participant'
+      | 'ticket_type'
+      | 'ticket_pack'
+      | 'ticket_purchase',
+    resourceId: string,
+  ) => {
+    const row = await d1
+      .prepare(
+        `SELECT organization.slug AS orgSlug, store.slug AS storeSlug
+         FROM ${tableName}
+         INNER JOIN organization ON organization.id = ${tableName}.organization_id
+         INNER JOIN store ON store.id = ${tableName}.store_id
+         WHERE ${tableName}.id = ?
+         LIMIT 1`,
+      )
+      .bind(resourceId)
+      .first<{ orgSlug: string; storeSlug: string }>();
+
+    return row ?? null;
+  };
+
+  const resolveStoreSlugByLegacyResource = async (
+    url: URL,
+    bodyPayload: Record<string, unknown> | null,
+  ) => {
+    const readString = (key: string): string | null => {
+      const queryValue = url.searchParams.get(key);
+      if (queryValue) {
+        return queryValue;
+      }
+      const bodyValue = bodyPayload?.[key];
+      return typeof bodyValue === 'string' && bodyValue.length > 0 ? bodyValue : null;
+    };
+
+    const resourceLookups: Array<{
+      key: string;
+      tableName: Parameters<typeof resolveStoreSlugByResource>[0];
+    }> = [
+      { key: 'serviceId', tableName: 'service' },
+      { key: 'slotId', tableName: 'slot' },
+      { key: 'recurringScheduleId', tableName: 'recurring_schedule' },
+      { key: 'bookingId', tableName: 'booking' },
+      { key: 'ticketTypeId', tableName: 'ticket_type' },
+      { key: 'ticketPackId', tableName: 'ticket_pack' },
+      { key: 'purchaseId', tableName: 'ticket_purchase' },
+      { key: 'participantId', tableName: 'participant' },
+    ];
+
+    for (const { key, tableName } of resourceLookups) {
+      const resourceId = readString(key);
+      if (!resourceId) {
+        continue;
+      }
+      const scopedStore = await resolveStoreSlugByResource(tableName, resourceId);
+      if (scopedStore) {
+        return scopedStore;
+      }
+    }
+
+    return null;
+  };
+
+  const normalizeLegacyReservationRequest = async (
+    input: string,
+    init: RequestInit,
+  ): Promise<{ input: string; init: RequestInit }> => {
+    const url = new URL(input, 'http://localhost');
+    const legacyPrefix = '/api/v1/auth/organizations';
+    if (!url.pathname.startsWith(legacyPrefix)) {
+      return { input, init };
+    }
+
+    const suffix = url.pathname.slice(legacyPrefix.length);
+    if (suffix.startsWith('/services/images/upload/')) {
+      return {
+        input: `/api/v1/auth/services/images/upload/${suffix.slice('/services/images/upload/'.length)}${url.search}`,
+        init,
+      };
+    }
+    if (suffix.startsWith('/services/images/')) {
+      return {
+        input: `/api/v1/auth/services/images/${suffix.slice('/services/images/'.length)}${url.search}`,
+        init,
+      };
+    }
+
+    const legacyReservationPrefixes = [
+      '/participants',
+      '/services',
+      '/slots',
+      '/recurring-schedules',
+      '/bookings',
+      '/ticket-types',
+      '/ticket-packs',
+      '/ticket-purchases',
+    ] as const;
+    if (!legacyReservationPrefixes.some((prefix) => suffix.startsWith(prefix))) {
+      return { input, init };
+    }
+
+    let bodyPayload: Record<string, unknown> | null = null;
+    if (typeof init.body === 'string' && init.body.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(init.body) as unknown;
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          bodyPayload = parsed as Record<string, unknown>;
+        }
+      } catch {
+        bodyPayload = null;
+      }
+    }
+
+    const organizationId =
+      url.searchParams.get('organizationId') ??
+      (typeof bodyPayload?.organizationId === 'string' ? bodyPayload.organizationId : null);
+    const storeId =
+      url.searchParams.get('storeId') ??
+      (typeof bodyPayload?.storeId === 'string' ? bodyPayload.storeId : null);
+    const scopedStore = organizationId
+      ? await resolveDefaultStoreSlug(organizationId, storeId)
+      : await resolveStoreSlugByLegacyResource(url, bodyPayload);
+    if (!scopedStore) {
+      return { input, init };
+    }
+
+    url.searchParams.delete('organizationId');
+    url.searchParams.delete('storeId');
+
+    const nextInit = { ...init };
+    if (bodyPayload) {
+      const { organizationId: _organizationId, storeId: _storeId, ...nextBody } = bodyPayload;
+      nextInit.body = JSON.stringify(nextBody);
+    }
+
+    return {
+      input: `/api/v1/auth/orgs/${encodeURIComponent(scopedStore.orgSlug)}/stores/${encodeURIComponent(
+        scopedStore.storeSlug,
+      )}${suffix}${url.search}`,
+      init: nextInit,
+    };
+  };
+
   const request = async (input: string, init: RequestInit = {}) => {
+    const normalized = await normalizeLegacyReservationRequest(input, init);
     const headers = new Headers(init.headers);
     const cookieHeader = refreshCookieHeader();
     if (cookieHeader.length > 0) {
       headers.set('cookie', cookieHeader);
     }
 
-    const response = await application.request(input, {
-      ...init,
+    const response = await application.request(normalized.input, {
+      ...normalized.init,
       headers,
     });
 
@@ -267,14 +439,35 @@ const selectBookingByPublicId = async (publicId: string) => {
     }>();
 };
 
-const selectBookingAnswerRows = async (bookingId: string) => {
+const selectFormAnswerRowsByBooking = async (bookingId: string) => {
   const rows = await d1
     .prepare(
-      'SELECT field_id as fieldId, label_snapshot as labelSnapshot, value_json as valueJson FROM booking_answer WHERE booking_id = ? ORDER BY created_at ASC',
+      `SELECT
+         form_submissions.form_template_id as formTemplateId,
+         form_submissions.form_template_version_id as formTemplateVersionId,
+         form_submissions.form_type as formType,
+         form_submissions.source as source,
+         form_submissions.customer_name_snapshot as customerNameSnapshot,
+         form_submissions.customer_email_snapshot as customerEmailSnapshot,
+         form_answers.field_key as fieldKey,
+         form_answers.field_type as fieldType,
+         form_answers.label_snapshot as labelSnapshot,
+         form_answers.value_json as valueJson
+       FROM form_submissions
+       INNER JOIN form_answers ON form_answers.form_submission_id = form_submissions.id
+       WHERE form_submissions.booking_id = ?
+       ORDER BY form_submissions.created_at ASC, form_answers.sort_order ASC`,
     )
     .bind(bookingId)
     .all<{
-      fieldId: string;
+      formTemplateId: string;
+      formTemplateVersionId: string;
+      formType: string;
+      source: string;
+      customerNameSnapshot: string | null;
+      customerEmailSnapshot: string | null;
+      fieldKey: string;
+      fieldType: string;
       labelSnapshot: string;
       valueJson: string;
     }>();
@@ -808,25 +1001,6 @@ const selectPublicSiteNotificationSetting = async (organizationId: string, store
       notifyStaff: number;
       additionalEmailsJson: string | null;
     }>();
-};
-
-const selectPublicSiteIntakeFieldRows = async (organizationId: string, storeId: string) => {
-  const rows = await d1
-    .prepare(
-      'SELECT field_key as fieldId, label, field_type as fieldType, required, options_json as optionsJson, visible_on_public as visibleOnPublic, sort_order as sortOrder FROM public_site_intake_field WHERE organization_id = ? AND store_id = ? ORDER BY sort_order ASC',
-    )
-    .bind(organizationId, storeId)
-    .all<{
-      fieldId: string;
-      label: string;
-      fieldType: string;
-      required: number;
-      optionsJson: string | null;
-      visibleOnPublic: number;
-      sortOrder: number;
-    }>();
-
-  return rows.results ?? [];
 };
 
 const selectReminderPolicyRows = async (organizationId: string, storeId: string) => {
@@ -2006,8 +2180,6 @@ const createAiTestRuntime = ({
     BETTER_AUTH_URL: 'http://localhost:3000',
     BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
     BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
-    PUBLIC_EVENTS_ORG_SLUG: 'public-events-org',
-    PUBLIC_EVENTS_STORE_SLUG: 'public-events-org',
     GOOGLE_CLIENT_ID: 'test-google-client-id',
     GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
     INTERNAL_OPERATOR_EMAILS: operatorEmails,
@@ -2425,8 +2597,6 @@ beforeAll(async () => {
       BETTER_AUTH_URL: 'http://localhost:3000',
       BETTER_AUTH_SECRET: 'test-secret-at-least-32-characters-long',
       BETTER_AUTH_TRUSTED_ORIGINS: 'http://localhost:3000,http://localhost:5173',
-      PUBLIC_EVENTS_ORG_SLUG: 'public-events-org',
-      PUBLIC_EVENTS_STORE_SLUG: 'public-events-org',
       GOOGLE_CLIENT_ID: 'test-google-client-id',
       GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
     },
@@ -9807,128 +9977,228 @@ describe('バックエンドアプリ', () => {
     expect(forbiddenPatchResponse.status).toBe(403);
   });
 
-  it('店舗の公開予約カスタム入力を取得し更新する', async () => {
+  it('店舗のフォームを作成し公開して割り当てる', async () => {
     const owner = createAuthAgent(app);
     await signUpUser({
       agent: owner,
-      name: 'Intake Fields Owner',
-      email: 'intake-fields-owner@example.com',
+      name: 'Forms Owner',
+      email: 'forms-owner@example.com',
     });
 
     const organizationId = await createOrganization({
       agent: owner,
-      name: 'Intake Fields Org',
-      slug: 'intake-fields-org',
+      name: 'Forms Org',
+      slug: 'forms-org',
     });
-    const storeId = await selectStoreIdBySlug(organizationId, 'intake-fields-org');
+    const storeId = await selectStoreIdBySlug(organizationId, 'forms-org');
     expect(storeId).toBeTruthy();
 
-    const path = '/api/v1/auth/orgs/intake-fields-org/stores/intake-fields-org/intake-fields';
-    const defaultsResponse = await owner.request(path);
+    const serviceId = await insertServiceFixture({
+      organizationId,
+      storeId: storeId as string,
+      name: 'Forms Service',
+    });
+    const formsPath = '/api/v1/auth/orgs/forms-org/stores/forms-org/forms';
+    const defaultsResponse = await owner.request(formsPath);
     expect(defaultsResponse.status).toBe(200);
-    expect(await toJson(defaultsResponse)).toEqual({ fields: [] });
+    expect(await toJson(defaultsResponse)).toEqual({ forms: [] });
 
-    const updateResponse = await owner.request(path, {
-      method: 'PATCH',
+    const createResponse = await owner.request(formsPath, {
+      method: 'POST',
       headers: {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
+        formType: 'reservation_input',
+        name: '体験予約フォーム',
+        description: '公開予約時に確認する項目です。',
         fields: [
           {
-            fieldId: 'experience',
+            fieldKey: 'experience',
             label: '経験年数',
-            fieldType: 'select',
+            fieldType: 'radio',
             required: true,
-            options: ['未経験', '1年以上'],
-            helpText: '該当するものを選択してください。',
-            placeholder: '選択してください',
-            visibleOnPublic: true,
+            options: [
+              { value: 'none', label: '未経験' },
+              { value: 'over_1_year', label: '1年以上' },
+            ],
+            description: '該当するものを選択してください。',
           },
           {
-            fieldId: 'internal_note',
-            label: '内部確認',
+            fieldKey: 'goal',
+            label: '参加目的',
             fieldType: 'text',
             required: false,
-            options: ['ignored'],
-            visibleOnPublic: false,
+            options: [],
+            placeholder: '例: 体力づくり',
           },
         ],
       }),
     });
-    expect(updateResponse.status).toBe(200);
-    expect(await toJson(updateResponse)).toMatchObject({
+    expect(createResponse.status).toBe(200);
+    const createdForm = (await toJson(createResponse)) as Record<string, unknown>;
+    expect(createdForm).toMatchObject({
+      formType: 'reservation_input',
+      name: '体験予約フォーム',
+      description: '公開予約時に確認する項目です。',
+      status: 'draft',
       fields: [
         {
-          fieldId: 'experience',
+          fieldKey: 'experience',
           label: '経験年数',
-          fieldType: 'select',
+          fieldType: 'radio',
           required: true,
-          options: ['未経験', '1年以上'],
-          helpText: '該当するものを選択してください。',
-          placeholder: '選択してください',
-          visibleOnPublic: true,
+          options: [
+            { value: 'none', label: '未経験' },
+            { value: 'over_1_year', label: '1年以上' },
+          ],
+          description: '該当するものを選択してください。',
           sortOrder: 0,
         },
         {
-          fieldId: 'internal_note',
-          label: '内部確認',
+          fieldKey: 'goal',
+          label: '参加目的',
           fieldType: 'text',
           required: false,
           options: [],
-          visibleOnPublic: false,
           sortOrder: 1,
         },
       ],
     });
+    const formId = createdForm.id as string;
+    expect(formId).toBeTruthy();
 
-    const rows = await selectPublicSiteIntakeFieldRows(organizationId, storeId as string);
-    expect(rows).toEqual([
-      expect.objectContaining({
-        fieldId: 'experience',
-        fieldType: 'select',
-        required: 1,
-        optionsJson: JSON.stringify(['未経験', '1年以上']),
-        visibleOnPublic: 1,
-        sortOrder: 0,
-      }),
-      expect.objectContaining({
-        fieldId: 'internal_note',
-        fieldType: 'text',
-        required: 0,
-        optionsJson: null,
-        visibleOnPublic: 0,
-        sortOrder: 1,
-      }),
-    ]);
-
-    const invalidSelectResponse = await owner.request(path, {
-      method: 'PATCH',
+    const invalidSelectResponse = await owner.request(formsPath, {
+      method: 'POST',
       headers: {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
+        formType: 'reservation_input',
+        name: '未設定の選択式フォーム',
         fields: [
           {
-            fieldId: 'invalid_select',
+            fieldKey: 'invalid_select',
             label: '未設定の選択式',
             fieldType: 'select',
             required: true,
             options: [],
-            visibleOnPublic: true,
           },
         ],
       }),
     });
     expect(invalidSelectResponse.status).toBe(400);
 
+    const publishResponse = await owner.request(
+      `${formsPath}/${encodeURIComponent(formId)}/publish`,
+      {
+        method: 'POST',
+      },
+    );
+    expect(publishResponse.status).toBe(200);
+    const publishedForm = (await toJson(publishResponse)) as Record<string, unknown>;
+    expect(publishedForm).toMatchObject({
+      status: 'published',
+      currentPublishedVersion: {
+        versionNumber: 1,
+      },
+    });
+
+    const assignmentResponse = await owner.request(
+      `${formsPath}/${encodeURIComponent(formId)}/assignments`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          targetType: 'store',
+          targetId: storeId,
+        }),
+      },
+    );
+    expect(assignmentResponse.status).toBe(200);
+    const assignmentPayload = (await toJson(assignmentResponse)) as {
+      assignments?: Array<Record<string, unknown>>;
+    };
+    expect(assignmentPayload.assignments).toEqual([
+      expect.objectContaining({
+        formTemplateId: formId,
+        formType: 'reservation_input',
+        targetType: 'store',
+        targetId: storeId,
+      }),
+    ]);
+    const assignmentId = assignmentPayload.assignments?.[0]?.id as string;
+
+    const duplicateAssignmentResponse = await owner.request(
+      `${formsPath}/${encodeURIComponent(formId)}/assignments`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          targetType: 'store',
+          targetId: storeId,
+        }),
+      },
+    );
+    expect(duplicateAssignmentResponse.status).toBe(409);
+
+    const invalidAssignmentTargetResponse = await owner.request(
+      `${formsPath}/${encodeURIComponent(formId)}/assignments`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          targetType: 'service',
+          targetId: 'missing-service',
+        }),
+      },
+    );
+    expect(invalidAssignmentTargetResponse.status).toBe(400);
+
+    const requiredFormsResponse = await owner.request(
+      `${formsPath}/required?serviceId=${encodeURIComponent(serviceId)}`,
+    );
+    expect(requiredFormsResponse.status).toBe(200);
+    const requiredFormsPayload = (await toJson(requiredFormsResponse)) as Record<string, unknown>;
+    expect(requiredFormsPayload.formContextHash).toEqual(expect.stringMatching(/^ctx_/));
+    expect(requiredFormsPayload.forms).toEqual([
+      expect.objectContaining({
+        formTemplateId: formId,
+        formType: 'reservation_input',
+        name: '体験予約フォーム',
+        versionNumber: 1,
+      }),
+    ]);
+
+    const deleteAssignmentResponse = await owner.request(
+      `${formsPath}/${encodeURIComponent(formId)}/assignments/${encodeURIComponent(assignmentId)}`,
+      {
+        method: 'DELETE',
+      },
+    );
+    expect(deleteAssignmentResponse.status).toBe(200);
+    expect(await toJson(deleteAssignmentResponse)).toEqual({ assignments: [] });
+
+    const archiveResponse = await owner.request(
+      `${formsPath}/${encodeURIComponent(formId)}/archive`,
+      {
+        method: 'POST',
+      },
+    );
+    expect(archiveResponse.status).toBe(200);
+    expect(await toJson(archiveResponse)).toMatchObject({
+      id: formId,
+      status: 'archived',
+      assignments: [],
+    });
+
     const outsider = createAuthAgent(app);
     await signUpUser({
       agent: outsider,
-      name: 'Intake Fields Outsider',
-      email: 'intake-fields-outsider@example.com',
+      name: 'Forms Outsider',
+      email: 'forms-outsider@example.com',
     });
-    expect((await outsider.request(path)).status).toBe(403);
+    expect((await outsider.request(formsPath)).status).toBe(403);
   });
 
   it('店舗のリマインド設定を既定値で取得し更新する', async () => {
@@ -10881,7 +11151,7 @@ describe('バックエンドアプリ', () => {
       invitationId: managerInvite.payload?.id as string,
     });
     await expectPremiumDenied(acceptManagerInviteResponse);
-  });
+  }, 120_000);
 
   it('エンタイトルメント喪失と復旧をまたいでプレミアム運用データを保持する', async () => {
     const owner = createAuthAgent(app);
@@ -11378,17 +11648,37 @@ describe('バックエンドアプリ', () => {
   });
 
   it('予約ドメインエンドポイントに認証を要求する', async () => {
+    const organizationId = crypto.randomUUID();
+    await d1
+      .prepare('INSERT INTO organization (id, slug, name, created_at) VALUES (?, ?, ?, ?)')
+      .bind(organizationId, 'auth-required-org', 'Auth Required Org', Date.now())
+      .run();
+    const createdAt = Date.now();
+    await d1
+      .prepare(
+        'INSERT INTO store (id, organization_id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        crypto.randomUUID(),
+        organizationId,
+        'auth-required-store',
+        'Auth Required Store',
+        createdAt,
+        createdAt,
+      )
+      .run();
+
+    const scopedBase = '/api/v1/auth/orgs/auth-required-org/stores/auth-required-store';
     const targets: Array<{
       path: string;
       method: 'GET' | 'POST';
       body?: Record<string, unknown>;
     }> = [
-      { path: '/api/v1/auth/organizations/services', method: 'GET' },
+      { path: `${scopedBase}/services`, method: 'GET' },
       {
-        path: '/api/v1/auth/organizations/services',
+        path: `${scopedBase}/services`,
         method: 'POST',
         body: {
-          organizationId: 'dummy-org',
           name: 'Dummy',
           kind: 'single',
           durationMinutes: 60,
@@ -11396,15 +11686,15 @@ describe('バックエンドアプリ', () => {
         },
       },
       {
-        path: `/api/v1/auth/organizations/slots?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
+        path: `${scopedBase}/slots?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
         method: 'GET',
       },
       {
-        path: `/api/v1/auth/organizations/slots/available?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
+        path: `${scopedBase}/slots/available?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
         method: 'GET',
       },
       {
-        path: '/api/v1/auth/organizations/slots/update',
+        path: `${scopedBase}/slots/update`,
         method: 'POST',
         body: {
           slotId: 'dummy-slot',
@@ -11413,50 +11703,48 @@ describe('バックエンドアプリ', () => {
         },
       },
       {
-        path: '/api/v1/auth/organizations/bookings',
+        path: `${scopedBase}/bookings`,
         method: 'POST',
         body: {
           slotId: 'dummy-slot',
         },
       },
       {
-        path: '/api/v1/auth/organizations/participants/self-enroll',
+        path: `${scopedBase}/participants/self-enroll`,
         method: 'POST',
-        body: {
-          organizationId: 'dummy-org',
-        },
+        body: {},
       },
-      { path: '/api/v1/auth/organizations/bookings/mine', method: 'GET' },
+      { path: `${scopedBase}/bookings/mine`, method: 'GET' },
       {
-        path: '/api/v1/auth/organizations/bookings/cancel',
-        method: 'POST',
-        body: {
-          bookingId: 'dummy-booking',
-        },
-      },
-      {
-        path: '/api/v1/auth/organizations/bookings/cancel-by-staff',
+        path: `${scopedBase}/bookings/cancel`,
         method: 'POST',
         body: {
           bookingId: 'dummy-booking',
         },
       },
       {
-        path: '/api/v1/auth/organizations/bookings/approve',
+        path: `${scopedBase}/bookings/cancel-by-staff`,
         method: 'POST',
         body: {
           bookingId: 'dummy-booking',
         },
       },
       {
-        path: '/api/v1/auth/organizations/bookings/reject',
+        path: `${scopedBase}/bookings/approve`,
         method: 'POST',
         body: {
           bookingId: 'dummy-booking',
         },
       },
       {
-        path: '/api/v1/auth/organizations/bookings/reschedule',
+        path: `${scopedBase}/bookings/reject`,
+        method: 'POST',
+        body: {
+          bookingId: 'dummy-booking',
+        },
+      },
+      {
+        path: `${scopedBase}/bookings/reschedule`,
         method: 'POST',
         body: {
           bookingId: 'dummy-booking',
@@ -11464,37 +11752,37 @@ describe('バックエンドアプリ', () => {
         },
       },
       {
-        path: '/api/v1/auth/organizations/bookings/no-show',
+        path: `${scopedBase}/bookings/no-show`,
         method: 'POST',
         body: {
           bookingId: 'dummy-booking',
         },
       },
       {
-        path: '/api/v1/auth/organizations/bookings/check-in',
+        path: `${scopedBase}/bookings/check-in`,
         method: 'POST',
         body: {
           bookingId: 'dummy-booking',
           attendanceStatus: 'checked_in',
         },
       },
-      { path: '/api/v1/auth/organizations/ticket-types', method: 'GET' },
+      { path: `${scopedBase}/ticket-types`, method: 'GET' },
       {
-        path: '/api/v1/auth/organizations/ticket-types/update',
+        path: `${scopedBase}/ticket-types/update`,
         method: 'POST',
         body: {
           ticketTypeId: 'dummy-ticket-type',
           name: 'Updated Ticket Type',
         },
       },
-      { path: '/api/v1/auth/organizations/ticket-types/purchasable', method: 'GET' },
+      { path: `${scopedBase}/ticket-types/purchasable`, method: 'GET' },
       {
-        path: '/api/v1/auth/organizations/ticket-packs?participantId=dummy-participant',
+        path: `${scopedBase}/ticket-packs?participantId=dummy-participant`,
         method: 'GET',
       },
-      { path: '/api/v1/auth/organizations/ticket-packs/mine', method: 'GET' },
+      { path: `${scopedBase}/ticket-packs/mine`, method: 'GET' },
       {
-        path: '/api/v1/auth/organizations/ticket-packs/adjust',
+        path: `${scopedBase}/ticket-packs/adjust`,
         method: 'POST',
         body: {
           ticketPackId: 'dummy-ticket-pack',
@@ -11502,38 +11790,38 @@ describe('バックエンドアプリ', () => {
           reason: 'test',
         },
       },
-      { path: '/api/v1/auth/organizations/ticket-purchases', method: 'GET' },
+      { path: `${scopedBase}/ticket-purchases`, method: 'GET' },
       {
-        path: '/api/v1/auth/organizations/ticket-purchases',
+        path: `${scopedBase}/ticket-purchases`,
         method: 'POST',
         body: {
           ticketTypeId: 'dummy-ticket-type',
           paymentMethod: 'stripe',
         },
       },
-      { path: '/api/v1/auth/organizations/ticket-purchases/mine', method: 'GET' },
+      { path: `${scopedBase}/ticket-purchases/mine`, method: 'GET' },
       {
-        path: '/api/v1/auth/organizations/ticket-purchases/approve',
+        path: `${scopedBase}/ticket-purchases/approve`,
         method: 'POST',
         body: {
           purchaseId: 'dummy-purchase',
         },
       },
       {
-        path: '/api/v1/auth/organizations/ticket-purchases/reject',
+        path: `${scopedBase}/ticket-purchases/reject`,
         method: 'POST',
         body: {
           purchaseId: 'dummy-purchase',
         },
       },
       {
-        path: '/api/v1/auth/organizations/ticket-purchases/cancel',
+        path: `${scopedBase}/ticket-purchases/cancel`,
         method: 'POST',
         body: {
           purchaseId: 'dummy-purchase',
         },
       },
-      { path: '/api/v1/auth/organizations/recurring-schedules', method: 'GET' },
+      { path: `${scopedBase}/recurring-schedules`, method: 'GET' },
     ];
 
     for (const target of targets) {
@@ -11545,6 +11833,27 @@ describe('バックエンドアプリ', () => {
         ...(target.body ? { body: JSON.stringify(target.body) } : {}),
       });
       expect(response.status).toBe(401);
+    }
+  });
+
+  it('旧予約ドメインエンドポイントを登録しない', async () => {
+    const legacyTargets: Array<{ path: string; method: 'GET' | 'POST' }> = [
+      { path: '/api/v1/auth/organizations/services', method: 'GET' },
+      { path: '/api/v1/auth/organizations/slots', method: 'GET' },
+      { path: '/api/v1/auth/organizations/bookings', method: 'GET' },
+      { path: '/api/v1/auth/organizations/participants/self-enroll', method: 'POST' },
+      { path: '/api/v1/auth/organizations/ticket-types', method: 'GET' },
+      { path: '/api/v1/auth/organizations/ticket-purchases', method: 'GET' },
+      { path: '/api/v1/auth/organizations/recurring-schedules', method: 'GET' },
+    ];
+
+    for (const target of legacyTargets) {
+      const response = await app.request(target.path, {
+        method: target.method,
+        headers: { 'content-type': 'application/json' },
+        ...(target.method === 'POST' ? { body: JSON.stringify({}) } : {}),
+      });
+      expect(response.status).toBe(404);
     }
   });
 
@@ -11560,6 +11869,8 @@ describe('バックエンドアプリ', () => {
       name: 'Public Events Org',
       slug: 'public-events-org',
     });
+    const publicStoreId = await selectStoreIdBySlug(organizationId, 'public-events-org');
+    expect(publicStoreId).toBeTruthy();
     await enablePremiumForOrganization(organizationId);
 
     const serviceResponse = await owner.request('/api/v1/auth/organizations/services', {
@@ -11887,60 +12198,90 @@ describe('バックエンドアプリ', () => {
       address: '東京都千代田区1-1-1',
     });
 
-    const publicIntakeFieldsResponse = await owner.request(
-      '/api/v1/auth/orgs/public-events-org/stores/public-events-org/intake-fields',
+    const publicFormCreateResponse = await owner.request(
+      '/api/v1/auth/orgs/public-events-org/stores/public-events-org/forms',
       {
-        method: 'PATCH',
+        method: 'POST',
         headers: {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
+          formType: 'reservation_input',
+          name: '体験予約フォーム',
+          description: '公開予約時に確認する項目です。',
           fields: [
             {
-              fieldId: 'experience',
+              fieldKey: 'experience',
               label: '経験年数',
               fieldType: 'select',
               required: true,
-              options: ['未経験', '1年以上'],
+              options: [
+                { value: 'none', label: '未経験' },
+                { value: 'over_1_year', label: '1年以上' },
+              ],
               placeholder: '選択してください',
-              visibleOnPublic: true,
             },
             {
-              fieldId: 'goal',
+              fieldKey: 'goal',
               label: '参加目的',
               fieldType: 'text',
-              required: false,
+              required: true,
+              options: [],
               placeholder: '例: 体力づくり',
-              helpText: '目的を一言で入力してください。',
-              visibleOnPublic: true,
+              description: '目的を一言で入力してください。',
             },
             {
-              fieldId: 'request',
+              fieldKey: 'request',
               label: '希望内容',
               fieldType: 'textarea',
               required: false,
+              options: [],
               placeholder: '配慮事項など',
-              visibleOnPublic: true,
             },
             {
-              fieldId: 'newsletter',
+              fieldKey: 'newsletter',
               label: '案内メールを受け取る',
               fieldType: 'checkbox',
               required: false,
-              visibleOnPublic: true,
-            },
-            {
-              fieldId: 'private_memo',
-              label: '管理メモ',
-              fieldType: 'text',
-              required: false,
-              visibleOnPublic: false,
+              options: [{ value: 'subscribe', label: '受け取る' }],
             },
           ],
         }),
       },
     );
-    expect(publicIntakeFieldsResponse.status).toBe(200);
+    expect(publicFormCreateResponse.status).toBe(200);
+    const publicFormCreatePayload = (await toJson(publicFormCreateResponse)) as Record<
+      string,
+      unknown
+    >;
+    const publicFormId = publicFormCreatePayload.id as string;
+    expect(publicFormId).toBeTruthy();
+
+    const publicFormPublishResponse = await owner.request(
+      `/api/v1/auth/orgs/public-events-org/stores/public-events-org/forms/${encodeURIComponent(publicFormId)}/publish`,
+      {
+        method: 'POST',
+      },
+    );
+    expect(publicFormPublishResponse.status).toBe(200);
+    const publicFormPublishPayload = (await toJson(publicFormPublishResponse)) as {
+      currentPublishedVersion?: { id?: string; versionNumber?: number };
+    };
+    const publicFormVersionId = publicFormPublishPayload.currentPublishedVersion?.id;
+    expect(publicFormVersionId).toBeTruthy();
+
+    const publicFormAssignmentResponse = await owner.request(
+      `/api/v1/auth/orgs/public-events-org/stores/public-events-org/forms/${encodeURIComponent(publicFormId)}/assignments`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          targetType: 'store',
+          targetId: publicStoreId,
+        }),
+      },
+    );
+    expect(publicFormAssignmentResponse.status).toBe(200);
 
     const publicEventsResponse = await app.request(
       '/api/v1/public/orgs/public-events-org/stores/public-events-org/events',
@@ -12048,37 +12389,95 @@ describe('バックエンドアプリ', () => {
         (ticketType) => ticketType.name,
       ),
     ).toEqual(expect.arrayContaining(['Public All Service Ticket', 'Public Specific Ticket']));
-    expect(publicEventDetail.intakeFields).toEqual([
+    expect(publicEventDetail).not.toHaveProperty('intakeFields');
+
+    const publicRequiredFormsResponse = await app.request(
+      `/api/v1/public/orgs/public-events-org/stores/public-events-org/forms/required?serviceId=${encodeURIComponent(
+        serviceId,
+      )}&slotId=${encodeURIComponent(slotId)}`,
+    );
+    expect(publicRequiredFormsResponse.status).toBe(200);
+    const publicRequiredFormsPayload = (await toJson(publicRequiredFormsResponse)) as {
+      formContextHash: string;
+      forms: Array<{
+        formTemplateId: string;
+        formTemplateVersionId: string;
+        formType: string;
+        name: string;
+        versionNumber: number;
+        fields: Array<Record<string, unknown>>;
+      }>;
+    };
+    expect(publicRequiredFormsPayload.formContextHash).toEqual(expect.stringMatching(/^ctx_/));
+    expect(publicRequiredFormsPayload.forms).toEqual([
       expect.objectContaining({
-        fieldId: 'experience',
-        label: '経験年数',
-        fieldType: 'select',
-        required: true,
-        options: ['未経験', '1年以上'],
-        placeholder: '選択してください',
-      }),
-      expect.objectContaining({
-        fieldId: 'goal',
-        label: '参加目的',
-        fieldType: 'text',
-        required: false,
-        placeholder: '例: 体力づくり',
-        helpText: '目的を一言で入力してください。',
-      }),
-      expect.objectContaining({
-        fieldId: 'request',
-        label: '希望内容',
-        fieldType: 'textarea',
-        required: false,
-        placeholder: '配慮事項など',
-      }),
-      expect.objectContaining({
-        fieldId: 'newsletter',
-        label: '案内メールを受け取る',
-        fieldType: 'checkbox',
-        required: false,
+        formTemplateId: publicFormId,
+        formTemplateVersionId: publicFormVersionId,
+        formType: 'reservation_input',
+        name: '体験予約フォーム',
+        versionNumber: 1,
+        fields: [
+          expect.objectContaining({
+            fieldKey: 'experience',
+            label: '経験年数',
+            fieldType: 'select',
+            required: true,
+            options: [
+              { value: 'none', label: '未経験' },
+              { value: 'over_1_year', label: '1年以上' },
+            ],
+            placeholder: '選択してください',
+          }),
+          expect.objectContaining({
+            fieldKey: 'goal',
+            label: '参加目的',
+            fieldType: 'text',
+            required: true,
+            placeholder: '例: 体力づくり',
+            description: '目的を一言で入力してください。',
+          }),
+          expect.objectContaining({
+            fieldKey: 'request',
+            label: '希望内容',
+            fieldType: 'textarea',
+            required: false,
+            placeholder: '配慮事項など',
+          }),
+          expect.objectContaining({
+            fieldKey: 'newsletter',
+            label: '案内メールを受け取る',
+            fieldType: 'checkbox',
+            required: false,
+            options: [{ value: 'subscribe', label: '受け取る' }],
+          }),
+        ],
       }),
     ]);
+
+    const validPublicFormSubmissions = [
+      {
+        formTemplateId: publicFormId,
+        formTemplateVersionId: publicFormVersionId as string,
+        answers: [
+          {
+            fieldKey: 'experience',
+            value: 'over_1_year',
+          },
+          {
+            fieldKey: 'goal',
+            value: '体力づくり',
+          },
+          {
+            fieldKey: 'request',
+            value: '初回なのでゆっくり進めたい',
+          },
+          {
+            fieldKey: 'newsletter',
+            value: ['subscribe'],
+          },
+        ],
+      },
+    ];
 
     const privatePublicEventDetailResponse = await app.request(
       `/api/v1/public/orgs/public-events-org/stores/public-events-org/events/${encodeURIComponent(privateSlotId)}`,
@@ -12149,9 +12548,13 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           slotId,
-          customerName: 'Missing Intake Guest',
-          customerEmail: 'missing-intake@example.com',
+          customer: {
+            name: 'Missing Form Guest',
+            email: 'missing-form@example.com',
+          },
           participantsCount: 1,
+          formContextHash: publicRequiredFormsPayload.formContextHash,
+          formSubmissions: [],
         }),
       },
     );
@@ -12164,9 +12567,13 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           slotId: suspendedSlotId,
-          customerName: 'Suspended Guest',
-          customerEmail: 'suspended-guest@example.com',
+          customer: {
+            name: 'Suspended Guest',
+            email: 'suspended-guest@example.com',
+          },
           participantsCount: 1,
+          formContextHash: publicRequiredFormsPayload.formContextHash,
+          formSubmissions: [],
         }),
       },
     );
@@ -12179,9 +12586,13 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           slotId: suspendedPublicSlotId,
-          customerName: 'Suspended Slot Guest',
-          customerEmail: 'suspended-slot-guest@example.com',
+          customer: {
+            name: 'Suspended Slot Guest',
+            email: 'suspended-slot-guest@example.com',
+          },
           participantsCount: 1,
+          formContextHash: publicRequiredFormsPayload.formContextHash,
+          formSubmissions: [],
         }),
       },
     );
@@ -12194,9 +12605,13 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           slotId: privatePublicSlotId,
-          customerName: 'Private Slot Guest',
-          customerEmail: 'private-slot-guest@example.com',
+          customer: {
+            name: 'Private Slot Guest',
+            email: 'private-slot-guest@example.com',
+          },
           participantsCount: 1,
+          formContextHash: publicRequiredFormsPayload.formContextHash,
+          formSubmissions: [],
         }),
       },
     );
@@ -12209,34 +12624,17 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           slotId,
-          customerName: 'Guest Booker',
-          customerEmail: 'guest-booker@example.com',
-          customerPhone: '090-0000-0000',
+          serviceId,
+          customer: {
+            name: 'Guest Booker',
+            email: 'guest-booker@example.com',
+            phone: '090-0000-0000',
+          },
           participantsCount: 2,
           companions: [{ name: 'Guest Companion' }],
           note: '公開予約の備考',
-          answers: [
-            {
-              fieldId: 'experience',
-              labelSnapshot: '改ざんされたラベル',
-              value: '1年以上',
-            },
-            {
-              fieldId: 'goal',
-              labelSnapshot: '参加目的',
-              value: '体力づくり',
-            },
-            {
-              fieldId: 'request',
-              labelSnapshot: '希望内容',
-              value: '初回なのでゆっくり進めたい',
-            },
-            {
-              fieldId: 'newsletter',
-              labelSnapshot: '案内メールを受け取る',
-              value: false,
-            },
-          ],
+          formContextHash: publicRequiredFormsPayload.formContextHash,
+          formSubmissions: validPublicFormSubmissions,
         }),
       },
     );
@@ -12256,26 +12654,54 @@ describe('バックエンドアプリ', () => {
     });
     expect(Number(publicBookingRow?.participantsCount ?? 0)).toBe(2);
     expect(await selectSlotReservedCount(slotId)).toBe(2);
-    expect(await selectBookingAnswerRows(publicBookingRow?.id ?? '')).toEqual([
+    expect(await selectFormAnswerRowsByBooking(publicBookingRow?.id ?? '')).toEqual([
       {
-        fieldId: 'experience',
+        formTemplateId: publicFormId,
+        formTemplateVersionId: publicFormVersionId,
+        formType: 'reservation_input',
+        source: 'public',
+        customerNameSnapshot: 'Guest Booker',
+        customerEmailSnapshot: 'guest-booker@example.com',
+        fieldKey: 'experience',
+        fieldType: 'select',
         labelSnapshot: '経験年数',
-        valueJson: JSON.stringify('1年以上'),
+        valueJson: JSON.stringify('over_1_year'),
       },
       {
-        fieldId: 'goal',
+        formTemplateId: publicFormId,
+        formTemplateVersionId: publicFormVersionId,
+        formType: 'reservation_input',
+        source: 'public',
+        customerNameSnapshot: 'Guest Booker',
+        customerEmailSnapshot: 'guest-booker@example.com',
+        fieldKey: 'goal',
+        fieldType: 'text',
         labelSnapshot: '参加目的',
         valueJson: JSON.stringify('体力づくり'),
       },
       {
-        fieldId: 'request',
+        formTemplateId: publicFormId,
+        formTemplateVersionId: publicFormVersionId,
+        formType: 'reservation_input',
+        source: 'public',
+        customerNameSnapshot: 'Guest Booker',
+        customerEmailSnapshot: 'guest-booker@example.com',
+        fieldKey: 'request',
+        fieldType: 'textarea',
         labelSnapshot: '希望内容',
         valueJson: JSON.stringify('初回なのでゆっくり進めたい'),
       },
       {
-        fieldId: 'newsletter',
+        formTemplateId: publicFormId,
+        formTemplateVersionId: publicFormVersionId,
+        formType: 'reservation_input',
+        source: 'public',
+        customerNameSnapshot: 'Guest Booker',
+        customerEmailSnapshot: 'guest-booker@example.com',
+        fieldKey: 'newsletter',
+        fieldType: 'checkbox',
         labelSnapshot: '案内メールを受け取る',
-        valueJson: JSON.stringify(false),
+        valueJson: JSON.stringify(['subscribe']),
       },
     ]);
 
@@ -12300,7 +12726,7 @@ describe('バックエンドアプリ', () => {
       },
     );
     expect(publicCancelResponse.status).toBe(200);
-    expect(await selectBookingStatus(publicBookingRow?.id ?? '')).toBe('cancelled_by_participant');
+    expect(await selectBookingStatus(publicBookingRow?.id ?? '')).toBe('cancelled');
     expect(await selectSlotReservedCount(slotId)).toBe(0);
 
     const reusedPublicCancelResponse = await app.request(
@@ -12332,6 +12758,22 @@ describe('バックエンドアプリ', () => {
           notifyCustomer: false,
           companions: [{ name: 'Phone Companion' }],
           note: '電話受付',
+          formSubmissions: [
+            {
+              formTemplateId: publicFormId,
+              formTemplateVersionId: publicFormVersionId,
+              answers: [
+                {
+                  fieldKey: 'experience',
+                  value: 'none',
+                },
+                {
+                  fieldKey: 'goal',
+                  value: '電話受付',
+                },
+              ],
+            },
+          ],
         }),
       },
     );
@@ -12347,6 +12789,32 @@ describe('バックエンドアプリ', () => {
       status: 'confirmed',
     });
     expect(await selectSlotReservedCount(slotId)).toBe(1);
+    expect(await selectFormAnswerRowsByBooking(staffCreatePayload.id as string)).toEqual([
+      expect.objectContaining({
+        formTemplateId: publicFormId,
+        formTemplateVersionId: publicFormVersionId,
+        formType: 'reservation_input',
+        source: 'staff',
+        customerNameSnapshot: 'Phone Booker',
+        customerEmailSnapshot: 'phone-booker@example.com',
+        fieldKey: 'experience',
+        fieldType: 'select',
+        labelSnapshot: '経験年数',
+        valueJson: JSON.stringify('none'),
+      }),
+      expect.objectContaining({
+        formTemplateId: publicFormId,
+        formTemplateVersionId: publicFormVersionId,
+        formType: 'reservation_input',
+        source: 'staff',
+        customerNameSnapshot: 'Phone Booker',
+        customerEmailSnapshot: 'phone-booker@example.com',
+        fieldKey: 'goal',
+        fieldType: 'text',
+        labelSnapshot: '参加目的',
+        valueJson: JSON.stringify('電話受付'),
+      }),
+    ]);
 
     const scopedOrganizationId = await createOrganization({
       agent: owner,
@@ -12437,16 +12905,19 @@ describe('バックエンドアプリ', () => {
       scopedPublicEventsPayload.events?.some((row) => row.slotId === scopedSlotPayload.id),
     ).toBe(true);
 
+    const scopedSelfEnrollPath =
+      '/api/v1/auth/orgs/public-events-org/stores/public-events-org/participants/self-enroll';
+    const scopedParticipantBookingsPath =
+      '/api/v1/auth/orgs/public-events-org/stores/public-events-org/bookings';
+
     const unauthSelfEnrollResponse = await app.request(
-      '/api/v1/auth/organizations/participants/self-enroll',
+      scopedSelfEnrollPath,
       {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
         },
-        body: JSON.stringify({
-          organizationId,
-        }),
+        body: JSON.stringify({}),
       },
     );
     expect(unauthSelfEnrollResponse.status).toBe(401);
@@ -12477,7 +12948,7 @@ describe('バックエンドアプリ', () => {
     expect(forbiddenStaffCreateResponse.status).toBe(403);
 
     const bookingBeforeSelfEnrollResponse = await participantUser.request(
-      '/api/v1/auth/organizations/bookings',
+      scopedParticipantBookingsPath,
       {
         method: 'POST',
         headers: {
@@ -12491,29 +12962,25 @@ describe('バックエンドアプリ', () => {
     expect(bookingBeforeSelfEnrollResponse.status).toBe(403);
 
     const forbiddenSelfEnrollResponse = await participantUser.request(
-      '/api/v1/auth/organizations/participants/self-enroll',
+      '/api/v1/auth/orgs/missing-org/stores/missing-store/participants/self-enroll',
       {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
         },
-        body: JSON.stringify({
-          organizationId: 'another-org',
-        }),
+        body: JSON.stringify({}),
       },
     );
-    expect(forbiddenSelfEnrollResponse.status).toBe(403);
+    expect(forbiddenSelfEnrollResponse.status).toBe(404);
 
     const firstSelfEnrollResponse = await participantUser.request(
-      '/api/v1/auth/organizations/participants/self-enroll',
+      scopedSelfEnrollPath,
       {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
         },
-        body: JSON.stringify({
-          organizationId,
-        }),
+        body: JSON.stringify({}),
       },
     );
     expect(firstSelfEnrollResponse.status).toBe(200);
@@ -12524,15 +12991,13 @@ describe('バックエンドアプリ', () => {
     expect(firstSelfEnrollPayload.created).toBe(true);
 
     const secondSelfEnrollResponse = await participantUser.request(
-      '/api/v1/auth/organizations/participants/self-enroll',
+      scopedSelfEnrollPath,
       {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
         },
-        body: JSON.stringify({
-          organizationId,
-        }),
+        body: JSON.stringify({}),
       },
     );
     expect(secondSelfEnrollResponse.status).toBe(200);
@@ -12546,7 +13011,7 @@ describe('バックエンドアプリ', () => {
     ).toBe(1);
 
     const bookingAfterSelfEnrollResponse = await participantUser.request(
-      '/api/v1/auth/organizations/bookings',
+      scopedParticipantBookingsPath,
       {
         method: 'POST',
         headers: {
@@ -13074,7 +13539,7 @@ describe('バックエンドアプリ', () => {
     expect(await selectSlotReservedCount(slotId)).toBe(1);
     expect(await selectTicketPackRemaining(ticketPackId)).toBe(2);
     expect(await selectTicketLedgerActionCount(ticketPackId, 'consume')).toBe(1);
-    expect(await selectBookingAuditActionCount(bookingId, 'booking.created')).toBe(1);
+    expect(await selectBookingAuditActionCount(bookingId, 'created')).toBe(1);
 
     const duplicateBookingResponse = await participantUser.request(
       '/api/v1/auth/organizations/bookings',
@@ -13099,13 +13564,11 @@ describe('バックエンドアプリ', () => {
       },
     );
     expect(cancelBookingResponse.status).toBe(200);
-    expect(await selectBookingStatus(bookingId)).toBe('cancelled_by_participant');
+    expect(await selectBookingStatus(bookingId)).toBe('cancelled');
     expect(await selectSlotReservedCount(slotId)).toBe(0);
     expect(await selectTicketPackRemaining(ticketPackId)).toBe(3);
     expect(await selectTicketLedgerActionCount(ticketPackId, 'restore')).toBe(1);
-    expect(await selectBookingAuditActionCount(bookingId, 'booking.cancelled_by_participant')).toBe(
-      1,
-    );
+    expect(await selectBookingAuditActionCount(bookingId, 'cancelled_by_customer')).toBe(1);
 
     const nearStart = new Date(Date.now() + 30 * 60 * 1000);
     const nearEnd = new Date(nearStart.getTime() + 60 * 60 * 1000);
@@ -13161,11 +13624,9 @@ describe('バックエンドアプリ', () => {
       },
     );
     expect(staffCancelResponse.status).toBe(200);
-    expect(await selectBookingStatus(secondBookingId)).toBe('cancelled_by_staff');
+    expect(await selectBookingStatus(secondBookingId)).toBe('cancelled');
     expect(await selectTicketPackRemaining(ticketPackId)).toBe(2);
-    expect(await selectBookingAuditActionCount(secondBookingId, 'booking.cancelled_by_staff')).toBe(
-      1,
-    );
+    expect(await selectBookingAuditActionCount(secondBookingId, 'cancelled_by_staff')).toBe(1);
 
     const thirdStart = new Date(Date.now() + 48 * 60 * 60 * 1000);
     const thirdEnd = new Date(thirdStart.getTime() + 60 * 60 * 1000);
@@ -13234,7 +13695,7 @@ describe('バックエンドアプリ', () => {
     expect(await selectSlotReservedCount(thirdSlotId)).toBe(0);
     expect(await selectSlotReservedCount(rescheduleSlotId)).toBe(1);
     expect(await selectBookingChangeLogCount(thirdBookingId)).toBe(1);
-    expect(await selectBookingAuditActionCount(thirdBookingId, 'booking.rescheduled')).toBe(1);
+    expect(await selectBookingAuditActionCount(thirdBookingId, 'rescheduled')).toBe(1);
     expect(
       await selectNotificationLogEventCount(thirdBookingId, 'booking_rescheduled'),
     ).toBeGreaterThan(0);
@@ -13248,14 +13709,12 @@ describe('バックエンドアプリ', () => {
       }),
     });
     expect(checkInResponse.status).toBe(200);
-    expect(await selectBookingStatus(thirdBookingId)).toBe('confirmed');
+    expect(await selectBookingStatus(thirdBookingId)).toBe('completed');
     const checkedInAttendance = await selectBookingAttendance(thirdBookingId);
     expect(checkedInAttendance?.attendanceStatus).toBe('checked_in');
     expect(checkedInAttendance?.attendanceMarkedAt).toBeTruthy();
     expect(checkedInAttendance?.attendanceMarkedByUserId).toBeTruthy();
-    expect(await selectBookingAuditActionCount(thirdBookingId, 'booking.attendance_marked')).toBe(
-      1,
-    );
+    expect(await selectBookingAuditActionCount(thirdBookingId, 'checked_in')).toBe(1);
 
     const absentResponse = await admin.request('/api/v1/auth/organizations/bookings/check-in', {
       method: 'POST',
@@ -13284,9 +13743,8 @@ describe('バックエンドアプリ', () => {
     expect(resetAttendance?.attendanceStatus).toBe('not_checked');
     expect(resetAttendance?.attendanceMarkedAt).toBeNull();
     expect(resetAttendance?.attendanceMarkedByUserId).toBeNull();
-    expect(await selectBookingAuditActionCount(thirdBookingId, 'booking.attendance_marked')).toBe(
-      3,
-    );
+    expect(await selectBookingStatus(thirdBookingId)).toBe('confirmed');
+    expect(await selectBookingAuditActionCount(thirdBookingId, 'checked_in')).toBe(1);
 
     const noShowResponse = await admin.request('/api/v1/auth/organizations/bookings/no-show', {
       method: 'POST',
@@ -13298,7 +13756,7 @@ describe('バックエンドアプリ', () => {
     expect(noShowResponse.status).toBe(200);
     expect(await selectBookingStatus(thirdBookingId)).toBe('no_show');
     expect((await selectBookingAttendance(thirdBookingId))?.attendanceStatus).toBe('no_show');
-    expect(await selectBookingAuditActionCount(thirdBookingId, 'booking.no_show')).toBe(1);
+    expect(await selectBookingAuditActionCount(thirdBookingId, 'no_show_marked')).toBe(1);
 
     const checkInNoShowResponse = await admin.request(
       '/api/v1/auth/organizations/bookings/check-in',
@@ -14397,7 +14855,7 @@ describe('バックエンドアプリ', () => {
     expect(await selectSlotReservedCount(approvalSlotId)).toBe(1);
     expect(await selectTicketPackRemaining(ticketPackId)).toBe(1);
     expect(await selectTicketLedgerActionCount(ticketPackId, 'consume')).toBe(1);
-    expect(await selectBookingAuditActionCount(pendingBookingId, 'booking.approved')).toBe(1);
+    expect(await selectBookingAuditActionCount(pendingBookingId, 'approved')).toBe(1);
 
     const approveAgainResponse = await owner.request(
       '/api/v1/auth/organizations/bookings/approve',
@@ -14449,7 +14907,7 @@ describe('バックエンドアプリ', () => {
       },
     );
     expect(cancelPendingResponse.status).toBe(200);
-    expect(await selectBookingStatus(nearPendingBookingId)).toBe('cancelled_by_participant');
+    expect(await selectBookingStatus(nearPendingBookingId)).toBe('cancelled');
     expect(await selectSlotReservedCount(nearSlotId)).toBe(0);
     expect(await selectTicketPackRemaining(ticketPackId)).toBe(1);
 
@@ -14478,10 +14936,8 @@ describe('バックエンドアプリ', () => {
       }),
     });
     expect(rejectResponse.status).toBe(200);
-    expect(await selectBookingStatus(rejectPendingBookingId)).toBe('rejected_by_staff');
-    expect(
-      await selectBookingAuditActionCount(rejectPendingBookingId, 'booking.rejected_by_staff'),
-    ).toBe(1);
+    expect(await selectBookingStatus(rejectPendingBookingId)).toBe('rejected');
+    expect(await selectBookingAuditActionCount(rejectPendingBookingId, 'rejected')).toBe(1);
 
     const rejectAgainResponse = await owner.request('/api/v1/auth/organizations/bookings/reject', {
       method: 'POST',
@@ -17090,9 +17546,25 @@ describe('バックエンドアプリ', () => {
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/invitations']).toBeDefined();
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/invitations']).toBeDefined();
     expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/public-site']).toBeDefined();
+    expect(body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms']).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}'],
+    ).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}/publish'],
+    ).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/required'],
+    ).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/forms/{formId}/assignments'],
+    ).toBeDefined();
+    expect(
+      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/form-submissions/{submissionId}'],
+    ).toBeDefined();
     expect(
       body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/intake-fields'],
-    ).toBeDefined();
+    ).toBeUndefined();
     expect(
       body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/notification-settings'],
     ).toBeDefined();
@@ -17104,43 +17576,56 @@ describe('バックエンドアプリ', () => {
     expect(body.paths['/api/v1/auth/invitations/{invitationId}/accept']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}/reject']).toBeDefined();
     expect(body.paths['/api/v1/auth/invitations/{invitationId}/cancel']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/participants']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/participants/self-enroll']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/services']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/services/update']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/services/archive']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/slots']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/slots/update']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/slots/available']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/slots/cancel']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/recurring-schedules']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/recurring-schedules/update']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/recurring-schedules/exceptions']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/recurring-schedules/generate']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings/mine']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings/cancel']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings/cancel-by-staff']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings/approve']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings/reject']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings/reschedule']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings/no-show']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/bookings/check-in']).toBeDefined();
-    expect(
-      body.paths['/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}/bookings/staff-create'],
-    ).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-types']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-types/update']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-types/purchasable']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-packs']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-packs/grant']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-packs/adjust']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-packs/mine']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-purchases']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-purchases/mine']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-purchases/approve']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-purchases/reject']).toBeDefined();
-    expect(body.paths['/api/v1/auth/organizations/ticket-purchases/cancel']).toBeDefined();
+    const scopedAuthPrefix = '/api/v1/auth/orgs/{orgSlug}/stores/{storeSlug}';
+    for (const suffix of [
+      '/participants',
+      '/participants/self-enroll',
+      '/services',
+      '/services/images/upload-url',
+      '/services/update',
+      '/services/archive',
+      '/slots',
+      '/slots/update',
+      '/slots/public-status',
+      '/slots/available',
+      '/slots/cancel',
+      '/recurring-schedules',
+      '/recurring-schedules/update',
+      '/recurring-schedules/exceptions',
+      '/recurring-schedules/generate',
+      '/bookings',
+      '/bookings/mine',
+      '/bookings/cancel',
+      '/bookings/cancel-by-staff',
+      '/bookings/approve',
+      '/bookings/reject',
+      '/bookings/reschedule',
+      '/bookings/no-show',
+      '/bookings/check-in',
+      '/bookings/staff-create',
+      '/ticket-types',
+      '/ticket-types/update',
+      '/ticket-types/purchasable',
+      '/ticket-packs',
+      '/ticket-packs/grant',
+      '/ticket-packs/adjust',
+      '/ticket-packs/mine',
+      '/ticket-purchases',
+      '/ticket-purchases/mine',
+      '/ticket-purchases/approve',
+      '/ticket-purchases/reject',
+      '/ticket-purchases/cancel',
+    ]) {
+      expect(body.paths[`${scopedAuthPrefix}${suffix}`]).toBeDefined();
+    }
+    expect(body.paths['/api/v1/auth/services/images/upload/{token}']).toBeDefined();
+    expect(body.paths['/api/v1/auth/services/images/{key}']).toBeDefined();
+    expect(body.paths['/api/v1/auth/organizations/services']).toBeUndefined();
+    expect(body.paths['/api/v1/auth/organizations/slots']).toBeUndefined();
+    expect(body.paths['/api/v1/auth/organizations/bookings']).toBeUndefined();
+    expect(body.paths['/api/v1/auth/organizations/participants/self-enroll']).toBeUndefined();
+    expect(body.paths['/api/v1/auth/organizations/ticket-types']).toBeUndefined();
+    expect(body.paths['/api/v1/auth/organizations/recurring-schedules']).toBeUndefined();
     expect(body.paths['/api/v1/auth/organizations/billing']).toBeDefined();
     expect(
       body.paths['/api/v1/auth/internal/organizations/{organizationId}/billing-inspection'],
@@ -17155,6 +17640,9 @@ describe('バックエンドアプリ', () => {
     expect(body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events']).toBeDefined();
     expect(
       body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/events/{slotId}'],
+    ).toBeDefined();
+    expect(
+      body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/forms/required'],
     ).toBeDefined();
     expect(
       body.paths['/api/v1/public/orgs/{orgSlug}/stores/{storeSlug}/ticket-types/{ticketTypeId}'],

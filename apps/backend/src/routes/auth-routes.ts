@@ -8,8 +8,6 @@ import {
   resolveOrganizationStoreContext,
 } from '../domain/booking/authorization.js';
 import {
-  resolvePublicEventsStoreSlug,
-  resolvePublicEventsOrganizationSlug,
   type AuthInstance,
   type AuthRuntimeDatabase,
   type AuthRuntimeEnv,
@@ -25,6 +23,7 @@ import {
 import type { OrganizationLogoService } from '../infra/storage/organization-logo-service.js';
 import type { ServiceImageUploadService } from '../infra/storage/service-image-upload-service.js';
 import { registerBookingRoutes } from './booking-routes.js';
+import { scopedStoreAuthPath, scopedStoreRouteParamsSchema } from '../shared/scoped-store-route.js';
 
 export { resolveE2eStripeTestClockId } from '../features/billing/billing.routes.js';
 
@@ -41,25 +40,6 @@ type CreateAuthRoutesOptions = {
   organizationLogoService?: OrganizationLogoService | null;
   serviceImageUploadService?: ServiceImageUploadService | null;
 };
-
-type PublicSiteIntakeFieldType = 'text' | 'textarea' | 'select' | 'checkbox';
-
-type PublicSiteIntakeFieldRow = {
-  id: string;
-  fieldKey: string;
-  label: string;
-  fieldType: string;
-  required: boolean;
-  optionsJson: string | null;
-  helpText: string | null;
-  placeholder: string | null;
-  visibleOnPublic: boolean;
-  sortOrder: number;
-  createdAt: Date;
-};
-
-const normalizePublicSiteIntakeFieldType = (value: string): PublicSiteIntakeFieldType =>
-  value === 'textarea' || value === 'select' || value === 'checkbox' ? value : 'text';
 
 const LOGO_KEY_PATTERN = /^[a-zA-Z0-9._-]+$/;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -146,15 +126,7 @@ const getFullOrganizationQuerySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
-const listParticipantsQuerySchema = z.object({
-  organizationId: z.string().min(1).optional(),
-  storeId: z.string().min(1).optional(),
-});
-
-const selfEnrollParticipantBodySchema = z.object({
-  organizationId: z.string().min(1),
-  storeId: z.string().min(1).optional(),
-});
+const listParticipantsQuerySchema = z.object({});
 
 const signUpRoute = createRoute({
   method: 'post',
@@ -475,78 +447,6 @@ const publicSiteSettingBodySchema = z.object({
   noindex: z.boolean().optional(),
 });
 
-const publicSiteIntakeFieldTypeSchema = z.enum(['text', 'textarea', 'select', 'checkbox']);
-const publicSiteIntakeFieldKeySchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(80)
-  .regex(/^[a-z0-9][a-z0-9_-]*$/, {
-    message: 'Field id must start with a lowercase letter or number and use lowercase letters, numbers, hyphens, or underscores.',
-  });
-const publicSiteIntakeOptionSchema = z.string().trim().min(1).max(80);
-
-const publicSiteIntakeFieldSchema = z.object({
-  id: z.string().min(1),
-  fieldId: publicSiteIntakeFieldKeySchema,
-  label: z.string().min(1).max(120),
-  fieldType: publicSiteIntakeFieldTypeSchema,
-  required: z.boolean(),
-  options: z.array(publicSiteIntakeOptionSchema),
-  helpText: z.string().nullable(),
-  placeholder: z.string().nullable(),
-  visibleOnPublic: z.boolean(),
-  sortOrder: z.number().int().min(0),
-});
-
-const publicSiteIntakeFieldsSchema = z.object({
-  fields: z.array(publicSiteIntakeFieldSchema),
-});
-
-const publicSiteIntakeFieldBodySchema = z
-  .object({
-    fieldId: publicSiteIntakeFieldKeySchema,
-    label: z.string().trim().min(1).max(120),
-    fieldType: publicSiteIntakeFieldTypeSchema,
-    required: z.boolean().default(false),
-    options: z.array(publicSiteIntakeOptionSchema).max(20).optional().default([]),
-    helpText: z.string().trim().max(500).nullable().optional(),
-    placeholder: z.string().trim().max(200).nullable().optional(),
-    visibleOnPublic: z.boolean().default(true),
-  })
-  .superRefine((value, ctx) => {
-    const normalizedOptions = value.options.map((option) => option.trim()).filter(Boolean);
-    if (value.fieldType === 'select' && normalizedOptions.length === 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['options'],
-        message: 'Select field requires at least one option.',
-      });
-    }
-    if (new Set(normalizedOptions).size !== normalizedOptions.length) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['options'],
-        message: 'Duplicate intake field option.',
-      });
-    }
-  });
-
-const publicSiteIntakeFieldsBodySchema = z
-  .object({
-    fields: z.array(publicSiteIntakeFieldBodySchema).max(20),
-  })
-  .superRefine((value, ctx) => {
-    const fieldIds = value.fields.map((field) => field.fieldId.trim());
-    if (new Set(fieldIds).size !== fieldIds.length) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['fields'],
-        message: 'Duplicate intake field id.',
-      });
-    }
-  });
-
 const emailAddressSchema = z.email();
 const notificationEmailInputSchema = z
   .string()
@@ -822,61 +722,6 @@ const updatePublicSiteSettingRoute = createRoute({
     404: {
       description: 'Organization or store not found',
     },
-  },
-});
-
-const getPublicSiteIntakeFieldsRoute = createRoute({
-  method: 'get',
-  path: '/orgs/{orgSlug}/stores/{storeSlug}/intake-fields',
-  tags: ['Public Site'],
-  summary: 'Get public booking custom input fields for a store',
-  request: {
-    params: organizationStoreRouteParamsSchema,
-  },
-  responses: {
-    200: {
-      description: 'Public booking custom input fields',
-      content: {
-        'application/json': {
-          schema: publicSiteIntakeFieldsSchema,
-        },
-      },
-    },
-    401: messageResponse('Unauthorized'),
-    403: messageResponse('Forbidden'),
-    404: messageResponse('Organization or store not found'),
-  },
-});
-
-const updatePublicSiteIntakeFieldsRoute = createRoute({
-  method: 'patch',
-  path: '/orgs/{orgSlug}/stores/{storeSlug}/intake-fields',
-  tags: ['Public Site'],
-  summary: 'Update public booking custom input fields for a store',
-  request: {
-    params: organizationStoreRouteParamsSchema,
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: publicSiteIntakeFieldsBodySchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Updated public booking custom input fields',
-      content: {
-        'application/json': {
-          schema: publicSiteIntakeFieldsSchema,
-        },
-      },
-    },
-    400: messageResponse('Validation error'),
-    401: messageResponse('Unauthorized'),
-    403: messageResponse('Forbidden'),
-    404: messageResponse('Organization or store not found'),
   },
 });
 
@@ -1284,10 +1129,11 @@ const cancelInvitationRoute = createRoute({
 
 const listParticipantsRoute = createRoute({
   method: 'get',
-  path: '/organizations/participants',
+  path: scopedStoreAuthPath('/participants'),
   tags: ['Participants'],
   summary: 'List participants in an organization',
   request: {
+    params: scopedStoreRouteParamsSchema,
     query: listParticipantsQuerySchema,
   },
   responses: {
@@ -1308,18 +1154,11 @@ const listParticipantsRoute = createRoute({
 
 const selfEnrollParticipantRoute = createRoute({
   method: 'post',
-  path: '/organizations/participants/self-enroll',
+  path: scopedStoreAuthPath('/participants/self-enroll'),
   tags: ['Participants'],
   summary: 'Create participant membership for current user in public organization',
   request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: selfEnrollParticipantBodySchema,
-        },
-      },
-    },
+    params: scopedStoreRouteParamsSchema,
   },
   responses: {
     200: {
@@ -1334,8 +1173,8 @@ const selfEnrollParticipantRoute = createRoute({
     400: {
       description: 'Validation error',
     },
-    503: {
-      description: 'Public organization is not configured',
+    404: {
+      description: 'Organization or store not found',
     },
   },
 });
@@ -2364,84 +2203,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     };
   };
 
-  const normalizePublicSiteIntakeOptions = (values: string[]): string[] => {
-    const options: string[] = [];
-    const seenOptions = new Set<string>();
-    for (const value of values) {
-      const option = value.trim();
-      if (!option || seenOptions.has(option)) {
-        continue;
-      }
-      seenOptions.add(option);
-      options.push(option);
-    }
-    return options;
-  };
-
-  const parsePublicSiteIntakeOptionsJson = (value: string | null): string[] => {
-    if (!value) {
-      return [];
-    }
-    try {
-      const parsed = JSON.parse(value) as unknown;
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-      return normalizePublicSiteIntakeOptions(
-        parsed.filter((entry): entry is string => typeof entry === 'string'),
-      );
-    } catch {
-      return [];
-    }
-  };
-
-  const serializePublicSiteIntakeFields = async ({
-    context,
-  }: {
-    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
-  }) => {
-    const rows = (await database
-      .select({
-        id: dbSchema.publicSiteIntakeField.id,
-        fieldKey: dbSchema.publicSiteIntakeField.fieldKey,
-        label: dbSchema.publicSiteIntakeField.label,
-        fieldType: dbSchema.publicSiteIntakeField.fieldType,
-        required: dbSchema.publicSiteIntakeField.required,
-        optionsJson: dbSchema.publicSiteIntakeField.optionsJson,
-        helpText: dbSchema.publicSiteIntakeField.helpText,
-        placeholder: dbSchema.publicSiteIntakeField.placeholder,
-        visibleOnPublic: dbSchema.publicSiteIntakeField.visibleOnPublic,
-        sortOrder: dbSchema.publicSiteIntakeField.sortOrder,
-        createdAt: dbSchema.publicSiteIntakeField.createdAt,
-      })
-      .from(dbSchema.publicSiteIntakeField)
-      .where(
-        and(
-          eq(dbSchema.publicSiteIntakeField.organizationId, context.organizationId),
-          eq(dbSchema.publicSiteIntakeField.storeId, context.storeId),
-        ),
-      )
-      .orderBy(
-        asc(dbSchema.publicSiteIntakeField.sortOrder),
-        asc(dbSchema.publicSiteIntakeField.createdAt),
-      )) as PublicSiteIntakeFieldRow[];
-
-    return {
-      fields: rows.map((row) => ({
-        id: row.id,
-        fieldId: row.fieldKey,
-        label: row.label,
-        fieldType: normalizePublicSiteIntakeFieldType(row.fieldType),
-        required: row.required,
-        options: parsePublicSiteIntakeOptionsJson(row.optionsJson),
-        helpText: row.helpText ?? null,
-        placeholder: row.placeholder ?? null,
-        visibleOnPublic: row.visibleOnPublic,
-        sortOrder: row.sortOrder,
-      })),
-    };
-  };
-
   const normalizeNotificationEmails = (values: string[]): string[] => {
     const emails = new Set<string>();
     for (const value of values) {
@@ -3335,98 +3096,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         });
 
       return c.json(await serializePublicSiteSetting({ context: storeContext }), 200);
-    })();
-  });
-
-  authRoutes.openapi(getPublicSiteIntakeFieldsRoute, (c) => {
-    return (async () => {
-      const { orgSlug, storeSlug } = c.req.valid('param');
-      const identity = await getSessionIdentity(c.req.raw.headers);
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-
-      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
-      if (!storeContext) {
-        return c.json({ message: 'Organization or store not found.' }, 404);
-      }
-
-      const access = await resolveOrganizationStoreAccess({
-        database,
-        userId: identity.userId,
-        context: storeContext,
-      });
-      if (!access.effective.canManageStore) {
-        return c.json({ message: 'Forbidden' }, 403);
-      }
-
-      return c.json(await serializePublicSiteIntakeFields({ context: storeContext }), 200);
-    })();
-  });
-
-  authRoutes.openapi(updatePublicSiteIntakeFieldsRoute, (c) => {
-    return (async () => {
-      const { orgSlug, storeSlug } = c.req.valid('param');
-      const body = c.req.valid('json');
-      const identity = await getSessionIdentity(c.req.raw.headers);
-      if (!identity) {
-        return c.json({ message: 'Unauthorized' }, 401);
-      }
-
-      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
-      if (!storeContext) {
-        return c.json({ message: 'Organization or store not found.' }, 404);
-      }
-
-      const access = await resolveOrganizationStoreAccess({
-        database,
-        userId: identity.userId,
-        context: storeContext,
-      });
-      if (!access.effective.canManageStore) {
-        return c.json({ message: 'Forbidden' }, 403);
-      }
-
-      const now = new Date();
-      await database
-        .delete(dbSchema.publicSiteIntakeField)
-        .where(
-          and(
-            eq(dbSchema.publicSiteIntakeField.organizationId, storeContext.organizationId),
-            eq(dbSchema.publicSiteIntakeField.storeId, storeContext.storeId),
-          ),
-        );
-
-      if (body.fields.length > 0) {
-        await database.insert(dbSchema.publicSiteIntakeField).values(
-          body.fields.map((field, index) => {
-            const fieldType = field.fieldType;
-            const options =
-              fieldType === 'select' ? normalizePublicSiteIntakeOptions(field.options) : [];
-            const helpText = normalizePublicSiteText(field.helpText, null);
-            const placeholder =
-              fieldType === 'checkbox' ? null : normalizePublicSiteText(field.placeholder, null);
-            return {
-              id: crypto.randomUUID(),
-              organizationId: storeContext.organizationId,
-              storeId: storeContext.storeId,
-              fieldKey: field.fieldId.trim(),
-              label: field.label.trim(),
-              fieldType,
-              required: field.required,
-              optionsJson: options.length > 0 ? JSON.stringify(options) : null,
-              helpText,
-              placeholder,
-              visibleOnPublic: field.visibleOnPublic,
-              sortOrder: index,
-              createdAt: now,
-              updatedAt: now,
-            };
-          }),
-        );
-      }
-
-      return c.json(await serializePublicSiteIntakeFields({ context: storeContext }), 200);
     })();
   });
 
@@ -4460,7 +4129,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
   authRoutes.openapi(listParticipantsRoute, (c) => {
     return (async () => {
-      const query = c.req.valid('query');
+      const { orgSlug, storeSlug } = c.req.valid('param');
       const headers = c.req.raw.headers;
       const identity = await getSessionIdentity(headers);
 
@@ -4468,55 +4137,34 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         return c.json({ message: 'Unauthorized' }, 401);
       }
 
-      const organizationId = resolveOrganizationId(
-        query.organizationId,
-        identity.activeOrganizationId,
-      );
-      if (!organizationId) {
-        return c.json({ message: 'organizationId is required.' }, 400);
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
       }
 
-      if (query.storeId) {
-        const storeContext = await resolveStoreContextByIds({
-          organizationId,
-          storeId: query.storeId,
-        });
-        if (!storeContext) {
-          return c.json({ message: 'Store not found.' }, 404);
-        }
-
-        const access = await resolveOrganizationStoreAccess({
-          database,
-          userId: identity.userId,
-          context: storeContext,
-        });
-        if (!access.effective.canManageParticipants && !access.effective.canManageStore) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
-      } else {
-        const hasAccess = await hasOrganizationAdminAccess({
-          organizationId,
-          userId: identity.userId,
-        });
-        if (!hasAccess) {
-          return c.json({ message: 'Forbidden' }, 403);
-        }
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageParticipants && !access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
       }
 
       const premiumGate = await readOrganizationEntitlementGate({
         database,
         env,
-        organizationId,
+        organizationId: storeContext.organizationId,
         key: RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
       }
 
-      const filters = [eq(dbSchema.participant.organizationId, organizationId)];
-      if (query.storeId) {
-        filters.push(eq(dbSchema.participant.storeId, query.storeId));
-      }
+      const filters = [
+        eq(dbSchema.participant.organizationId, storeContext.organizationId),
+        eq(dbSchema.participant.storeId, storeContext.storeId),
+      ];
 
       const rows = await database
         .select({
@@ -4546,7 +4194,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
 
   authRoutes.openapi(selfEnrollParticipantRoute, (c) => {
     return (async () => {
-      const body = c.req.valid('json');
+      const { orgSlug, storeSlug } = c.req.valid('param');
       const headers = c.req.raw.headers;
       const identity = await getSessionIdentity(headers);
       if (!identity) {
@@ -4557,43 +4205,12 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       }
       const participantEmail = identity.email;
 
-      const publicOrganizationSlug = resolvePublicEventsOrganizationSlug(env);
-      if (!publicOrganizationSlug) {
-        return c.json({ message: 'PUBLIC_EVENTS_ORG_SLUG is not configured.' }, 503);
-      }
-
-      const publicOrganizationRows = await database
-        .select({
-          id: dbSchema.organization.id,
-        })
-        .from(dbSchema.organization)
-        .where(eq(dbSchema.organization.slug, publicOrganizationSlug))
-        .limit(1);
-      const publicOrganization = publicOrganizationRows[0];
-      if (!publicOrganization) {
-        return c.json({ message: 'Public events organization was not found.' }, 503);
-      }
-
-      const publicStoreSlug = resolvePublicEventsStoreSlug(env) ?? publicOrganizationSlug;
-      if (publicStoreSlug.length === 0) {
-        return c.json({ message: 'PUBLIC_EVENTS_STORE_SLUG is invalid.' }, 503);
-      }
-
-      if (body.organizationId !== publicOrganization.id) {
-        return c.json({ message: 'Forbidden' }, 403);
-      }
-
-      const storeContext = body.storeId
-        ? await resolveStoreContextByIds({
-            organizationId: body.organizationId,
-            storeId: body.storeId,
-          })
-        : await resolveStoreContextBySlugs({
-            orgSlug: publicOrganizationSlug,
-            storeSlug: publicStoreSlug,
-          });
+      const storeContext = await resolveStoreContextBySlugs({
+        orgSlug,
+        storeSlug,
+      });
       if (!storeContext) {
-        return c.json({ message: 'Public events store was not found.' }, 503);
+        return c.json({ message: 'Organization or store not found.' }, 404);
       }
 
       const currentSession = await auth.api.getSession({ headers });
@@ -4617,7 +4234,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           .from(dbSchema.participant)
           .where(
             and(
-              eq(dbSchema.participant.organizationId, body.organizationId),
+              eq(dbSchema.participant.organizationId, storeContext.organizationId),
               eq(dbSchema.participant.storeId, storeContext.storeId),
               or(
                 eq(dbSchema.participant.userId, identity.userId),
@@ -4645,7 +4262,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       try {
         await database.insert(dbSchema.participant).values({
           id: participantId,
-          organizationId: body.organizationId,
+          organizationId: storeContext.organizationId,
           storeId: storeContext.storeId,
           userId: identity.userId,
           email: participantEmail,
@@ -4704,89 +4321,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     database,
     env,
     serviceImageUploadService,
-  });
-
-  const scopedOrganizationApiPrefixes = [
-    '/participants',
-    '/services',
-    '/slots',
-    '/recurring-schedules',
-    '/bookings',
-    '/ticket-types',
-    '/ticket-packs',
-    '/ticket-purchases',
-  ] as const;
-
-  authRoutes.on(['GET', 'POST'], '/orgs/:orgSlug/stores/:storeSlug/*', async (c) => {
-    const { orgSlug, storeSlug } = c.req.param();
-    const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
-    if (!storeContext) {
-      return c.json({ message: 'Organization or store not found.' }, 404);
-    }
-
-    const scopedPrefix = `/orgs/${orgSlug}/stores/${storeSlug}`;
-    const prefixIndex = c.req.path.indexOf(scopedPrefix);
-    if (prefixIndex < 0) {
-      return c.json({ message: 'Not found.' }, 404);
-    }
-
-    const suffix = c.req.path.slice(prefixIndex + scopedPrefix.length);
-    if (
-      suffix.length === 0 ||
-      !scopedOrganizationApiPrefixes.some((candidatePrefix) => suffix.startsWith(candidatePrefix))
-    ) {
-      return c.json({ message: 'Not found.' }, 404);
-    }
-
-    const targetUrl = new URL(c.req.url);
-    targetUrl.pathname = `/organizations${suffix}`;
-    targetUrl.searchParams.set('organizationId', storeContext.organizationId);
-    targetUrl.searchParams.set('storeId', storeContext.storeId);
-
-    const headers = new Headers(c.req.raw.headers);
-    headers.delete('content-length');
-
-    let body: BodyInit | undefined;
-    if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-      const contentType = c.req.raw.headers.get('content-type') ?? '';
-      if (contentType.includes('application/json')) {
-        const payload = await c.req.raw
-          .clone()
-          .json()
-          .catch(() => ({}));
-        const nextPayload =
-          typeof payload === 'object' && payload !== null
-            ? {
-                ...payload,
-                organizationId: storeContext.organizationId,
-                storeId: storeContext.storeId,
-              }
-            : {
-                organizationId: storeContext.organizationId,
-                storeId: storeContext.storeId,
-              };
-        body = JSON.stringify(nextPayload);
-        headers.set('content-type', 'application/json');
-      } else {
-        body = await c.req.raw.clone().arrayBuffer();
-      }
-    }
-
-    const forwardedRequest = new Request(targetUrl.toString(), {
-      method: c.req.method,
-      headers,
-      body,
-    });
-
-    const executionCtx = (() => {
-      try {
-        return c.executionCtx;
-      } catch {
-        return undefined;
-      }
-    })();
-
-    return authRoutes.fetch(forwardedRequest, c.env, executionCtx);
   });
 
   return authRoutes;

@@ -387,10 +387,16 @@ describe('共通レイアウト', () => {
 
 	it('アクティブポータルが参加者の場合は参加者サイドバー項目だけを表示する', async () => {
 		mocks.readLastAuthPortal.mockReturnValue('participant');
+		mocks.loadOrganizations.mockResolvedValue({
+			organizations: [{ id: 'org-1', name: 'Org One', slug: 'org-one' }],
+			activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
+			stores: [buildStoreEntry()],
+			activeStore: buildStoreEntry()
+		});
 		renderLayout();
 
 		await vi.waitFor(() => {
-			expect(document.querySelector('a[href="/events"]')).not.toBeNull();
+			expect(document.querySelector('a[href="/org-one/room-a/events"]')).not.toBeNull();
 			expect(document.querySelector('a[href="/admin/dashboard"]')).toBeNull();
 			expect(document.body.textContent).toContain('管理者へ切替');
 			expect(document.body.textContent).not.toContain('参加者へ切替');
@@ -525,10 +531,16 @@ describe('共通レイアウト', () => {
 				hasActiveOrganization: true
 			})
 		);
+		mocks.loadOrganizations.mockResolvedValue({
+			organizations: [{ id: 'org-1', name: 'Org One', slug: 'org-one' }],
+			activeOrganization: { id: 'org-1', name: 'Org One', slug: 'org-one' },
+			stores: [buildStoreEntry()],
+			activeStore: buildStoreEntry()
+		});
 		renderLayout();
 
 		await vi.waitFor(() => {
-			expect(document.querySelector('a[href="/events"]')).not.toBeNull();
+			expect(document.querySelector('a[href="/org-one/room-a/events"]')).not.toBeNull();
 			expect(document.querySelector('a[href="/admin/dashboard"]')).toBeNull();
 		});
 	});

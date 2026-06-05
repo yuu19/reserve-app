@@ -36,6 +36,9 @@ const serializeBookingsWithAnswers = async (
     Array<{ id: string; fieldId: string; labelSnapshot: string; value: unknown }>
   >();
   for (const answer of answers) {
+    if (!answer.bookingId) {
+      continue;
+    }
     const bookingAnswers = answersByBookingId.get(answer.bookingId) ?? [];
     bookingAnswers.push({
       id: answer.id,
@@ -90,7 +93,9 @@ export const listMyBookings = async (
     to: parseIsoDateOrNull(query.to),
   });
 
-  return jsonResult(await serializeBookingsWithAnswers(ctx, rows as Array<Record<string, unknown>>));
+  return jsonResult(
+    await serializeBookingsWithAnswers(ctx, rows as Array<Record<string, unknown>>),
+  );
 };
 
 /**
@@ -131,5 +136,7 @@ export const listStaffBookings = async (
     to: parseIsoDateOrNull(query.to),
   });
 
-  return jsonResult(await serializeBookingsWithAnswers(ctx, rows as Array<Record<string, unknown>>));
+  return jsonResult(
+    await serializeBookingsWithAnswers(ctx, rows as Array<Record<string, unknown>>),
+  );
 };
