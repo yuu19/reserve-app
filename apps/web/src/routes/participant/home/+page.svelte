@@ -80,7 +80,9 @@
 			</CardHeader>
 			<CardContent class="flex flex-wrap gap-2">
 				{#if publicEventsPath}
-					<Button type="button" variant="outline" onclick={goToPublicEvents}>イベント一覧へ移動</Button>
+					<Button type="button" variant="outline" onclick={goToPublicEvents}
+						>イベント一覧へ移動</Button
+					>
 				{/if}
 				<Button
 					type="button"

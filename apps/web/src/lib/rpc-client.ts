@@ -1472,6 +1472,12 @@ const createStoreScopeRequiredResponse = () =>
 	});
 
 const storeScopeRequired = () => Promise.resolve(createStoreScopeRequiredResponse());
+const storeScopeRequiredWithArgs =
+	<Args extends unknown[]>() =>
+	(...args: Args) => {
+		void args;
+		return storeScopeRequired();
+	};
 
 /**
  * web UI が backend auth API を呼ぶための集約 client。
@@ -1506,7 +1512,7 @@ export const authRpc = {
 			credentials: 'include'
 		});
 	},
-	createServiceImageUploadUrl: (_json: CreateServiceImageUploadUrlInput) => storeScopeRequired(),
+	createServiceImageUploadUrl: storeScopeRequiredWithArgs<[CreateServiceImageUploadUrlInput]>(),
 	uploadServiceImageBySignedUrl: (uploadUrl: string, file: File, contentType: string) =>
 		fetch(uploadUrl, {
 			method: 'PUT',
@@ -1654,8 +1660,8 @@ export const authRpc = {
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/reject`, { json: {} }),
 	cancelInvitation: ({ invitationId }: InvitationActionInput) =>
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/cancel`, { json: {} }),
-	listParticipants: (_organizationId?: string) => storeScopeRequired(),
-	selfEnrollParticipant: (_json: SelfEnrollParticipantInput) => storeScopeRequired(),
+	listParticipants: storeScopeRequiredWithArgs<[string?]>(),
+	selfEnrollParticipant: storeScopeRequiredWithArgs<[SelfEnrollParticipantInput]>(),
 	listUserParticipantInvitations: () => authFetch('/api/v1/auth/invitations/user'),
 	getParticipantInvitationDetail: (invitationId: string) =>
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}`),
@@ -1665,44 +1671,44 @@ export const authRpc = {
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/reject`, { json: {} }),
 	cancelParticipantInvitation: ({ invitationId }: InvitationActionInput) =>
 		authFetch(`/api/v1/auth/invitations/${encodeURIComponent(invitationId)}/cancel`, { json: {} }),
-	listServices: (_query?: ListServicesQuery) => storeScopeRequired(),
-	createService: (_json: CreateServiceInput) => storeScopeRequired(),
-	updateService: (_json: UpdateServiceInput) => storeScopeRequired(),
-	archiveService: (_json: ArchiveServiceInput) => storeScopeRequired(),
-	listSlots: (_query: ListSlotsQuery) => storeScopeRequired(),
-	createSlot: (_json: CreateSlotInput) => storeScopeRequired(),
-	updateSlot: (_json: UpdateSlotInput) => storeScopeRequired(),
-	listAvailableSlots: (_query: ListSlotsQuery) => storeScopeRequired(),
-	cancelSlot: (_json: CancelSlotInput) => storeScopeRequired(),
-	listRecurringSchedules: (_query?: ListRecurringSchedulesQuery) => storeScopeRequired(),
-	createRecurringSchedule: (_json: CreateRecurringScheduleInput) => storeScopeRequired(),
-	updateRecurringSchedule: (_json: UpdateRecurringScheduleInput) => storeScopeRequired(),
-	upsertRecurringScheduleException: (_json: UpsertRecurringExceptionInput) => storeScopeRequired(),
-	generateRecurringSlots: (_json: GenerateRecurringSlotsInput) => storeScopeRequired(),
-	createBooking: (_json: CreateBookingInput) => storeScopeRequired(),
-	listMyBookings: (_query?: ListBookingsQuery) => storeScopeRequired(),
-	cancelBooking: (_json: BookingActionInput) => storeScopeRequired(),
-	listBookings: (_query?: ListBookingsQuery) => storeScopeRequired(),
-	cancelBookingByStaff: (_json: BookingActionInput) => storeScopeRequired(),
-	approveBooking: (_bookingId: string) => storeScopeRequired(),
-	rejectBooking: (_json: BookingActionInput) => storeScopeRequired(),
-	rescheduleBooking: (_json: BookingRescheduleInput) => storeScopeRequired(),
-	markBookingNoShow: (_json: BookingNoShowInput) => storeScopeRequired(),
-	markBookingAttendance: (_json: BookingAttendanceInput) => storeScopeRequired(),
-	createTicketType: (_json: CreateTicketTypeInput) => storeScopeRequired(),
-	updateTicketType: (_json: UpdateTicketTypeInput) => storeScopeRequired(),
-	listTicketTypes: (_query?: ListTicketTypesQuery) => storeScopeRequired(),
-	listPurchasableTicketTypes: (_organizationId?: string) => storeScopeRequired(),
-	grantTicketPack: (_json: GrantTicketPackInput) => storeScopeRequired(),
-	listTicketPacks: (_query: ListTicketPacksQuery) => storeScopeRequired(),
-	adjustTicketPack: (_json: AdjustTicketPackInput) => storeScopeRequired(),
-	listMyTicketPacks: (_organizationId?: string) => storeScopeRequired(),
-	createTicketPurchase: (_json: CreateTicketPurchaseInput) => storeScopeRequired(),
-	listMyTicketPurchases: (_query?: ListMyTicketPurchasesQuery) => storeScopeRequired(),
-	listTicketPurchases: (_query?: ListTicketPurchasesQuery) => storeScopeRequired(),
-	approveTicketPurchase: (_json: TicketPurchaseApproveInput) => storeScopeRequired(),
-	rejectTicketPurchase: (_json: TicketPurchaseRejectInput) => storeScopeRequired(),
-	cancelTicketPurchase: (_json: TicketPurchaseCancelInput) => storeScopeRequired(),
+	listServices: storeScopeRequiredWithArgs<[ListServicesQuery?]>(),
+	createService: storeScopeRequiredWithArgs<[CreateServiceInput]>(),
+	updateService: storeScopeRequiredWithArgs<[UpdateServiceInput]>(),
+	archiveService: storeScopeRequiredWithArgs<[ArchiveServiceInput]>(),
+	listSlots: storeScopeRequiredWithArgs<[ListSlotsQuery]>(),
+	createSlot: storeScopeRequiredWithArgs<[CreateSlotInput]>(),
+	updateSlot: storeScopeRequiredWithArgs<[UpdateSlotInput]>(),
+	listAvailableSlots: storeScopeRequiredWithArgs<[ListSlotsQuery]>(),
+	cancelSlot: storeScopeRequiredWithArgs<[CancelSlotInput]>(),
+	listRecurringSchedules: storeScopeRequiredWithArgs<[ListRecurringSchedulesQuery?]>(),
+	createRecurringSchedule: storeScopeRequiredWithArgs<[CreateRecurringScheduleInput]>(),
+	updateRecurringSchedule: storeScopeRequiredWithArgs<[UpdateRecurringScheduleInput]>(),
+	upsertRecurringScheduleException: storeScopeRequiredWithArgs<[UpsertRecurringExceptionInput]>(),
+	generateRecurringSlots: storeScopeRequiredWithArgs<[GenerateRecurringSlotsInput]>(),
+	createBooking: storeScopeRequiredWithArgs<[CreateBookingInput]>(),
+	listMyBookings: storeScopeRequiredWithArgs<[ListBookingsQuery?]>(),
+	cancelBooking: storeScopeRequiredWithArgs<[BookingActionInput]>(),
+	listBookings: storeScopeRequiredWithArgs<[ListBookingsQuery?]>(),
+	cancelBookingByStaff: storeScopeRequiredWithArgs<[BookingActionInput]>(),
+	approveBooking: storeScopeRequiredWithArgs<[string]>(),
+	rejectBooking: storeScopeRequiredWithArgs<[BookingActionInput]>(),
+	rescheduleBooking: storeScopeRequiredWithArgs<[BookingRescheduleInput]>(),
+	markBookingNoShow: storeScopeRequiredWithArgs<[BookingNoShowInput]>(),
+	markBookingAttendance: storeScopeRequiredWithArgs<[BookingAttendanceInput]>(),
+	createTicketType: storeScopeRequiredWithArgs<[CreateTicketTypeInput]>(),
+	updateTicketType: storeScopeRequiredWithArgs<[UpdateTicketTypeInput]>(),
+	listTicketTypes: storeScopeRequiredWithArgs<[ListTicketTypesQuery?]>(),
+	listPurchasableTicketTypes: storeScopeRequiredWithArgs<[string?]>(),
+	grantTicketPack: storeScopeRequiredWithArgs<[GrantTicketPackInput]>(),
+	listTicketPacks: storeScopeRequiredWithArgs<[ListTicketPacksQuery]>(),
+	adjustTicketPack: storeScopeRequiredWithArgs<[AdjustTicketPackInput]>(),
+	listMyTicketPacks: storeScopeRequiredWithArgs<[string?]>(),
+	createTicketPurchase: storeScopeRequiredWithArgs<[CreateTicketPurchaseInput]>(),
+	listMyTicketPurchases: storeScopeRequiredWithArgs<[ListMyTicketPurchasesQuery?]>(),
+	listTicketPurchases: storeScopeRequiredWithArgs<[ListTicketPurchasesQuery?]>(),
+	approveTicketPurchase: storeScopeRequiredWithArgs<[TicketPurchaseApproveInput]>(),
+	rejectTicketPurchase: storeScopeRequiredWithArgs<[TicketPurchaseRejectInput]>(),
+	cancelTicketPurchase: storeScopeRequiredWithArgs<[TicketPurchaseCancelInput]>(),
 	listInvitationsScoped: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/invitations')),
 	createInvitationScoped: (context: ScopedApiContext, json: CreateStoreInvitationInput) =>

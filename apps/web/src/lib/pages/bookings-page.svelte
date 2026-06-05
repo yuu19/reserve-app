@@ -3435,7 +3435,8 @@
 																						type="button"
 																						variant="destructive"
 																						size="sm"
-																						onclick={() => submitCancelBookingByStaff(row.booking.id)}
+																						onclick={() =>
+																							submitCancelBookingByStaff(row.booking.id)}
 																						disabled={busy || !!staffAction}
 																					>
 																						{isStaffActionInProgress('cancel', row.booking.id)

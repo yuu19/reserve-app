@@ -10,11 +10,6 @@
 	}: WithoutChild<DialogPrimitive.TriggerProps> = $props();
 </script>
 
-<DialogPrimitive.Trigger
-	bind:ref
-	data-slot="dialog-trigger"
-	class={cn(className)}
-	{...restProps}
->
+<DialogPrimitive.Trigger bind:ref data-slot="dialog-trigger" class={cn(className)} {...restProps}>
 	{@render children?.()}
 </DialogPrimitive.Trigger>

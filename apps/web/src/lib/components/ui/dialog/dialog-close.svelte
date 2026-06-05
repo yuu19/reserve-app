@@ -10,11 +10,6 @@
 	}: WithoutChild<DialogPrimitive.CloseProps> = $props();
 </script>
 
-<DialogPrimitive.Close
-	bind:ref
-	data-slot="dialog-close"
-	class={cn(className)}
-	{...restProps}
->
+<DialogPrimitive.Close bind:ref data-slot="dialog-close" class={cn(className)} {...restProps}>
 	{@render children?.()}
 </DialogPrimitive.Close>

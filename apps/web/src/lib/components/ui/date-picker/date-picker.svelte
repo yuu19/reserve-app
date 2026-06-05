@@ -56,12 +56,11 @@
 			open = false;
 		}
 	};
-
 </script>
 
 <div class="space-y-2">
 	<Label for={id}>{required ? `${label}*` : label}</Label>
-	<input type="hidden" {name} value={value} />
+	<input type="hidden" {name} {value} />
 	<Popover.Root bind:open>
 		<Popover.Trigger class="w-full">
 			<Button

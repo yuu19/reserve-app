@@ -40,7 +40,9 @@ describe('料金ページ', () => {
 		expect(plansSection?.textContent).toContain(
 			'公開予約受付を始める基本機能と、運営拡張に必要な Premium 機能を比較できます。'
 		);
-		expect(plansSection?.querySelector('a[href^="https://docs.wakureserve.com/manuals/"]')).toBeNull();
+		expect(
+			plansSection?.querySelector('a[href^="https://docs.wakureserve.com/manuals/"]')
+		).toBeNull();
 		expect(plansSection?.textContent).not.toContain('準備中');
 	});
 
@@ -93,21 +95,23 @@ describe('料金ページ', () => {
 			expect(link?.getAttribute('href')).toBe(expected.href);
 		}
 
-		const bookingReceptionRow = Array.from(comparisonTable?.querySelectorAll('tbody tr') ?? []).find(
+		const bookingReceptionRow = Array.from(
+			comparisonTable?.querySelectorAll('tbody tr') ?? []
+		).find(
 			(element) =>
 				element.textContent?.includes('予約受付') &&
 				element.textContent?.includes('単発予約枠の公開と受付')
 		);
 		expect(bookingReceptionRow).toBeTruthy();
 		expect(
-			bookingReceptionRow
-				?.querySelector('a[href="https://docs.wakureserve.com/manuals/admin/one-time-slots"]')
-				?.textContent
+			bookingReceptionRow?.querySelector(
+				'a[href="https://docs.wakureserve.com/manuals/admin/one-time-slots"]'
+			)?.textContent
 		).toContain('予約受付');
 		expect(
-			bookingReceptionRow
-				?.querySelector('a[href="https://docs.wakureserve.com/manuals/admin/recurring-schedules"]')
-				?.textContent
+			bookingReceptionRow?.querySelector(
+				'a[href="https://docs.wakureserve.com/manuals/admin/recurring-schedules"]'
+			)?.textContent
 		).toContain('定期スケジュール');
 	});
 
@@ -137,8 +141,6 @@ describe('料金ページ', () => {
 
 		expect(preparingManualLink?.textContent).toContain('準備中');
 		expect(publishedManualLink?.textContent).not.toContain('準備中');
-		await expect
-			.element(page.getByRole('link', { name: /予約受付/ }).first())
-			.toBeInTheDocument();
+		await expect.element(page.getByRole('link', { name: /予約受付/ }).first()).toBeInTheDocument();
 	});
 });

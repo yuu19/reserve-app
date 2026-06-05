@@ -279,18 +279,18 @@
 			toast.error('フォーム名を入力してください。');
 			return false;
 		}
-		const keys = new Set<string>();
+		const keys: string[] = [];
 		for (const field of draft.fields) {
 			const fieldKey = field.fieldKey.trim();
 			if (!/^[a-zA-Z0-9_-]+$/u.test(fieldKey)) {
 				toast.error('項目キーは英数字、ハイフン、アンダースコアで入力してください。');
 				return false;
 			}
-			if (keys.has(fieldKey)) {
+			if (keys.includes(fieldKey)) {
 				toast.error('項目キーが重複しています。');
 				return false;
 			}
-			keys.add(fieldKey);
+			keys.push(fieldKey);
 			if (!field.label.trim()) {
 				toast.error('項目ラベルを入力してください。');
 				return false;
