@@ -62,7 +62,7 @@ export const loadForms = async (context: ScopedApiContext): Promise<FormListPayl
 	const response = await authRpc.listFormsScoped(context);
 	const payload = await parseResponseBody(response);
 	if (!response.ok || !isFormList(payload)) {
-		throw new Error(toErrorMessage(payload, 'フォーム一覧の取得に失敗しました。'));
+		throw new Error(toErrorMessage(payload, '予約フォーム設定一覧の取得に失敗しました。'));
 	}
 	return payload;
 };
@@ -77,7 +77,7 @@ export const loadForm = async (
 		return null;
 	}
 	if (!response.ok || !isForm(payload)) {
-		throw new Error(toErrorMessage(payload, 'フォームの取得に失敗しました。'));
+		throw new Error(toErrorMessage(payload, '予約フォーム設定の取得に失敗しました。'));
 	}
 	return payload;
 };
@@ -91,8 +91,8 @@ export const createForm = async (context: ScopedApiContext, input: CreateFormInp
 		message: resultMessage(
 			response,
 			payload,
-			'フォームを作成しました。',
-			'フォームの作成に失敗しました。'
+			'予約フォーム設定を作成しました。',
+			'予約フォーム設定の作成に失敗しました。'
 		)
 	};
 };
@@ -110,8 +110,8 @@ export const updateForm = async (
 		message: resultMessage(
 			response,
 			payload,
-			'フォームを保存しました。',
-			'フォームの保存に失敗しました。'
+			'予約フォーム設定を保存しました。',
+			'予約フォーム設定の保存に失敗しました。'
 		)
 	};
 };
@@ -125,8 +125,8 @@ export const publishForm = async (context: ScopedApiContext, formId: string) => 
 		message: resultMessage(
 			response,
 			payload,
-			'フォームを公開しました。',
-			'フォームの公開に失敗しました。'
+			'予約フォーム設定を公開しました。',
+			'予約フォーム設定の公開に失敗しました。'
 		)
 	};
 };
@@ -140,8 +140,8 @@ export const archiveForm = async (context: ScopedApiContext, formId: string) => 
 		message: resultMessage(
 			response,
 			payload,
-			'フォームをアーカイブしました。',
-			'フォームのアーカイブに失敗しました。'
+			'予約フォーム設定をアーカイブしました。',
+			'予約フォーム設定のアーカイブに失敗しました。'
 		)
 	};
 };
@@ -159,8 +159,8 @@ export const createFormAssignment = async (
 		message: resultMessage(
 			response,
 			payload,
-			'フォームの割り当てを保存しました。',
-			'フォームの割り当てに失敗しました。'
+			'表示対象の詳細設定を保存しました。',
+			'表示対象の詳細設定に失敗しました。'
 		)
 	};
 };
@@ -178,8 +178,8 @@ export const deleteFormAssignment = async (
 		message: resultMessage(
 			response,
 			payload,
-			'フォームの割り当てを解除しました。',
-			'フォームの割り当て解除に失敗しました。'
+			'表示対象の詳細設定を解除しました。',
+			'表示対象の詳細設定解除に失敗しました。'
 		)
 	};
 };

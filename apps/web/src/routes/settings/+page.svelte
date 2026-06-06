@@ -345,7 +345,7 @@
 							href={formsPath ? resolve(formsPath as Pathname) : undefined}
 							disabled={!formsPath}
 						>
-							フォーム管理へ移動
+							予約フォーム設定へ移動
 						</Button>
 						<Button
 							type="button"

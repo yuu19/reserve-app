@@ -78,11 +78,59 @@
 		description: string;
 		fields: FieldDraft[];
 	};
+	type FormTypeDefinition = {
+		value: FormType;
+		label: string;
+		description: string;
+		defaultName: string;
+		defaultDescription: string;
+		previewSectionTitle: string;
+	};
+	type DefaultBookingField = {
+		label: string;
+		requirement: '必須' | '任意';
+		policy: '固定';
+	};
 
-	const formTypeOptions: Array<{ value: FormType; label: string }> = [
-		{ value: 'reservation_input', label: '予約入力' },
-		{ value: 'pre_survey', label: '事前アンケート' },
-		{ value: 'consent', label: '同意フォーム' }
+	const formTypeDefinitions: FormTypeDefinition[] = [
+		{
+			value: 'reservation_input',
+			label: '予約フォーム設定',
+			description: '公開予約時に入力してもらう追加項目です。',
+			defaultName: '予約フォームの追加項目',
+			defaultDescription: '公開予約フォームの標準項目の後に表示する追加質問です。',
+			previewSectionTitle: '追加質問'
+		},
+		{
+			value: 'pre_survey',
+			label: '事前アンケート',
+			description: '予約前に確認したい質問です。',
+			defaultName: '事前アンケート',
+			defaultDescription: '予約前に確認したい質問を設定します。',
+			previewSectionTitle: '事前アンケート'
+		},
+		{
+			value: 'consent',
+			label: '同意事項',
+			description: 'キャンセルポリシーなどへの同意チェックです。',
+			defaultName: '同意事項',
+			defaultDescription: '予約前に同意してもらう内容を設定します。',
+			previewSectionTitle: '同意事項'
+		}
+	];
+	const formTypeOptions: Array<{ value: FormType; label: string }> = formTypeDefinitions.map(
+		(definition) => ({
+			value: definition.value,
+			label: definition.label
+		})
+	);
+	const defaultBookingFields: DefaultBookingField[] = [
+		{ label: '氏名', requirement: '必須', policy: '固定' },
+		{ label: 'メールアドレス', requirement: '必須', policy: '固定' },
+		{ label: '電話番号', requirement: '任意', policy: '固定' },
+		{ label: '人数', requirement: '必須', policy: '固定' },
+		{ label: '同伴者名', requirement: '任意', policy: '固定' },
+		{ label: '備考', requirement: '任意', policy: '固定' }
 	];
 	const fieldTypeOptions: Array<{ value: FormFieldType; label: string }> = [
 		{ value: 'text', label: '1行テキスト' },
@@ -123,6 +171,10 @@
 	const routePathname = $derived(getRoutePathFromUrlPath(page.url.pathname));
 	const routeScopedContext = $derived(extractScopedRouteContext(page.url.pathname));
 	const routeFormId = $derived(page.params.formId ?? '');
+	const routeNewFormType = $derived.by((): FormType => {
+		const value = page.url.searchParams.get('type');
+		return isFormType(value) ? value : 'reservation_input';
+	});
 	const navigationContext = $derived(currentContext ?? routeScopedContext);
 	const mode = $derived.by((): Mode => {
 		if (routePathname.endsWith('/new')) {
@@ -139,9 +191,11 @@
 	const formsPath = $derived(
 		navigationContext ? buildScopedPath(navigationContext, '/admin/forms') : '/admin/forms'
 	);
-	const newFormPath = $derived(
-		navigationContext ? buildScopedPath(navigationContext, '/admin/forms/new') : '/admin/forms/new'
-	);
+	const newFormPathForType = (formType: FormType): ResolvablePath =>
+		preserveScopedRouteContext(
+			`/admin/forms/new?type=${encodeURIComponent(formType)}`,
+			page.url.pathname
+		) as ResolvablePath;
 	const editFormPath = (formId: string): ResolvablePath =>
 		preserveScopedRouteContext(
 			`/admin/forms/${encodeURIComponent(formId)}`,
@@ -163,6 +217,16 @@
 			page.url.pathname
 		) as ResolvablePath;
 
+	function isFormType(value: string | null): value is FormType {
+		return value === 'reservation_input' || value === 'pre_survey' || value === 'consent';
+	}
+	const getFormTypeDefinition = (value: FormType): FormTypeDefinition => {
+		const definition = formTypeDefinitions.find((item) => item.value === value);
+		if (definition) {
+			return definition;
+		}
+		return formTypeDefinitions[0] as FormTypeDefinition;
+	};
 	const formTypeLabel = (value: FormType): string =>
 		formTypeOptions.find((option) => option.value === value)?.label ?? value;
 	const fieldTypeLabel = (value: FormFieldType): string =>
@@ -179,6 +243,21 @@
 		return '下書き';
 	};
 	const formatDateTime = (value: string): string => new Date(value).toLocaleString('ja-JP');
+	const sortFormsByUpdatedAtDesc = (left: FormPayload, right: FormPayload): number =>
+		new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+	const formTypeGroups = $derived.by(() =>
+		formTypeDefinitions.map((definition) => {
+			const activeForms = [
+				...forms.filter((form) => form.formType === definition.value && form.status !== 'archived')
+			].sort(sortFormsByUpdatedAtDesc);
+			return {
+				definition,
+				activeForms,
+				primaryForm: activeForms[0] ?? null
+			};
+		})
+	);
+	const selectedDefinition = $derived(getFormTypeDefinition(draft.formType));
 	const optionTextToPayload = (value: string) =>
 		Array.from(
 			new Set(
@@ -200,14 +279,20 @@
 		optionsText: field.options.map((option) => option.label || option.value).join('\n')
 	});
 
+	const createDefaultDraft = (formType: FormType): FormDraft => {
+		const definition = getFormTypeDefinition(formType);
+		const fields: FieldDraft[] = [];
+		return {
+			formType,
+			name: definition.defaultName,
+			description: definition.defaultDescription,
+			fields: [createEmptyField(formType, fields)]
+		};
+	};
+
 	const applyFormToDraft = (form: FormPayload | null) => {
 		if (!form) {
-			draft = {
-				formType: 'reservation_input',
-				name: '',
-				description: '',
-				fields: [createEmptyField()]
-			};
+			draft = createDefaultDraft(routeNewFormType);
 			return;
 		}
 		draft = {
@@ -218,9 +303,9 @@
 		};
 	};
 
-	const createEmptyFieldKey = () => {
-		const keys = new Set(draft.fields.map((field) => field.fieldKey.trim()));
-		let index = draft.fields.length + 1;
+	const createEmptyFieldKey = (fields: FieldDraft[] = draft.fields) => {
+		const keys = new Set(fields.map((field) => field.fieldKey.trim()));
+		let index = fields.length + 1;
 		let key = `field_${index}`;
 		while (keys.has(key)) {
 			index += 1;
@@ -229,13 +314,16 @@
 		return key;
 	};
 
-	const createEmptyField = (): FieldDraft => ({
-		fieldKey: createEmptyFieldKey(),
-		fieldType: draft.formType === 'consent' ? 'consent' : 'text',
+	const createEmptyField = (
+		formType: FormType = draft.formType,
+		fields: FieldDraft[] = draft.fields
+	): FieldDraft => ({
+		fieldKey: createEmptyFieldKey(fields),
+		fieldType: formType === 'consent' ? 'consent' : 'text',
 		label: '',
 		description: '',
 		placeholder: '',
-		required: draft.formType === 'consent',
+		required: formType === 'consent',
 		optionsText: ''
 	});
 
@@ -435,16 +523,29 @@
 				description: draft.description.trim() || null,
 				fields: toFieldInputs()
 			};
-			const result =
-				mode === 'new' || !selectedForm
-					? await createForm(currentContext, input)
-					: await updateForm(currentContext, selectedForm.id, input);
+			const formId = selectedForm?.id ?? null;
+			const isNewForm = mode === 'new' || !formId;
+			const result = isNewForm
+				? await createForm(currentContext, input)
+				: await updateForm(currentContext, formId, input);
 			if (!result.ok || !result.form) {
 				toast.error(result.message);
 				return;
 			}
+			let savedForm = result.form;
+			if (isNewForm && savedForm.assignments.length === 0) {
+				const assignmentResult = await createFormAssignment(currentContext, savedForm.id, {
+					targetType: 'store',
+					targetId: savedForm.storeId
+				});
+				if (assignmentResult.ok && assignmentResult.assignments) {
+					savedForm = { ...savedForm, assignments: assignmentResult.assignments };
+				} else {
+					toast.warning('作成しましたが、店舗全体への自動割り当てに失敗しました。');
+				}
+			}
 			toast.success(result.message);
-			await goto(resolve(editFormPath(result.form.id)));
+			await goto(resolve(editFormPath(savedForm.id)));
 		} finally {
 			busy = false;
 		}
@@ -540,6 +641,35 @@
 		}
 	};
 
+	const assignmentSummary = (form: FormPayload): string => {
+		if (
+			form.assignments.some(
+				(assignment) => assignment.targetType === 'store' && assignment.targetId === form.storeId
+			)
+		) {
+			return 'この店舗のすべての予約に表示';
+		}
+		if (form.assignments.length > 0) {
+			return 'サービス・予約枠ごとの詳細設定あり';
+		}
+		return '未割り当て';
+	};
+
+	const draftOptions = (field: FieldDraft) => optionTextToPayload(field.optionsText);
+
+	const previewPlaceholder = (field: FieldDraft): string => {
+		if (field.placeholder.trim()) {
+			return field.placeholder.trim();
+		}
+		if (field.fieldType === 'date') {
+			return '2026-06-06';
+		}
+		if (field.fieldType === 'textarea') {
+			return '入力内容';
+		}
+		return '回答';
+	};
+
 	const renderAnswerValue = (value: unknown): string => {
 		if (Array.isArray(value)) {
 			return value.join('、');
@@ -561,7 +691,7 @@
 				await refresh();
 			} catch (error) {
 				errorMessage =
-					error instanceof Error ? error.message : 'フォーム管理の読み込みに失敗しました。';
+					error instanceof Error ? error.message : '予約フォーム設定の読み込みに失敗しました。';
 			} finally {
 				loading = false;
 			}
@@ -573,20 +703,16 @@
 	<header class="space-y-3">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="space-y-2">
-				<h1 class="text-3xl font-semibold text-foreground">フォーム管理</h1>
+				<h1 class="text-3xl font-semibold text-foreground">予約フォーム設定</h1>
 				<p class="text-sm text-muted-foreground">
-					予約入力、事前アンケート、同意フォームを店舗・サービス・予約枠へ割り当てます。
+					公開予約時に表示する標準項目、追加質問、事前アンケート、同意事項を管理します。
 				</p>
 			</div>
-			<Button type="button" href={resolve(newFormPath as ResolvablePath)}>
-				<Plus class="size-4" />
-				新規フォーム
-			</Button>
 		</div>
 		{#if mode !== 'list'}
 			<Button type="button" variant="ghost" href={resolve(formsPath as ResolvablePath)}>
 				<ArrowLeft class="size-4" />
-				フォーム一覧へ戻る
+				設定一覧へ戻る
 			</Button>
 		{/if}
 	</header>
@@ -594,7 +720,7 @@
 	{#if loading}
 		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardContent class="py-6">
-				<p class="text-sm text-muted-foreground">フォーム管理を読み込み中…</p>
+				<p class="text-sm text-muted-foreground">予約フォーム設定を読み込み中…</p>
 			</CardContent>
 		</Card>
 	{:else if !currentContext}
@@ -611,143 +737,143 @@
 			</CardContent>
 		</Card>
 	{:else if mode === 'list'}
-		<Card class="surface-panel border-border/80 shadow-lg">
-			<CardHeader>
-				<h2 class="text-xl font-semibold text-foreground">フォーム一覧</h2>
-				<CardDescription>公開済みフォームだけを予約時に解決します。</CardDescription>
-			</CardHeader>
-			<CardContent>
-				{#if forms.length === 0}
-					<div class="rounded-md border border-border/80 bg-secondary/40 p-4">
-						<p class="text-sm text-muted-foreground">フォームは未作成です。</p>
-					</div>
-				{:else}
-					<div class="overflow-x-auto">
-						<table class="w-full min-w-[760px] text-sm">
-							<thead class="border-b border-border/80 text-left text-muted-foreground">
-								<tr>
-									<th class="px-3 py-2 font-medium">フォーム</th>
-									<th class="px-3 py-2 font-medium">種類</th>
-									<th class="px-3 py-2 font-medium">状態</th>
-									<th class="px-3 py-2 font-medium">項目</th>
-									<th class="px-3 py-2 font-medium">割り当て</th>
-									<th class="px-3 py-2 font-medium">更新日時</th>
-									<th class="px-3 py-2 font-medium">操作</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-border/70">
-								{#each forms as form (form.id)}
-									<tr>
-										<td class="px-3 py-3 font-medium text-foreground">{form.name}</td>
-										<td class="px-3 py-3">{formTypeLabel(form.formType)}</td>
-										<td class="px-3 py-3">
-											<Badge variant={form.status === 'published' ? 'outline' : 'secondary'}>
-												{statusLabel(form.status)}
-											</Badge>
-										</td>
-										<td class="px-3 py-3">{form.fields.length}</td>
-										<td class="px-3 py-3">{form.assignments.length}</td>
-										<td class="px-3 py-3">{formatDateTime(form.updatedAt)}</td>
-										<td class="px-3 py-3">
-											<div class="flex flex-wrap gap-2">
+		<section class="grid gap-4 lg:grid-cols-3" aria-label="予約フォーム設定メニュー">
+			{#each formTypeGroups as group (group.definition.value)}
+				<Card class="surface-panel border-border/80 shadow-lg">
+					<CardHeader class="space-y-3">
+						<div class="space-y-1">
+							<h2 class="text-xl font-semibold text-foreground">{group.definition.label}</h2>
+							<CardDescription>{group.definition.description}</CardDescription>
+						</div>
+						<div class="flex flex-wrap gap-2">
+							{#if group.primaryForm}
+								<Badge variant={group.primaryForm.status === 'published' ? 'outline' : 'secondary'}>
+									{statusLabel(group.primaryForm.status)}
+								</Badge>
+								<Badge variant="secondary">{group.primaryForm.fields.length}項目</Badge>
+							{:else}
+								<Badge variant="secondary">未作成</Badge>
+							{/if}
+						</div>
+					</CardHeader>
+					<CardContent class="space-y-4">
+						{#if group.primaryForm}
+							<div class="space-y-2 rounded-md border border-border/80 bg-background p-3 text-sm">
+								<p class="font-medium text-foreground">{group.primaryForm.name}</p>
+								<p class="text-muted-foreground">{assignmentSummary(group.primaryForm)}</p>
+								<p class="text-xs text-muted-foreground">
+									更新日時: {formatDateTime(group.primaryForm.updatedAt)}
+								</p>
+							</div>
+							{#if group.activeForms.length > 1}
+								<div class="space-y-2 text-sm">
+									<p class="font-medium text-foreground">同じ種類のフォーム</p>
+									<div class="space-y-2">
+										{#each group.activeForms.slice(1) as form (form.id)}
+											<div
+												class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-secondary/30 px-3 py-2"
+											>
+												<span class="min-w-0 truncate">{form.name}</span>
 												<Button
 													type="button"
 													variant="outline"
 													size="sm"
 													href={resolve(editFormPath(form.id))}
 												>
-													<FilePenLine class="size-4" />
 													編集
 												</Button>
-												<Button
-													type="button"
-													variant="outline"
-													size="sm"
-													href={resolve(assignmentsPath(form.id))}
-												>
-													<ClipboardList class="size-4" />
-													割り当て
-												</Button>
-												<Button
-													type="button"
-													variant="outline"
-													size="sm"
-													href={resolve(submissionsPath(form.id))}
-												>
-													回答
-												</Button>
 											</div>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
-			</CardContent>
-		</Card>
-	{:else if mode === 'new' || mode === 'edit'}
-		<Card class="surface-panel border-border/80 shadow-lg">
-			<CardHeader class="space-y-2">
-				<div class="flex flex-wrap items-start justify-between gap-3">
-					<div class="space-y-1">
-						<h2 class="text-xl font-semibold text-foreground">
-							{mode === 'new' ? 'フォーム作成' : 'フォーム編集'}
-						</h2>
-						<CardDescription>
-							{selectedForm?.currentPublishedVersion
-								? `公開版 v${selectedForm.currentPublishedVersion.versionNumber}`
-								: '公開前'}
-						</CardDescription>
-					</div>
-					{#if selectedForm}
+										{/each}
+									</div>
+								</div>
+							{/if}
+						{:else}
+							<div class="rounded-md border border-border/80 bg-secondary/40 p-3">
+								<p class="text-sm text-muted-foreground">
+									最初に作成すると、この店舗のすべての予約に表示されます。
+								</p>
+							</div>
+						{/if}
 						<div class="flex flex-wrap gap-2">
 							<Button
 								type="button"
-								variant="outline"
-								onclick={publishSelectedForm}
-								disabled={busy || selectedForm.status === 'archived'}
+								href={resolve(
+									group.primaryForm
+										? editFormPath(group.primaryForm.id)
+										: newFormPathForType(group.definition.value)
+								)}
 							>
-								<Send class="size-4" />
-								公開
+								<FilePenLine class="size-4" />
+								{group.primaryForm
+									? `${group.definition.label}を編集`
+									: `${group.definition.label}を作成`}
 							</Button>
-							<Button
-								type="button"
-								variant="destructive"
-								onclick={archiveSelectedForm}
-								disabled={busy || selectedForm.status === 'archived'}
-							>
-								<Archive class="size-4" />
-								アーカイブ
-							</Button>
+							{#if group.primaryForm}
+								<Button
+									type="button"
+									variant="outline"
+									href={resolve(submissionsPath(group.primaryForm.id))}
+								>
+									回答を見る
+								</Button>
+							{/if}
 						</div>
-					{/if}
-				</div>
-			</CardHeader>
-			<CardContent>
-				<form
-					class="space-y-6"
-					onsubmit={(event) => {
-						event.preventDefault();
-						void saveForm();
-					}}
-				>
-					<div class="grid gap-4 md:grid-cols-3">
+					</CardContent>
+				</Card>
+			{/each}
+		</section>
+	{:else if mode === 'new' || mode === 'edit'}
+		<form
+			class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]"
+			onsubmit={(event) => {
+				event.preventDefault();
+				void saveForm();
+			}}
+		>
+			<Card class="surface-panel border-border/80 shadow-lg">
+				<CardHeader class="space-y-2">
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div class="space-y-1">
+							<h2 class="text-xl font-semibold text-foreground">{selectedDefinition.label}</h2>
+							<CardDescription>
+								{selectedForm?.currentPublishedVersion
+									? `公開版 v${selectedForm.currentPublishedVersion.versionNumber}`
+									: '公開前'}
+								{#if selectedForm}
+									<span class="mx-1">/</span>{assignmentSummary(selectedForm)}
+								{:else}
+									<span class="mx-1">/</span>作成後、この店舗のすべての予約に表示
+								{/if}
+							</CardDescription>
+						</div>
+						{#if selectedForm}
+							<div class="flex flex-wrap gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									onclick={publishSelectedForm}
+									disabled={busy || selectedForm.status === 'archived'}
+								>
+									<Send class="size-4" />
+									公開
+								</Button>
+								<Button
+									type="button"
+									variant="destructive"
+									onclick={archiveSelectedForm}
+									disabled={busy || selectedForm.status === 'archived'}
+								>
+									<Archive class="size-4" />
+									アーカイブ
+								</Button>
+							</div>
+						{/if}
+					</div>
+				</CardHeader>
+				<CardContent class="space-y-6">
+					<div class="grid gap-4 md:grid-cols-2">
 						<div class="space-y-2">
-							<Label for="form-type">フォーム種別</Label>
-							<select
-								id="form-type"
-								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-								bind:value={draft.formType}
-								disabled={busy}
-							>
-								{#each formTypeOptions as option (option.value)}
-									<option value={option.value}>{option.label}</option>
-								{/each}
-							</select>
-						</div>
-						<div class="space-y-2 md:col-span-2">
-							<Label for="form-name">フォーム名</Label>
+							<Label for="form-name">設定名</Label>
 							<Input
 								id="form-name"
 								bind:value={draft.name}
@@ -756,7 +882,16 @@
 								required
 							/>
 						</div>
-						<div class="space-y-2 md:col-span-3">
+						<div class="space-y-2">
+							<Label for="form-type-readonly">種類</Label>
+							<div
+								id="form-type-readonly"
+								class="flex h-10 items-center rounded-md border border-border/80 bg-secondary/40 px-3 text-sm text-foreground"
+							>
+								{selectedDefinition.label}
+							</div>
+						</div>
+						<div class="space-y-2 md:col-span-2">
 							<Label for="form-description">説明</Label>
 							<textarea
 								id="form-description"
@@ -768,9 +903,55 @@
 						</div>
 					</div>
 
+					{#if draft.formType === 'reservation_input'}
+						<section class="space-y-3" aria-labelledby="default-fields-heading">
+							<div class="space-y-1">
+								<h3 id="default-fields-heading" class="text-lg font-semibold text-foreground">
+									デフォルト項目
+								</h3>
+								<p class="text-sm text-muted-foreground">
+									標準項目は予約データとして保存されます。フォーム基盤の項目には含めません。
+								</p>
+							</div>
+							<div class="overflow-hidden rounded-md border border-border/80">
+								<table class="w-full text-sm">
+									<thead class="bg-secondary/60 text-left text-muted-foreground">
+										<tr>
+											<th class="px-3 py-2 font-medium">項目</th>
+											<th class="px-3 py-2 font-medium">必須</th>
+											<th class="px-3 py-2 font-medium">変更</th>
+										</tr>
+									</thead>
+									<tbody class="divide-y divide-border/70 bg-background">
+										{#each defaultBookingFields as field (field.label)}
+											<tr>
+												<td class="px-3 py-2 font-medium text-foreground">{field.label}</td>
+												<td class="px-3 py-2">{field.requirement}</td>
+												<td class="px-3 py-2 text-muted-foreground">{field.policy}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						</section>
+					{:else}
+						<div class="rounded-md border border-border/80 bg-secondary/40 p-4">
+							<p class="text-sm text-muted-foreground">
+								氏名、メールアドレス、電話番号、人数、同伴者名、備考は予約フォームの標準項目として先に表示されます。
+							</p>
+						</div>
+					{/if}
+
 					<section class="space-y-4" aria-labelledby="form-fields-heading">
 						<div class="flex flex-wrap items-center justify-between gap-3">
-							<h3 id="form-fields-heading" class="text-lg font-semibold text-foreground">項目</h3>
+							<div class="space-y-1">
+								<h3 id="form-fields-heading" class="text-lg font-semibold text-foreground">
+									カスタム項目
+								</h3>
+								<p class="text-sm text-muted-foreground">
+									追加した項目だけがフォーム回答として保存されます。
+								</p>
+							</div>
 							<Button type="button" variant="outline" onclick={addField} disabled={busy}>
 								<Plus class="size-4" />
 								項目を追加
@@ -778,7 +959,7 @@
 						</div>
 						{#if draft.fields.length === 0}
 							<div class="rounded-md border border-border/80 bg-secondary/40 p-4">
-								<p class="text-sm text-muted-foreground">項目は未設定です。</p>
+								<p class="text-sm text-muted-foreground">カスタム項目は未設定です。</p>
 							</div>
 						{:else}
 							<div class="space-y-4">
@@ -787,23 +968,7 @@
 										<legend class="px-1 text-sm font-semibold text-foreground">
 											{field.label || `項目 ${index + 1}`}
 										</legend>
-										<div class="grid gap-4 md:grid-cols-4">
-											<div class="space-y-2">
-												<Label for={`form-field-key-${index}`}>項目キー</Label>
-												<Input
-													id={`form-field-key-${index}`}
-													value={field.fieldKey}
-													oninput={(event) =>
-														updateField(
-															index,
-															'fieldKey',
-															(event.currentTarget as HTMLInputElement).value
-														)}
-													disabled={busy}
-													maxlength={120}
-													required
-												/>
-											</div>
+										<div class="grid gap-4 md:grid-cols-2">
 											<div class="space-y-2">
 												<Label for={`form-field-type-${index}`}>種類</Label>
 												<select
@@ -823,7 +988,7 @@
 													{/each}
 												</select>
 											</div>
-											<div class="space-y-2 md:col-span-2">
+											<div class="space-y-2">
 												<Label for={`form-field-label-${index}`}>ラベル</Label>
 												<Input
 													id={`form-field-label-${index}`}
@@ -839,7 +1004,7 @@
 													required
 												/>
 											</div>
-											<div class="space-y-2 md:col-span-2">
+											<div class="space-y-2">
 												<Label for={`form-field-placeholder-${index}`}>プレースホルダー</Label>
 												<Input
 													id={`form-field-placeholder-${index}`}
@@ -856,7 +1021,7 @@
 													maxlength={200}
 												/>
 											</div>
-											<div class="space-y-2 md:col-span-2">
+											<div class="space-y-2">
 												<Label for={`form-field-description-${index}`}>補足</Label>
 												<Input
 													id={`form-field-description-${index}`}
@@ -872,7 +1037,7 @@
 												/>
 											</div>
 											{#if requiresOptions(field.fieldType)}
-												<div class="space-y-2 md:col-span-4">
+												<div class="space-y-2 md:col-span-2">
 													<Label for={`form-field-options-${index}`}>選択肢</Label>
 													<textarea
 														id={`form-field-options-${index}`}
@@ -885,10 +1050,11 @@
 																(event.currentTarget as HTMLTextAreaElement).value
 															)}
 														disabled={busy}
+														placeholder="1行に1つずつ入力"
 													></textarea>
 												</div>
 											{/if}
-											<div class="flex flex-wrap items-center gap-2 md:col-span-4">
+											<div class="flex flex-wrap items-center gap-2 md:col-span-2">
 												<label
 													class="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm"
 												>
@@ -949,7 +1115,8 @@
 								variant="outline"
 								href={resolve(assignmentsPath(selectedForm.id))}
 							>
-								割り当て
+								<ClipboardList class="size-4" />
+								表示対象の詳細設定
 							</Button>
 							<Button
 								type="button"
@@ -960,9 +1127,179 @@
 							</Button>
 						{/if}
 					</div>
-				</form>
-			</CardContent>
-		</Card>
+				</CardContent>
+			</Card>
+
+			<aside class="lg:sticky lg:top-6 lg:self-start">
+				<Card class="surface-panel border-border/80 shadow-lg">
+					<CardHeader>
+						<h2 class="text-xl font-semibold text-foreground">予約者から見えるプレビュー</h2>
+						<CardDescription
+							>標準項目と追加項目を、公開予約フォームに近い並びで表示します。</CardDescription
+						>
+					</CardHeader>
+					<CardContent class="space-y-5">
+						<section class="space-y-3" aria-labelledby="preview-customer-heading">
+							<h3 id="preview-customer-heading" class="text-base font-semibold text-foreground">
+								予約者情報
+							</h3>
+							<div class="grid gap-3">
+								<div class="grid gap-3 sm:grid-cols-2">
+									<div class="space-y-1.5">
+										<Label for="preview-customer-name">氏名 *</Label>
+										<Input id="preview-customer-name" value="" placeholder="山田 太郎" disabled />
+									</div>
+									<div class="space-y-1.5">
+										<Label for="preview-customer-email">メールアドレス *</Label>
+										<Input
+											id="preview-customer-email"
+											value=""
+											placeholder="taro@example.com"
+											disabled
+										/>
+									</div>
+								</div>
+								<div class="grid gap-3 sm:grid-cols-2">
+									<div class="space-y-1.5">
+										<Label for="preview-customer-phone">電話番号</Label>
+										<Input
+											id="preview-customer-phone"
+											value=""
+											placeholder="090-0000-0000"
+											disabled
+										/>
+									</div>
+									<div class="space-y-1.5">
+										<Label for="preview-participants-count">人数 *</Label>
+										<Input id="preview-participants-count" value="1" disabled />
+									</div>
+								</div>
+								<div class="space-y-1.5">
+									<Label for="preview-companions">同伴者名</Label>
+									<textarea
+										id="preview-companions"
+										class="min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-sm opacity-70"
+										placeholder="1行に1名ずつ入力"
+										disabled
+									></textarea>
+								</div>
+								<div class="space-y-1.5">
+									<Label for="preview-note">備考</Label>
+									<textarea
+										id="preview-note"
+										class="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm opacity-70"
+										disabled
+									></textarea>
+								</div>
+							</div>
+						</section>
+
+						<section class="space-y-3" aria-labelledby="preview-custom-heading">
+							<h3 id="preview-custom-heading" class="text-base font-semibold text-foreground">
+								{selectedDefinition.previewSectionTitle}
+							</h3>
+							{#if draft.fields.length === 0}
+								<div class="rounded-md border border-border/80 bg-secondary/40 p-3">
+									<p class="text-sm text-muted-foreground">追加項目はありません。</p>
+								</div>
+							{:else}
+								<div class="space-y-3">
+									{#each draft.fields as field, index (field.fieldKey || index)}
+										{@const previewId = `preview-custom-${index}`}
+										<div class="space-y-1.5">
+											{#if field.fieldType === 'consent'}
+												<label
+													class="flex items-start gap-3 rounded-md border border-border/80 bg-secondary/30 p-3 text-sm"
+												>
+													<input type="checkbox" class="mt-1 size-4" disabled />
+													<span class="min-w-0 space-y-1">
+														<span class="block font-medium text-foreground">
+															{field.label || `項目 ${index + 1}`}{field.required ? ' *' : ''}
+														</span>
+														{#if field.description}
+															<span class="block text-xs text-muted-foreground">
+																{field.description}
+															</span>
+														{/if}
+													</span>
+												</label>
+											{:else if field.fieldType === 'checkbox'}
+												<div class="space-y-2">
+													<p class="text-sm font-medium text-foreground">
+														{field.label || `項目 ${index + 1}`}{field.required ? ' *' : ''}
+													</p>
+													<div class="grid gap-2">
+														{#each draftOptions(field) as option (option.value)}
+															<label
+																class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/30 px-3 py-2 text-sm"
+															>
+																<input type="checkbox" disabled />
+																<span>{option.label}</span>
+															</label>
+														{/each}
+													</div>
+												</div>
+											{:else if field.fieldType === 'radio'}
+												<div class="space-y-2">
+													<p class="text-sm font-medium text-foreground">
+														{field.label || `項目 ${index + 1}`}{field.required ? ' *' : ''}
+													</p>
+													<div class="grid gap-2">
+														{#each draftOptions(field) as option (option.value)}
+															<label
+																class="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/30 px-3 py-2 text-sm"
+															>
+																<input type="radio" disabled />
+																<span>{option.label}</span>
+															</label>
+														{/each}
+													</div>
+												</div>
+											{:else if field.fieldType === 'select'}
+												<Label for={previewId}>
+													{field.label || `項目 ${index + 1}`}{field.required ? ' *' : ''}
+												</Label>
+												<select
+													id={previewId}
+													class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm opacity-70"
+													disabled
+												>
+													<option>{draftOptions(field)[0]?.label ?? '選択してください'}</option>
+												</select>
+											{:else if field.fieldType === 'textarea'}
+												<Label for={previewId}>
+													{field.label || `項目 ${index + 1}`}{field.required ? ' *' : ''}
+												</Label>
+												<textarea
+													id={previewId}
+													class="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm opacity-70"
+													placeholder={previewPlaceholder(field)}
+													disabled
+												></textarea>
+											{:else}
+												<Label for={previewId}>
+													{field.label || `項目 ${index + 1}`}{field.required ? ' *' : ''}
+												</Label>
+												<Input
+													id={previewId}
+													type={field.fieldType === 'date' ? 'date' : 'text'}
+													value=""
+													placeholder={previewPlaceholder(field)}
+													disabled
+												/>
+											{/if}
+											{#if field.description && field.fieldType !== 'consent'}
+												<p class="text-xs text-muted-foreground">{field.description}</p>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</section>
+					</CardContent>
+				</Card>
+			</aside>
+		</form>
 	{:else if mode === 'assignments' && selectedForm}
 		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardHeader>
