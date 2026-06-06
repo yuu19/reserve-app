@@ -160,7 +160,6 @@ export const publicSiteSetting = sqliteTable(
       .references(() => store.id, { onDelete: 'cascade' }),
     siteName: text('site_name'),
     description: text('description'),
-    descriptionFormat: text('description_format').default('plain_text').notNull(),
     address: text('address'),
     phone: text('phone'),
     businessHours: text('business_hours'),

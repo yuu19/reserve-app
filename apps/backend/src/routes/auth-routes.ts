@@ -20,13 +20,6 @@ import {
   sendOrganizationInvitationEmail,
   sendParticipantInvitationEmail,
 } from '../infra/email/resend.js';
-import {
-  PublicSiteDescriptionValidationError,
-  extractPlainText,
-  normalizePublicSiteDescription,
-  sanitizeLimitedHtml,
-  type PublicSiteDescriptionFormat,
-} from '@repo/rich-text';
 import type { OrganizationLogoService } from '../infra/storage/organization-logo-service.js';
 import type { ServiceImageUploadService } from '../infra/storage/service-image-upload-service.js';
 import { registerBookingRoutes } from './booking-routes.js';
@@ -435,7 +428,6 @@ const publicSiteSettingSchema = z.object({
   storeName: z.string().min(1),
   siteName: z.string().min(1),
   description: z.string().nullable(),
-  descriptionFormat: z.enum(['plain_text', 'limited_html']),
   address: z.string().nullable(),
   phone: z.string().nullable(),
   businessHours: z.string().nullable(),
@@ -447,8 +439,7 @@ const publicSiteSettingSchema = z.object({
 
 const publicSiteSettingBodySchema = z.object({
   siteName: z.string().trim().max(120).nullable().optional(),
-  description: z.string().nullable().optional(),
-  descriptionFormat: z.enum(['plain_text', 'limited_html']).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
   address: z.string().trim().max(500).nullable().optional(),
   phone: z.string().trim().max(80).nullable().optional(),
   businessHours: z.string().trim().max(1000).nullable().optional(),
@@ -2345,7 +2336,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       .select({
         siteName: dbSchema.publicSiteSetting.siteName,
         description: dbSchema.publicSiteSetting.description,
-        descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
         address: dbSchema.publicSiteSetting.address,
         phone: dbSchema.publicSiteSetting.phone,
         businessHours: dbSchema.publicSiteSetting.businessHours,
@@ -2363,10 +2353,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       )
       .limit(1);
     const setting = rows[0] ?? null;
-    const siteDescription = serializePublicSiteDescription(
-      setting?.description ?? null,
-      setting?.descriptionFormat ?? null,
-    );
 
     return {
       organizationId: context.organizationId,
@@ -2376,8 +2362,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       storeSlug: context.storeSlug,
       storeName: context.storeName,
       siteName: setting?.siteName?.trim() || context.storeName || context.organizationName,
-      description: siteDescription.description,
-      descriptionFormat: siteDescription.descriptionFormat,
+      description: setting?.description ?? null,
       address: setting?.address ?? null,
       phone: setting?.phone ?? null,
       businessHours: setting?.businessHours ?? null,
@@ -2846,29 +2831,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     }
     const trimmed = value?.trim() ?? '';
     return trimmed.length > 0 ? trimmed : null;
-  };
-
-  const normalizeStoredPublicSiteDescriptionFormat = (
-    value: string | null | undefined,
-  ): PublicSiteDescriptionFormat => (value === 'limited_html' ? 'limited_html' : 'plain_text');
-
-  const serializePublicSiteDescription = (
-    description: string | null | undefined,
-    descriptionFormat: string | null | undefined,
-  ): { description: string | null; descriptionFormat: PublicSiteDescriptionFormat } => {
-    if (!description) {
-      return { description: null, descriptionFormat: 'plain_text' };
-    }
-
-    if (normalizeStoredPublicSiteDescriptionFormat(descriptionFormat) === 'limited_html') {
-      const sanitized = sanitizeLimitedHtml(description);
-      if (!extractPlainText(sanitized)) {
-        return { description: null, descriptionFormat: 'plain_text' };
-      }
-      return { description: sanitized, descriptionFormat: 'limited_html' };
-    }
-
-    return { description, descriptionFormat: 'plain_text' };
   };
 
   const listAccessibleStoresForOrganization = async ({
@@ -3541,7 +3503,6 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .select({
           siteName: dbSchema.publicSiteSetting.siteName,
           description: dbSchema.publicSiteSetting.description,
-          descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
           address: dbSchema.publicSiteSetting.address,
           phone: dbSchema.publicSiteSetting.phone,
           businessHours: dbSchema.publicSiteSetting.businessHours,
@@ -3560,26 +3521,9 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .limit(1);
       const current = currentRows[0] ?? null;
       const now = new Date();
-      let nextDescription: ReturnType<typeof normalizePublicSiteDescription>;
-      try {
-        nextDescription = normalizePublicSiteDescription({
-          description: body.description,
-          descriptionFormat: body.descriptionFormat,
-          currentDescription: current?.description ?? null,
-          currentDescriptionFormat: normalizeStoredPublicSiteDescriptionFormat(
-            current?.descriptionFormat ?? null,
-          ),
-        });
-      } catch (error) {
-        if (error instanceof PublicSiteDescriptionValidationError) {
-          return c.json({ message: error.message }, 400);
-        }
-        throw error;
-      }
       const nextValues = {
         siteName: normalizePublicSiteText(body.siteName, current?.siteName ?? null),
-        description: nextDescription.description,
-        descriptionFormat: nextDescription.descriptionFormat,
+        description: normalizePublicSiteText(body.description, current?.description ?? null),
         address: normalizePublicSiteText(body.address, current?.address ?? null),
         phone: normalizePublicSiteText(body.phone, current?.phone ?? null),
         businessHours: normalizePublicSiteText(body.businessHours, current?.businessHours ?? null),

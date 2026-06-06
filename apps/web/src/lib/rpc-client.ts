@@ -1,6 +1,5 @@
 import { env } from '$env/dynamic/public';
 import { hc } from 'hono/client';
-import type { PublicSiteDescriptionFormat } from '@repo/rich-text';
 
 const backendUrl = env.PUBLIC_BACKEND_URL || 'http://localhost:3000';
 
@@ -443,7 +442,6 @@ export type PublicSiteProfilePayload = {
 	storeName: string;
 	siteName: string;
 	description?: string | null;
-	descriptionFormat: PublicSiteDescriptionFormat;
 	address?: string | null;
 	phone?: string | null;
 	businessHours?: string | null;
@@ -870,7 +868,6 @@ type UpdateStoreInput = {
 export type UpdatePublicSiteSettingsInput = {
 	siteName?: string | null;
 	description?: string | null;
-	descriptionFormat?: PublicSiteDescriptionFormat;
 	address?: string | null;
 	phone?: string | null;
 	businessHours?: string | null;

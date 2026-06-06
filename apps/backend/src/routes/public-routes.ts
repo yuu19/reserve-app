@@ -31,11 +31,6 @@ import {
   resolveRequiredForms,
   validateFormSubmissions,
 } from '../features/forms/form.logic.js';
-import {
-  extractPlainText,
-  sanitizeLimitedHtml,
-  type PublicSiteDescriptionFormat,
-} from '@repo/rich-text';
 
 const publicTicketTypeSchema = z.object({
   id: z.string(),
@@ -128,7 +123,6 @@ const publicSiteProfileSchema = z.object({
   storeName: z.string(),
   siteName: z.string(),
   description: z.string().nullable(),
-  descriptionFormat: z.enum(['plain_text', 'limited_html']),
   address: z.string().nullable(),
   phone: z.string().nullable(),
   businessHours: z.string().nullable(),
@@ -460,7 +454,6 @@ type PublicContext = {
   siteSetting: {
     siteName: string | null;
     description: string | null;
-    descriptionFormat: string;
     address: string | null;
     phone: string | null;
     businessHours: string | null;
@@ -632,35 +625,8 @@ const buildPublicTicketTypeHref = ({
     ticketTypeId,
   )}`;
 
-const normalizeStoredPublicSiteDescriptionFormat = (
-  value: string | null | undefined,
-): PublicSiteDescriptionFormat => (value === 'limited_html' ? 'limited_html' : 'plain_text');
-
-const serializePublicSiteDescription = (
-  description: string | null | undefined,
-  descriptionFormat: string | null | undefined,
-): { description: string | null; descriptionFormat: PublicSiteDescriptionFormat } => {
-  if (!description) {
-    return { description: null, descriptionFormat: 'plain_text' };
-  }
-
-  if (normalizeStoredPublicSiteDescriptionFormat(descriptionFormat) === 'limited_html') {
-    const sanitized = sanitizeLimitedHtml(description);
-    if (!extractPlainText(sanitized)) {
-      return { description: null, descriptionFormat: 'plain_text' };
-    }
-    return { description: sanitized, descriptionFormat: 'limited_html' };
-  }
-
-  return { description, descriptionFormat: 'plain_text' };
-};
-
 const readPublicSiteProfile = async ({ publicContext }: { publicContext: PublicContext }) => {
   const setting = publicContext.siteSetting;
-  const siteDescription = serializePublicSiteDescription(
-    setting?.description ?? null,
-    setting?.descriptionFormat ?? null,
-  );
 
   return {
     organizationId: publicContext.organization.id,
@@ -671,8 +637,7 @@ const readPublicSiteProfile = async ({ publicContext }: { publicContext: PublicC
     storeName: publicContext.store.name,
     siteName:
       setting?.siteName?.trim() || publicContext.store.name || publicContext.organization.name,
-    description: siteDescription.description,
-    descriptionFormat: siteDescription.descriptionFormat,
+    description: setting?.description ?? null,
     address: setting?.address ?? null,
     phone: setting?.phone ?? null,
     businessHours: setting?.businessHours ?? null,
@@ -867,7 +832,6 @@ const resolvePublicOrganizationStore = async ({
     .select({
       siteName: dbSchema.publicSiteSetting.siteName,
       description: dbSchema.publicSiteSetting.description,
-      descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
       address: dbSchema.publicSiteSetting.address,
       phone: dbSchema.publicSiteSetting.phone,
       businessHours: dbSchema.publicSiteSetting.businessHours,

@@ -12312,7 +12312,6 @@ describe('バックエンドアプリ', () => {
       organizationSlug: 'public-events-org',
       storeSlug: 'public-events-org',
       siteName: 'Public Events Site',
-      descriptionFormat: 'plain_text',
       address: '東京都千代田区1-1-1',
     });
 
@@ -12641,7 +12640,6 @@ describe('バックエンドアプリ', () => {
     expect(publicSitePayload.site).toMatchObject({
       siteName: 'Public Events Site',
       description: '予約サイトトップページの説明です。',
-      descriptionFormat: 'plain_text',
       address: '東京都千代田区1-1-1',
       phone: '03-0000-0000',
       businessHours: '平日 10:00-18:00',
@@ -13133,140 +13131,6 @@ describe('バックエンドアプリ', () => {
       },
     );
     expect([200, 409]).toContain(bookingAfterSelfEnrollResponse.status);
-  });
-
-  it('予約サイト説明を形式付きで正規化し公開 API に返す', async () => {
-    const owner = createAuthAgent(app);
-    await signUpUser({
-      agent: owner,
-      name: 'Rich Public Site Owner',
-      email: 'rich-public-site-owner@example.com',
-    });
-    await createOrganization({
-      agent: owner,
-      name: 'Rich Public Site Org',
-      slug: 'rich-public-site-org',
-    });
-
-    const path = '/api/v1/auth/orgs/rich-public-site-org/stores/rich-public-site-org/public-site';
-    const plainTextResponse = await owner.request(path, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        siteName: 'Rich Public Site',
-        description: '  1行目\n2行目  ',
-        status: 'public',
-      }),
-    });
-    expect(plainTextResponse.status).toBe(200);
-    expect(await toJson(plainTextResponse)).toMatchObject({
-      description: '1行目\n2行目',
-      descriptionFormat: 'plain_text',
-    });
-
-    const partialUpdateResponse = await owner.request(path, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        acceptBookings: false,
-      }),
-    });
-    expect(partialUpdateResponse.status).toBe(200);
-    expect(await toJson(partialUpdateResponse)).toMatchObject({
-      description: '1行目\n2行目',
-      descriptionFormat: 'plain_text',
-      acceptBookings: false,
-    });
-
-    const limitedHtmlResponse = await owner.request(path, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        description:
-          '<p class="x">紹介<script>alert(1)</script><img src=x onerror=alert(1)><strong>太字</strong><a href="https://example.com/path">公式</a><a href="javascript:alert(1)">危険</a></p>',
-        descriptionFormat: 'limited_html',
-        acceptBookings: true,
-      }),
-    });
-    expect(limitedHtmlResponse.status).toBe(200);
-    const limitedHtmlPayload = (await toJson(limitedHtmlResponse)) as Record<string, unknown>;
-    expect(limitedHtmlPayload.descriptionFormat).toBe('limited_html');
-    expect(limitedHtmlPayload.description).toContain('<strong>太字</strong>');
-    expect(limitedHtmlPayload.description).toContain(
-      '<a href="https://example.com/path" target="_blank" rel="nofollow noopener noreferrer">公式</a>',
-    );
-    expect(limitedHtmlPayload.description).toContain('危険');
-    expect(limitedHtmlPayload.description).not.toContain('<script');
-    expect(limitedHtmlPayload.description).not.toContain('<img');
-    expect(limitedHtmlPayload.description).not.toContain('javascript:');
-
-    const publicSiteResponse = await app.request(
-      '/api/v1/public/orgs/rich-public-site-org/stores/rich-public-site-org/site',
-    );
-    expect(publicSiteResponse.status).toBe(200);
-    const publicSitePayload = (await toJson(publicSiteResponse)) as Record<string, unknown>;
-    expect(publicSitePayload.site).toMatchObject({
-      description: limitedHtmlPayload.description,
-      descriptionFormat: 'limited_html',
-    });
-
-    const emptyHtmlResponse = await owner.request(path, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        description: '<p><br></p>',
-        descriptionFormat: 'limited_html',
-      }),
-    });
-    expect(emptyHtmlResponse.status).toBe(200);
-    expect(await toJson(emptyHtmlResponse)).toMatchObject({
-      description: null,
-      descriptionFormat: 'plain_text',
-    });
-
-    const tooLongPlainTextResponse = await owner.request(path, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        description: 'あ'.repeat(4001),
-        descriptionFormat: 'plain_text',
-      }),
-    });
-    expect(tooLongPlainTextResponse.status).toBe(400);
-
-    const tooLargeHtmlResponse = await owner.request(path, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        description: `<p>${'あ'.repeat(4000)}</p>`,
-        descriptionFormat: 'limited_html',
-      }),
-    });
-    expect(tooLargeHtmlResponse.status).toBe(400);
-
-    const invalidFormatResponse = await owner.request(path, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        description: '本文',
-        descriptionFormat: 'markdown',
-      }),
-    });
-    expect(invalidFormatResponse.status).toBe(400);
   });
 
   it('サービス名・説明の上限を検証し更新時に説明を正規化する', async () => {
