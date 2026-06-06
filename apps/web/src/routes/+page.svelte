@@ -185,7 +185,10 @@
 	const sectionHeadingClass = 'text-xl font-bold text-foreground md:text-2xl';
 	const panelClass = 'surface-panel rounded-md border border-border/80 shadow-sm';
 	const linkClass =
-		'inline-flex items-center gap-1.5 text-sm font-medium text-link underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+		'inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 px-1 text-sm font-medium text-link underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+	const headerButtonClass = 'min-h-11 w-full md:w-auto';
+	const ctaButtonClass = 'min-h-11 w-full sm:w-auto';
+	const pricingButtonClass = 'min-h-11 w-full md:w-auto';
 </script>
 
 <svelte:head>
@@ -207,7 +210,7 @@
 		>
 			<a
 				href={resolve('/' as Pathname)}
-				class="flex items-center gap-3 text-foreground no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+				class="flex min-h-11 items-center gap-3 text-foreground no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 			>
 				<img
 					src={resolve('/brand/reservation-logo-44x44.svg')}
@@ -225,7 +228,7 @@
 					<a class={linkClass} href={pricingHref}>料金</a>
 					<a class={linkClass} href="#portal-entry">ログイン</a>
 				</div>
-				<Button href={freeStartHref} class="w-full md:w-auto">
+				<Button href={freeStartHref} class={headerButtonClass}>
 					<ArrowRight class="size-4" aria-hidden="true" />
 					無料で始める
 				</Button>
@@ -235,9 +238,9 @@
 
 	<section class="border-b border-border/80 bg-card">
 		<div
-			class="mx-auto grid w-full max-w-6xl gap-8 px-4 py-8 md:px-8 md:py-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.8fr)] lg:items-center"
+			class="mx-auto grid w-full max-w-6xl grid-cols-[minmax(0,1fr)] gap-8 px-4 py-8 md:px-8 md:py-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,0.8fr)] lg:items-center"
 		>
-			<div class="space-y-6">
+			<div class="min-w-0 space-y-6">
 				<div class="space-y-3">
 					<p class={sectionEyebrowClass}>教室・スクール向け予約管理</p>
 					<h1 class="max-w-[44rem] text-2xl font-bold leading-tight text-foreground">
@@ -250,11 +253,11 @@
 				</div>
 
 				<div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-					<Button href={freeStartHref} class="w-full sm:w-auto">
+					<Button href={freeStartHref} class={ctaButtonClass}>
 						<ArrowRight class="size-4" aria-hidden="true" />
 						無料で始める
 					</Button>
-					<Button href={pricingHref} variant="outline" class="w-full sm:w-auto">
+					<Button href={pricingHref} variant="outline" class={ctaButtonClass}>
 						<ArrowRight class="size-4" aria-hidden="true" />
 						料金を見る
 					</Button>
@@ -272,7 +275,7 @@
 			</div>
 
 			<aside
-				class="rounded-md border border-border/80 bg-background p-4 shadow-sm"
+				class="min-w-0 rounded-md border border-border/80 bg-background p-4 shadow-sm"
 				aria-label="WakuReserveの運用画面プレビュー"
 			>
 				<div
@@ -299,8 +302,8 @@
 					{/each}
 				</div>
 
-				<div class="mt-4 overflow-x-auto rounded-md border border-border/80 bg-card">
-					<table class="w-full min-w-[440px] text-sm">
+				<div class="mt-4 min-w-0 overflow-x-auto rounded-md border border-border/80 bg-card">
+					<table class="w-full text-sm">
 						<thead class="bg-secondary text-muted-foreground">
 							<tr>
 								<th scope="col" class="px-3 py-2 text-left font-medium">時刻</th>
@@ -454,7 +457,7 @@
 						公開ページから直接決済は開始せず、申込や契約管理はログイン後の契約画面で扱います。
 					</p>
 				</div>
-				<Button href={pricingHref} variant="outline" class="w-full md:w-auto">
+				<Button href={pricingHref} variant="outline" class={pricingButtonClass}>
 					<ArrowRight class="size-4" aria-hidden="true" />
 					料金ページへ
 				</Button>
@@ -476,11 +479,11 @@
 			</div>
 
 			<div class="flex flex-col gap-3 sm:flex-row">
-				<Button href={freeStartHref} class="w-full sm:w-auto">
+				<Button href={freeStartHref} class={ctaButtonClass}>
 					<ArrowRight class="size-4" aria-hidden="true" />
 					無料で始める
 				</Button>
-				<Button href={pricingHref} variant="outline" class="w-full sm:w-auto">
+				<Button href={pricingHref} variant="outline" class={ctaButtonClass}>
 					<ArrowRight class="size-4" aria-hidden="true" />
 					料金を見る
 				</Button>
@@ -551,7 +554,7 @@
 				</div>
 			</div>
 
-			<Button href={freeStartHref} class="w-full sm:w-auto">
+			<Button href={freeStartHref} class={ctaButtonClass}>
 				<ArrowRight class="size-4" aria-hidden="true" />
 				無料で始める
 			</Button>
