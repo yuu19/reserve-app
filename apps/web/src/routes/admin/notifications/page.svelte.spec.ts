@@ -151,7 +151,7 @@ describe('通知一覧ページ', () => {
 		mocks.applyNotificationOutboxAction.mockResolvedValue({
 			ok: true,
 			status: 200,
-			message: '通知状態を更新しました。',
+			message: '通知の送信状況を更新しました。',
 			detail: {
 				notification: retryNotification,
 				logs: [
@@ -172,7 +172,7 @@ describe('通知一覧ページ', () => {
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 	});
 
-	it('通知 outbox 一覧を表示して詳細と手動 retry を実行する', async () => {
+	it('通知の送信状況一覧を表示して詳細と手動再送を実行する', async () => {
 		render(NotificationsRoute);
 
 		await expect
@@ -190,7 +190,7 @@ describe('通知一覧ページ', () => {
 		});
 		await expect.element(page.getByText('resend_delivery_failed').first()).toBeInTheDocument();
 
-		await page.getByRole('button', { name: '再試行' }).click();
+		await page.getByRole('button', { name: '再送待ちに戻す' }).click();
 		await vi.waitFor(() => {
 			expect(mocks.applyNotificationOutboxAction).toHaveBeenCalledWith(
 				{ orgSlug: 'org-one', storeSlug: 'room-a' },
@@ -198,14 +198,14 @@ describe('通知一覧ページ', () => {
 				'retry'
 			);
 		});
-		expect(mocks.toastSuccess).toHaveBeenCalledWith('通知状態を更新しました。');
+		expect(mocks.toastSuccess).toHaveBeenCalledWith('通知の送信状況を更新しました。');
 	});
 
-	it('絞り込み条件を指定して通知 outbox を検索する', async () => {
+	it('絞り込み条件を指定して通知の送信状況を検索する', async () => {
 		render(NotificationsRoute);
 
 		await expect.element(page.getByText('dead@example.com')).toBeInTheDocument();
-		await page.getByLabelText('ステータス').selectOptions('dead');
+		await page.getByLabelText('送信状況').selectOptions('dead');
 		await page.getByLabelText('通知種別').selectOptions('booking.confirmed');
 		await page.getByLabelText('宛先メール').fill('dead@example.com');
 		await page.getByRole('button', { name: '検索' }).click();

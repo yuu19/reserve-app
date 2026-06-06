@@ -48,10 +48,10 @@
 	const statusOptions: Array<{ value: StatusFilter; label: string }> = [
 		{ value: 'all', label: 'すべて' },
 		{ value: 'pending', label: '送信待ち' },
-		{ value: 'retry', label: '再試行待ち' },
-		{ value: 'processing', label: '処理中' },
+		{ value: 'retry', label: '再送待ち' },
+		{ value: 'processing', label: '送信中' },
 		{ value: 'sent', label: '送信済み' },
-		{ value: 'dead', label: '停止' },
+		{ value: 'dead', label: '送信失敗' },
 		{ value: 'cancelled', label: 'キャンセル済み' },
 		{ value: 'skipped', label: 'スキップ' },
 		{ value: 'ambiguous', label: '要確認' }
@@ -77,11 +77,11 @@
 
 	const statusLabel: Record<NotificationOutboxStatus, string> = {
 		pending: '送信待ち',
-		processing: '処理中',
+		processing: '送信中',
 		sent: '送信済み',
-		retry: '再試行待ち',
+		retry: '再送待ち',
 		cancelled: 'キャンセル済み',
-		dead: '停止',
+		dead: '送信失敗',
 		skipped: 'スキップ',
 		ambiguous: '要確認'
 	};
@@ -168,7 +168,7 @@
 	const actionButtonLabel = (action: NotificationOutboxAction): string => {
 		switch (action) {
 			case 'retry':
-				return '再試行';
+				return '再送待ちに戻す';
 			case 'cancel':
 				return 'キャンセル';
 			case 'mark_sent':
@@ -192,7 +192,7 @@
 	const actionConfirmation = (action: NotificationOutboxAction): string => {
 		switch (action) {
 			case 'retry':
-				return 'この通知を再試行待ちに戻しますか？';
+				return 'この通知を再送待ちに戻しますか？';
 			case 'cancel':
 				return 'この通知をキャンセルしますか？';
 			case 'mark_sent':
@@ -345,7 +345,7 @@
 		<div class="space-y-2">
 			<h1 class="text-3xl font-semibold text-foreground">通知一覧</h1>
 			<p class="text-sm text-muted-foreground">
-				予約通知メールの outbox 状態と送信履歴を確認します。
+				予約通知メールの送信状況と送信履歴を確認します。
 			</p>
 		</div>
 		<Button type="button" variant="outline" onclick={refresh} disabled={loading || listLoading}>
@@ -383,7 +383,7 @@
 					onsubmit={submitFilters}
 				>
 					<div class="space-y-2">
-						<Label for="notification-status-filter">ステータス</Label>
+						<Label for="notification-status-filter">送信状況</Label>
 						<select
 							id="notification-status-filter"
 							class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
@@ -451,7 +451,7 @@
 				<Card class="surface-panel min-w-0 border-border/80 shadow-lg">
 					<CardHeader class="flex flex-row items-center justify-between gap-3">
 						<div>
-							<h2 class="text-xl font-semibold text-foreground">通知ジョブ</h2>
+							<h2 class="text-xl font-semibold text-foreground">通知の送信状況</h2>
 							<CardDescription>{notifications.length}件</CardDescription>
 						</div>
 						{#if listLoading}
@@ -465,7 +465,7 @@
 									<tr class="border-b border-border/80 text-left text-xs text-muted-foreground">
 										<th class="px-3 py-2 font-medium">通知種別</th>
 										<th class="px-3 py-2 font-medium">宛先</th>
-										<th class="px-3 py-2 font-medium">ステータス</th>
+										<th class="px-3 py-2 font-medium">送信状況</th>
 										<th class="px-3 py-2 font-medium">試行</th>
 										<th class="px-3 py-2 font-medium">次回試行</th>
 										<th class="px-3 py-2 font-medium">送信時刻</th>
@@ -550,7 +550,7 @@
 									{:else}
 										<tr>
 											<td colspan="8" class="px-3 py-8 text-center text-sm text-muted-foreground">
-												通知ジョブはありません。
+												通知の送信状況はありません。
 											</td>
 										</tr>
 									{/each}
@@ -563,7 +563,7 @@
 				<Card class="surface-panel min-w-0 border-border/80 shadow-lg">
 					<CardHeader>
 						<h2 class="text-xl font-semibold text-foreground">通知詳細</h2>
-						<CardDescription>選択中の通知ジョブと送信履歴です。</CardDescription>
+						<CardDescription>選択中の通知の送信状況と送信履歴です。</CardDescription>
 					</CardHeader>
 					<CardContent>
 						{#if selectedDetail}

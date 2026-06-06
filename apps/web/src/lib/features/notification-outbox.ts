@@ -132,8 +132,8 @@ export const applyNotificationOutboxAction = async (
 		ok: response.ok,
 		status: response.status,
 		message: response.ok
-			? '通知状態を更新しました。'
-			: toErrorMessage(payload, '通知状態の更新に失敗しました。'),
+			? '通知の送信状況を更新しました。'
+			: toErrorMessage(payload, '通知の送信状況の更新に失敗しました。'),
 		detail
 	};
 };
