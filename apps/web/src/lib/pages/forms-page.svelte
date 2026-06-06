@@ -361,6 +361,60 @@
 
 	const requiresOptions = (fieldType: FormFieldType) =>
 		fieldType === 'radio' || fieldType === 'checkbox' || fieldType === 'select';
+	const allowsPlaceholder = (fieldType: FormFieldType) =>
+		fieldType === 'text' || fieldType === 'textarea';
+	const optionRows = (field: FieldDraft): string[] =>
+		field.optionsText.length > 0 ? field.optionsText.split('\n') : [];
+	const defaultOptionsText = '選択肢 1\n選択肢 2';
+
+	const updateFieldType = (index: number, fieldType: FormFieldType) => {
+		draft.fields = draft.fields.map((field, currentIndex) => {
+			if (currentIndex !== index) {
+				return field;
+			}
+			return {
+				...field,
+				fieldType,
+				placeholder: allowsPlaceholder(fieldType) ? field.placeholder : '',
+				required: fieldType === 'consent' ? true : field.required,
+				optionsText: requiresOptions(fieldType)
+					? field.optionsText.trim()
+						? field.optionsText
+						: defaultOptionsText
+					: ''
+			};
+		});
+	};
+
+	const updateFieldOption = (fieldIndex: number, optionIndex: number, value: string) => {
+		const field = draft.fields[fieldIndex];
+		if (!field) {
+			return;
+		}
+		const nextOptions = optionRows(field);
+		nextOptions[optionIndex] = value;
+		updateField(fieldIndex, 'optionsText', nextOptions.join('\n'));
+	};
+
+	const addFieldOption = (fieldIndex: number) => {
+		const field = draft.fields[fieldIndex];
+		if (!field) {
+			return;
+		}
+		const nextOptions = optionRows(field);
+		nextOptions.push(`選択肢 ${nextOptions.length + 1}`);
+		updateField(fieldIndex, 'optionsText', nextOptions.join('\n'));
+	};
+
+	const removeFieldOption = (fieldIndex: number, optionIndex: number) => {
+		const field = draft.fields[fieldIndex];
+		if (!field) {
+			return;
+		}
+		const nextOptions = optionRows(field);
+		nextOptions.splice(optionIndex, 1);
+		updateField(fieldIndex, 'optionsText', nextOptions.join('\n'));
+	};
 
 	const validateDraft = () => {
 		if (!draft.name.trim()) {
@@ -405,10 +459,7 @@
 			fieldType: field.fieldType,
 			label: field.label.trim(),
 			description: field.description.trim() || null,
-			placeholder:
-				field.fieldType === 'consent' || field.fieldType === 'checkbox'
-					? null
-					: field.placeholder.trim() || null,
+			placeholder: allowsPlaceholder(field.fieldType) ? field.placeholder.trim() || null : null,
 			required: field.required,
 			options: requiresOptions(field.fieldType) ? optionTextToPayload(field.optionsText) : [],
 			sortOrder: index
@@ -976,9 +1027,8 @@
 													class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 													value={field.fieldType}
 													onchange={(event) =>
-														updateField(
+														updateFieldType(
 															index,
-															'fieldType',
 															(event.currentTarget as HTMLSelectElement).value as FormFieldType
 														)}
 													disabled={busy}
@@ -1004,23 +1054,23 @@
 													required
 												/>
 											</div>
-											<div class="space-y-2">
-												<Label for={`form-field-placeholder-${index}`}>プレースホルダー</Label>
-												<Input
-													id={`form-field-placeholder-${index}`}
-													value={field.placeholder}
-													oninput={(event) =>
-														updateField(
-															index,
-															'placeholder',
-															(event.currentTarget as HTMLInputElement).value
-														)}
-													disabled={busy ||
-														field.fieldType === 'consent' ||
-														field.fieldType === 'checkbox'}
-													maxlength={200}
-												/>
-											</div>
+											{#if allowsPlaceholder(field.fieldType)}
+												<div class="space-y-2">
+													<Label for={`form-field-placeholder-${index}`}>プレースホルダー</Label>
+													<Input
+														id={`form-field-placeholder-${index}`}
+														value={field.placeholder}
+														oninput={(event) =>
+															updateField(
+																index,
+																'placeholder',
+																(event.currentTarget as HTMLInputElement).value
+															)}
+														disabled={busy}
+														maxlength={200}
+													/>
+												</div>
+											{/if}
 											<div class="space-y-2">
 												<Label for={`form-field-description-${index}`}>補足</Label>
 												<Input
@@ -1037,21 +1087,88 @@
 												/>
 											</div>
 											{#if requiresOptions(field.fieldType)}
-												<div class="space-y-2 md:col-span-2">
-													<Label for={`form-field-options-${index}`}>選択肢</Label>
-													<textarea
-														id={`form-field-options-${index}`}
-														class="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-														value={field.optionsText}
-														oninput={(event) =>
-															updateField(
-																index,
-																'optionsText',
-																(event.currentTarget as HTMLTextAreaElement).value
-															)}
-														disabled={busy}
-														placeholder="1行に1つずつ入力"
-													></textarea>
+												<div class="space-y-3 md:col-span-2">
+													<div class="flex flex-wrap items-center justify-between gap-2">
+														<p class="text-sm font-medium text-foreground">選択肢</p>
+														<Button
+															type="button"
+															variant="outline"
+															size="sm"
+															onclick={() => addFieldOption(index)}
+															disabled={busy}
+														>
+															<Plus class="size-4" />
+															選択肢を追加
+														</Button>
+													</div>
+													{#if optionRows(field).length === 0}
+														<div class="rounded-md border border-border/80 bg-secondary/40 p-3">
+															<p class="text-sm text-muted-foreground">
+																選択肢は未設定です。選択肢を追加してください。
+															</p>
+														</div>
+													{:else}
+														<div class="space-y-2">
+															{#each optionRows(field) as option, optionIndex (optionIndex)}
+																<div
+																	class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border/80 bg-secondary/30 p-2"
+																>
+																	{#if field.fieldType === 'radio'}
+																		<input
+																			type="radio"
+																			class="size-4"
+																			disabled
+																			aria-hidden="true"
+																		/>
+																	{:else if field.fieldType === 'checkbox'}
+																		<input
+																			type="checkbox"
+																			class="size-4"
+																			disabled
+																			aria-hidden="true"
+																		/>
+																	{:else}
+																		<span
+																			class="flex size-6 items-center justify-center rounded-md border border-border/80 bg-background text-xs text-muted-foreground"
+																			aria-hidden="true"
+																		>
+																			{optionIndex + 1}
+																		</span>
+																	{/if}
+																	<div class="min-w-0">
+																		<Label
+																			for={`form-field-option-${index}-${optionIndex}`}
+																			class="sr-only"
+																		>
+																			選択肢 {optionIndex + 1}
+																		</Label>
+																		<Input
+																			id={`form-field-option-${index}-${optionIndex}`}
+																			value={option}
+																			oninput={(event) =>
+																				updateFieldOption(
+																					index,
+																					optionIndex,
+																					(event.currentTarget as HTMLInputElement).value
+																				)}
+																			disabled={busy}
+																			maxlength={200}
+																			placeholder={`選択肢 ${optionIndex + 1}`}
+																		/>
+																	</div>
+																	<Button
+																		type="button"
+																		variant="destructive"
+																		size="sm"
+																		onclick={() => removeFieldOption(index, optionIndex)}
+																		disabled={busy || optionRows(field).length <= 1}
+																	>
+																		削除
+																	</Button>
+																</div>
+															{/each}
+														</div>
+													{/if}
 												</div>
 											{/if}
 											<div class="flex flex-wrap items-center gap-2 md:col-span-2">

@@ -209,5 +209,8 @@ describe('予約フォーム設定ページ', () => {
 			.element(page.getByRole('heading', { level: 3, name: '追加質問' }))
 			.toBeInTheDocument();
 		await expect.element(page.getByLabelText('ラベル')).toHaveValue('経験有無');
+		await expect.element(page.getByLabelText('選択肢 1')).toHaveValue('初めて');
+		await expect.element(page.getByLabelText('選択肢 2')).toHaveValue('経験あり');
+		expect(document.querySelector('#form-field-options-0')).toBeNull();
 	});
 });
