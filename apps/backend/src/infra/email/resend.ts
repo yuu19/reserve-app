@@ -352,7 +352,7 @@ export const sendBookingNotificationEmail = async ({
 }: SendBookingNotificationInput) => {
   const config = requireResendConfig(env);
   if (!config) {
-    return;
+    return null;
   }
 
   const subject = bookingNotificationSubjectMap[event];
@@ -400,11 +400,14 @@ export const sendBookingNotificationEmail = async ({
       console.warn(
         '[booking-email] Resend test-mode restriction: only your own verified recipient is allowed. Verify a domain in Resend and set RESEND_FROM_EMAIL to that domain to send to other recipients.',
       );
-      return;
+      return null;
     }
 
     throw new Error(`Failed to send booking notification email via Resend: ${details}`);
   }
+
+  const payload = (await response.json().catch(() => null)) as { id?: unknown } | null;
+  return typeof payload?.id === 'string' ? payload.id : null;
 };
 
 /** 課金 workflow から呼ばれる trial reminder メールを送る。設定不備は retryable でない例外にする。 */

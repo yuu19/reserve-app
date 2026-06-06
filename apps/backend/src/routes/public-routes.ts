@@ -14,10 +14,12 @@ import {
 } from '../domain/booking/constants.js';
 import { type AuthRuntimeDatabase, type AuthRuntimeEnv } from '../auth-runtime.js';
 import * as dbSchema from '../infra/db/schema.js';
-import { runDatabaseTransaction } from '../infra/db/transaction.js';
+import { runDatabaseTransactionOrThrow } from '../infra/db/transaction.js';
 import {
-  notifyBookingEmailBestEffort,
-  notifyBookingOperationalEmailBestEffort,
+  cancelPendingBookingReminderOutboxes,
+  enqueueBookingCustomerNotificationOutbox,
+  enqueueBookingOperationalNotificationOutbox,
+  enqueueBookingRemindersForBooking,
 } from '../features/booking/booking.notifications.js';
 import {
   parseTicketServiceIds,
@@ -29,6 +31,11 @@ import {
   resolveRequiredForms,
   validateFormSubmissions,
 } from '../features/forms/form.logic.js';
+import {
+  extractPlainText,
+  sanitizeLimitedHtml,
+  type PublicSiteDescriptionFormat,
+} from '@repo/rich-text';
 
 const publicTicketTypeSchema = z.object({
   id: z.string(),
@@ -121,6 +128,7 @@ const publicSiteProfileSchema = z.object({
   storeName: z.string(),
   siteName: z.string(),
   description: z.string().nullable(),
+  descriptionFormat: z.enum(['plain_text', 'limited_html']),
   address: z.string().nullable(),
   phone: z.string().nullable(),
   businessHours: z.string().nullable(),
@@ -452,6 +460,7 @@ type PublicContext = {
   siteSetting: {
     siteName: string | null;
     description: string | null;
+    descriptionFormat: string;
     address: string | null;
     phone: string | null;
     businessHours: string | null;
@@ -623,8 +632,35 @@ const buildPublicTicketTypeHref = ({
     ticketTypeId,
   )}`;
 
+const normalizeStoredPublicSiteDescriptionFormat = (
+  value: string | null | undefined,
+): PublicSiteDescriptionFormat => (value === 'limited_html' ? 'limited_html' : 'plain_text');
+
+const serializePublicSiteDescription = (
+  description: string | null | undefined,
+  descriptionFormat: string | null | undefined,
+): { description: string | null; descriptionFormat: PublicSiteDescriptionFormat } => {
+  if (!description) {
+    return { description: null, descriptionFormat: 'plain_text' };
+  }
+
+  if (normalizeStoredPublicSiteDescriptionFormat(descriptionFormat) === 'limited_html') {
+    const sanitized = sanitizeLimitedHtml(description);
+    if (!extractPlainText(sanitized)) {
+      return { description: null, descriptionFormat: 'plain_text' };
+    }
+    return { description: sanitized, descriptionFormat: 'limited_html' };
+  }
+
+  return { description, descriptionFormat: 'plain_text' };
+};
+
 const readPublicSiteProfile = async ({ publicContext }: { publicContext: PublicContext }) => {
   const setting = publicContext.siteSetting;
+  const siteDescription = serializePublicSiteDescription(
+    setting?.description ?? null,
+    setting?.descriptionFormat ?? null,
+  );
 
   return {
     organizationId: publicContext.organization.id,
@@ -635,7 +671,8 @@ const readPublicSiteProfile = async ({ publicContext }: { publicContext: PublicC
     storeName: publicContext.store.name,
     siteName:
       setting?.siteName?.trim() || publicContext.store.name || publicContext.organization.name,
-    description: setting?.description ?? null,
+    description: siteDescription.description,
+    descriptionFormat: siteDescription.descriptionFormat,
     address: setting?.address ?? null,
     phone: setting?.phone ?? null,
     businessHours: setting?.businessHours ?? null,
@@ -830,6 +867,7 @@ const resolvePublicOrganizationStore = async ({
     .select({
       siteName: dbSchema.publicSiteSetting.siteName,
       description: dbSchema.publicSiteSetting.description,
+      descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
       address: dbSchema.publicSiteSetting.address,
       phone: dbSchema.publicSiteSetting.phone,
       businessHours: dbSchema.publicSiteSetting.businessHours,
@@ -1420,8 +1458,9 @@ export const createPublicRoutes = ({
     const customerEmail = body.customer.email.trim().toLowerCase();
     const customerName = body.customer.name.trim();
     let cancelToken = '';
+    let cancelUrl = '';
     try {
-      await runDatabaseTransaction(database, async (tx: AuthRuntimeDatabase) => {
+      await runDatabaseTransactionOrThrow(database, async (tx: AuthRuntimeDatabase) => {
         if (status === BOOKING_STATUS.CONFIRMED) {
           const reserved = await reservePublicSlotCapacity({
             database: tx,
@@ -1479,6 +1518,13 @@ export const createPublicRoutes = ({
           emailSnapshot: customerEmail,
           now,
         });
+        cancelUrl = createPublicCancelUrl({
+          env,
+          requestUrl: c.req.raw.url,
+          publicContext,
+          bookingPublicId,
+          token: cancelToken,
+        });
 
         await writeBookingAuditLog({
           database: tx,
@@ -1494,6 +1540,33 @@ export const createPublicRoutes = ({
           },
           headers: c.req.raw.headers,
         });
+
+        const event =
+          status === BOOKING_STATUS.PENDING_APPROVAL
+            ? 'booking_application_received'
+            : 'booking_confirmed';
+
+        await Promise.all([
+          enqueueBookingCustomerNotificationOutbox({
+            database: tx,
+            bookingId,
+            event,
+            actionUrl: cancelUrl,
+            actionLabel: '予約をキャンセルする',
+          }),
+          enqueueBookingOperationalNotificationOutbox({
+            database: tx,
+            bookingId,
+            event,
+          }),
+          status === BOOKING_STATUS.CONFIRMED
+            ? enqueueBookingRemindersForBooking({
+                database: tx,
+                bookingId,
+                now,
+              })
+            : Promise.resolve(),
+        ]);
       });
     } catch (error) {
       if (error instanceof Error && error.message === 'CAPACITY_OR_TIME_CONFLICT') {
@@ -1501,37 +1574,6 @@ export const createPublicRoutes = ({
       }
       throw error;
     }
-
-    const cancelUrl = createPublicCancelUrl({
-      env,
-      requestUrl: c.req.raw.url,
-      publicContext,
-      bookingPublicId,
-      token: cancelToken,
-    });
-
-    await Promise.all([
-      notifyBookingEmailBestEffort({
-        database,
-        env,
-        bookingId,
-        event:
-          status === BOOKING_STATUS.PENDING_APPROVAL
-            ? 'booking_application_received'
-            : 'booking_confirmed',
-        actionUrl: cancelUrl,
-        actionLabel: '予約をキャンセルする',
-      }),
-      notifyBookingOperationalEmailBestEffort({
-        database,
-        env,
-        bookingId,
-        event:
-          status === BOOKING_STATUS.PENDING_APPROVAL
-            ? 'booking_application_received'
-            : 'booking_confirmed',
-      }),
-    ]);
 
     return c.json(
       {
@@ -1615,64 +1657,71 @@ export const createPublicRoutes = ({
       }
     }
 
-    await database
-      .update(dbSchema.booking)
-      .set({
-        status: BOOKING_STATUS.CANCELLED,
-        cancelReason: normalizeOptionalText(body.reason),
-        cancelledAt: now,
-        cancelledByUserId: null,
-      })
-      .where(eq(dbSchema.booking.id, booking.bookingId));
-
-    if (!isPendingApproval) {
-      await database
-        .update(dbSchema.slot)
+    await runDatabaseTransactionOrThrow(database, async (tx: AuthRuntimeDatabase) => {
+      await tx
+        .update(dbSchema.booking)
         .set({
-          reservedCount: sql`case
-            when ${dbSchema.slot.reservedCount} >= ${booking.participantsCount}
-            then ${dbSchema.slot.reservedCount} - ${booking.participantsCount}
-            else 0
-          end`,
+          status: BOOKING_STATUS.CANCELLED,
+          cancelReason: normalizeOptionalText(body.reason),
+          cancelledAt: now,
+          cancelledByUserId: null,
         })
-        .where(eq(dbSchema.slot.id, booking.slotId));
-    }
+        .where(eq(dbSchema.booking.id, booking.bookingId));
 
-    await database
-      .update(dbSchema.bookingPublicActionToken)
-      .set({ usedAt: now })
-      .where(eq(dbSchema.bookingPublicActionToken.id, booking.tokenId));
+      if (!isPendingApproval) {
+        await tx
+          .update(dbSchema.slot)
+          .set({
+            reservedCount: sql`case
+              when ${dbSchema.slot.reservedCount} >= ${booking.participantsCount}
+              then ${dbSchema.slot.reservedCount} - ${booking.participantsCount}
+              else 0
+            end`,
+          })
+          .where(eq(dbSchema.slot.id, booking.slotId));
+      }
 
-    await writeBookingAuditLog({
-      database,
-      bookingId: booking.bookingId,
-      organizationId: publicContext.organization.id,
-      storeId: publicContext.store.id,
-      actorUserId: null,
-      action: BOOKING_AUDIT_ACTION.CANCELLED_BY_CUSTOMER,
-      metadata: {
-        reason: normalizeOptionalText(body.reason),
-        source: BOOKING_SOURCE.PUBLIC_SITE,
-      },
-      headers: c.req.raw.headers,
+      await tx
+        .update(dbSchema.bookingPublicActionToken)
+        .set({ usedAt: now })
+        .where(eq(dbSchema.bookingPublicActionToken.id, booking.tokenId));
+
+      await writeBookingAuditLog({
+        database: tx,
+        bookingId: booking.bookingId,
+        organizationId: publicContext.organization.id,
+        storeId: publicContext.store.id,
+        actorUserId: null,
+        action: BOOKING_AUDIT_ACTION.CANCELLED_BY_CUSTOMER,
+        metadata: {
+          reason: normalizeOptionalText(body.reason),
+          source: BOOKING_SOURCE.PUBLIC_SITE,
+        },
+        headers: c.req.raw.headers,
+      });
+
+      await cancelPendingBookingReminderOutboxes({
+        database: tx,
+        bookingId: booking.bookingId,
+        includeProcessing: true,
+        now,
+      });
+
+      await Promise.all([
+        enqueueBookingCustomerNotificationOutbox({
+          database: tx,
+          bookingId: booking.bookingId,
+          event: 'booking_cancelled_by_participant',
+          reason: normalizeOptionalText(body.reason),
+        }),
+        enqueueBookingOperationalNotificationOutbox({
+          database: tx,
+          bookingId: booking.bookingId,
+          event: 'booking_cancelled_by_participant',
+          reason: normalizeOptionalText(body.reason),
+        }),
+      ]);
     });
-
-    await Promise.all([
-      notifyBookingEmailBestEffort({
-        database,
-        env,
-        bookingId: booking.bookingId,
-        event: 'booking_cancelled_by_participant',
-        reason: normalizeOptionalText(body.reason),
-      }),
-      notifyBookingOperationalEmailBestEffort({
-        database,
-        env,
-        bookingId: booking.bookingId,
-        event: 'booking_cancelled_by_participant',
-        reason: normalizeOptionalText(body.reason),
-      }),
-    ]);
 
     return c.json({ ok: true }, 200);
   });

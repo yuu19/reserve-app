@@ -6,6 +6,8 @@ import {
   BOOKING_STATUS,
   DEFAULT_CANCELLATION_DEADLINE_MINUTES,
 } from '../../domain/booking/constants.js';
+import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
+import { runDatabaseTransactionOrThrow } from '../../infra/db/transaction.js';
 import { canTransitionBookingStatus, isBookingStatus } from '../../domain/booking/state.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import {
@@ -29,7 +31,11 @@ import {
   releaseConfirmedBookingSlotCapacity,
   restoreTicketPackForBookingCancel,
 } from './booking.repository.js';
-import { notifyBookingEmailBestEffort } from './booking.notifications.js';
+import {
+  cancelPendingBookingReminderOutboxes,
+  enqueueBookingCustomerNotificationOutbox,
+  enqueueBookingOperationalNotificationOutbox,
+} from './booking.notifications.js';
 import type {
   BookingActionBody,
   BookingAttendanceBody,
@@ -94,57 +100,79 @@ export const cancelBookingByParticipant = async (
     }
   }
 
-  const updated = await cancelBookingByParticipantState({
-    database: ctx.database,
-    bookingId: booking.id,
-    reason: body.reason,
-    actorUserId: identity.userId,
-  });
-  if (!updated) {
-    return conflict('Booking cannot be canceled.');
-  }
+  try {
+    await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
+      const updated = await cancelBookingByParticipantState({
+        database: tx,
+        bookingId: booking.id,
+        reason: body.reason,
+        actorUserId: identity.userId,
+      });
+      if (!updated) {
+        throw new Error('BOOKING_CANCEL_CONFLICT');
+      }
 
-  if (!isPendingApproval) {
-    await releaseConfirmedBookingSlotCapacity({
-      database: ctx.database,
-      slotId: booking.slotId,
-      participantsCount: booking.participantsCount,
-    });
+      if (!isPendingApproval) {
+        await releaseConfirmedBookingSlotCapacity({
+          database: tx,
+          slotId: booking.slotId,
+          participantsCount: booking.participantsCount,
+        });
 
-    if (booking.ticketPackId) {
-      await restoreTicketPackForBookingCancel({
-        database: ctx.database,
+        if (booking.ticketPackId) {
+          await restoreTicketPackForBookingCancel({
+            database: tx,
+            organizationId: booking.organizationId,
+            storeId: booking.storeId,
+            ticketPackId: booking.ticketPackId,
+            bookingId: booking.id,
+            participantsCount: booking.participantsCount,
+            actorUserId: identity.userId,
+            reason: 'booking-canceled-by-participant',
+          });
+        }
+      }
+
+      await writeBookingAuditLog({
+        database: tx,
+        bookingId: booking.id,
         organizationId: booking.organizationId,
         storeId: booking.storeId,
-        ticketPackId: booking.ticketPackId,
-        bookingId: booking.id,
-        participantsCount: booking.participantsCount,
         actorUserId: identity.userId,
-        reason: 'booking-canceled-by-participant',
+        action: BOOKING_AUDIT_ACTION.CANCELLED_BY_CUSTOMER,
+        metadata: {
+          reason: body.reason ?? null,
+        },
+        headers,
       });
+
+      await cancelPendingBookingReminderOutboxes({
+        database: tx,
+        bookingId: booking.id,
+        includeProcessing: true,
+      });
+
+      await Promise.all([
+        enqueueBookingCustomerNotificationOutbox({
+          database: tx,
+          bookingId: booking.id,
+          event: 'booking_cancelled_by_participant',
+          reason: body.reason ?? null,
+        }),
+        enqueueBookingOperationalNotificationOutbox({
+          database: tx,
+          bookingId: booking.id,
+          event: 'booking_cancelled_by_participant',
+          reason: body.reason ?? null,
+        }),
+      ]);
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'BOOKING_CANCEL_CONFLICT') {
+      return conflict('Booking cannot be canceled.');
     }
+    throw error;
   }
-
-  await writeBookingAuditLog({
-    database: ctx.database,
-    bookingId: booking.id,
-    organizationId: booking.organizationId,
-    storeId: booking.storeId,
-    actorUserId: identity.userId,
-    action: BOOKING_AUDIT_ACTION.CANCELLED_BY_CUSTOMER,
-    metadata: {
-      reason: body.reason ?? null,
-    },
-    headers,
-  });
-
-  await notifyBookingEmailBestEffort({
-    database: ctx.database,
-    env: ctx.env,
-    bookingId: booking.id,
-    event: 'booking_cancelled_by_participant',
-    reason: body.reason ?? null,
-  });
 
   return jsonResult({ ok: true });
 };
@@ -188,42 +216,64 @@ export const cancelBookingByStaff = async (
     return conflict('Booking cannot be canceled.');
   }
 
-  const updated = await cancelBookingByStaffState({
-    database: ctx.database,
-    bookingId: booking.id,
-    reason: body.reason,
-    actorUserId: identity.userId,
-  });
-  if (!updated) {
-    return conflict('Booking cannot be canceled.');
+  try {
+    await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
+      const updated = await cancelBookingByStaffState({
+        database: tx,
+        bookingId: booking.id,
+        reason: body.reason,
+        actorUserId: identity.userId,
+      });
+      if (!updated) {
+        throw new Error('BOOKING_CANCEL_CONFLICT');
+      }
+
+      await releaseConfirmedBookingSlotCapacity({
+        database: tx,
+        slotId: booking.slotId,
+        participantsCount: booking.participantsCount,
+      });
+
+      await writeBookingAuditLog({
+        database: tx,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        storeId: booking.storeId,
+        actorUserId: identity.userId,
+        action: BOOKING_AUDIT_ACTION.CANCELLED_BY_STAFF,
+        metadata: {
+          reason: body.reason ?? null,
+        },
+        headers,
+      });
+
+      await cancelPendingBookingReminderOutboxes({
+        database: tx,
+        bookingId: booking.id,
+        includeProcessing: true,
+      });
+
+      await Promise.all([
+        enqueueBookingCustomerNotificationOutbox({
+          database: tx,
+          bookingId: booking.id,
+          event: 'booking_cancelled_by_staff',
+          reason: body.reason ?? null,
+        }),
+        enqueueBookingOperationalNotificationOutbox({
+          database: tx,
+          bookingId: booking.id,
+          event: 'booking_cancelled_by_staff',
+          reason: body.reason ?? null,
+        }),
+      ]);
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'BOOKING_CANCEL_CONFLICT') {
+      return conflict('Booking cannot be canceled.');
+    }
+    throw error;
   }
-
-  await releaseConfirmedBookingSlotCapacity({
-    database: ctx.database,
-    slotId: booking.slotId,
-    participantsCount: booking.participantsCount,
-  });
-
-  await writeBookingAuditLog({
-    database: ctx.database,
-    bookingId: booking.id,
-    organizationId: booking.organizationId,
-    storeId: booking.storeId,
-    actorUserId: identity.userId,
-    action: BOOKING_AUDIT_ACTION.CANCELLED_BY_STAFF,
-    metadata: {
-      reason: body.reason ?? null,
-    },
-    headers,
-  });
-
-  await notifyBookingEmailBestEffort({
-    database: ctx.database,
-    env: ctx.env,
-    bookingId: booking.id,
-    event: 'booking_cancelled_by_staff',
-    reason: body.reason ?? null,
-  });
 
   return jsonResult({ ok: true });
 };
@@ -267,31 +317,44 @@ export const markBookingNoShow = async (
     return conflict('Only confirmed booking can be marked as no-show.');
   }
 
-  const updated = await markConfirmedBookingNoShow({
-    database: ctx.database,
-    bookingId: booking.id,
-    actorUserId: identity.userId,
-  });
-  if (!updated) {
-    return conflict('Only confirmed booking can be marked as no-show.');
+  try {
+    await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
+      const updated = await markConfirmedBookingNoShow({
+        database: tx,
+        bookingId: booking.id,
+        actorUserId: identity.userId,
+      });
+      if (!updated) {
+        throw new Error('BOOKING_NO_SHOW_CONFLICT');
+      }
+
+      await writeBookingAuditLog({
+        database: tx,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        storeId: booking.storeId,
+        actorUserId: identity.userId,
+        action: BOOKING_AUDIT_ACTION.NO_SHOW_MARKED,
+        headers,
+      });
+
+      await cancelPendingBookingReminderOutboxes({
+        database: tx,
+        bookingId: booking.id,
+      });
+
+      await enqueueBookingCustomerNotificationOutbox({
+        database: tx,
+        bookingId: booking.id,
+        event: 'booking_no_show',
+      });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'BOOKING_NO_SHOW_CONFLICT') {
+      return conflict('Only confirmed booking can be marked as no-show.');
+    }
+    throw error;
   }
-
-  await writeBookingAuditLog({
-    database: ctx.database,
-    bookingId: booking.id,
-    organizationId: booking.organizationId,
-    storeId: booking.storeId,
-    actorUserId: identity.userId,
-    action: BOOKING_AUDIT_ACTION.NO_SHOW_MARKED,
-    headers,
-  });
-
-  await notifyBookingEmailBestEffort({
-    database: ctx.database,
-    env: ctx.env,
-    bookingId: booking.id,
-    event: 'booking_no_show',
-  });
 
   return jsonResult({ ok: true });
 };

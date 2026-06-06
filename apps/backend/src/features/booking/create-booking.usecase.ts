@@ -6,6 +6,8 @@ import {
   BOOKING_STATUS,
   SLOT_STATUS,
 } from '../../domain/booking/constants.js';
+import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
+import { runDatabaseTransactionOrThrow } from '../../infra/db/transaction.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import { serializeBooking } from '../../shared/serializers.js';
 import {
@@ -26,7 +28,11 @@ import {
   releaseSlotCapacity,
   reserveSlotCapacityForBookingCreate,
 } from './booking.repository.js';
-import { notifyBookingEmailBestEffort } from './booking.notifications.js';
+import {
+  enqueueBookingCustomerNotificationOutbox,
+  enqueueBookingOperationalNotificationOutbox,
+  enqueueBookingRemindersForBooking,
+} from './booking.notifications.js';
 import type { BookingCreateBody } from './booking.schemas.js';
 import {
   consumeTicketPackForParticipant,
@@ -88,47 +94,54 @@ export const createBooking = async (
   if (bookingPolicy === 'approval') {
     try {
       const bookingId = crypto.randomUUID();
-      await insertBooking({
-        database: ctx.database,
-        bookingId,
-        organizationId: slot.organizationId,
-        storeId: slot.storeId,
-        slotId: slot.id,
-        serviceId: slot.serviceId,
-        participantId: participant.id,
-        source: 'participant',
-        participantsCount,
-        customerName: participant.name,
-        customerEmail: participant.email,
-        createdByUserId: identity.userId,
-        status: BOOKING_STATUS.PENDING_APPROVAL,
-        ticketPackId: null,
-      });
-
-      await writeBookingAuditLog({
-        database: ctx.database,
-        bookingId,
-        organizationId: slot.organizationId,
-        storeId: slot.storeId,
-        actorUserId: identity.userId,
-        action: BOOKING_AUDIT_ACTION.CREATED,
-        metadata: {
-          initialStatus: BOOKING_STATUS.PENDING_APPROVAL,
+      await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
+        await insertBooking({
+          database: tx,
+          bookingId,
+          organizationId: slot.organizationId,
+          storeId: slot.storeId,
+          slotId: slot.id,
+          serviceId: slot.serviceId,
+          participantId: participant.id,
+          source: 'participant',
           participantsCount,
-          source: BOOKING_SOURCE.PARTICIPANT,
-        },
-        headers,
+          customerName: participant.name,
+          customerEmail: participant.email,
+          createdByUserId: identity.userId,
+          status: BOOKING_STATUS.PENDING_APPROVAL,
+          ticketPackId: null,
+        });
+
+        await writeBookingAuditLog({
+          database: tx,
+          bookingId,
+          organizationId: slot.organizationId,
+          storeId: slot.storeId,
+          actorUserId: identity.userId,
+          action: BOOKING_AUDIT_ACTION.CREATED,
+          metadata: {
+            initialStatus: BOOKING_STATUS.PENDING_APPROVAL,
+            participantsCount,
+            source: BOOKING_SOURCE.PARTICIPANT,
+          },
+          headers,
+        });
+
+        await Promise.all([
+          enqueueBookingCustomerNotificationOutbox({
+            database: tx,
+            bookingId,
+            event: 'booking_application_received',
+          }),
+          enqueueBookingOperationalNotificationOutbox({
+            database: tx,
+            bookingId,
+            event: 'booking_application_received',
+          }),
+        ]);
       });
 
       const booking = await getBookingById(ctx.database, bookingId);
-
-      await notifyBookingEmailBestEffort({
-        database: ctx.database,
-        env: ctx.env,
-        bookingId,
-        event: 'booking_application_received',
-      });
-
       return jsonResult(serializeBooking(booking as Record<string, unknown> | undefined));
     } catch (error) {
       if (isUniqueConstraintError(error)) {
@@ -139,7 +152,7 @@ export const createBooking = async (
   }
 
   let capacityReserved = false;
-  let consumedTicketPackId: string | null = null;
+  let consumedTicketPackIdForCompensation: string | null = null;
   let bookingCreated = false;
 
   const releaseReservedCapacity = async () => {
@@ -155,100 +168,117 @@ export const createBooking = async (
   };
 
   const restoreTicket = async () => {
-    if (consumedTicketPackId) {
-      await restoreConsumedTicketPackBalance({
-        database: ctx.database,
-        ticketPackId: consumedTicketPackId,
-        participantsCount,
-      });
+    if (!consumedTicketPackIdForCompensation) {
+      return;
     }
-    consumedTicketPackId = null;
+    await restoreConsumedTicketPackBalance({
+      database: ctx.database,
+      ticketPackId: consumedTicketPackIdForCompensation,
+      participantsCount,
+    });
+    consumedTicketPackIdForCompensation = null;
   };
 
   try {
-    const reserved = await reserveSlotCapacityForBookingCreate({
-      database: ctx.database,
-      slotId: slot.id,
-      participantsCount,
-      now,
-    });
-    if (!reserved) {
-      throw new Error('CAPACITY_OR_TIME_CONFLICT');
-    }
-    capacityReserved = true;
-
-    let consumedBalanceAfter: number | null = null;
-    if (service.requiresTicket) {
-      const consumed = await consumeTicketPackForParticipant({
-        database: ctx.database,
-        organizationId: slot.organizationId,
-        storeId: slot.storeId,
-        serviceId: slot.serviceId,
-        participantId: participant.id,
+    const bookingId = crypto.randomUUID();
+    await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
+      const reserved = await reserveSlotCapacityForBookingCreate({
+        database: tx,
+        slotId: slot.id,
         participantsCount,
         now,
       });
-      consumedTicketPackId = consumed.ticketPackId;
-      consumedBalanceAfter = consumed.balanceAfter;
-    }
+      if (!reserved) {
+        throw new Error('CAPACITY_OR_TIME_CONFLICT');
+      }
+      capacityReserved = true;
 
-    const bookingId = crypto.randomUUID();
-    await insertBooking({
-      database: ctx.database,
-      bookingId,
-      organizationId: slot.organizationId,
-      storeId: slot.storeId,
-      slotId: slot.id,
-      serviceId: slot.serviceId,
-      participantId: participant.id,
-      source: 'participant',
-      participantsCount,
-      customerName: participant.name,
-      customerEmail: participant.email,
-      createdByUserId: identity.userId,
-      status: BOOKING_STATUS.CONFIRMED,
-      ticketPackId: consumedTicketPackId,
-    });
-    bookingCreated = true;
+      let consumedTicketPackId: string | null = null;
+      let consumedBalanceAfter: number | null = null;
+      if (service.requiresTicket) {
+        const consumed = await consumeTicketPackForParticipant({
+          database: tx,
+          organizationId: slot.organizationId,
+          storeId: slot.storeId,
+          serviceId: slot.serviceId,
+          participantId: participant.id,
+          participantsCount,
+          now,
+        });
+        consumedTicketPackId = consumed.ticketPackId;
+        consumedTicketPackIdForCompensation = consumed.ticketPackId;
+        consumedBalanceAfter = consumed.balanceAfter;
+      }
 
-    if (consumedTicketPackId) {
-      await consumeBookingTicketLedger({
-        database: ctx.database,
+      await insertBooking({
+        database: tx,
+        bookingId,
         organizationId: slot.organizationId,
         storeId: slot.storeId,
+        slotId: slot.id,
+        serviceId: slot.serviceId,
+        participantId: participant.id,
+        source: 'participant',
+        participantsCount,
+        customerName: participant.name,
+        customerEmail: participant.email,
+        createdByUserId: identity.userId,
+        status: BOOKING_STATUS.CONFIRMED,
         ticketPackId: consumedTicketPackId,
-        bookingId,
-        participantsCount,
-        balanceAfter: consumedBalanceAfter ?? 0,
-        actorUserId: identity.userId,
-        reason: 'booking-created',
       });
-    }
+      bookingCreated = true;
+      capacityReserved = false;
+      consumedTicketPackIdForCompensation = null;
 
-    await writeBookingAuditLog({
-      database: ctx.database,
-      bookingId,
-      organizationId: slot.organizationId,
-      storeId: slot.storeId,
-      actorUserId: identity.userId,
-      action: BOOKING_AUDIT_ACTION.CREATED,
-      metadata: {
-        initialStatus: BOOKING_STATUS.CONFIRMED,
-        participantsCount,
-        source: BOOKING_SOURCE.PARTICIPANT,
-      },
-      headers,
+      if (consumedTicketPackId) {
+        await consumeBookingTicketLedger({
+          database: tx,
+          organizationId: slot.organizationId,
+          storeId: slot.storeId,
+          ticketPackId: consumedTicketPackId,
+          bookingId,
+          participantsCount,
+          balanceAfter: consumedBalanceAfter ?? 0,
+          actorUserId: identity.userId,
+          reason: 'booking-created',
+        });
+      }
+
+      await writeBookingAuditLog({
+        database: tx,
+        bookingId,
+        organizationId: slot.organizationId,
+        storeId: slot.storeId,
+        actorUserId: identity.userId,
+        action: BOOKING_AUDIT_ACTION.CREATED,
+        metadata: {
+          initialStatus: BOOKING_STATUS.CONFIRMED,
+          participantsCount,
+          source: BOOKING_SOURCE.PARTICIPANT,
+        },
+        headers,
+      });
+
+      await Promise.all([
+        enqueueBookingCustomerNotificationOutbox({
+          database: tx,
+          bookingId,
+          event: 'booking_confirmed',
+        }),
+        enqueueBookingOperationalNotificationOutbox({
+          database: tx,
+          bookingId,
+          event: 'booking_confirmed',
+        }),
+        enqueueBookingRemindersForBooking({
+          database: tx,
+          bookingId,
+          now,
+        }),
+      ]);
     });
 
     const booking = await getBookingById(ctx.database, bookingId);
-
-    await notifyBookingEmailBestEffort({
-      database: ctx.database,
-      env: ctx.env,
-      bookingId,
-      event: 'booking_confirmed',
-    });
-
     return jsonResult(serializeBooking(booking as Record<string, unknown> | undefined));
   } catch (error) {
     if (isUniqueConstraintError(error)) {
@@ -265,8 +295,10 @@ export const createBooking = async (
       error instanceof Error &&
       (error.message === 'TICKET_REQUIRED' || error.message === 'TICKET_CONFLICT')
     ) {
-      await restoreTicket();
-      await releaseReservedCapacity();
+      if (!bookingCreated) {
+        await restoreTicket();
+        await releaseReservedCapacity();
+      }
       return conflict('No available ticket pack for booking.');
     }
     if (!bookingCreated) {

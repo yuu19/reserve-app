@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/public';
 import { hc } from 'hono/client';
+import type { PublicSiteDescriptionFormat } from '@repo/rich-text';
 
 const backendUrl = env.PUBLIC_BACKEND_URL || 'http://localhost:3000';
 
@@ -442,6 +443,7 @@ export type PublicSiteProfilePayload = {
 	storeName: string;
 	siteName: string;
 	description?: string | null;
+	descriptionFormat: PublicSiteDescriptionFormat;
 	address?: string | null;
 	phone?: string | null;
 	businessHours?: string | null;
@@ -459,6 +461,81 @@ export type NotificationSettingsPayload = {
 	notifyStaff: boolean;
 	additionalEmails: string[];
 	[key: string]: unknown;
+};
+
+export type NotificationOutboxStatus =
+	| 'pending'
+	| 'processing'
+	| 'sent'
+	| 'retry'
+	| 'cancelled'
+	| 'dead'
+	| 'skipped'
+	| 'ambiguous';
+
+export type NotificationOutboxAction = 'retry' | 'cancel' | 'mark_sent' | 'mark_duplicate';
+
+export type NotificationOutboxPayload = {
+	id: string;
+	organizationId: string;
+	storeId: string;
+	bookingId: string | null;
+	participantId: string | null;
+	eventType: string;
+	templateKey: string;
+	channel: string;
+	recipientType: string;
+	recipientEmail: string;
+	recipientName: string | null;
+	subjectSnapshot: string | null;
+	status: NotificationOutboxStatus;
+	scheduledFor: string | null;
+	nextAttemptAt: string | null;
+	attemptCount: number;
+	maxAttempts: number;
+	idempotencyKey: string;
+	lockedAt: string | null;
+	lockedBy: string | null;
+	lockExpiresAt: string | null;
+	provider: string | null;
+	providerMessageId: string | null;
+	lastError: string | null;
+	sentAt: string | null;
+	cancelledAt: string | null;
+	deadAt: string | null;
+	createdAt: string | null;
+	updatedAt: string | null;
+	[key: string]: unknown;
+};
+
+export type NotificationOutboxLogPayload = {
+	id: string;
+	outboxId: string | null;
+	status: string;
+	attemptNumber: number | null;
+	provider: string | null;
+	providerMessageId: string | null;
+	errorMessage: string | null;
+	responseJson: string | null;
+	createdAt: string | null;
+	[key: string]: unknown;
+};
+
+export type NotificationOutboxListPayload = {
+	notifications: NotificationOutboxPayload[];
+};
+
+export type NotificationOutboxDetailPayload = {
+	notification: NotificationOutboxPayload;
+	logs: NotificationOutboxLogPayload[];
+};
+
+export type ListNotificationOutboxQuery = {
+	status?: NotificationOutboxStatus;
+	eventType?: string;
+	bookingId?: string;
+	recipientEmail?: string;
+	limit?: number;
 };
 
 export type ReminderServiceOverridePayload = {
@@ -793,6 +870,7 @@ type UpdateStoreInput = {
 export type UpdatePublicSiteSettingsInput = {
 	siteName?: string | null;
 	description?: string | null;
+	descriptionFormat?: PublicSiteDescriptionFormat;
 	address?: string | null;
 	phone?: string | null;
 	businessHours?: string | null;
@@ -1602,6 +1680,21 @@ export const authRpc = {
 			method: 'PATCH',
 			json
 		}),
+	listNotificationOutbox: (context: ScopedApiContext, query?: ListNotificationOutboxQuery) =>
+		authFetch(buildScopedAuthPath(context, '/notifications'), { query }),
+	getNotificationOutboxDetail: (context: ScopedApiContext, outboxId: string) =>
+		authFetch(buildScopedAuthPath(context, `/notifications/${encodeURIComponent(outboxId)}`)),
+	applyNotificationOutboxAction: (
+		context: ScopedApiContext,
+		outboxId: string,
+		action: NotificationOutboxAction
+	) =>
+		authFetch(
+			buildScopedAuthPath(context, `/notifications/${encodeURIComponent(outboxId)}/actions`),
+			{
+				json: { action }
+			}
+		),
 	getReminderSettings: (context: ScopedApiContext) =>
 		authFetch(buildScopedAuthPath(context, '/reminder-settings')),
 	updateReminderSettings: (context: ScopedApiContext, json: UpdateReminderSettingsInput) =>

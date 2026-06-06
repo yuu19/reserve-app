@@ -1,5 +1,7 @@
 import { writeBookingAuditLog } from '../../domain/booking/audit.js';
 import { BOOKING_AUDIT_ACTION, BOOKING_STATUS } from '../../domain/booking/constants.js';
+import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
+import { runDatabaseTransactionOrThrow } from '../../infra/db/transaction.js';
 import { canTransitionBookingStatus, isBookingStatus } from '../../domain/booking/state.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import {
@@ -18,15 +20,14 @@ import {
   findBookingScope,
   findServiceForBookingCreate,
   rejectPendingBooking,
-  releaseSlotCapacity,
   reserveSlotCapacityForApproval,
 } from './booking.repository.js';
-import { notifyBookingEmailBestEffort } from './booking.notifications.js';
-import type { BookingActionBody, BookingApproveBody } from './booking.schemas.js';
 import {
-  consumeTicketPackForParticipant,
-  restoreConsumedTicketPackBalance,
-} from '../tickets/ticket.state.js';
+  enqueueBookingCustomerNotificationOutbox,
+  enqueueBookingRemindersForBooking,
+} from './booking.notifications.js';
+import type { BookingActionBody, BookingApproveBody } from './booking.schemas.js';
+import { consumeTicketPackForParticipant } from '../tickets/ticket.state.js';
 
 /**
  * staff が承認待ち予約を承認し、定員確保と必要な ticket pack 消費を同時に処理します。
@@ -84,100 +85,81 @@ export const approveBookingByStaff = async (
   }
 
   const now = new Date();
-  let capacityReserved = false;
-  let consumedTicketPackId: string | null = null;
-  let consumedBalanceAfter: number | null = null;
-
-  const releaseReservedCapacity = async () => {
-    if (!capacityReserved) {
-      return;
-    }
-    await releaseSlotCapacity({
-      database: ctx.database,
-      slotId: booking.slotId,
-      participantsCount: booking.participantsCount,
-    });
-    capacityReserved = false;
-  };
-
-  const restoreTicket = async () => {
-    if (consumedTicketPackId) {
-      await restoreConsumedTicketPackBalance({
-        database: ctx.database,
-        ticketPackId: consumedTicketPackId,
-        participantsCount: booking.participantsCount,
-      });
-    }
-    consumedTicketPackId = null;
-    consumedBalanceAfter = null;
-  };
-
   try {
-    const reserved = await reserveSlotCapacityForApproval({
-      database: ctx.database,
-      slotId: booking.slotId,
-      participantsCount: booking.participantsCount,
-    });
-    if (!reserved) {
-      throw new Error('CAPACITY_OR_SLOT_CONFLICT');
-    }
-    capacityReserved = true;
-
-    if (service.requiresTicket) {
-      const consumed = await consumeTicketPackForParticipant({
-        database: ctx.database,
-        organizationId: booking.organizationId,
-        storeId: booking.storeId,
-        serviceId: booking.serviceId,
-        participantId: booking.participantId,
+    await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
+      const reserved = await reserveSlotCapacityForApproval({
+        database: tx,
+        slotId: booking.slotId,
         participantsCount: booking.participantsCount,
-        now,
       });
-      consumedTicketPackId = consumed.ticketPackId;
-      consumedBalanceAfter = consumed.balanceAfter;
-    }
+      if (!reserved) {
+        throw new Error('CAPACITY_OR_SLOT_CONFLICT');
+      }
 
-    const updated = await approvePendingBooking({
-      database: ctx.database,
-      bookingId: booking.id,
-      ticketPackId: consumedTicketPackId,
-    });
-    if (!updated) {
-      throw new Error('BOOKING_STATE_CONFLICT');
-    }
+      let consumedTicketPackId: string | null = null;
+      let consumedBalanceAfter: number | null = null;
+      if (service.requiresTicket) {
+        const consumed = await consumeTicketPackForParticipant({
+          database: tx,
+          organizationId: booking.organizationId,
+          storeId: booking.storeId,
+          serviceId: booking.serviceId,
+          participantId: booking.participantId,
+          participantsCount: booking.participantsCount,
+          now,
+        });
+        consumedTicketPackId = consumed.ticketPackId;
+        consumedBalanceAfter = consumed.balanceAfter;
+      }
 
-    if (consumedTicketPackId) {
-      await consumeBookingTicketLedger({
-        database: ctx.database,
-        organizationId: booking.organizationId,
-        storeId: booking.storeId,
-        ticketPackId: consumedTicketPackId,
+      const updated = await approvePendingBooking({
+        database: tx,
         bookingId: booking.id,
-        participantsCount: booking.participantsCount,
-        balanceAfter: consumedBalanceAfter ?? 0,
-        actorUserId: identity.userId,
-        reason: 'booking-approved',
-      });
-    }
-
-    await writeBookingAuditLog({
-      database: ctx.database,
-      bookingId: booking.id,
-      organizationId: booking.organizationId,
-      storeId: booking.storeId,
-      actorUserId: identity.userId,
-      action: BOOKING_AUDIT_ACTION.APPROVED,
-      metadata: {
         ticketPackId: consumedTicketPackId,
-      },
-      headers,
-    });
+      });
+      if (!updated) {
+        throw new Error('BOOKING_STATE_CONFLICT');
+      }
 
-    await notifyBookingEmailBestEffort({
-      database: ctx.database,
-      env: ctx.env,
-      bookingId: booking.id,
-      event: 'booking_approved',
+      if (consumedTicketPackId) {
+        await consumeBookingTicketLedger({
+          database: tx,
+          organizationId: booking.organizationId,
+          storeId: booking.storeId,
+          ticketPackId: consumedTicketPackId,
+          bookingId: booking.id,
+          participantsCount: booking.participantsCount,
+          balanceAfter: consumedBalanceAfter ?? 0,
+          actorUserId: identity.userId,
+          reason: 'booking-approved',
+        });
+      }
+
+      await writeBookingAuditLog({
+        database: tx,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        storeId: booking.storeId,
+        actorUserId: identity.userId,
+        action: BOOKING_AUDIT_ACTION.APPROVED,
+        metadata: {
+          ticketPackId: consumedTicketPackId,
+        },
+        headers,
+      });
+
+      await Promise.all([
+        enqueueBookingCustomerNotificationOutbox({
+          database: tx,
+          bookingId: booking.id,
+          event: 'booking_approved',
+        }),
+        enqueueBookingRemindersForBooking({
+          database: tx,
+          bookingId: booking.id,
+          now,
+        }),
+      ]);
     });
 
     return jsonResult({ ok: true });
@@ -189,17 +171,11 @@ export const approveBookingByStaff = async (
       error instanceof Error &&
       (error.message === 'TICKET_REQUIRED' || error.message === 'TICKET_CONFLICT')
     ) {
-      await releaseReservedCapacity();
-      await restoreTicket();
       return conflict('No available ticket pack for booking.');
     }
     if (error instanceof Error && error.message === 'BOOKING_STATE_CONFLICT') {
-      await releaseReservedCapacity();
-      await restoreTicket();
       return conflict('Only pending approval booking can be approved.');
     }
-    await releaseReservedCapacity();
-    await restoreTicket();
     throw error;
   }
 };
@@ -251,36 +227,44 @@ export const rejectBookingByStaff = async (
     return jsonResult(premiumGate.body, premiumGate.status);
   }
 
-  const updated = await rejectPendingBooking({
-    database: ctx.database,
-    bookingId: booking.id,
-    reason: body.reason,
-    actorUserId: identity.userId,
-  });
-  if (!updated) {
-    return conflict('Only pending approval booking can be rejected.');
+  try {
+    await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
+      const updated = await rejectPendingBooking({
+        database: tx,
+        bookingId: booking.id,
+        reason: body.reason,
+        actorUserId: identity.userId,
+      });
+      if (!updated) {
+        throw new Error('BOOKING_REJECT_CONFLICT');
+      }
+
+      await writeBookingAuditLog({
+        database: tx,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        storeId: booking.storeId,
+        actorUserId: identity.userId,
+        action: BOOKING_AUDIT_ACTION.REJECTED,
+        metadata: {
+          reason: body.reason ?? null,
+        },
+        headers,
+      });
+
+      await enqueueBookingCustomerNotificationOutbox({
+        database: tx,
+        bookingId: booking.id,
+        event: 'booking_rejected',
+        reason: body.reason ?? null,
+      });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'BOOKING_REJECT_CONFLICT') {
+      return conflict('Only pending approval booking can be rejected.');
+    }
+    throw error;
   }
-
-  await writeBookingAuditLog({
-    database: ctx.database,
-    bookingId: booking.id,
-    organizationId: booking.organizationId,
-    storeId: booking.storeId,
-    actorUserId: identity.userId,
-    action: BOOKING_AUDIT_ACTION.REJECTED,
-    metadata: {
-      reason: body.reason ?? null,
-    },
-    headers,
-  });
-
-  await notifyBookingEmailBestEffort({
-    database: ctx.database,
-    env: ctx.env,
-    bookingId: booking.id,
-    event: 'booking_rejected',
-    reason: body.reason ?? null,
-  });
 
   return jsonResult({ ok: true });
 };

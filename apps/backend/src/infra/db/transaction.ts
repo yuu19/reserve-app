@@ -29,3 +29,10 @@ export const runDatabaseTransaction = async <T>(
     throw error;
   }
 };
+
+export const runDatabaseTransactionOrThrow = async <T>(
+  database: AuthRuntimeDatabase,
+  callback: (tx: AuthRuntimeDatabase) => Promise<T>,
+): Promise<T> => {
+  return runDatabaseTransaction(database, callback);
+};

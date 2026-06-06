@@ -13,6 +13,10 @@ import {
 } from './domain/billing/organization-billing-maintenance.js';
 import { sendDueBookingReminders } from './features/booking/booking-reminders.js';
 import {
+  enqueueBookingRemindersForBooking,
+  processDueNotificationOutbox,
+} from './features/booking/booking.notifications.js';
+import {
   syncReserveAppBillingV2DerivedState,
   upsertReserveAppBillingV2SubscriptionState,
 } from './infra/billing/reserve-app-billing-v2-source.js';
@@ -412,7 +416,7 @@ const selectBookingChangeLogCount = async (bookingId: string) => {
 const selectNotificationLogEventCount = async (bookingId: string, eventType: string) => {
   const row = await d1
     .prepare(
-      'SELECT COUNT(*) as count FROM notification_log WHERE booking_id = ? AND event_type = ?',
+      'SELECT COUNT(*) as count FROM notification_outbox WHERE booking_id = ? AND template_key = ?',
     )
     .bind(bookingId, eventType)
     .first<{ count: number | string }>();
@@ -1022,11 +1026,11 @@ const selectReminderPolicyRows = async (organizationId: string, storeId: string)
 const selectReminderLogRowsByBooking = async (bookingId: string) => {
   const rows = await d1
     .prepare(
-      'SELECT reminder_policy_id as reminderPolicyId, dedupe_key as dedupeKey, recipient_email as recipientEmail, status, scheduled_for as scheduledFor FROM reminder_log WHERE booking_id = ? ORDER BY created_at ASC',
+      "SELECT id as outboxId, idempotency_key as dedupeKey, recipient_email as recipientEmail, status, scheduled_for as scheduledFor FROM notification_outbox WHERE booking_id = ? AND event_type = 'booking.reminder' ORDER BY scheduled_for ASC, created_at ASC",
     )
     .bind(bookingId)
     .all<{
-      reminderPolicyId: string | null;
+      outboxId: string;
       dedupeKey: string;
       recipientEmail: string;
       status: string;
@@ -1034,6 +1038,84 @@ const selectReminderLogRowsByBooking = async (bookingId: string) => {
     }>();
 
   return rows.results ?? [];
+};
+
+const clearNotificationOutboxRows = async () => {
+  await d1.prepare('DELETE FROM notification_log').run();
+  await d1.prepare('DELETE FROM notification_outbox').run();
+};
+
+const insertNotificationOutboxFixture = async ({
+  organizationId,
+  storeId,
+  status,
+  recipientEmail,
+  eventType = 'booking.confirmed',
+  templateKey = 'booking_confirmed',
+  bookingId = null,
+  attemptCount = 0,
+  maxAttempts = 5,
+  lastError = null,
+}: {
+  organizationId: string;
+  storeId: string;
+  status: string;
+  recipientEmail: string;
+  eventType?: string;
+  templateKey?: string;
+  bookingId?: string | null;
+  attemptCount?: number;
+  maxAttempts?: number;
+  lastError?: string | null;
+}) => {
+  const now = Date.now();
+  const outboxId = crypto.randomUUID();
+  await d1
+    .prepare(
+      `INSERT INTO notification_outbox (
+        id,
+        organization_id,
+        store_id,
+        booking_id,
+        event_type,
+        template_key,
+        channel,
+        recipient_type,
+        recipient_email,
+        payload_json,
+        status,
+        scheduled_for,
+        next_attempt_at,
+        attempt_count,
+        max_attempts,
+        idempotency_key,
+        last_error,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'email', 'customer', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      outboxId,
+      organizationId,
+      storeId,
+      bookingId,
+      eventType,
+      templateKey,
+      recipientEmail,
+      JSON.stringify({ event: templateKey, fixture: true }),
+      status,
+      now,
+      now,
+      attemptCount,
+      maxAttempts,
+      `${eventType}:${outboxId}:${recipientEmail}`,
+      lastError,
+      now,
+      now,
+    )
+    .run();
+
+  return outboxId;
 };
 
 const insertServiceFixture = async ({
@@ -1061,11 +1143,13 @@ const insertReminderBookingFixture = async ({
   storeId,
   startAt,
   customerEmail,
+  reminderNow,
 }: {
   organizationId: string;
   storeId: string;
   startAt: Date;
   customerEmail: string;
+  reminderNow?: Date;
 }) => {
   const serviceId = crypto.randomUUID();
   const slotId = crypto.randomUUID();
@@ -1127,6 +1211,14 @@ const insertReminderBookingFixture = async ({
       'confirmed',
     )
     .run();
+
+  if (reminderNow) {
+    await enqueueBookingRemindersForBooking({
+      database: drizzle(d1),
+      bookingId,
+      now: reminderNow,
+    });
+  }
 
   return {
     serviceId,
@@ -10420,6 +10512,7 @@ describe('バックエンドアプリ', () => {
     });
 
     try {
+      await clearNotificationOutboxRows();
       const owner = createAuthAgent(appWithEmail);
       await signUpUser({
         agent: owner,
@@ -10454,6 +10547,7 @@ describe('バックエンドアプリ', () => {
         storeId: storeId as string,
         startAt,
         customerEmail: 'three-hour-reminder@example.com',
+        reminderNow: baseNow,
       });
 
       await sendDueBookingReminders({
@@ -10462,7 +10556,13 @@ describe('バックエンドアプリ', () => {
         now: baseNow,
       });
       expect(resendRequests).toHaveLength(0);
-      expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([]);
+      expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([
+        expect.objectContaining({
+          dedupeKey: `booking.reminder:${bookingId}:customer:three-hour-reminder@example.com:180:slot_start_${startAt.getTime()}`,
+          recipientEmail: 'three-hour-reminder@example.com',
+          status: 'pending',
+        }),
+      ]);
 
       const dueNow = new Date(startAt.getTime() - 150 * 60 * 1000);
       await sendDueBookingReminders({
@@ -10477,8 +10577,8 @@ describe('バックエンドアプリ', () => {
       });
       expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([
         expect.objectContaining({
-          reminderPolicyId: expect.any(String),
-          dedupeKey: `booking-reminder:${bookingId}:180:three-hour-reminder@example.com`,
+          outboxId: expect.any(String),
+          dedupeKey: `booking.reminder:${bookingId}:customer:three-hour-reminder@example.com:180:slot_start_${startAt.getTime()}`,
           recipientEmail: 'three-hour-reminder@example.com',
           status: 'sent',
         }),
@@ -10573,6 +10673,11 @@ describe('バックエンドアプリ', () => {
         },
       );
       expect(updateResponse.status).toBe(200);
+      await enqueueBookingRemindersForBooking({
+        database: drizzle(d1),
+        bookingId,
+        now: baseNow,
+      });
 
       await sendDueBookingReminders({
         database: drizzle(d1),
@@ -10580,7 +10685,13 @@ describe('バックエンドアプリ', () => {
         now: baseNow,
       });
       expect(resendRequests).toHaveLength(0);
-      expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([]);
+      expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([
+        expect.objectContaining({
+          dedupeKey: `booking.reminder:${bookingId}:customer:service-override-reminder@example.com:180:slot_start_${startAt.getTime()}`,
+          recipientEmail: 'service-override-reminder@example.com',
+          status: 'pending',
+        }),
+      ]);
 
       const dueNow = new Date(startAt.getTime() - 150 * 60 * 1000);
       await sendDueBookingReminders({
@@ -10595,8 +10706,8 @@ describe('バックエンドアプリ', () => {
       });
       expect(await selectReminderLogRowsByBooking(bookingId)).toEqual([
         expect.objectContaining({
-          reminderPolicyId: expect.any(String),
-          dedupeKey: `booking-reminder:${bookingId}:180:service-override-reminder@example.com`,
+          outboxId: expect.any(String),
+          dedupeKey: `booking.reminder:${bookingId}:customer:service-override-reminder@example.com:180:slot_start_${startAt.getTime()}`,
           recipientEmail: 'service-override-reminder@example.com',
           status: 'sent',
         }),
@@ -10675,7 +10786,7 @@ describe('バックエンドアプリ', () => {
       expect(disableResponse.status).toBe(200);
 
       const baseNow = new Date('2026-06-02T00:00:00.000Z');
-      const disabledStartAt = new Date(baseNow.getTime() + 2 * 60 * 60 * 1000);
+      const disabledStartAt = new Date(baseNow.getTime() + 4 * 60 * 60 * 1000);
       const disabledBooking = await insertReminderBookingFixture({
         organizationId,
         storeId: storeId as string,
@@ -10699,25 +10810,31 @@ describe('バックエンドアプリ', () => {
         }),
       });
       expect(enableResponse.status).toBe(200);
+      await enqueueBookingRemindersForBooking({
+        database: drizzle(d1),
+        bookingId: disabledBooking.bookingId,
+        now: baseNow,
+      });
 
-      const simultaneousStartAt = new Date(baseNow.getTime() + 2 * 60 * 60 * 1000);
+      const simultaneousStartAt = new Date(baseNow.getTime() + 4 * 60 * 60 * 1000);
       const simultaneousBooking = await insertReminderBookingFixture({
         organizationId,
         storeId: storeId as string,
         startAt: simultaneousStartAt,
         customerEmail: 'closest-reminder@example.com',
+        reminderNow: baseNow,
       });
       await sendDueBookingReminders({
         database: drizzle(d1),
         env: authRuntimeWithEmail.env,
-        now: baseNow,
+        now: new Date(simultaneousStartAt.getTime() - 150 * 60 * 1000),
       });
 
       expect(resendRequests).toHaveLength(2);
       expect(await selectReminderLogRowsByBooking(simultaneousBooking.bookingId)).toEqual([
         expect.objectContaining({
-          reminderPolicyId: expect.any(String),
-          dedupeKey: `booking-reminder:${simultaneousBooking.bookingId}:180:closest-reminder@example.com`,
+          outboxId: expect.any(String),
+          dedupeKey: `booking.reminder:${simultaneousBooking.bookingId}:customer:closest-reminder@example.com:180:slot_start_${simultaneousStartAt.getTime()}`,
           recipientEmail: 'closest-reminder@example.com',
           status: 'sent',
         }),
@@ -12195,6 +12312,7 @@ describe('バックエンドアプリ', () => {
       organizationSlug: 'public-events-org',
       storeSlug: 'public-events-org',
       siteName: 'Public Events Site',
+      descriptionFormat: 'plain_text',
       address: '東京都千代田区1-1-1',
     });
 
@@ -12523,6 +12641,7 @@ describe('バックエンドアプリ', () => {
     expect(publicSitePayload.site).toMatchObject({
       siteName: 'Public Events Site',
       description: '予約サイトトップページの説明です。',
+      descriptionFormat: 'plain_text',
       address: '東京都千代田区1-1-1',
       phone: '03-0000-0000',
       businessHours: '平日 10:00-18:00',
@@ -12910,16 +13029,13 @@ describe('バックエンドアプリ', () => {
     const scopedParticipantBookingsPath =
       '/api/v1/auth/orgs/public-events-org/stores/public-events-org/bookings';
 
-    const unauthSelfEnrollResponse = await app.request(
-      scopedSelfEnrollPath,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({}),
+    const unauthSelfEnrollResponse = await app.request(scopedSelfEnrollPath, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
       },
-    );
+      body: JSON.stringify({}),
+    });
     expect(unauthSelfEnrollResponse.status).toBe(401);
 
     const participantUser = createAuthAgent(app);
@@ -12973,16 +13089,13 @@ describe('バックエンドアプリ', () => {
     );
     expect(forbiddenSelfEnrollResponse.status).toBe(404);
 
-    const firstSelfEnrollResponse = await participantUser.request(
-      scopedSelfEnrollPath,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({}),
+    const firstSelfEnrollResponse = await participantUser.request(scopedSelfEnrollPath, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
       },
-    );
+      body: JSON.stringify({}),
+    });
     expect(firstSelfEnrollResponse.status).toBe(200);
     const firstSelfEnrollPayload = (await toJson(firstSelfEnrollResponse)) as Record<
       string,
@@ -12990,16 +13103,13 @@ describe('バックエンドアプリ', () => {
     >;
     expect(firstSelfEnrollPayload.created).toBe(true);
 
-    const secondSelfEnrollResponse = await participantUser.request(
-      scopedSelfEnrollPath,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({}),
+    const secondSelfEnrollResponse = await participantUser.request(scopedSelfEnrollPath, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
       },
-    );
+      body: JSON.stringify({}),
+    });
     expect(secondSelfEnrollResponse.status).toBe(200);
     const secondSelfEnrollPayload = (await toJson(secondSelfEnrollResponse)) as Record<
       string,
@@ -13023,6 +13133,140 @@ describe('バックエンドアプリ', () => {
       },
     );
     expect([200, 409]).toContain(bookingAfterSelfEnrollResponse.status);
+  });
+
+  it('予約サイト説明を形式付きで正規化し公開 API に返す', async () => {
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Rich Public Site Owner',
+      email: 'rich-public-site-owner@example.com',
+    });
+    await createOrganization({
+      agent: owner,
+      name: 'Rich Public Site Org',
+      slug: 'rich-public-site-org',
+    });
+
+    const path = '/api/v1/auth/orgs/rich-public-site-org/stores/rich-public-site-org/public-site';
+    const plainTextResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        siteName: 'Rich Public Site',
+        description: '  1行目\n2行目  ',
+        status: 'public',
+      }),
+    });
+    expect(plainTextResponse.status).toBe(200);
+    expect(await toJson(plainTextResponse)).toMatchObject({
+      description: '1行目\n2行目',
+      descriptionFormat: 'plain_text',
+    });
+
+    const partialUpdateResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        acceptBookings: false,
+      }),
+    });
+    expect(partialUpdateResponse.status).toBe(200);
+    expect(await toJson(partialUpdateResponse)).toMatchObject({
+      description: '1行目\n2行目',
+      descriptionFormat: 'plain_text',
+      acceptBookings: false,
+    });
+
+    const limitedHtmlResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        description:
+          '<p class="x">紹介<script>alert(1)</script><img src=x onerror=alert(1)><strong>太字</strong><a href="https://example.com/path">公式</a><a href="javascript:alert(1)">危険</a></p>',
+        descriptionFormat: 'limited_html',
+        acceptBookings: true,
+      }),
+    });
+    expect(limitedHtmlResponse.status).toBe(200);
+    const limitedHtmlPayload = (await toJson(limitedHtmlResponse)) as Record<string, unknown>;
+    expect(limitedHtmlPayload.descriptionFormat).toBe('limited_html');
+    expect(limitedHtmlPayload.description).toContain('<strong>太字</strong>');
+    expect(limitedHtmlPayload.description).toContain(
+      '<a href="https://example.com/path" target="_blank" rel="nofollow noopener noreferrer">公式</a>',
+    );
+    expect(limitedHtmlPayload.description).toContain('危険');
+    expect(limitedHtmlPayload.description).not.toContain('<script');
+    expect(limitedHtmlPayload.description).not.toContain('<img');
+    expect(limitedHtmlPayload.description).not.toContain('javascript:');
+
+    const publicSiteResponse = await app.request(
+      '/api/v1/public/orgs/rich-public-site-org/stores/rich-public-site-org/site',
+    );
+    expect(publicSiteResponse.status).toBe(200);
+    const publicSitePayload = (await toJson(publicSiteResponse)) as Record<string, unknown>;
+    expect(publicSitePayload.site).toMatchObject({
+      description: limitedHtmlPayload.description,
+      descriptionFormat: 'limited_html',
+    });
+
+    const emptyHtmlResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        description: '<p><br></p>',
+        descriptionFormat: 'limited_html',
+      }),
+    });
+    expect(emptyHtmlResponse.status).toBe(200);
+    expect(await toJson(emptyHtmlResponse)).toMatchObject({
+      description: null,
+      descriptionFormat: 'plain_text',
+    });
+
+    const tooLongPlainTextResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        description: 'あ'.repeat(4001),
+        descriptionFormat: 'plain_text',
+      }),
+    });
+    expect(tooLongPlainTextResponse.status).toBe(400);
+
+    const tooLargeHtmlResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        description: `<p>${'あ'.repeat(4000)}</p>`,
+        descriptionFormat: 'limited_html',
+      }),
+    });
+    expect(tooLargeHtmlResponse.status).toBe(400);
+
+    const invalidFormatResponse = await owner.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        description: '本文',
+        descriptionFormat: 'markdown',
+      }),
+    });
+    expect(invalidFormatResponse.status).toBe(400);
   });
 
   it('サービス名・説明の上限を検証し更新時に説明を正規化する', async () => {
@@ -15237,8 +15481,17 @@ describe('バックエンドアプリ', () => {
       });
       expect(noShowResponse.status).toBe(200);
 
-      const bookingNotificationRequests = resendRequests.filter((request) =>
-        request.subject.startsWith('【予約通知】'),
+      await processDueNotificationOutbox({
+        database: drizzle(d1),
+        env: authRuntimeWithEmail.env,
+        now: new Date(),
+        limit: 100,
+      });
+
+      const bookingNotificationRequests = resendRequests.filter(
+        (request) =>
+          request.subject.startsWith('【予約通知】') &&
+          request.to.includes('booking-email-participant@example.com'),
       );
       const uniqueSubjects = Array.from(
         new Set(bookingNotificationRequests.map((request) => request.subject)),
@@ -15248,12 +15501,6 @@ describe('バックエンドアプリ', () => {
       expect(uniqueSubjects).toContain('【予約通知】予約をキャンセルしました');
       expect(uniqueSubjects).toContain('【予約通知】運営により予約がキャンセルされました');
       expect(uniqueSubjects).toContain('【予約通知】予約がNo-showとして記録されました');
-      expect(
-        bookingNotificationRequests.every((request) =>
-          request.to.includes('booking-email-participant@example.com'),
-        ),
-      ).toBe(true);
-
       shouldFailResend = true;
       const fourthSlotId = await makeSlot(7);
       const fourthBookingResponse = await participantUser.request(
@@ -15315,6 +15562,7 @@ describe('バックエンドアプリ', () => {
     });
 
     try {
+      await clearNotificationOutboxRows();
       const owner = createAuthAgent(appWithEmail);
       await signUpUser({
         agent: owner,
@@ -15439,8 +15687,17 @@ describe('バックエンドアプリ', () => {
       });
       expect(rejectResponse.status).toBe(200);
 
-      const bookingNotificationRequests = resendRequests.filter((request) =>
-        request.subject.startsWith('【予約通知】'),
+      await processDueNotificationOutbox({
+        database: drizzle(d1),
+        env: authRuntimeWithEmail.env,
+        now: new Date(),
+        limit: 100,
+      });
+
+      const bookingNotificationRequests = resendRequests.filter(
+        (request) =>
+          request.subject.startsWith('【予約通知】') &&
+          request.to.includes('booking-approval-email-participant@example.com'),
       );
       expect(
         bookingNotificationRequests.some(
@@ -15457,14 +15714,148 @@ describe('バックエンドアプリ', () => {
           (request) => request.subject === '【予約通知】予約が却下されました',
         ),
       ).toBe(true);
-      expect(
-        bookingNotificationRequests.every((request) =>
-          request.to.includes('booking-approval-email-participant@example.com'),
-        ),
-      ).toBe(true);
+      expect(bookingNotificationRequests.length).toBeGreaterThanOrEqual(3);
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+
+  it('通知Outbox管理APIで一覧・詳細・手動操作を処理する', async () => {
+    await clearNotificationOutboxRows();
+    const owner = createAuthAgent(app);
+    await signUpUser({
+      agent: owner,
+      name: 'Notification Outbox Admin Owner',
+      email: 'notification-outbox-admin-owner@example.com',
+    });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Notification Outbox Admin Org',
+      slug: 'notification-outbox-admin-org',
+    });
+    const storeId = await selectStoreIdBySlug(organizationId, 'notification-outbox-admin-org');
+    expect(storeId).toBeTruthy();
+    const scopedBase =
+      '/api/v1/auth/orgs/notification-outbox-admin-org/stores/notification-outbox-admin-org';
+
+    const deadOutboxId = await insertNotificationOutboxFixture({
+      organizationId,
+      storeId: storeId as string,
+      status: 'dead',
+      recipientEmail: 'outbox-dead@example.com',
+      attemptCount: 5,
+      lastError: 'resend_delivery_failed',
+    });
+    const pendingOutboxId = await insertNotificationOutboxFixture({
+      organizationId,
+      storeId: storeId as string,
+      status: 'pending',
+      recipientEmail: 'outbox-pending@example.com',
+      eventType: 'booking.reminder',
+      templateKey: 'booking_reminder',
+    });
+
+    const listResponse = await owner.request(`${scopedBase}/notifications?status=dead`);
+    expect(listResponse.status).toBe(200);
+    const listPayload = (await toJson(listResponse)) as {
+      notifications?: Array<{ id: string; status: string; recipientEmail: string }>;
+    };
+    expect(listPayload.notifications).toHaveLength(1);
+    expect(listPayload.notifications?.[0]).toMatchObject({
+      id: deadOutboxId,
+      status: 'dead',
+      recipientEmail: 'outbox-dead@example.com',
+    });
+
+    const detailResponse = await owner.request(`${scopedBase}/notifications/${deadOutboxId}`);
+    expect(detailResponse.status).toBe(200);
+    const detailPayload = (await toJson(detailResponse)) as {
+      notification?: { id: string; lastError: string | null };
+      logs?: unknown[];
+    };
+    expect(detailPayload.notification).toMatchObject({
+      id: deadOutboxId,
+      lastError: 'resend_delivery_failed',
+    });
+    expect(detailPayload.logs).toEqual([]);
+
+    const retryResponse = await owner.request(
+      `${scopedBase}/notifications/${deadOutboxId}/actions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'retry' }),
+      },
+    );
+    expect(retryResponse.status).toBe(200);
+    const retryPayload = (await toJson(retryResponse)) as {
+      notification?: { status: string; lastError: string | null; deadAt: string | null };
+      logs?: Array<{ status: string }>;
+    };
+    expect(retryPayload.notification).toMatchObject({
+      status: 'retry',
+      lastError: null,
+      deadAt: null,
+    });
+    expect(retryPayload.logs?.some((log) => log.status === 'manual_retry')).toBe(true);
+
+    const cancelResponse = await owner.request(
+      `${scopedBase}/notifications/${pendingOutboxId}/actions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      },
+    );
+    expect(cancelResponse.status).toBe(200);
+    const cancelPayload = (await toJson(cancelResponse)) as {
+      notification?: { status: string; cancelledAt: string | null };
+      logs?: Array<{ status: string }>;
+    };
+    expect(cancelPayload.notification?.status).toBe('cancelled');
+    expect(cancelPayload.notification?.cancelledAt).toEqual(expect.any(String));
+    expect(cancelPayload.logs?.some((log) => log.status === 'cancelled')).toBe(true);
+
+    const sentResponse = await owner.request(
+      `${scopedBase}/notifications/${deadOutboxId}/actions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'mark_sent' }),
+      },
+    );
+    expect(sentResponse.status).toBe(200);
+    const sentPayload = (await toJson(sentResponse)) as {
+      notification?: { status: string; sentAt: string | null };
+      logs?: Array<{ status: string }>;
+    };
+    expect(sentPayload.notification?.status).toBe('sent');
+    expect(sentPayload.notification?.sentAt).toEqual(expect.any(String));
+    expect(sentPayload.logs?.some((log) => log.status === 'manual_marked_sent')).toBe(true);
+
+    const duplicateResponse = await owner.request(
+      `${scopedBase}/notifications/${deadOutboxId}/actions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'mark_duplicate' }),
+      },
+    );
+    expect(duplicateResponse.status).toBe(200);
+    const duplicatePayload = (await toJson(duplicateResponse)) as {
+      logs?: Array<{ status: string }>;
+    };
+    expect(duplicatePayload.logs?.some((log) => log.status === 'duplicate_detected')).toBe(true);
+
+    const conflictResponse = await owner.request(
+      `${scopedBase}/notifications/${pendingOutboxId}/actions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'retry' }),
+      },
+    );
+    expect(conflictResponse.status).toBe(409);
   });
 
   it('繰り返し枠を生成しスキップ例外を適用する', async () => {

@@ -20,10 +20,19 @@ import {
   sendOrganizationInvitationEmail,
   sendParticipantInvitationEmail,
 } from '../infra/email/resend.js';
+import {
+  PublicSiteDescriptionValidationError,
+  extractPlainText,
+  normalizePublicSiteDescription,
+  sanitizeLimitedHtml,
+  type PublicSiteDescriptionFormat,
+} from '@repo/rich-text';
 import type { OrganizationLogoService } from '../infra/storage/organization-logo-service.js';
 import type { ServiceImageUploadService } from '../infra/storage/service-image-upload-service.js';
 import { registerBookingRoutes } from './booking-routes.js';
 import { scopedStoreAuthPath, scopedStoreRouteParamsSchema } from '../shared/scoped-store-route.js';
+import { runDatabaseTransactionOrThrow } from '../infra/db/transaction.js';
+import { regenerateFutureBookingReminderOutboxes } from '../features/booking/booking.notifications.js';
 
 export { resolveE2eStripeTestClockId } from '../features/billing/billing.routes.js';
 
@@ -426,6 +435,7 @@ const publicSiteSettingSchema = z.object({
   storeName: z.string().min(1),
   siteName: z.string().min(1),
   description: z.string().nullable(),
+  descriptionFormat: z.enum(['plain_text', 'limited_html']),
   address: z.string().nullable(),
   phone: z.string().nullable(),
   businessHours: z.string().nullable(),
@@ -437,7 +447,8 @@ const publicSiteSettingSchema = z.object({
 
 const publicSiteSettingBodySchema = z.object({
   siteName: z.string().trim().max(120).nullable().optional(),
-  description: z.string().trim().max(2000).nullable().optional(),
+  description: z.string().nullable().optional(),
+  descriptionFormat: z.enum(['plain_text', 'limited_html']).optional(),
   address: z.string().trim().max(500).nullable().optional(),
   phone: z.string().trim().max(80).nullable().optional(),
   businessHours: z.string().trim().max(1000).nullable().optional(),
@@ -471,6 +482,97 @@ const notificationSettingsBodySchema = z.object({
   notifyStoreManagers: z.boolean(),
   notifyStaff: z.boolean(),
   additionalEmails: z.array(notificationEmailInputSchema),
+});
+
+const notificationOutboxStatusSchema = z.enum([
+  'pending',
+  'processing',
+  'sent',
+  'retry',
+  'cancelled',
+  'dead',
+  'skipped',
+  'ambiguous',
+]);
+
+const notificationOutboxLogStatusSchema = z.enum([
+  'attempt_started',
+  'sent',
+  'failed',
+  'skipped',
+  'cancelled',
+  'duplicate_detected',
+  'manual_marked_sent',
+  'manual_retry',
+]);
+
+const notificationOutboxListQuerySchema = z.object({
+  status: notificationOutboxStatusSchema.optional(),
+  eventType: z.string().trim().min(1).max(120).optional(),
+  bookingId: z.string().trim().min(1).max(120).optional(),
+  recipientEmail: z.string().trim().min(1).max(254).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const notificationOutboxRouteParamsSchema = organizationStoreRouteParamsSchema.extend({
+  outboxId: z.string().min(1),
+});
+
+const notificationOutboxActionBodySchema = z.object({
+  action: z.enum(['retry', 'cancel', 'mark_sent', 'mark_duplicate']),
+});
+
+const notificationOutboxLogSchema = z.object({
+  id: z.string(),
+  outboxId: z.string().nullable(),
+  status: z.string(),
+  attemptNumber: z.number().nullable(),
+  provider: z.string().nullable(),
+  providerMessageId: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  responseJson: z.string().nullable(),
+  createdAt: z.string().nullable(),
+});
+
+const notificationOutboxItemSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  storeId: z.string(),
+  bookingId: z.string().nullable(),
+  participantId: z.string().nullable(),
+  eventType: z.string(),
+  templateKey: z.string(),
+  channel: z.string(),
+  recipientType: z.string(),
+  recipientEmail: z.string(),
+  recipientName: z.string().nullable(),
+  subjectSnapshot: z.string().nullable(),
+  status: notificationOutboxStatusSchema,
+  scheduledFor: z.string().nullable(),
+  nextAttemptAt: z.string().nullable(),
+  attemptCount: z.number(),
+  maxAttempts: z.number(),
+  idempotencyKey: z.string(),
+  lockedAt: z.string().nullable(),
+  lockedBy: z.string().nullable(),
+  lockExpiresAt: z.string().nullable(),
+  provider: z.string().nullable(),
+  providerMessageId: z.string().nullable(),
+  lastError: z.string().nullable(),
+  sentAt: z.string().nullable(),
+  cancelledAt: z.string().nullable(),
+  deadAt: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
+
+const notificationOutboxListSchema = z.object({
+  notifications: z.array(notificationOutboxItemSchema),
+});
+
+const notificationOutboxDetailSchema = z.object({
+  notification: notificationOutboxItemSchema,
+  logs: z.array(notificationOutboxLogSchema),
 });
 
 const REMINDER_SETTINGS_SUPPORTED_TIMINGS_MINUTES = [1440, 180] as const;
@@ -777,6 +879,86 @@ const updateNotificationSettingsRoute = createRoute({
     401: messageResponse('Unauthorized'),
     403: messageResponse('Forbidden'),
     404: messageResponse('Organization or store not found'),
+  },
+});
+
+const listNotificationOutboxRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/notifications',
+  tags: ['Notifications'],
+  summary: 'List notification outbox jobs for a store',
+  request: {
+    params: organizationStoreRouteParamsSchema,
+    query: notificationOutboxListQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Notification outbox list',
+      content: {
+        'application/json': {
+          schema: notificationOutboxListSchema,
+        },
+      },
+    },
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Organization or store not found'),
+  },
+});
+
+const getNotificationOutboxDetailRoute = createRoute({
+  method: 'get',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/notifications/{outboxId}',
+  tags: ['Notifications'],
+  summary: 'Get notification outbox detail with logs',
+  request: {
+    params: notificationOutboxRouteParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Notification outbox detail',
+      content: {
+        'application/json': {
+          schema: notificationOutboxDetailSchema,
+        },
+      },
+    },
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Notification outbox not found'),
+  },
+});
+
+const createNotificationOutboxActionRoute = createRoute({
+  method: 'post',
+  path: '/orgs/{orgSlug}/stores/{storeSlug}/notifications/{outboxId}/actions',
+  tags: ['Notifications'],
+  summary: 'Apply a manual action to a notification outbox job',
+  request: {
+    params: notificationOutboxRouteParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: notificationOutboxActionBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated notification outbox detail',
+      content: {
+        'application/json': {
+          schema: notificationOutboxDetailSchema,
+        },
+      },
+    },
+    400: messageResponse('Invalid notification action'),
+    401: messageResponse('Unauthorized'),
+    403: messageResponse('Forbidden'),
+    404: messageResponse('Notification outbox not found'),
+    409: messageResponse('Notification action cannot be applied'),
   },
 });
 
@@ -2163,6 +2345,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       .select({
         siteName: dbSchema.publicSiteSetting.siteName,
         description: dbSchema.publicSiteSetting.description,
+        descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
         address: dbSchema.publicSiteSetting.address,
         phone: dbSchema.publicSiteSetting.phone,
         businessHours: dbSchema.publicSiteSetting.businessHours,
@@ -2180,6 +2363,10 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       )
       .limit(1);
     const setting = rows[0] ?? null;
+    const siteDescription = serializePublicSiteDescription(
+      setting?.description ?? null,
+      setting?.descriptionFormat ?? null,
+    );
 
     return {
       organizationId: context.organizationId,
@@ -2189,7 +2376,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       storeSlug: context.storeSlug,
       storeName: context.storeName,
       siteName: setting?.siteName?.trim() || context.storeName || context.organizationName,
-      description: setting?.description ?? null,
+      description: siteDescription.description,
+      descriptionFormat: siteDescription.descriptionFormat,
       address: setting?.address ?? null,
       phone: setting?.phone ?? null,
       businessHours: setting?.businessHours ?? null,
@@ -2261,6 +2449,289 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       notifyStaff: setting?.notifyStaff ?? false,
       additionalEmails: parseNotificationEmailsJson(setting?.additionalEmailsJson ?? null),
     };
+  };
+
+  const serializeTimestamp = (value: Date | number | string | null | undefined): string | null => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const date = value instanceof Date ? value : new Date(Number(value));
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  };
+
+  const normalizeNotificationOutboxStatus = (
+    value: string,
+  ): z.infer<typeof notificationOutboxStatusSchema> => {
+    const parsed = notificationOutboxStatusSchema.safeParse(value);
+    return parsed.success ? parsed.data : 'ambiguous';
+  };
+
+  const serializeNotificationOutbox = (row: typeof dbSchema.notificationOutbox.$inferSelect) => ({
+    id: row.id,
+    organizationId: row.organizationId,
+    storeId: row.storeId,
+    bookingId: row.bookingId,
+    participantId: row.participantId,
+    eventType: row.eventType,
+    templateKey: row.templateKey,
+    channel: row.channel,
+    recipientType: row.recipientType,
+    recipientEmail: row.recipientEmail,
+    recipientName: row.recipientName,
+    subjectSnapshot: row.subjectSnapshot,
+    status: normalizeNotificationOutboxStatus(row.status),
+    scheduledFor: serializeTimestamp(row.scheduledFor),
+    nextAttemptAt: serializeTimestamp(row.nextAttemptAt),
+    attemptCount: row.attemptCount,
+    maxAttempts: row.maxAttempts,
+    idempotencyKey: row.idempotencyKey,
+    lockedAt: serializeTimestamp(row.lockedAt),
+    lockedBy: row.lockedBy,
+    lockExpiresAt: serializeTimestamp(row.lockExpiresAt),
+    provider: row.provider,
+    providerMessageId: row.providerMessageId,
+    lastError: row.lastError,
+    sentAt: serializeTimestamp(row.sentAt),
+    cancelledAt: serializeTimestamp(row.cancelledAt),
+    deadAt: serializeTimestamp(row.deadAt),
+    createdAt: serializeTimestamp(row.createdAt),
+    updatedAt: serializeTimestamp(row.updatedAt),
+  });
+
+  const serializeNotificationOutboxLog = (row: typeof dbSchema.notificationLog.$inferSelect) => ({
+    id: row.id,
+    outboxId: row.outboxId,
+    status: row.status,
+    attemptNumber: row.attemptNumber,
+    provider: row.provider,
+    providerMessageId: row.providerMessageId,
+    errorMessage: row.errorMessage,
+    responseJson: row.responseJson,
+    createdAt: serializeTimestamp(row.createdAt),
+  });
+
+  const listNotificationOutboxes = async ({
+    context,
+    query,
+  }: {
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
+    query: z.infer<typeof notificationOutboxListQuerySchema>;
+  }) => {
+    const conditions: SQL[] = [
+      eq(dbSchema.notificationOutbox.organizationId, context.organizationId),
+      eq(dbSchema.notificationOutbox.storeId, context.storeId),
+    ];
+
+    if (query.status) {
+      conditions.push(eq(dbSchema.notificationOutbox.status, query.status));
+    }
+    if (query.eventType) {
+      conditions.push(eq(dbSchema.notificationOutbox.eventType, query.eventType.trim()));
+    }
+    if (query.bookingId) {
+      conditions.push(eq(dbSchema.notificationOutbox.bookingId, query.bookingId.trim()));
+    }
+    if (query.recipientEmail) {
+      conditions.push(
+        sql`lower(${dbSchema.notificationOutbox.recipientEmail}) = ${query.recipientEmail.trim().toLowerCase()}`,
+      );
+    }
+
+    const rows = await database
+      .select()
+      .from(dbSchema.notificationOutbox)
+      .where(and(...conditions))
+      .orderBy(desc(dbSchema.notificationOutbox.createdAt))
+      .limit(query.limit ?? 50);
+
+    return {
+      notifications: rows.map(serializeNotificationOutbox),
+    };
+  };
+
+  const readNotificationOutboxDetail = async ({
+    context,
+    outboxId,
+  }: {
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
+    outboxId: string;
+  }) => {
+    const rows = await database
+      .select()
+      .from(dbSchema.notificationOutbox)
+      .where(
+        and(
+          eq(dbSchema.notificationOutbox.organizationId, context.organizationId),
+          eq(dbSchema.notificationOutbox.storeId, context.storeId),
+          eq(dbSchema.notificationOutbox.id, outboxId),
+        ),
+      )
+      .limit(1);
+    const outbox = rows[0] ?? null;
+    if (!outbox) {
+      return null;
+    }
+
+    const logs = await database
+      .select()
+      .from(dbSchema.notificationLog)
+      .where(eq(dbSchema.notificationLog.outboxId, outbox.id))
+      .orderBy(asc(dbSchema.notificationLog.createdAt));
+
+    return {
+      notification: serializeNotificationOutbox(outbox),
+      logs: logs.map(serializeNotificationOutboxLog),
+    };
+  };
+
+  const appendNotificationOutboxManualLog = async ({
+    outbox,
+    status,
+    message,
+    now,
+  }: {
+    outbox: typeof dbSchema.notificationOutbox.$inferSelect;
+    status: z.infer<typeof notificationOutboxLogStatusSchema>;
+    message: string;
+    now: Date;
+  }) => {
+    await database.insert(dbSchema.notificationLog).values({
+      id: crypto.randomUUID(),
+      outboxId: outbox.id,
+      organizationId: outbox.organizationId,
+      storeId: outbox.storeId,
+      bookingId: outbox.bookingId,
+      eventType: outbox.eventType,
+      templateKey: outbox.templateKey,
+      channel: outbox.channel,
+      recipientType: outbox.recipientType,
+      recipientEmail: outbox.recipientEmail,
+      status,
+      attemptNumber: outbox.attemptCount,
+      provider: outbox.provider,
+      providerMessageId: outbox.providerMessageId,
+      errorMessage: message,
+      responseJson: null,
+      dedupeKey: `outbox-manual:${outbox.id}:${status}:${crypto.randomUUID()}`,
+      createdAt: now,
+    });
+  };
+
+  const applyNotificationOutboxAction = async ({
+    context,
+    outboxId,
+    action,
+  }: {
+    context: NonNullable<Awaited<ReturnType<typeof resolveOrganizationStoreContext>>>;
+    outboxId: string;
+    action: z.infer<typeof notificationOutboxActionBodySchema>['action'];
+  }): Promise<
+    | { ok: true; detail: NonNullable<Awaited<ReturnType<typeof readNotificationOutboxDetail>>> }
+    | { ok: false; status: 404 | 409; message: string }
+  > => {
+    const rows = await database
+      .select()
+      .from(dbSchema.notificationOutbox)
+      .where(
+        and(
+          eq(dbSchema.notificationOutbox.organizationId, context.organizationId),
+          eq(dbSchema.notificationOutbox.storeId, context.storeId),
+          eq(dbSchema.notificationOutbox.id, outboxId),
+        ),
+      )
+      .limit(1);
+    const outbox = rows[0] ?? null;
+    if (!outbox) {
+      return { ok: false, status: 404, message: 'Notification outbox not found.' };
+    }
+
+    const now = new Date();
+    if (action === 'retry') {
+      if (outbox.status !== 'dead' && outbox.status !== 'retry') {
+        return {
+          ok: false,
+          status: 409,
+          message: 'Only dead or retry notifications can be returned to retry.',
+        };
+      }
+      await database
+        .update(dbSchema.notificationOutbox)
+        .set({
+          status: 'retry',
+          nextAttemptAt: now,
+          lockedAt: null,
+          lockedBy: null,
+          lockExpiresAt: null,
+          lastError: null,
+          deadAt: null,
+          cancelledAt: null,
+          updatedAt: now,
+        })
+        .where(eq(dbSchema.notificationOutbox.id, outbox.id));
+      await appendNotificationOutboxManualLog({
+        outbox,
+        status: 'manual_retry',
+        message: 'Manual retry was requested.',
+        now,
+      });
+    } else if (action === 'cancel') {
+      if (outbox.status !== 'pending' && outbox.status !== 'retry') {
+        return {
+          ok: false,
+          status: 409,
+          message: 'Only pending or retry notifications can be cancelled.',
+        };
+      }
+      await database
+        .update(dbSchema.notificationOutbox)
+        .set({
+          status: 'cancelled',
+          lockedAt: null,
+          lockedBy: null,
+          lockExpiresAt: null,
+          cancelledAt: now,
+          updatedAt: now,
+        })
+        .where(eq(dbSchema.notificationOutbox.id, outbox.id));
+      await appendNotificationOutboxManualLog({
+        outbox,
+        status: 'cancelled',
+        message: 'Notification was manually cancelled.',
+        now,
+      });
+    } else if (action === 'mark_sent') {
+      await database
+        .update(dbSchema.notificationOutbox)
+        .set({
+          status: 'sent',
+          lockedAt: null,
+          lockedBy: null,
+          lockExpiresAt: null,
+          lastError: null,
+          sentAt: now,
+          updatedAt: now,
+        })
+        .where(eq(dbSchema.notificationOutbox.id, outbox.id));
+      await appendNotificationOutboxManualLog({
+        outbox,
+        status: 'manual_marked_sent',
+        message: 'Notification was manually marked as sent.',
+        now,
+      });
+    } else {
+      await appendNotificationOutboxManualLog({
+        outbox,
+        status: 'duplicate_detected',
+        message: 'Duplicate delivery was manually recorded.',
+        now,
+      });
+    }
+
+    const detail = await readNotificationOutboxDetail({ context, outboxId });
+    if (!detail) {
+      return { ok: false, status: 404, message: 'Notification outbox not found.' };
+    }
+    return { ok: true, detail };
   };
 
   const normalizeReminderTimings = (values: number[]): number[] => {
@@ -2375,6 +2846,29 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     }
     const trimmed = value?.trim() ?? '';
     return trimmed.length > 0 ? trimmed : null;
+  };
+
+  const normalizeStoredPublicSiteDescriptionFormat = (
+    value: string | null | undefined,
+  ): PublicSiteDescriptionFormat => (value === 'limited_html' ? 'limited_html' : 'plain_text');
+
+  const serializePublicSiteDescription = (
+    description: string | null | undefined,
+    descriptionFormat: string | null | undefined,
+  ): { description: string | null; descriptionFormat: PublicSiteDescriptionFormat } => {
+    if (!description) {
+      return { description: null, descriptionFormat: 'plain_text' };
+    }
+
+    if (normalizeStoredPublicSiteDescriptionFormat(descriptionFormat) === 'limited_html') {
+      const sanitized = sanitizeLimitedHtml(description);
+      if (!extractPlainText(sanitized)) {
+        return { description: null, descriptionFormat: 'plain_text' };
+      }
+      return { description: sanitized, descriptionFormat: 'limited_html' };
+    }
+
+    return { description, descriptionFormat: 'plain_text' };
   };
 
   const listAccessibleStoresForOrganization = async ({
@@ -3047,6 +3541,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .select({
           siteName: dbSchema.publicSiteSetting.siteName,
           description: dbSchema.publicSiteSetting.description,
+          descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
           address: dbSchema.publicSiteSetting.address,
           phone: dbSchema.publicSiteSetting.phone,
           businessHours: dbSchema.publicSiteSetting.businessHours,
@@ -3065,9 +3560,26 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .limit(1);
       const current = currentRows[0] ?? null;
       const now = new Date();
+      let nextDescription: ReturnType<typeof normalizePublicSiteDescription>;
+      try {
+        nextDescription = normalizePublicSiteDescription({
+          description: body.description,
+          descriptionFormat: body.descriptionFormat,
+          currentDescription: current?.description ?? null,
+          currentDescriptionFormat: normalizeStoredPublicSiteDescriptionFormat(
+            current?.descriptionFormat ?? null,
+          ),
+        });
+      } catch (error) {
+        if (error instanceof PublicSiteDescriptionValidationError) {
+          return c.json({ message: error.message }, 400);
+        }
+        throw error;
+      }
       const nextValues = {
         siteName: normalizePublicSiteText(body.siteName, current?.siteName ?? null),
-        description: normalizePublicSiteText(body.description, current?.description ?? null),
+        description: nextDescription.description,
+        descriptionFormat: nextDescription.descriptionFormat,
         address: normalizePublicSiteText(body.address, current?.address ?? null),
         phone: normalizePublicSiteText(body.phone, current?.phone ?? null),
         businessHours: normalizePublicSiteText(body.businessHours, current?.businessHours ?? null),
@@ -3183,6 +3695,103 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
     })();
   });
 
+  authRoutes.openapi(listNotificationOutboxRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug } = c.req.valid('param');
+      const query = c.req.valid('query');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      return c.json(await listNotificationOutboxes({ context: storeContext, query }), 200);
+    })();
+  });
+
+  authRoutes.openapi(getNotificationOutboxDetailRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug, outboxId } = c.req.valid('param');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const detail = await readNotificationOutboxDetail({ context: storeContext, outboxId });
+      if (!detail) {
+        return c.json({ message: 'Notification outbox not found.' }, 404);
+      }
+
+      return c.json(detail, 200);
+    })();
+  });
+
+  authRoutes.openapi(createNotificationOutboxActionRoute, (c) => {
+    return (async () => {
+      const { orgSlug, storeSlug, outboxId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      const identity = await getSessionIdentity(c.req.raw.headers);
+      if (!identity) {
+        return c.json({ message: 'Unauthorized' }, 401);
+      }
+
+      const storeContext = await resolveStoreContextBySlugs({ orgSlug, storeSlug });
+      if (!storeContext) {
+        return c.json({ message: 'Organization or store not found.' }, 404);
+      }
+
+      const access = await resolveOrganizationStoreAccess({
+        database,
+        userId: identity.userId,
+        context: storeContext,
+      });
+      if (!access.effective.canManageStore) {
+        return c.json({ message: 'Forbidden' }, 403);
+      }
+
+      const result = await applyNotificationOutboxAction({
+        context: storeContext,
+        outboxId,
+        action: body.action,
+      });
+      if (!result.ok) {
+        if (result.status === 404) {
+          return c.json({ message: result.message }, 404);
+        }
+        return c.json({ message: result.message }, 409);
+      }
+
+      return c.json(result.detail, 200);
+    })();
+  });
+
   authRoutes.openapi(getReminderSettingsRoute, (c) => {
     return (async () => {
       const { orgSlug, storeSlug } = c.req.valid('param');
@@ -3254,60 +3863,69 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         }
       }
 
-      await database
-        .delete(dbSchema.reminderPolicy)
-        .where(
-          and(
-            eq(dbSchema.reminderPolicy.organizationId, storeContext.organizationId),
-            eq(dbSchema.reminderPolicy.storeId, storeContext.storeId),
-            isNull(dbSchema.reminderPolicy.serviceId),
-          ),
-        );
-
-      await database.insert(dbSchema.reminderPolicy).values(
-        timingsMinutes.map((minutesBefore) => ({
-          id: crypto.randomUUID(),
-          organizationId: storeContext.organizationId,
-          storeId: storeContext.storeId,
-          serviceId: null,
-          enabled: body.enabled,
-          minutesBefore,
-          channel: 'email',
-          createdAt: now,
-          updatedAt: now,
-        })),
-      );
-
-      if (serviceOverrideInputs) {
-        await database
+      await runDatabaseTransactionOrThrow(database, async (tx: AuthRuntimeDatabase) => {
+        await tx
           .delete(dbSchema.reminderPolicy)
           .where(
             and(
               eq(dbSchema.reminderPolicy.organizationId, storeContext.organizationId),
               eq(dbSchema.reminderPolicy.storeId, storeContext.storeId),
-              isNotNull(dbSchema.reminderPolicy.serviceId),
+              isNull(dbSchema.reminderPolicy.serviceId),
             ),
           );
 
-        const servicePolicyRows = serviceOverrideInputs
-          .filter((override) => !override.inheritsStoreDefault)
-          .flatMap((override) =>
-            normalizeReminderTimings(override.timingsMinutes).map((minutesBefore) => ({
-              id: crypto.randomUUID(),
-              organizationId: storeContext.organizationId,
-              storeId: storeContext.storeId,
-              serviceId: override.serviceId,
-              enabled: override.enabled,
-              minutesBefore,
-              channel: 'email',
-              createdAt: now,
-              updatedAt: now,
-            })),
-          );
-        if (servicePolicyRows.length > 0) {
-          await database.insert(dbSchema.reminderPolicy).values(servicePolicyRows);
+        await tx.insert(dbSchema.reminderPolicy).values(
+          timingsMinutes.map((minutesBefore) => ({
+            id: crypto.randomUUID(),
+            organizationId: storeContext.organizationId,
+            storeId: storeContext.storeId,
+            serviceId: null,
+            enabled: body.enabled,
+            minutesBefore,
+            channel: 'email',
+            createdAt: now,
+            updatedAt: now,
+          })),
+        );
+
+        if (serviceOverrideInputs) {
+          await tx
+            .delete(dbSchema.reminderPolicy)
+            .where(
+              and(
+                eq(dbSchema.reminderPolicy.organizationId, storeContext.organizationId),
+                eq(dbSchema.reminderPolicy.storeId, storeContext.storeId),
+                isNotNull(dbSchema.reminderPolicy.serviceId),
+              ),
+            );
+
+          const servicePolicyRows = serviceOverrideInputs
+            .filter((override) => !override.inheritsStoreDefault)
+            .flatMap((override) =>
+              normalizeReminderTimings(override.timingsMinutes).map((minutesBefore) => ({
+                id: crypto.randomUUID(),
+                organizationId: storeContext.organizationId,
+                storeId: storeContext.storeId,
+                serviceId: override.serviceId,
+                enabled: override.enabled,
+                minutesBefore,
+                channel: 'email',
+                createdAt: now,
+                updatedAt: now,
+              })),
+            );
+          if (servicePolicyRows.length > 0) {
+            await tx.insert(dbSchema.reminderPolicy).values(servicePolicyRows);
+          }
         }
-      }
+
+        await regenerateFutureBookingReminderOutboxes({
+          database: tx,
+          organizationId: storeContext.organizationId,
+          storeId: storeContext.storeId,
+          now,
+        });
+      });
 
       return c.json(await serializeReminderSettings({ context: storeContext }), 200);
     })();

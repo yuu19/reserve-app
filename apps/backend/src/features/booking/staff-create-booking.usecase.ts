@@ -11,7 +11,7 @@ import {
   SLOT_STATUS,
 } from '../../domain/booking/constants.js';
 import * as dbSchema from '../../infra/db/schema.js';
-import { runDatabaseTransaction } from '../../infra/db/transaction.js';
+import { runDatabaseTransactionOrThrow } from '../../infra/db/transaction.js';
 import { serializeBooking } from '../../shared/serializers.js';
 import {
   conflict,
@@ -33,7 +33,10 @@ import {
   insertBookingCompanions,
   reserveSlotCapacityForBookingCreate,
 } from './booking.repository.js';
-import { notifyBookingEmailBestEffort } from './booking.notifications.js';
+import {
+  enqueueBookingCustomerNotificationOutbox,
+  enqueueBookingRemindersForBooking,
+} from './booking.notifications.js';
 import type { StaffCreateBookingBody, StaffCreateBookingParams } from './booking.schemas.js';
 import { isUniqueConstraintError } from './booking-usecase-helpers.js';
 import {
@@ -162,7 +165,7 @@ export const createBookingByStaff = async (
 
   const bookingId = crypto.randomUUID();
   try {
-    await runDatabaseTransaction(ctx.database, async (tx: AuthRuntimeDatabase) => {
+    await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
       const reserved = await reserveSlotCapacityForBookingCreate({
         database: tx,
         slotId: slot.id,
@@ -257,16 +260,22 @@ export const createBookingByStaff = async (
         },
         headers,
       });
-    });
 
-    if (body.notifyCustomer) {
-      await notifyBookingEmailBestEffort({
-        database: ctx.database,
-        env: ctx.env,
-        bookingId,
-        event: 'booking_confirmed',
-      });
-    }
+      await Promise.all([
+        body.notifyCustomer
+          ? enqueueBookingCustomerNotificationOutbox({
+              database: tx,
+              bookingId,
+              event: 'booking_confirmed',
+            })
+          : Promise.resolve(),
+        enqueueBookingRemindersForBooking({
+          database: tx,
+          bookingId,
+          now,
+        }),
+      ]);
+    });
 
     const booking = await getBookingById(ctx.database, bookingId);
     return jsonResult(serializeBooking(booking as Record<string, unknown> | undefined));

@@ -160,6 +160,7 @@ export const publicSiteSetting = sqliteTable(
       .references(() => store.id, { onDelete: 'cascade' }),
     siteName: text('site_name'),
     description: text('description'),
+    descriptionFormat: text('description_format').default('plain_text').notNull(),
     address: text('address'),
     phone: text('phone'),
     businessHours: text('business_hours'),
@@ -877,6 +878,7 @@ export const notificationLog = sqliteTable(
   'notification_log',
   {
     id: text('id').primaryKey(),
+    outboxId: text('outbox_id').references(() => notificationOutbox.id, { onDelete: 'set null' }),
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
@@ -885,18 +887,75 @@ export const notificationLog = sqliteTable(
       .references(() => store.id, { onDelete: 'cascade' }),
     bookingId: text('booking_id').references(() => booking.id, { onDelete: 'set null' }),
     eventType: text('event_type').notNull(),
+    templateKey: text('template_key'),
     channel: text('channel').default('email').notNull(),
+    recipientType: text('recipient_type'),
     recipientEmail: text('recipient_email').notNull(),
     status: text('status').default('pending').notNull(),
+    attemptNumber: integer('attempt_number'),
+    provider: text('provider'),
+    providerMessageId: text('provider_message_id'),
     dedupeKey: text('dedupe_key').notNull(),
     errorMessage: text('error_message'),
+    responseJson: text('response_json'),
     createdAt: defaultTimestampMs(),
     updatedAt: defaultUpdatedTimestampMs(),
   },
   (table) => [
     uniqueIndex('notification_log_dedupe_uidx').on(table.dedupeKey),
+    index('notification_log_outbox_idx').on(table.outboxId, table.createdAt),
+    index('notification_log_attempt_idx').on(table.outboxId, table.attemptNumber),
     index('notification_log_booking_event_idx').on(table.bookingId, table.eventType),
     index('notification_log_org_created_idx').on(table.organizationId, table.createdAt),
+  ],
+);
+
+export const notificationOutbox = sqliteTable(
+  'notification_outbox',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    storeId: text('store_id')
+      .notNull()
+      .references(() => store.id, { onDelete: 'cascade' }),
+    bookingId: text('booking_id').references(() => booking.id, { onDelete: 'set null' }),
+    participantId: text('participant_id').references(() => participant.id, {
+      onDelete: 'set null',
+    }),
+    eventType: text('event_type').notNull(),
+    templateKey: text('template_key').notNull(),
+    channel: text('channel').default('email').notNull(),
+    recipientType: text('recipient_type').notNull(),
+    recipientEmail: text('recipient_email').notNull(),
+    recipientName: text('recipient_name'),
+    subjectSnapshot: text('subject_snapshot'),
+    payloadJson: text('payload_json').notNull(),
+    status: text('status').default('pending').notNull(),
+    scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }).notNull(),
+    nextAttemptAt: integer('next_attempt_at', { mode: 'timestamp_ms' }).notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(5).notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    lockedAt: integer('locked_at', { mode: 'timestamp_ms' }),
+    lockedBy: text('locked_by'),
+    lockExpiresAt: integer('lock_expires_at', { mode: 'timestamp_ms' }),
+    provider: text('provider'),
+    providerMessageId: text('provider_message_id'),
+    lastError: text('last_error'),
+    sentAt: integer('sent_at', { mode: 'timestamp_ms' }),
+    cancelledAt: integer('cancelled_at', { mode: 'timestamp_ms' }),
+    deadAt: integer('dead_at', { mode: 'timestamp_ms' }),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('notification_outbox_idempotency_uidx').on(table.idempotencyKey),
+    index('notification_outbox_due_idx').on(table.status, table.nextAttemptAt, table.scheduledFor),
+    index('notification_outbox_booking_idx').on(table.bookingId),
+    index('notification_outbox_store_idx').on(table.organizationId, table.storeId, table.createdAt),
+    index('notification_outbox_event_idx').on(table.eventType, table.status, table.scheduledFor),
   ],
 );
 

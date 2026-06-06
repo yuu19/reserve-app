@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createWorkerAuthRuntime, type BackendWorkerEnv } from './auth-worker.js';
 import { cleanupExpiredAiConversationContent } from './features/ai/conversation-store.js';
-import { sendDueBookingReminders } from './features/booking/booking-reminders.js';
+import { processDueNotificationOutbox } from './features/booking/booking.notifications.js';
 import { runDailyBookingMaintenance } from './domain/booking/scheduler.js';
 import {
   completeExpiredOrganizationPremiumTrials,
@@ -52,7 +52,7 @@ const handler = {
     const cron =
       typeof event === 'object' && event !== null ? (event as { cron?: string }).cron : null;
     const reminderJobs = [
-      sendDueBookingReminders({
+      processDueNotificationOutbox({
         database: runtime.database,
         env: runtime.env,
       }),

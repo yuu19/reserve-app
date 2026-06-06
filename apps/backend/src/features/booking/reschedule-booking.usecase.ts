@@ -4,6 +4,8 @@ import {
   BOOKING_STATUS,
   SLOT_STATUS,
 } from '../../domain/booking/constants.js';
+import type { AuthRuntimeDatabase } from '../../auth-runtime.js';
+import { runDatabaseTransactionOrThrow } from '../../infra/db/transaction.js';
 import { isBookingStatus } from '../../domain/booking/state.js';
 import { isRequestedStoreMismatch } from '../../shared/store-policy.js';
 import {
@@ -24,8 +26,10 @@ import {
   updateConfirmedBookingSlot,
 } from './booking.repository.js';
 import {
-  notifyBookingEmailBestEffort,
-  notifyBookingOperationalEmailBestEffort,
+  cancelPendingBookingReminderOutboxes,
+  enqueueBookingCustomerNotificationOutbox,
+  enqueueBookingOperationalNotificationOutbox,
+  enqueueBookingRemindersForBooking,
 } from './booking.notifications.js';
 import type { BookingRescheduleBody } from './booking.schemas.js';
 
@@ -101,111 +105,108 @@ export const rescheduleBookingByStaff = async (
     return conflict('Target slot is not bookable.');
   }
 
-  let targetCapacityReserved = false;
-  const releaseTargetCapacity = async () => {
-    if (!targetCapacityReserved) {
-      return;
-    }
-    await releaseConfirmedBookingSlotCapacity({
-      database: ctx.database,
-      slotId: targetSlot.id,
-      participantsCount: booking.participantsCount,
-    });
-    targetCapacityReserved = false;
-  };
-
   try {
-    const reserved = await reserveSlotCapacityForReschedule({
-      database: ctx.database,
-      slotId: targetSlot.id,
-      participantsCount: booking.participantsCount,
-      now,
-    });
-    if (!reserved) {
-      throw new Error('TARGET_SLOT_CONFLICT');
-    }
-    targetCapacityReserved = true;
+    await runDatabaseTransactionOrThrow(ctx.database, async (tx: AuthRuntimeDatabase) => {
+      const reserved = await reserveSlotCapacityForReschedule({
+        database: tx,
+        slotId: targetSlot.id,
+        participantsCount: booking.participantsCount,
+        now,
+      });
+      if (!reserved) {
+        throw new Error('TARGET_SLOT_CONFLICT');
+      }
 
-    const updated = await updateConfirmedBookingSlot({
-      database: ctx.database,
-      bookingId: booking.id,
-      currentSlotId: booking.slotId,
-      targetSlotId: targetSlot.id,
-    });
-    if (!updated) {
-      throw new Error('BOOKING_STATE_CONFLICT');
-    }
-    targetCapacityReserved = false;
-
-    await releaseConfirmedBookingSlotCapacity({
-      database: ctx.database,
-      slotId: booking.slotId,
-      participantsCount: booking.participantsCount,
-    });
-
-    const reason = normalizeOptionalText(body.reason);
-    const beforeJson = JSON.stringify({
-      slotId: booking.slotId,
-      serviceId: booking.serviceId,
-      startAt: toIsoString(booking.currentSlotStartAt),
-      endAt: toIsoString(booking.currentSlotEndAt),
-      participantsCount: booking.participantsCount,
-      status: booking.status,
-    });
-    const afterJson = JSON.stringify({
-      slotId: targetSlot.id,
-      serviceId: targetSlot.serviceId,
-      startAt: toIsoString(targetSlot.startAt),
-      endAt: toIsoString(targetSlot.endAt),
-      participantsCount: booking.participantsCount,
-      status: BOOKING_STATUS.CONFIRMED,
-    });
-
-    const changeLogId = await insertBookingChangeLog({
-      database: ctx.database,
-      bookingId: booking.id,
-      organizationId: booking.organizationId,
-      storeId: booking.storeId,
-      beforeJson,
-      afterJson,
-      reason,
-      changedByUserId: identity.userId,
-    });
-
-    await writeBookingAuditLog({
-      database: ctx.database,
-      bookingId: booking.id,
-      organizationId: booking.organizationId,
-      storeId: booking.storeId,
-      actorUserId: identity.userId,
-      action: BOOKING_AUDIT_ACTION.RESCHEDULED,
-      metadata: {
-        fromSlotId: booking.slotId,
-        toSlotId: targetSlot.id,
-        reason,
-        changeLogId,
-      },
-      headers,
-    });
-
-    await Promise.all([
-      notifyBookingEmailBestEffort({
-        database: ctx.database,
-        env: ctx.env,
+      const updated = await updateConfirmedBookingSlot({
+        database: tx,
         bookingId: booking.id,
-        event: 'booking_rescheduled',
-        reason,
-        dedupeKeyExtra: changeLogId,
-      }),
-      notifyBookingOperationalEmailBestEffort({
-        database: ctx.database,
-        env: ctx.env,
+        currentSlotId: booking.slotId,
+        targetSlotId: targetSlot.id,
+      });
+      if (!updated) {
+        throw new Error('BOOKING_STATE_CONFLICT');
+      }
+
+      await releaseConfirmedBookingSlotCapacity({
+        database: tx,
+        slotId: booking.slotId,
+        participantsCount: booking.participantsCount,
+      });
+
+      const reason = normalizeOptionalText(body.reason);
+      const beforeJson = JSON.stringify({
+        slotId: booking.slotId,
+        serviceId: booking.serviceId,
+        startAt: toIsoString(booking.currentSlotStartAt),
+        endAt: toIsoString(booking.currentSlotEndAt),
+        participantsCount: booking.participantsCount,
+        status: booking.status,
+      });
+      const afterJson = JSON.stringify({
+        slotId: targetSlot.id,
+        serviceId: targetSlot.serviceId,
+        startAt: toIsoString(targetSlot.startAt),
+        endAt: toIsoString(targetSlot.endAt),
+        participantsCount: booking.participantsCount,
+        status: BOOKING_STATUS.CONFIRMED,
+      });
+
+      const changeLogId = await insertBookingChangeLog({
+        database: tx,
         bookingId: booking.id,
-        event: 'booking_rescheduled',
+        organizationId: booking.organizationId,
+        storeId: booking.storeId,
+        beforeJson,
+        afterJson,
         reason,
-        dedupeKeyExtra: changeLogId,
-      }),
-    ]);
+        changedByUserId: identity.userId,
+      });
+
+      await writeBookingAuditLog({
+        database: tx,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        storeId: booking.storeId,
+        actorUserId: identity.userId,
+        action: BOOKING_AUDIT_ACTION.RESCHEDULED,
+        metadata: {
+          fromSlotId: booking.slotId,
+          toSlotId: targetSlot.id,
+          reason,
+          changeLogId,
+        },
+        headers,
+      });
+
+      await cancelPendingBookingReminderOutboxes({
+        database: tx,
+        bookingId: booking.id,
+        includeProcessing: true,
+        now,
+      });
+
+      await Promise.all([
+        enqueueBookingCustomerNotificationOutbox({
+          database: tx,
+          bookingId: booking.id,
+          event: 'booking_rescheduled',
+          reason,
+          dedupeKeyExtra: changeLogId,
+        }),
+        enqueueBookingOperationalNotificationOutbox({
+          database: tx,
+          bookingId: booking.id,
+          event: 'booking_rescheduled',
+          reason,
+          dedupeKeyExtra: changeLogId,
+        }),
+        enqueueBookingRemindersForBooking({
+          database: tx,
+          bookingId: booking.id,
+          now,
+        }),
+      ]);
+    });
 
     return jsonResult({ ok: true });
   } catch (error) {
@@ -213,10 +214,8 @@ export const rescheduleBookingByStaff = async (
       return conflict('Target slot is full or not bookable.');
     }
     if (error instanceof Error && error.message === 'BOOKING_STATE_CONFLICT') {
-      await releaseTargetCapacity();
       return conflict('Only confirmed booking can be rescheduled.');
     }
-    await releaseTargetCapacity();
     throw error;
   }
 };
