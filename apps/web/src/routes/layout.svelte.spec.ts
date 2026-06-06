@@ -378,6 +378,7 @@ describe('共通レイアウト', () => {
 			expect(document.querySelector('a[href="/admin/dashboard"]')).not.toBeNull();
 			expect(document.querySelector('a[href="/admin/reminder-settings"]')).not.toBeNull();
 			expect(document.querySelector('a[href="/admin/tickets"]')).not.toBeNull();
+			expect(document.body.textContent).toContain('フォーム管理');
 			expect(document.body.textContent).toContain('回数券管理');
 			expect(document.querySelector('a[href="/events"]')).toBeNull();
 			expect(document.body.textContent).toContain('参加者へ切替');

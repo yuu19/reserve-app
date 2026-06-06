@@ -101,7 +101,7 @@ describe('公開サイト管理ページ', () => {
 			.element(page.getByRole('link', { name: '予約ページ一覧を開く' }))
 			.toHaveAttribute('href', '/hoge/room-one/events');
 		await expect
-			.element(page.getByRole('link', { name: '予約フォーム設定へ移動' }))
+			.element(page.getByRole('link', { name: 'フォーム管理へ移動' }))
 			.toHaveAttribute('href', '/hoge/room-one/admin/forms');
 	});
 

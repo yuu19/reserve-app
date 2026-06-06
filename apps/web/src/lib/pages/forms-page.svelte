@@ -84,7 +84,10 @@
 		description: string;
 		defaultName: string;
 		defaultDescription: string;
+		previewTitle: string;
+		previewDescription: string;
 		previewSectionTitle: string;
+		previewIncludesBookingFields: boolean;
 	};
 	type DefaultBookingField = {
 		label: string;
@@ -99,7 +102,10 @@
 			description: '公開予約時に入力してもらう追加項目です。',
 			defaultName: '予約フォームの追加項目',
 			defaultDescription: '公開予約フォームの標準項目の後に表示する追加質問です。',
-			previewSectionTitle: '追加質問'
+			previewTitle: '予約フォームのプレビュー',
+			previewDescription: '予約者情報と追加質問を、公開予約フォームに近い並びで表示します。',
+			previewSectionTitle: '追加質問',
+			previewIncludesBookingFields: true
 		},
 		{
 			value: 'pre_survey',
@@ -107,7 +113,10 @@
 			description: '予約前に確認したい質問です。',
 			defaultName: '事前アンケート',
 			defaultDescription: '予約前に確認したい質問を設定します。',
-			previewSectionTitle: '事前アンケート'
+			previewTitle: '事前アンケートのプレビュー',
+			previewDescription: '事前アンケートの項目だけを表示します。',
+			previewSectionTitle: '事前アンケート',
+			previewIncludesBookingFields: false
 		},
 		{
 			value: 'consent',
@@ -115,7 +124,10 @@
 			description: 'キャンセルポリシーなどへの同意チェックです。',
 			defaultName: '同意事項',
 			defaultDescription: '予約前に同意してもらう内容を設定します。',
-			previewSectionTitle: '同意事項'
+			previewTitle: '同意事項のプレビュー',
+			previewDescription: '同意事項の項目だけを表示します。',
+			previewSectionTitle: '同意事項',
+			previewIncludesBookingFields: false
 		}
 	];
 	const formTypeOptions: Array<{ value: FormType; label: string }> = formTypeDefinitions.map(
@@ -742,7 +754,7 @@
 				await refresh();
 			} catch (error) {
 				errorMessage =
-					error instanceof Error ? error.message : '予約フォーム設定の読み込みに失敗しました。';
+					error instanceof Error ? error.message : 'フォーム管理の読み込みに失敗しました。';
 			} finally {
 				loading = false;
 			}
@@ -754,7 +766,7 @@
 	<header class="space-y-3">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="space-y-2">
-				<h1 class="text-3xl font-semibold text-foreground">予約フォーム設定</h1>
+				<h1 class="text-3xl font-semibold text-foreground">フォーム管理</h1>
 				<p class="text-sm text-muted-foreground">
 					公開予約時に表示する標準項目、追加質問、事前アンケート、同意事項を管理します。
 				</p>
@@ -763,7 +775,7 @@
 		{#if mode !== 'list'}
 			<Button type="button" variant="ghost" href={resolve(formsPath as ResolvablePath)}>
 				<ArrowLeft class="size-4" />
-				設定一覧へ戻る
+				フォーム管理へ戻る
 			</Button>
 		{/if}
 	</header>
@@ -771,7 +783,7 @@
 	{#if loading}
 		<Card class="surface-panel border-border/80 shadow-lg">
 			<CardContent class="py-6">
-				<p class="text-sm text-muted-foreground">予約フォーム設定を読み込み中…</p>
+				<p class="text-sm text-muted-foreground">フォーム管理を読み込み中…</p>
 			</CardContent>
 		</Card>
 	{:else if !currentContext}
@@ -788,7 +800,7 @@
 			</CardContent>
 		</Card>
 	{:else if mode === 'list'}
-		<section class="grid gap-4 lg:grid-cols-3" aria-label="予約フォーム設定メニュー">
+		<section class="grid gap-4 lg:grid-cols-3" aria-label="フォーム管理メニュー">
 			{#each formTypeGroups as group (group.definition.value)}
 				<Card class="surface-panel border-border/80 shadow-lg">
 					<CardHeader class="space-y-3">
@@ -988,7 +1000,7 @@
 					{:else}
 						<div class="rounded-md border border-border/80 bg-secondary/40 p-4">
 							<p class="text-sm text-muted-foreground">
-								氏名、メールアドレス、電話番号、人数、同伴者名、備考は予約フォームの標準項目として先に表示されます。
+								右側のプレビューでは、このフォーム種別で設定する項目だけを確認できます。
 							</p>
 						</div>
 					{/if}
@@ -1250,66 +1262,66 @@
 			<aside class="lg:sticky lg:top-6 lg:self-start">
 				<Card class="surface-panel border-border/80 shadow-lg">
 					<CardHeader>
-						<h2 class="text-xl font-semibold text-foreground">予約者から見えるプレビュー</h2>
-						<CardDescription
-							>標準項目と追加項目を、公開予約フォームに近い並びで表示します。</CardDescription
-						>
+						<h2 class="text-xl font-semibold text-foreground">{selectedDefinition.previewTitle}</h2>
+						<CardDescription>{selectedDefinition.previewDescription}</CardDescription>
 					</CardHeader>
 					<CardContent class="space-y-5">
-						<section class="space-y-3" aria-labelledby="preview-customer-heading">
-							<h3 id="preview-customer-heading" class="text-base font-semibold text-foreground">
-								予約者情報
-							</h3>
-							<div class="grid gap-3">
-								<div class="grid gap-3 sm:grid-cols-2">
-									<div class="space-y-1.5">
-										<Label for="preview-customer-name">氏名 *</Label>
-										<Input id="preview-customer-name" value="" placeholder="山田 太郎" disabled />
+						{#if selectedDefinition.previewIncludesBookingFields}
+							<section class="space-y-3" aria-labelledby="preview-customer-heading">
+								<h3 id="preview-customer-heading" class="text-base font-semibold text-foreground">
+									予約者情報
+								</h3>
+								<div class="grid gap-3">
+									<div class="grid gap-3 sm:grid-cols-2">
+										<div class="space-y-1.5">
+											<Label for="preview-customer-name">氏名 *</Label>
+											<Input id="preview-customer-name" value="" placeholder="山田 太郎" disabled />
+										</div>
+										<div class="space-y-1.5">
+											<Label for="preview-customer-email">メールアドレス *</Label>
+											<Input
+												id="preview-customer-email"
+												value=""
+												placeholder="taro@example.com"
+												disabled
+											/>
+										</div>
+									</div>
+									<div class="grid gap-3 sm:grid-cols-2">
+										<div class="space-y-1.5">
+											<Label for="preview-customer-phone">電話番号</Label>
+											<Input
+												id="preview-customer-phone"
+												value=""
+												placeholder="090-0000-0000"
+												disabled
+											/>
+										</div>
+										<div class="space-y-1.5">
+											<Label for="preview-participants-count">人数 *</Label>
+											<Input id="preview-participants-count" value="1" disabled />
+										</div>
 									</div>
 									<div class="space-y-1.5">
-										<Label for="preview-customer-email">メールアドレス *</Label>
-										<Input
-											id="preview-customer-email"
-											value=""
-											placeholder="taro@example.com"
+										<Label for="preview-companions">同伴者名</Label>
+										<textarea
+											id="preview-companions"
+											class="min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-sm opacity-70"
+											placeholder="1行に1名ずつ入力"
 											disabled
-										/>
+										></textarea>
 									</div>
-								</div>
-								<div class="grid gap-3 sm:grid-cols-2">
 									<div class="space-y-1.5">
-										<Label for="preview-customer-phone">電話番号</Label>
-										<Input
-											id="preview-customer-phone"
-											value=""
-											placeholder="090-0000-0000"
+										<Label for="preview-note">備考</Label>
+										<textarea
+											id="preview-note"
+											class="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm opacity-70"
 											disabled
-										/>
-									</div>
-									<div class="space-y-1.5">
-										<Label for="preview-participants-count">人数 *</Label>
-										<Input id="preview-participants-count" value="1" disabled />
+										></textarea>
 									</div>
 								</div>
-								<div class="space-y-1.5">
-									<Label for="preview-companions">同伴者名</Label>
-									<textarea
-										id="preview-companions"
-										class="min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-sm opacity-70"
-										placeholder="1行に1名ずつ入力"
-										disabled
-									></textarea>
-								</div>
-								<div class="space-y-1.5">
-									<Label for="preview-note">備考</Label>
-									<textarea
-										id="preview-note"
-										class="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm opacity-70"
-										disabled
-									></textarea>
-								</div>
-							</div>
-						</section>
+							</section>
+						{/if}
 
 						<section class="space-y-3" aria-labelledby="preview-custom-heading">
 							<h3 id="preview-custom-heading" class="text-base font-semibold text-foreground">

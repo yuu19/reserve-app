@@ -114,7 +114,77 @@ const reservationForm: FormPayload = {
 	archivedAt: null
 };
 
-describe('予約フォーム設定ページ', () => {
+const preSurveyForm: FormPayload = {
+	...reservationForm,
+	id: 'form-pre-survey',
+	formType: 'pre_survey',
+	name: '事前アンケート',
+	description: '予約前に確認したい質問を設定します。',
+	status: 'draft',
+	currentPublishedVersionId: null,
+	currentPublishedVersion: null,
+	fields: [
+		{
+			id: 'field-condition',
+			fieldKey: 'condition',
+			fieldType: 'textarea',
+			label: '当日の体調',
+			description: '気になることがあれば記入してください。',
+			placeholder: '体調や注意点',
+			required: false,
+			options: [],
+			sortOrder: 0
+		}
+	],
+	assignments: [
+		{
+			id: 'assignment-pre-survey',
+			formType: 'pre_survey',
+			targetType: 'store',
+			targetId: 'store-1',
+			formTemplateId: 'form-pre-survey',
+			createdAt: '2026-06-01T00:00:00.000Z',
+			updatedAt: '2026-06-01T00:00:00.000Z'
+		}
+	]
+};
+
+const consentForm: FormPayload = {
+	...reservationForm,
+	id: 'form-consent',
+	formType: 'consent',
+	name: '同意事項',
+	description: '予約前に同意してもらう内容を設定します。',
+	status: 'draft',
+	currentPublishedVersionId: null,
+	currentPublishedVersion: null,
+	fields: [
+		{
+			id: 'field-policy',
+			fieldKey: 'policy',
+			fieldType: 'consent',
+			label: 'キャンセルポリシーに同意する',
+			description: '前日以降のキャンセル料に同意してください。',
+			placeholder: null,
+			required: true,
+			options: [],
+			sortOrder: 0
+		}
+	],
+	assignments: [
+		{
+			id: 'assignment-consent',
+			formType: 'consent',
+			targetType: 'store',
+			targetId: 'store-1',
+			formTemplateId: 'form-consent',
+			createdAt: '2026-06-01T00:00:00.000Z',
+			updatedAt: '2026-06-01T00:00:00.000Z'
+		}
+	]
+};
+
+describe('フォーム管理ページ', () => {
 	beforeEach(() => {
 		pageState.url = new URL('https://example.com/hoge/room-one/admin/forms');
 		pageState.params = {};
@@ -153,7 +223,7 @@ describe('予約フォーム設定ページ', () => {
 		render(FormsPage);
 
 		await expect
-			.element(page.getByRole('heading', { level: 1, name: '予約フォーム設定' }))
+			.element(page.getByRole('heading', { level: 1, name: 'フォーム管理' }))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('heading', { level: 2, name: '予約フォーム設定' }))
@@ -200,7 +270,7 @@ describe('予約フォーム設定ページ', () => {
 			.element(page.getByRole('heading', { level: 3, name: 'カスタム項目' }))
 			.toBeInTheDocument();
 		await expect
-			.element(page.getByRole('heading', { level: 2, name: '予約者から見えるプレビュー' }))
+			.element(page.getByRole('heading', { level: 2, name: '予約フォームのプレビュー' }))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('heading', { level: 3, name: '予約者情報' }))
@@ -212,5 +282,51 @@ describe('予約フォーム設定ページ', () => {
 		await expect.element(page.getByLabelText('選択肢 1')).toHaveValue('初めて');
 		await expect.element(page.getByLabelText('選択肢 2')).toHaveValue('経験あり');
 		expect(document.querySelector('#form-field-options-0')).toBeNull();
+	});
+
+	it('事前アンケートの編集プレビューでは予約者情報を表示しない', async () => {
+		pageState.url = new URL('https://example.com/hoge/room-one/admin/forms/form-pre-survey');
+		pageState.params = { formId: 'form-pre-survey' };
+		mocks.loadForm.mockResolvedValue(preSurveyForm);
+
+		render(FormsPage);
+
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '事前アンケートのプレビュー' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 3, name: '事前アンケート' }))
+			.toBeInTheDocument();
+		await expect.element(page.getByLabelText('ラベル')).toHaveValue('当日の体調');
+		expect(page.getByRole('heading', { level: 3, name: '予約者情報' }).query()).toBeNull();
+		expect(document.body.textContent).not.toContain('氏名 *');
+		expect(document.body.textContent).not.toContain('メールアドレス *');
+		expect(document.body.textContent).not.toContain('電話番号');
+		expect(document.body.textContent).not.toContain('人数 *');
+		expect(document.body.textContent).not.toContain('同伴者名');
+		expect(document.body.textContent).not.toContain('備考');
+	});
+
+	it('同意事項の編集プレビューでは予約者情報を表示しない', async () => {
+		pageState.url = new URL('https://example.com/hoge/room-one/admin/forms/form-consent');
+		pageState.params = { formId: 'form-consent' };
+		mocks.loadForm.mockResolvedValue(consentForm);
+
+		render(FormsPage);
+
+		await expect
+			.element(page.getByRole('heading', { level: 2, name: '同意事項のプレビュー' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('heading', { level: 3, name: '同意事項' }))
+			.toBeInTheDocument();
+		await expect.element(page.getByLabelText('ラベル')).toHaveValue('キャンセルポリシーに同意する');
+		expect(page.getByRole('heading', { level: 3, name: '予約者情報' }).query()).toBeNull();
+		expect(document.body.textContent).not.toContain('氏名 *');
+		expect(document.body.textContent).not.toContain('メールアドレス *');
+		expect(document.body.textContent).not.toContain('電話番号');
+		expect(document.body.textContent).not.toContain('人数 *');
+		expect(document.body.textContent).not.toContain('同伴者名');
+		expect(document.body.textContent).not.toContain('備考');
 	});
 });

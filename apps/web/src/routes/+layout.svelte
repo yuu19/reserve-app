@@ -186,7 +186,7 @@
 				{ href: '/admin/stores', label: '店舗管理', icon: Building2 },
 				{ href: '/admin/services', label: 'サービス一覧', icon: CalendarDays },
 				{ href: '/admin/public-site', label: '予約サイト管理', icon: Globe2 },
-				{ href: '/admin/forms', label: '予約フォーム設定', icon: ListChecks },
+				{ href: '/admin/forms', label: 'フォーム管理', icon: ListChecks },
 				{ href: '/admin/notification-settings', label: '通知先設定', icon: BellRing },
 				{ href: '/admin/reminder-settings', label: 'リマインド設定', icon: Clock3 },
 				{ href: '/admin/schedules/slots', label: '単発予約枠', icon: CalendarDays },

@@ -178,7 +178,7 @@ describe('設定ページ', () => {
 		await expect
 			.element(reminderSettingsLink)
 			.toHaveAttribute('href', '/hoge/room-one/admin/reminder-settings');
-		const formsLink = page.getByRole('link', { name: '予約フォーム設定へ移動' });
+		const formsLink = page.getByRole('link', { name: 'フォーム管理へ移動' });
 		await expect.element(formsLink).toBeInTheDocument();
 		await expect.element(formsLink).toHaveAttribute('href', '/hoge/room-one/admin/forms');
 	});
