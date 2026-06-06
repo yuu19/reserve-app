@@ -47,6 +47,7 @@
 - [directory-structure.md](./history/directory-structure.md): backend ディレクトリ再編の検討。
 - [reserve-app-ai-chatbot-reusable-plan.md](./history/reserve-app-ai-chatbot-reusable-plan.md): AI チャット再利用化の旧実行計画。
 - [ai-chat-proposal.md](./history/ai-chat-proposal.md): AI チャット初期提案と追記メモ。
+- [wysiwyg-editor-introduction-proposal.md](./history/wysiwyg-editor-introduction-proposal.md): 予約サイト説明と同意事項本文への WYSIWYG エディタ導入案。
 
 ### 調査メモ
 
