@@ -12299,7 +12299,9 @@ describe('バックエンドアプリ', () => {
         },
         body: JSON.stringify({
           siteName: 'Public Events Site',
-          description: '予約サイトトップページの説明です。',
+          description:
+            '<p class="x">予約サイトトップページの<strong>説明</strong>です。<script>alert(1)</script><a href="https://example.com/info">案内</a><a href="javascript:alert(1)">危険</a></p>',
+          descriptionFormat: 'limited_html',
           address: '東京都千代田区1-1-1',
           phone: '03-0000-0000',
           businessHours: '平日 10:00-18:00',
@@ -12312,6 +12314,9 @@ describe('バックエンドアプリ', () => {
       organizationSlug: 'public-events-org',
       storeSlug: 'public-events-org',
       siteName: 'Public Events Site',
+      description:
+        '<p>予約サイトトップページの<strong>説明</strong>です。<a href="https://example.com/info" target="_blank" rel="nofollow noopener noreferrer">案内</a>危険</p>',
+      descriptionFormat: 'limited_html',
       address: '東京都千代田区1-1-1',
     });
 
@@ -12639,7 +12644,9 @@ describe('バックエンドアプリ', () => {
     const publicSitePayload = (await toJson(publicSiteResponse)) as Record<string, unknown>;
     expect(publicSitePayload.site).toMatchObject({
       siteName: 'Public Events Site',
-      description: '予約サイトトップページの説明です。',
+      description:
+        '<p>予約サイトトップページの<strong>説明</strong>です。<a href="https://example.com/info" target="_blank" rel="nofollow noopener noreferrer">案内</a>危険</p>',
+      descriptionFormat: 'limited_html',
       address: '東京都千代田区1-1-1',
       phone: '03-0000-0000',
       businessHours: '平日 10:00-18:00',

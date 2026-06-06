@@ -27,8 +27,21 @@
 		"test:coverage": "vitest run --project server --coverage"
 	},
 	"dependencies": {
+		"@repo/rich-text": "workspace:*",
 		"@repo/saas-chatbot-core": "workspace:*",
 		"@sentry/sveltekit": "^10.39.0",
+		"@tiptap/core": "^3.26.0",
+		"@tiptap/extension-bold": "^3.26.0",
+		"@tiptap/extension-bullet-list": "^3.26.0",
+		"@tiptap/extension-document": "^3.26.0",
+		"@tiptap/extension-hard-break": "^3.26.0",
+		"@tiptap/extension-italic": "^3.26.0",
+		"@tiptap/extension-link": "^3.26.0",
+		"@tiptap/extension-list-item": "^3.26.0",
+		"@tiptap/extension-ordered-list": "^3.26.0",
+		"@tiptap/extension-paragraph": "^3.26.0",
+		"@tiptap/extension-text": "^3.26.0",
+		"@tiptap/pm": "^3.26.0",
 		"dayjs": "^1.11.19",
 		"hono": "^4.11.7",
 		"svelte-sonner": "^1.0.7"

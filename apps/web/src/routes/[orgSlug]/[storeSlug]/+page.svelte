@@ -6,6 +6,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
+	import SafeRichText from '$lib/components/SafeRichText.svelte';
 	import { formatJaDateTime } from '$lib/date/format';
 	import { loadPublicSitePage } from '$lib/features/public-site.svelte';
 	import type { PublicSitePagePayload, PublicTicketTypePayload } from '$lib/rpc-client';
@@ -80,9 +81,11 @@
 						{publicSitePage.site.siteName}
 					</h1>
 					{#if publicSitePage.site.description}
-						<p class="max-w-2xl whitespace-pre-line text-base leading-7 text-muted-foreground">
-							{publicSitePage.site.description}
-						</p>
+						<SafeRichText
+							description={publicSitePage.site.description}
+							descriptionFormat={publicSitePage.site.descriptionFormat}
+							class="max-w-2xl text-base leading-7 text-muted-foreground"
+						/>
 					{/if}
 				</div>
 				<div class="flex flex-wrap gap-3">

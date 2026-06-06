@@ -24,6 +24,9 @@ const publicTicketTypeQuerySchema = publicSiteQuerySchema.extend({
 const isRecord = (value: unknown): value is JsonRecord =>
 	typeof value === 'object' && value !== null;
 
+const asDescriptionFormat = (value: unknown): PublicSiteProfilePayload['descriptionFormat'] =>
+	value === 'limited_html' || value === 'plain_text' ? value : 'plain_text';
+
 const toErrorMessage = (payload: unknown, fallback: string): string => {
 	if (isRecord(payload) && typeof payload.message === 'string') {
 		return payload.message;
@@ -74,18 +77,27 @@ const publicTicketTypePath = ({
 		storeSlug
 	)}/ticket-types/${encodeURIComponent(ticketTypeId)}`;
 
-const isPublicSiteProfile = (value: unknown): value is PublicSiteProfilePayload =>
-	isRecord(value) &&
-	typeof value.organizationId === 'string' &&
-	typeof value.organizationSlug === 'string' &&
-	typeof value.organizationName === 'string' &&
-	typeof value.storeId === 'string' &&
-	typeof value.storeSlug === 'string' &&
-	typeof value.storeName === 'string' &&
-	typeof value.siteName === 'string' &&
-	(value.status === 'public' || value.status === 'private' || value.status === 'suspended') &&
-	typeof value.acceptBookings === 'boolean' &&
-	typeof value.noindex === 'boolean';
+const asPublicSiteProfile = (value: unknown): PublicSiteProfilePayload | null => {
+	if (
+		!isRecord(value) ||
+		typeof value.organizationId !== 'string' ||
+		typeof value.organizationSlug !== 'string' ||
+		typeof value.organizationName !== 'string' ||
+		typeof value.storeId !== 'string' ||
+		typeof value.storeSlug !== 'string' ||
+		typeof value.storeName !== 'string' ||
+		typeof value.siteName !== 'string' ||
+		(value.status !== 'public' && value.status !== 'private' && value.status !== 'suspended') ||
+		typeof value.acceptBookings !== 'boolean' ||
+		typeof value.noindex !== 'boolean'
+	) {
+		return null;
+	}
+	return {
+		...(value as PublicSiteProfilePayload),
+		descriptionFormat: asDescriptionFormat(value.descriptionFormat)
+	};
+};
 
 const isPublicTicketType = (value: unknown): value is PublicTicketTypePayload =>
 	isRecord(value) &&
@@ -123,11 +135,15 @@ const asPublicBookingPages = (value: unknown): PublicBookingPagePayload[] =>
 	Array.isArray(value) ? value.filter(isPublicBookingPage) : [];
 
 const asPublicSitePage = (value: unknown): PublicSitePagePayload | null => {
-	if (!isRecord(value) || !isPublicSiteProfile(value.site)) {
+	if (!isRecord(value)) {
+		return null;
+	}
+	const site = asPublicSiteProfile(value.site);
+	if (!site) {
 		return null;
 	}
 	return {
-		site: value.site,
+		site,
 		bookingPages: asPublicBookingPages(value.bookingPages),
 		ticketTypes: asPublicTicketTypes(value.ticketTypes)
 	};

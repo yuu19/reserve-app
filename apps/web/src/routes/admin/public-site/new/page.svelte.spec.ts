@@ -80,6 +80,7 @@ describe('公開サイト新規作成ページ', () => {
 			storeName: 'Room One',
 			siteName: 'Room One',
 			description: '',
+			descriptionFormat: 'plain_text',
 			address: '',
 			phone: '',
 			businessHours: '',
@@ -90,7 +91,8 @@ describe('公開サイト新規作成ページ', () => {
 			message: '予約サイトトップページを更新しました。',
 			publicSite: {
 				siteName: 'Tokyo Studio',
-				description: 'Public description',
+				description: '<p>Public description</p>',
+				descriptionFormat: 'limited_html',
 				address: 'Tokyo',
 				phone: '',
 				businessHours: '',
@@ -118,7 +120,8 @@ describe('公開サイト新規作成ページ', () => {
 				},
 				expect.objectContaining({
 					siteName: 'Tokyo Studio',
-					description: 'Public description',
+					description: expect.stringContaining('Public description'),
+					descriptionFormat: 'limited_html',
 					address: 'Tokyo'
 				})
 			);

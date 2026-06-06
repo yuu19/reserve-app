@@ -15,6 +15,9 @@ type JsonRecord = Record<string, unknown>;
 const isRecord = (value: unknown): value is JsonRecord =>
 	typeof value === 'object' && value !== null;
 
+const asDescriptionFormat = (value: unknown): PublicSiteProfilePayload['descriptionFormat'] =>
+	value === 'limited_html' || value === 'plain_text' ? value : 'plain_text';
+
 const asPublicSiteProfile = (value: unknown): PublicSiteProfilePayload | null => {
 	if (
 		!isRecord(value) ||
@@ -31,7 +34,10 @@ const asPublicSiteProfile = (value: unknown): PublicSiteProfilePayload | null =>
 	) {
 		return null;
 	}
-	return value as PublicSiteProfilePayload;
+	return {
+		...(value as PublicSiteProfilePayload),
+		descriptionFormat: asDescriptionFormat(value.descriptionFormat)
+	};
 };
 
 export const loadPublicSitePage = async (

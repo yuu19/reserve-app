@@ -6,6 +6,7 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
+	import SafeRichText from '$lib/components/SafeRichText.svelte';
 	import {
 		buildScopedPath,
 		extractScopedRouteContext,
@@ -172,9 +173,12 @@
 						</div>
 						<div class="space-y-1 md:col-span-2">
 							<p class="text-xs text-muted-foreground">説明</p>
-							<p class="whitespace-pre-line text-sm text-foreground">
-								{displayValue(publicSite.description)}
-							</p>
+							<SafeRichText
+								description={publicSite.description}
+								descriptionFormat={publicSite.descriptionFormat}
+								emptyLabel="-"
+								class="text-sm text-foreground"
+							/>
 						</div>
 						<div class="space-y-1">
 							<p class="text-xs text-muted-foreground">住所</p>

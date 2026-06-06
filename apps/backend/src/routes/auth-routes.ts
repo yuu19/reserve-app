@@ -1,4 +1,8 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import {
+  PublicSiteDescriptionValidationError,
+  normalizePublicSiteDescription,
+} from '@repo/rich-text';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   canManageParticipantsByRole,
@@ -428,6 +432,7 @@ const publicSiteSettingSchema = z.object({
   storeName: z.string().min(1),
   siteName: z.string().min(1),
   description: z.string().nullable(),
+  descriptionFormat: z.enum(['plain_text', 'limited_html']),
   address: z.string().nullable(),
   phone: z.string().nullable(),
   businessHours: z.string().nullable(),
@@ -439,7 +444,8 @@ const publicSiteSettingSchema = z.object({
 
 const publicSiteSettingBodySchema = z.object({
   siteName: z.string().trim().max(120).nullable().optional(),
-  description: z.string().trim().max(2000).nullable().optional(),
+  description: z.string().max(20000).nullable().optional(),
+  descriptionFormat: z.enum(['plain_text', 'limited_html']).optional(),
   address: z.string().trim().max(500).nullable().optional(),
   phone: z.string().trim().max(80).nullable().optional(),
   businessHours: z.string().trim().max(1000).nullable().optional(),
@@ -2336,6 +2342,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       .select({
         siteName: dbSchema.publicSiteSetting.siteName,
         description: dbSchema.publicSiteSetting.description,
+        descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
         address: dbSchema.publicSiteSetting.address,
         phone: dbSchema.publicSiteSetting.phone,
         businessHours: dbSchema.publicSiteSetting.businessHours,
@@ -2363,6 +2370,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
       storeName: context.storeName,
       siteName: setting?.siteName?.trim() || context.storeName || context.organizationName,
       description: setting?.description ?? null,
+      descriptionFormat:
+        setting?.descriptionFormat === 'limited_html' ? 'limited_html' : 'plain_text',
       address: setting?.address ?? null,
       phone: setting?.phone ?? null,
       businessHours: setting?.businessHours ?? null,
@@ -3503,6 +3512,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         .select({
           siteName: dbSchema.publicSiteSetting.siteName,
           description: dbSchema.publicSiteSetting.description,
+          descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
           address: dbSchema.publicSiteSetting.address,
           phone: dbSchema.publicSiteSetting.phone,
           businessHours: dbSchema.publicSiteSetting.businessHours,
@@ -3520,10 +3530,26 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         )
         .limit(1);
       const current = currentRows[0] ?? null;
+      let normalizedDescription: ReturnType<typeof normalizePublicSiteDescription>;
+      try {
+        normalizedDescription = normalizePublicSiteDescription({
+          description: body.description,
+          descriptionFormat: body.descriptionFormat,
+          currentDescription: current?.description ?? null,
+          currentDescriptionFormat:
+            current?.descriptionFormat === 'limited_html' ? 'limited_html' : 'plain_text',
+        });
+      } catch (error) {
+        if (error instanceof PublicSiteDescriptionValidationError) {
+          return c.json({ message: error.message }, 422);
+        }
+        throw error;
+      }
       const now = new Date();
       const nextValues = {
         siteName: normalizePublicSiteText(body.siteName, current?.siteName ?? null),
-        description: normalizePublicSiteText(body.description, current?.description ?? null),
+        description: normalizedDescription.description,
+        descriptionFormat: normalizedDescription.descriptionFormat,
         address: normalizePublicSiteText(body.address, current?.address ?? null),
         phone: normalizePublicSiteText(body.phone, current?.phone ?? null),
         businessHours: normalizePublicSiteText(body.businessHours, current?.businessHours ?? null),

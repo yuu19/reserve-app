@@ -8,6 +8,8 @@
 	import { Card, CardContent, CardDescription, CardHeader } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import PublicSiteDescriptionEditor from '$lib/components/PublicSiteDescriptionEditor.svelte';
+	import SafeRichText from '$lib/components/SafeRichText.svelte';
 	import {
 		buildScopedPath,
 		extractScopedRouteContext,
@@ -25,6 +27,7 @@
 		loadPublicSiteSettings,
 		updatePublicSiteSettings
 	} from '$lib/features/public-site.svelte';
+	import { plainTextToLimitedHtmlDraft } from '@repo/rich-text';
 	import { toast } from 'svelte-sonner';
 
 	type ResolvablePath = Pathname;
@@ -68,6 +71,7 @@
 	const syncPublicSiteForm = (site: {
 		siteName?: string | null;
 		description?: string | null;
+		descriptionFormat?: 'plain_text' | 'limited_html';
 		address?: string | null;
 		phone?: string | null;
 		businessHours?: string | null;
@@ -78,7 +82,10 @@
 	}) => {
 		publicSiteForm = {
 			siteName: site.siteName ?? '',
-			description: site.description ?? '',
+			description:
+				site.descriptionFormat === 'limited_html'
+					? (site.description ?? '')
+					: plainTextToLimitedHtmlDraft(site.description ?? ''),
 			address: site.address ?? '',
 			phone: site.phone ?? '',
 			businessHours: site.businessHours ?? '',
@@ -141,7 +148,10 @@
 
 		busy = true;
 		try {
-			const result = await updatePublicSiteSettings(scopedContext, publicSiteForm);
+			const result = await updatePublicSiteSettings(scopedContext, {
+				...publicSiteForm,
+				descriptionFormat: 'limited_html'
+			});
 			if (!result.ok) {
 				toast.error(result.message);
 				return;
@@ -235,16 +245,23 @@
 						/>
 					</div>
 					<div class="space-y-2 md:col-span-2">
-						<Label for="public-site-description">説明</Label>
-						<textarea
-							id="public-site-description"
-							name="public_site_description"
-							class="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-							value={publicSiteForm.description}
-							oninput={(event) => updatePublicSiteField('description', event)}
+						<Label id="public-site-description-label" for="public-site-description-editor">説明</Label>
+						<PublicSiteDescriptionEditor
+							bind:value={publicSiteForm.description}
 							disabled={busy}
-							maxlength={2000}
-						></textarea>
+							editorId="public-site-description-editor"
+							labelId="public-site-description-label"
+						/>
+					</div>
+					<div class="space-y-2 md:col-span-2">
+						<p class="text-xs text-muted-foreground">説明プレビュー</p>
+						<div class="rounded-md border border-border/80 bg-secondary/30 px-3 py-2">
+							<SafeRichText
+								description={publicSiteForm.description}
+								descriptionFormat="limited_html"
+								emptyLabel="説明は未入力です。"
+							/>
+						</div>
 					</div>
 					<div class="space-y-2">
 						<Label for="public-site-address">住所</Label>

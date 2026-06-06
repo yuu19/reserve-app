@@ -442,6 +442,7 @@ export type PublicSiteProfilePayload = {
 	storeName: string;
 	siteName: string;
 	description?: string | null;
+	descriptionFormat: 'plain_text' | 'limited_html';
 	address?: string | null;
 	phone?: string | null;
 	businessHours?: string | null;
@@ -868,6 +869,7 @@ type UpdateStoreInput = {
 export type UpdatePublicSiteSettingsInput = {
 	siteName?: string | null;
 	description?: string | null;
+	descriptionFormat?: 'plain_text' | 'limited_html';
 	address?: string | null;
 	phone?: string | null;
 	businessHours?: string | null;

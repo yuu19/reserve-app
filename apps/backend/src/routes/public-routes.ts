@@ -123,6 +123,7 @@ const publicSiteProfileSchema = z.object({
   storeName: z.string(),
   siteName: z.string(),
   description: z.string().nullable(),
+  descriptionFormat: z.enum(['plain_text', 'limited_html']),
   address: z.string().nullable(),
   phone: z.string().nullable(),
   businessHours: z.string().nullable(),
@@ -454,6 +455,7 @@ type PublicContext = {
   siteSetting: {
     siteName: string | null;
     description: string | null;
+    descriptionFormat: string;
     address: string | null;
     phone: string | null;
     businessHours: string | null;
@@ -638,6 +640,8 @@ const readPublicSiteProfile = async ({ publicContext }: { publicContext: PublicC
     siteName:
       setting?.siteName?.trim() || publicContext.store.name || publicContext.organization.name,
     description: setting?.description ?? null,
+    descriptionFormat:
+      setting?.descriptionFormat === 'limited_html' ? 'limited_html' : 'plain_text',
     address: setting?.address ?? null,
     phone: setting?.phone ?? null,
     businessHours: setting?.businessHours ?? null,
@@ -832,6 +836,7 @@ const resolvePublicOrganizationStore = async ({
     .select({
       siteName: dbSchema.publicSiteSetting.siteName,
       description: dbSchema.publicSiteSetting.description,
+      descriptionFormat: dbSchema.publicSiteSetting.descriptionFormat,
       address: dbSchema.publicSiteSetting.address,
       phone: dbSchema.publicSiteSetting.phone,
       businessHours: dbSchema.publicSiteSetting.businessHours,
