@@ -21,6 +21,7 @@
 
 - [test-strategy.md](./operations/test-strategy.md): テスト方針と CI の扱い。
 - [playwright-report-r2.md](./operations/playwright-report-r2.md): Playwright レポート公開の運用。
+- [cloudflare-access-development-sites.md](./operations/cloudflare-access-development-sites.md): 開発中の Web アプリとドキュメントを Cloudflare Access で制限する運用。
 - [billing-verification-checklist.md](./operations/billing-verification-checklist.md): 課金確認のチェックリスト。
 - [ai-agent-billing-verification.md](./operations/ai-agent-billing-verification.md): AI agent で課金確認を補助する場合の運用ガイド。
 
