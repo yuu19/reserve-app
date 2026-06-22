@@ -21,8 +21,8 @@ importers:
         specifier: ^17.3.0
         version: 17.3.0
       prettier:
-        specifier: ^3.8.1
-        version: 3.8.1
+        specifier: ^3.8.4
+        version: 3.8.4
       turbo:
         specifier: ^2.5.8
         version: 2.9.14
@@ -203,14 +203,14 @@ importers:
         specifier: ^1.59.1
         version: 1.59.1
       prettier:
-        specifier: ^3.8.1
-        version: 3.8.1
+        specifier: ^3.8.4
+        version: 3.8.4
       prettier-plugin-svelte:
         specifier: ^3.5.1
-        version: 3.5.1(prettier@3.8.1)(svelte@5.55.4(@typescript-eslint/types@8.58.2))
+        version: 3.5.1(prettier@3.8.4)(svelte@5.55.4(@typescript-eslint/types@8.58.2))
       prettier-plugin-tailwindcss:
         specifier: ^0.7.2
-        version: 0.7.2(prettier-plugin-svelte@3.5.1(prettier@3.8.1)(svelte@5.55.4(@typescript-eslint/types@8.58.2)))(prettier@3.8.1)
+        version: 0.7.2(prettier-plugin-svelte@3.5.1(prettier@3.8.4)(svelte@5.55.4(@typescript-eslint/types@8.58.2)))(prettier@3.8.4)
       svelte:
         specifier: ^5.55.2
         version: 5.55.4(@typescript-eslint/types@8.58.2)
@@ -478,11 +478,11 @@ importers:
         specifier: ^1.59.1
         version: 1.59.1
       prettier:
-        specifier: ^3.8.1
-        version: 3.8.1
+        specifier: ^3.8.4
+        version: 3.8.4
       prettier-plugin-svelte:
         specifier: ^3.4.1
-        version: 3.4.1(prettier@3.8.1)(svelte@5.49.1)
+        version: 3.4.1(prettier@3.8.4)(svelte@5.49.1)
       svelte:
         specifier: ^5.48.2
         version: 5.49.1
@@ -7949,8 +7949,8 @@ packages:
       prettier-plugin-svelte:
         optional: true
 
-  prettier@3.8.1:
-    resolution: {integrity: sha512-UOnG6LftzbdaHZcKoPFtOcCKztrQ57WkHDeRD9t/PTQtmT0NHSeWWepj6pS0z/N7+08BHFDQVUrfmfMRcZwbMg==}
+  prettier@3.8.4:
+    resolution: {integrity: sha512-N2MylSdi48+5N/6S5j+maeHbUSIzzZ5uOcX5Hm4QpV8Dkb1HFjfAKTKX6yNPJQD9AhcT3ifHNB66tWTTJDi11Q==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -10160,7 +10160,7 @@ snapshots:
       drizzle-orm: 0.41.0(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0)
       open: 10.2.0
       pg: 8.18.0
-      prettier: 3.8.1
+      prettier: 3.8.4
       prompts: 2.4.2
       semver: 7.7.3
       yocto-spinner: 0.2.3
@@ -12662,7 +12662,7 @@ snapshots:
   '@react-email/render@2.0.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
     dependencies:
       html-to-text: 9.0.5
-      prettier: 3.8.1
+      prettier: 3.8.4
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
 
@@ -17906,23 +17906,23 @@ snapshots:
 
   prelude-ls@1.2.1: {}
 
-  prettier-plugin-svelte@3.4.1(prettier@3.8.1)(svelte@5.49.1):
+  prettier-plugin-svelte@3.4.1(prettier@3.8.4)(svelte@5.49.1):
     dependencies:
-      prettier: 3.8.1
+      prettier: 3.8.4
       svelte: 5.49.1
 
-  prettier-plugin-svelte@3.5.1(prettier@3.8.1)(svelte@5.55.4(@typescript-eslint/types@8.58.2)):
+  prettier-plugin-svelte@3.5.1(prettier@3.8.4)(svelte@5.55.4(@typescript-eslint/types@8.58.2)):
     dependencies:
-      prettier: 3.8.1
+      prettier: 3.8.4
       svelte: 5.55.4(@typescript-eslint/types@8.58.2)
 
-  prettier-plugin-tailwindcss@0.7.2(prettier-plugin-svelte@3.5.1(prettier@3.8.1)(svelte@5.55.4(@typescript-eslint/types@8.58.2)))(prettier@3.8.1):
+  prettier-plugin-tailwindcss@0.7.2(prettier-plugin-svelte@3.5.1(prettier@3.8.4)(svelte@5.55.4(@typescript-eslint/types@8.58.2)))(prettier@3.8.4):
     dependencies:
-      prettier: 3.8.1
+      prettier: 3.8.4
     optionalDependencies:
-      prettier-plugin-svelte: 3.5.1(prettier@3.8.1)(svelte@5.55.4(@typescript-eslint/types@8.58.2))
+      prettier-plugin-svelte: 3.5.1(prettier@3.8.4)(svelte@5.55.4(@typescript-eslint/types@8.58.2))
 
-  prettier@3.8.1: {}
+  prettier@3.8.4: {}
 
   pretty-bytes@5.6.0: {}
 
