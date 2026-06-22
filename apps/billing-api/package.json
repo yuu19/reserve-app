@@ -9,6 +9,7 @@
     "cf:types": "wrangler types",
     "d1:migrate:local": "wrangler d1 migrations apply reserve-billing-api --local",
     "d1:migrate:remote": "wrangler d1 migrations apply reserve-billing-api --remote",
+    "catalog:seed:sql": "node scripts/seed-billing-catalog.mjs",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -20,6 +21,7 @@
     "start": "wrangler dev --local --port 3010"
   },
   "dependencies": {
+    "@repo/product-billing-config": "workspace:*",
     "@repo/billing-types": "workspace:*",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.11.7"

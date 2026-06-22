@@ -123,6 +123,8 @@ export const billingSubscription = sqliteTable(
     providerScheduleId: text('provider_schedule_id'),
     planCode: text('plan_code').default('free').notNull(),
     priceCode: text('price_code'),
+    providerPriceId: text('provider_price_id'),
+    priceResolution: text('price_resolution').default('not_applicable').notNull(),
     interval: text('interval'),
     status: text('status').default('free').notNull(),
     currentPeriodStart: integer('current_period_start', { mode: 'timestamp_ms' }),
@@ -300,6 +302,53 @@ export const billingApiIdempotency = sqliteTable(
   (table) => [
     uniqueIndex('billing_api_idempotency_key_uidx').on(table.appId, table.idempotencyKey),
     index('billing_api_idempotency_expiry_idx').on(table.expiresAt),
+  ],
+);
+
+export const billingOperationAttempt = sqliteTable(
+  'billing_operation_attempt',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    billingAccountId: text('billing_account_id')
+      .notNull()
+      .references(() => billingAccount.id, { onDelete: 'cascade' }),
+    purpose: text('purpose').notNull(),
+    reuseKey: text('reuse_key').notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    state: text('state').notNull(),
+    handoffUrl: text('handoff_url'),
+    handoffExpiresAt: integer('handoff_expires_at', { mode: 'timestamp_ms' }),
+    provider: text('provider').default('stripe').notNull(),
+    providerCustomerId: text('provider_customer_id'),
+    providerSubscriptionId: text('provider_subscription_id'),
+    providerCheckoutSessionId: text('provider_checkout_session_id'),
+    providerPortalSessionId: text('provider_portal_session_id'),
+    failureReason: text('failure_reason'),
+    actorType: text('actor_type'),
+    actorId: text('actor_id'),
+    actorEmail: text('actor_email'),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_operation_attempt_idempotency_uidx').on(table.appId, table.idempotencyKey),
+    uniqueIndex('billing_operation_attempt_reuse_attempt_uidx').on(
+      table.appId,
+      table.billingAccountId,
+      table.reuseKey,
+      table.attemptNumber,
+    ),
+    index('billing_operation_attempt_reuse_state_idx').on(
+      table.appId,
+      table.billingAccountId,
+      table.reuseKey,
+      table.state,
+    ),
+    index('billing_operation_attempt_handoff_expiry_idx').on(table.handoffExpiresAt),
   ],
 );
 

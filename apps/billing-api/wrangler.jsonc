@@ -18,12 +18,16 @@
   "vars": {
     "BILLING_ENTITLEMENT_MAX_STALE_SECONDS": "3600",
     "BILLING_API_IDEMPOTENCY_TTL_SECONDS": "86400",
+    "BILLING_HANDOFF_REUSE_SECONDS": "1800",
+    "BILLING_DEFAULT_RETURN_URL_KEY": "default",
+    "BILLING_RETURN_URL_OVERRIDE_ALLOWED": "false",
+    "BILLING_DEFAULT_CURRENCY": "jpy",
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "reserve-billing-api",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "4f82bd32-a779-429e-9815-353a5e2c7d48",
       "migrations_dir": "drizzle",
     },
   ],

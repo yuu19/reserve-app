@@ -45,6 +45,8 @@ describe('createBillingClient', () => {
             subjectId: 'org_1',
             planCode: 'free',
             status: 'free',
+            priceResolution: 'not_applicable',
+            features: {},
             entitlements: [],
             syncedAt: '2026-06-22T00:00:00.000Z',
             maxStaleSeconds: 3600,

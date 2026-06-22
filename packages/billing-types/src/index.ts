@@ -3,6 +3,7 @@ export type BillingApiSubjectType = string;
 export type BillingApiSubjectId = string;
 export type BillingApiProvider = 'stripe';
 export type BillingApiInterval = 'month' | 'year';
+export type BillingApiPriceResolution = 'not_applicable' | 'known' | 'unknown';
 
 export type BillingApiSubscriptionStatus =
   | 'free'
@@ -66,6 +67,8 @@ export type BillingApiSubscription = {
   providerSubscriptionId: string | null;
   planCode: string;
   priceCode: string | null;
+  providerPriceId: string | null;
+  priceResolution: BillingApiPriceResolution;
   interval: BillingApiInterval | null;
   status: BillingApiSubscriptionStatus;
   currentPeriodStart: string | null;
@@ -95,6 +98,8 @@ export type BillingApiEntitlementsResponse = {
   subjectId: BillingApiSubjectId;
   planCode: string;
   status: BillingApiSubscriptionStatus;
+  priceResolution: BillingApiPriceResolution;
+  features: Record<string, unknown>;
   entitlements: BillingApiEntitlement[];
   syncedAt: string;
   maxStaleSeconds: number;
