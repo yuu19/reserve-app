@@ -15,6 +15,7 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "deploy:backend": "pnpm --filter @apps/backend run cf:deploy",
+    "deploy:billing-api": "pnpm --filter @apps/billing-api run cf:deploy",
     "deploy:docs": "pnpm --filter @apps/docs run cf:deploy",
     "deploy:web": "pnpm --filter @apps/web run cf:deploy",
     "deploy:workers": "pnpm deploy:backend && pnpm deploy:web && pnpm deploy:docs"

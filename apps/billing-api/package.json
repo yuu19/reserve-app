@@ -1,0 +1,35 @@
+{
+  "name": "@apps/billing-api",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 3010",
+    "cf:dev": "wrangler dev --local --port 3010",
+    "cf:deploy": "wrangler deploy",
+    "cf:tail": "wrangler tail",
+    "cf:types": "wrangler types",
+    "d1:migrate:local": "wrangler d1 migrations apply reserve-billing-api --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply reserve-billing-api --remote",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "rm -rf dist .turbo",
+    "start": "wrangler dev --local --port 3010"
+  },
+  "dependencies": {
+    "@repo/billing-types": "workspace:*",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.11.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260203.0",
+    "@types/node": "^20.11.17",
+    "drizzle-kit": "^0.31.8",
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.18",
+    "wrangler": "^4.62.0"
+  }
+}
