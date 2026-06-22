@@ -511,8 +511,8 @@
       <div class="v-badge">schema.ts / 2026-06-06</div>
       <div class="summary">
         <div class="pill">外部リソースなし</div>
-        <div class="pill">53 tables</div>
-        <div class="pill">126 relations</div>
+        <div class="pill">54 tables</div>
+        <div class="pill">131 relations</div>
         <div class="pill warn">現行 Drizzle schema 由来</div>
       </div>
     </header>
@@ -580,6 +580,9 @@
           >
           <a class="sb-link" href="#table-public_site_notification_setting"
             ><span class="sb-dot"></span>public_site_notification_setting</a
+          >
+          <a class="sb-link" href="#table-notification_outbox"
+            ><span class="sb-dot"></span>notification_outbox</a
           >
           <a class="sb-link" href="#table-notification_log"
             ><span class="sb-dot"></span>notification_log</a
@@ -689,7 +692,11 @@
               と <code>participantInvitation</code> は <code>invitation</code> の参照 alias
               であり、独立テーブルとしては数えていません。現在の Drizzle schema と
               <code>apps/backend/drizzle/0036_form_management_mvp.sql</code>
-              までの公開予約MVPテーブルを反映し、旧課金テーブルは含めていません。サービス単位の公開状態は
+              までの公開予約MVPテーブルと
+              <code>apps/backend/drizzle/0038_notification_outbox.sql</code>
+              の通知Outbox、
+              <code>apps/backend/drizzle/0039_public_site_description_format.sql</code>
+              の公開サイト説明形式を反映し、旧課金テーブルは含めていません。サービス単位の公開状態は
               <code>service.public_status</code> と
               <code>service_store_public_status_idx</code> を反映しています。枠単位の公開状態は
               <code>slot.public_status</code> と
@@ -1087,7 +1094,7 @@
                   <div class="tcard-header">
                     <div class="tname">public_site_setting</div>
                     <div class="tcard-badges">
-                      <span class="tbadge">14 cols</span><span class="tbadge">2 FK</span
+                      <span class="tbadge">15 cols</span><span class="tbadge">2 FK</span
                       ><span class="tbadge">1 UK</span>
                     </div>
                   </div>
@@ -1126,6 +1133,13 @@
                     <div class="fname">description<span class="ftag tag-meta">nullable</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">公開サイト説明文。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      description_format<span class="ftag tag-meta">default</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">公開サイト説明文の形式。既定値は plain_text。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">address<span class="ftag tag-meta">nullable</span></div>
@@ -2813,15 +2827,17 @@
                     <div class="fdesc">更新日時。timestamp_ms。</div>
                   </div>
                 </article>
-                <article class="tcard" id="table-notification_log">
+                <article class="tcard" id="table-notification_outbox">
                   <div class="tcard-header">
-                    <div class="tname">notification_log</div>
+                    <div class="tname">notification_outbox</div>
                     <div class="tcard-badges">
-                      <span class="tbadge">12 cols</span><span class="tbadge">3 FK</span
+                      <span class="tbadge">30 cols</span><span class="tbadge">4 FK</span
                       ><span class="tbadge">1 UK</span>
                     </div>
                   </div>
-                  <div class="tdesc">公開予約や予約関連通知の送信状態ログ。</div>
+                  <div class="tdesc">
+                    通知予定・送信待ち・再試行待ちの正本。1行を1通の送信ジョブとして扱う。
+                  </div>
                   <div class="col-header">
                     <div>column</div>
                     <div>type</div>
@@ -2851,14 +2867,215 @@
                     <div class="fdesc">booking.id への任意参照。削除時は set null。</div>
                   </div>
                   <div class="frow">
+                    <div class="fname">
+                      participant_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">participant.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">event_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">Outbox内部での通知イベント分類。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">template_key</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信テンプレートまたは既存通知種別との対応キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">channel<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">通知チャネル。既定値は email。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">recipient_type</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信先種別。customer / store など。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">recipient_email</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信先メールアドレス。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      recipient_name<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信先表示名。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      subject_snapshot<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信時点で使う件名スナップショット。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">payload_json</div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">本文生成に必要なペイロードJSON。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">status<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">pending / processing / retry / sent / cancelled / dead など。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">scheduled_for</div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">送信予定日時。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">next_attempt_at</div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">次回試行可能日時。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">attempt_count<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer</div>
+                    <div class="fdesc">送信試行回数。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">max_attempts<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer</div>
+                    <div class="fdesc">最大試行回数。既定値は5。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      idempotency_key<span class="ftag tag-uk">UK</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">同一業務イベントの二重Outbox作成を防ぐ一意キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">locked_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">処理ワーカーがジョブを確保した日時。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">locked_by<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">ジョブを確保したワーカー識別子。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      lock_expires_at<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">ジョブ確保の期限。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">provider<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信プロバイダ名。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      provider_message_id<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信プロバイダ側メッセージID。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">last_error<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">最後に発生した送信エラー概要。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">sent_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">送信完了日時。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      cancelled_at<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">送信前キャンセル日時。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">dead_at<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">最大試行後に dead とした日時。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">作成日時。timestamp_ms。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">updated_at<span class="ftag tag-meta">default</span></div>
+                    <div class="ftype">integer(timestamp_ms)</div>
+                    <div class="fdesc">更新日時。timestamp_ms。</div>
+                  </div>
+                </article>
+                <article class="tcard" id="table-notification_log">
+                  <div class="tcard-header">
+                    <div class="tname">notification_log</div>
+                    <div class="tcard-badges">
+                      <span class="tbadge">19 cols</span><span class="tbadge">4 FK</span
+                      ><span class="tbadge">1 UK</span>
+                    </div>
+                  </div>
+                  <div class="tdesc">公開予約や予約関連通知の送信結果ログ。Outbox処理結果の履歴も保持する。</div>
+                  <div class="col-header">
+                    <div>column</div>
+                    <div>type</div>
+                    <div>description</div>
+                  </div>
+                  <div class="frow truth">
+                    <div class="fname">id<span class="ftag tag-pk">PK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">主キー。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      outbox_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">notification_outbox.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">organization_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">organization.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">store_id<span class="ftag tag-fk">FK</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">store.id への必須参照。削除時は cascade。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      booking_id<span class="ftag tag-fk">FK</span
+                      ><span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">booking.id への任意参照。削除時は set null。</div>
+                  </div>
+                  <div class="frow">
                     <div class="fname">event_type</div>
                     <div class="ftype">text</div>
                     <div class="fdesc">通知対象イベント。</div>
                   </div>
                   <div class="frow">
+                    <div class="fname">template_key<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信テンプレートまたは既存通知種別との対応キー。</div>
+                  </div>
+                  <div class="frow">
                     <div class="fname">channel<span class="ftag tag-meta">default</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">通知チャネル。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">recipient_type<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信先種別。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">recipient_email</div>
@@ -2871,6 +3088,23 @@
                     <div class="fdesc">送信状態。</div>
                   </div>
                   <div class="frow">
+                    <div class="fname">attempt_number<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">integer</div>
+                    <div class="fdesc">Outbox処理時の試行番号。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">provider<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信プロバイダ名。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">
+                      provider_message_id<span class="ftag tag-meta">nullable</span>
+                    </div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信プロバイダ側メッセージID。</div>
+                  </div>
+                  <div class="frow">
                     <div class="fname">dedupe_key<span class="ftag tag-uk">UK</span></div>
                     <div class="ftype">text</div>
                     <div class="fdesc">重複送信防止キー。</div>
@@ -2881,6 +3115,11 @@
                     </div>
                     <div class="ftype">text</div>
                     <div class="fdesc">送信失敗時のエラー概要。</div>
+                  </div>
+                  <div class="frow">
+                    <div class="fname">response_json<span class="ftag tag-meta">nullable</span></div>
+                    <div class="ftype">text</div>
+                    <div class="fdesc">送信プロバイダ応答のJSON。</div>
                   </div>
                   <div class="frow">
                     <div class="fname">created_at<span class="ftag tag-meta">default</span></div>
@@ -6053,6 +6292,36 @@
               <div class="rel-row">
                 <span class="rel-entity">organization</span>
                 <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">notification_outbox</span>
+                <span class="rel-note">organization_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">store</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">notification_outbox</span>
+                <span class="rel-note">store_id / onDelete cascade</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">booking</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">notification_outbox</span>
+                <span class="rel-note">booking_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">participant</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">notification_outbox</span>
+                <span class="rel-note">participant_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">notification_outbox</span>
+                <span class="rel-conn">||--o{</span>
+                <span class="rel-entity">notification_log</span>
+                <span class="rel-note">outbox_id optional / onDelete set null</span>
+              </div>
+              <div class="rel-row">
+                <span class="rel-entity">organization</span>
+                <span class="rel-conn">||--o{</span>
                 <span class="rel-entity">notification_log</span>
                 <span class="rel-note">organization_id / onDelete cascade</span>
               </div>
@@ -6848,6 +7117,51 @@
                 </path>
                 <path
                   class="edge edge-strong"
+                  d="M 598 90 C 982 90, 982 918, 1400 918"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    organization ||--o{ notification_outbox: organization_id / onDelete cascade
+                  </title>
+                </path>
+                <path
+                  class="edge edge-strong"
+                  d="M 598 182 C 995 182, 995 918, 1400 918"
+                  marker-end="url(#arrow)"
+                >
+                  <title>store ||--o{ notification_outbox: store_id / onDelete cascade</title>
+                </path>
+                <path
+                  class="edge edge-strong"
+                  d="M 1278 458 C 1348 458, 1348 918, 1400 918"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    booking ||--o{ notification_outbox: booking_id optional / onDelete set null
+                  </title>
+                </path>
+                <path
+                  class="edge"
+                  d="M 598 550 C 982 550, 982 918, 1400 918"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    participant ||--o{ notification_outbox: participant_id optional / onDelete set
+                    null
+                  </title>
+                </path>
+                <path
+                  class="edge edge-strong"
+                  d="M 1400 918 C 1348 918, 1348 918, 1278 918"
+                  marker-end="url(#arrow)"
+                >
+                  <title>
+                    notification_outbox ||--o{ notification_log: outbox_id optional / onDelete set
+                    null
+                  </title>
+                </path>
+                <path
+                  class="edge edge-strong"
                   d="M 598 90 C 836 90, 836 918, 1060 918"
                   marker-end="url(#arrow)"
                 >
@@ -7384,7 +7698,7 @@
                 <g class="node" transform="translate(380, 238)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">public_site_setting</text>
-                  <text class="node-sub" x="12" y="43">14 columns</text>
+                  <text class="node-sub" x="12" y="43">15 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 2</text>
                 </g>
@@ -7489,9 +7803,9 @@
                 <g class="node" transform="translate(1060, 882)">
                   <rect class="node-box" width="218" height="72" rx="8" />
                   <text class="node-title" x="12" y="23">notification_log</text>
-                  <text class="node-sub" x="12" y="43">13 columns</text>
+                  <text class="node-sub" x="12" y="43">19 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
-                  <text class="node-fk" x="118" y="59">FK 3</text>
+                  <text class="node-fk" x="118" y="59">FK 4</text>
                 </g>
                 <g class="node" transform="translate(1060, 974)">
                   <rect class="node-box" width="218" height="72" rx="8" />
@@ -7576,6 +7890,13 @@
                   <text class="node-sub" x="12" y="43">8 columns</text>
                   <text class="node-meta" x="12" y="59">PK id</text>
                   <text class="node-fk" x="118" y="59">FK 1</text>
+                </g>
+                <g class="node" transform="translate(1400, 882)">
+                  <rect class="node-box" width="218" height="72" rx="8" />
+                  <text class="node-title" x="12" y="23">notification_outbox</text>
+                  <text class="node-sub" x="12" y="43">30 columns</text>
+                  <text class="node-meta" x="12" y="59">PK id</text>
+                  <text class="node-fk" x="118" y="59">FK 4</text>
                 </g>
                 <g class="node" transform="translate(1740, 54)">
                   <rect class="node-box" width="218" height="72" rx="8" />
@@ -7793,6 +8114,7 @@ erDiagram
         varchar store_id FK,UK "store.id への必須参照。削除時は cascade。"
         varchar site_name "公開サイト上の表示名。未設定時は店舗名等から補完する。"
         varchar description "公開サイト説明文。"
+        varchar description_format "公開サイト説明文の形式。既定値は plain_text。"
         varchar address "公開サイトに表示する住所。"
         varchar phone "公開サイトに表示する電話番号。"
         varchar business_hours "公開サイトに表示する営業時間。"
@@ -8088,17 +8410,57 @@ erDiagram
         int updated_at "更新日時。timestamp_ms。"
     }
 
-    notification_log {
+    notification_outbox {
         varchar id PK "主キー。"
         varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
         varchar store_id FK "store.id への必須参照。削除時は cascade。"
         varchar booking_id FK "booking.id への任意参照。削除時は set null。"
+        varchar participant_id FK "participant.id への任意参照。削除時は set null。"
+        varchar event_type "Outbox内部での通知イベント分類。"
+        varchar template_key "送信テンプレートまたは既存通知種別との対応キー。"
+        varchar channel "通知チャネル。既定値は email。"
+        varchar recipient_type "送信先種別。customer / store など。"
+        varchar recipient_email "送信先メールアドレス。"
+        varchar recipient_name "送信先表示名。"
+        varchar subject_snapshot "送信時点で使う件名スナップショット。"
+        varchar payload_json "本文生成に必要なペイロードJSON。"
+        varchar status "pending / processing / retry / sent / cancelled / dead など。"
+        int scheduled_for "送信予定日時。timestamp_ms。"
+        int next_attempt_at "次回試行可能日時。timestamp_ms。"
+        int attempt_count "送信試行回数。"
+        int max_attempts "最大試行回数。既定値は5。"
+        varchar idempotency_key UK "同一業務イベントの二重Outbox作成を防ぐ一意キー。"
+        int locked_at "処理ワーカーがジョブを確保した日時。timestamp_ms。"
+        varchar locked_by "ジョブを確保したワーカー識別子。"
+        int lock_expires_at "ジョブ確保の期限。timestamp_ms。"
+        varchar provider "送信プロバイダ名。"
+        varchar provider_message_id "送信プロバイダ側メッセージID。"
+        varchar last_error "最後に発生した送信エラー概要。"
+        int sent_at "送信完了日時。timestamp_ms。"
+        int cancelled_at "送信前キャンセル日時。timestamp_ms。"
+        int dead_at "最大試行後に dead とした日時。timestamp_ms。"
+        int created_at "作成日時。timestamp_ms。"
+        int updated_at "更新日時。timestamp_ms。"
+    }
+
+    notification_log {
+        varchar id PK "主キー。"
+        varchar outbox_id FK "notification_outbox.id への任意参照。削除時は set null。"
+        varchar organization_id FK "organization.id への必須参照。削除時は cascade。"
+        varchar store_id FK "store.id への必須参照。削除時は cascade。"
+        varchar booking_id FK "booking.id への任意参照。削除時は set null。"
         varchar event_type "通知対象イベント。"
+        varchar template_key "送信テンプレートまたは既存通知種別との対応キー。"
         varchar channel "通知チャネル。"
+        varchar recipient_type "送信先種別。"
         varchar recipient_email "送信先メールアドレス。"
         varchar status "送信状態。"
+        int attempt_number "Outbox処理時の試行番号。"
+        varchar provider "送信プロバイダ名。"
+        varchar provider_message_id "送信プロバイダ側メッセージID。"
         varchar dedupe_key UK "重複送信防止キー。"
         varchar error_message "送信失敗時のエラー概要。"
+        varchar response_json "送信プロバイダ応答のJSON。"
         int created_at "作成日時。timestamp_ms。"
         int updated_at "更新日時。timestamp_ms。"
     }
@@ -8613,6 +8975,11 @@ erDiagram
     booking ||--o{ booking_public_action_token : "booking_id / onDelete cascade"
     organization ||--o{ public_site_notification_setting : "organization_id / onDelete cascade"
     store ||--o| public_site_notification_setting : "store_id / onDelete cascade"
+    organization ||--o{ notification_outbox : "organization_id / onDelete cascade"
+    store ||--o{ notification_outbox : "store_id / onDelete cascade"
+    booking ||--o{ notification_outbox : "booking_id optional / onDelete set null"
+    participant ||--o{ notification_outbox : "participant_id optional / onDelete set null"
+    notification_outbox ||--o{ notification_log : "outbox_id optional / onDelete set null"
     organization ||--o{ notification_log : "organization_id / onDelete cascade"
     store ||--o{ notification_log : "store_id / onDelete cascade"
     booking ||--o{ notification_log : "booking_id optional / onDelete set null"
