@@ -54,7 +54,7 @@
     "@vitest/coverage-v8": "^4.0.18",
     "drizzle-kit": "^0.31.8",
     "miniflare": "^4.20260131.0",
-    "typescript": "^5.8.3",
+    "typescript": "^5.9.3",
     "vitest": "^4.0.18",
     "wrangler": "^4.62.0"
   }

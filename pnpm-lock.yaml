@@ -112,7 +112,7 @@ importers:
         specifier: ^4.20260131.0
         version: 4.20260131.0
       typescript:
-        specifier: ^5.8.3
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
@@ -143,7 +143,7 @@ importers:
         specifier: ^0.31.8
         version: 0.31.8
       typescript:
-        specifier: ^5.8.3
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
@@ -363,7 +363,7 @@ importers:
         specifier: ^3.4.17
         version: 3.4.19(tsx@4.21.0)(yaml@2.8.2)
       typescript:
-        specifier: ~5.9.2
+        specifier: ~5.9.3
         version: 5.9.3
 
   apps/web:
@@ -533,7 +533,7 @@ importers:
         version: link:../billing-types
     devDependencies:
       typescript:
-        specifier: ^5.8.3
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
@@ -542,7 +542,7 @@ importers:
   packages/billing-types:
     devDependencies:
       typescript:
-        specifier: ^5.8.3
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
@@ -570,7 +570,7 @@ importers:
         specifier: ^2.16.1
         version: 2.16.1
       typescript:
-        specifier: ^5.8.3
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
@@ -579,7 +579,7 @@ importers:
   packages/saas-billing-core:
     devDependencies:
       typescript:
-        specifier: ^5.8.3
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
@@ -595,7 +595,7 @@ importers:
         version: 0.45.1(@cloudflare/workers-types@4.20260203.0)(@opentelemetry/api@1.9.0)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(better-sqlite3@12.6.2)(kysely@0.28.17)(pg@8.18.0)
     devDependencies:
       typescript:
-        specifier: ^5.8.3
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
@@ -604,7 +604,7 @@ importers:
   packages/saas-chatbot-core:
     devDependencies:
       typescript:
-        specifier: ^5.8.3
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.18

@@ -19,7 +19,7 @@
     "@repo/billing-types": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.8.3",
+    "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   }
 }
