@@ -96,6 +96,33 @@ pnpm --filter @apps/billing-api run catalog:seed:sql -- --app reserve
 `STRIPE_PREMIUM_MONTHLY_PRICE_ID` と `STRIPE_PREMIUM_YEARLY_PRICE_ID` を設定して実行すると、Stripe Price ID も SQL に含まれます。
 API credential はこの seed では生成しません。
 
+## API credential
+
+reserve-app から Billing API を呼び出すには、Billing API 側に API credential の hash を保存し、reserve-app backend 側に raw key を secret として設定します。
+
+credential SQL は次のコマンドで生成します。
+
+```bash
+pnpm --filter @apps/billing-api run credential:create-sql -- --app reserve --prefix rbk_live > /tmp/reserve-billing-api-credential.sql
+```
+
+このコマンドは、`stdout` に `billing_app_credential` への `INSERT` SQL を出力し、`stderr` に raw key を一度だけ表示します。
+raw key は SQL には含まれず、SQL には SHA-256 hash だけが保存されます。
+
+表示された raw key は reserve-app backend の secret に設定します。
+
+```bash
+pnpm --filter @apps/backend exec wrangler secret put BILLING_API_KEY
+```
+
+生成した SQL は Billing API の remote D1 に適用します。
+
+```bash
+pnpm --filter @apps/billing-api exec wrangler d1 execute reserve-billing-api --remote --file /tmp/reserve-billing-api-credential.sql
+```
+
+`BILLING_API_KEY` は漏洩すると Billing API のアプリ権限で読み書きできるため、raw key を shell history、永続ログ、リポジトリに残さないでください。
+
 ## Entitlements
 
 `GET /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/entitlements` は、互換性のため `entitlements` 配列を正本として返します。

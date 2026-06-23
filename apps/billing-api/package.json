@@ -10,6 +10,7 @@
     "d1:migrate:local": "wrangler d1 migrations apply reserve-billing-api --local",
     "d1:migrate:remote": "wrangler d1 migrations apply reserve-billing-api --remote",
     "catalog:seed:sql": "node scripts/seed-billing-catalog.mjs",
+    "credential:create-sql": "node scripts/create-billing-api-credential.mjs",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
