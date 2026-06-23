@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BillingProvider } from '@repo/saas-billing-core';
 import type { AuthRuntimeEnv } from '../../auth-runtime.js';
 import type { OrganizationBillingOperationAttempt } from '../../domain/billing/organization-billing-operations.js';
@@ -165,23 +165,57 @@ const createProvider = (overrides: Partial<BillingProvider> = {}) =>
     ...overrides,
   }) as BillingProvider;
 
+const createBillingApiFetch = ({
+  handoffUrl,
+  handoffStatus = 200,
+  handoffBody,
+}: {
+  handoffUrl: string;
+  handoffStatus?: number;
+  handoffBody?: unknown;
+}) =>
+  vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PUT') {
+      return new Response(JSON.stringify({ synced: true }), { status: 200 });
+    }
+
+    return new Response(
+      JSON.stringify(
+        handoffBody ?? {
+          status: 'processing',
+          message: 'Billing API handoff is ready.',
+          url: handoffUrl,
+          operationAttemptId: 'billing-api-attempt-1',
+          reused: false,
+        },
+      ),
+      { status: handoffStatus },
+    );
+  });
+
 const createContext = ({
   billing = freeBilling,
   role = 'owner',
   provider = createProvider(),
+  envOverride = {},
 }: {
   billing?: typeof freeBilling;
   role?: 'owner' | 'admin' | 'member' | null;
   provider?: BillingProvider;
+  envOverride?: Partial<AuthRuntimeEnv>;
 } = {}) => {
   const store = createStore(billing);
   const operationStore = createOperationStore();
+  const currentEnv = {
+    ...env,
+    ...envOverride,
+  };
 
   return {
     ctx: {
       auth: null,
       database: null,
-      env,
+      env: currentEnv,
       store,
       operationStore,
       createProvider: vi.fn(() => provider),
@@ -196,6 +230,11 @@ const createContext = ({
           requestedOrganizationId ?? activeOrganizationId,
       ),
       readOrganizationMembershipRole: vi.fn(async () => role),
+      readOrganizationSubject: vi.fn(async () => ({
+        id: 'organization-1',
+        name: '予約テスト組織',
+        slug: 'reserve-test',
+      })),
       resolveE2eStripeTestClockId: vi.fn(() => null),
     } as unknown as BillingRouteContext,
     store,
@@ -207,6 +246,10 @@ const createContext = ({
 describe('課金アクションユースケース', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('Stripe Checkout ハンドオフ作成時に checkout 操作を成功として記録する', async () => {
@@ -252,6 +295,147 @@ describe('課金アクションユースケース', () => {
     expect(operationStore.markSucceeded).not.toHaveBeenCalled();
   });
 
+  it('Billing API action flag が有効なら checkout は subject sync 後に Billing API 経由で作成する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: 'https://billing.test/checkout',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
+    const { ctx, operationStore } = createContext({
+      provider,
+      envOverride: {
+        BILLING_API_ACTIONS_ENABLED: 'true',
+        BILLING_API_BASE_URL: 'https://billing.test',
+        BILLING_API_KEY: 'billing-api-key',
+      },
+    });
+
+    const result = await createSubscriptionCheckoutHandoff({
+      ctx,
+      body: { organizationId: 'organization-1', billingInterval: 'month' },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body.url).toBe('https://billing.test/checkout');
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createSubscriptionCheckoutSession).not.toHaveBeenCalled();
+    expect(operationStore.markSucceeded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: 'attempt-1',
+        handoffUrl: 'https://billing.test/checkout',
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1',
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'PUT' });
+    expect((fetchMock.mock.calls[0]?.[1]?.headers as Headers).get('authorization')).toBe(
+      'Bearer billing-api-key',
+    );
+    expect((fetchMock.mock.calls[0]?.[1]?.headers as Headers).get('idempotency-key')).toBe(
+      'reserve-action-sync:organization-1:attempt-1',
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      displayName: '予約テスト組織',
+      billingEmail: 'owner@example.com',
+      metadata: {
+        source: 'reserve-app-backend-action',
+        organizationSlug: 'reserve-test',
+      },
+    });
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/checkout-sessions',
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toMatchObject({
+      actor: {
+        type: 'user',
+        id: 'user-1',
+        email: 'owner@example.com',
+      },
+      planCode: 'premium',
+      interval: 'month',
+      returnUrlKey: 'default',
+    });
+  });
+
+  it('Billing API checkout 失敗時は legacy Stripe に fallback せず local attempt を失敗にする', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: 'https://billing.test/checkout',
+      handoffStatus: 503,
+      handoffBody: {
+        error: {
+          code: 'provider_not_configured',
+          message: 'Billing API provider is not configured.',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
+    const { ctx, operationStore } = createContext({
+      provider,
+      envOverride: {
+        BILLING_API_ACTIONS_ENABLED: 'true',
+        BILLING_API_BASE_URL: 'https://billing.test',
+        BILLING_API_KEY: 'billing-api-key',
+      },
+    });
+
+    const result = await createSubscriptionCheckoutHandoff({
+      ctx,
+      body: { organizationId: 'organization-1', billingInterval: 'month' },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(500);
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createSubscriptionCheckoutSession).not.toHaveBeenCalled();
+    expect(operationStore.markFailed).toHaveBeenCalledWith({
+      attemptId: 'attempt-1',
+      state: 'failed',
+      failureReason: 'Billing API provider is not configured.',
+    });
+  });
+
+  it('Billing API checkout が failed を返した場合も legacy Stripe に fallback せず local attempt を失敗にする', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: 'https://billing.test/checkout',
+      handoffBody: {
+        status: 'failed',
+        message: 'Billing API could not create a checkout session.',
+        url: null,
+        operationAttemptId: 'billing-api-attempt-1',
+        reused: false,
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
+    const { ctx, operationStore } = createContext({
+      provider,
+      envOverride: {
+        BILLING_API_ACTIONS_ENABLED: 'true',
+        BILLING_API_BASE_URL: 'https://billing.test',
+        BILLING_API_KEY: 'billing-api-key',
+      },
+    });
+
+    const result = await createSubscriptionCheckoutHandoff({
+      ctx,
+      body: { organizationId: 'organization-1', billingInterval: 'month' },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(500);
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createSubscriptionCheckoutSession).not.toHaveBeenCalled();
+    expect(operationStore.markFailed).toHaveBeenCalledWith({
+      attemptId: 'attempt-1',
+      state: 'failed',
+      failureReason: 'Billing API could not create a checkout session.',
+    });
+  });
+
   it('トライアル状態更新失敗時に trial 操作を失敗として記録する', async () => {
     const { ctx, store, operationStore } = createContext();
     vi.mocked(store.startPremiumTrial).mockRejectedValue(new Error('trial update failed'));
@@ -290,6 +474,43 @@ describe('課金アクションユースケース', () => {
     });
   });
 
+  it('Billing API action flag が有効なら setup は Billing API 経由で作成する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: 'https://billing.test/setup',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
+    const { ctx, operationStore } = createContext({
+      billing: trialBilling,
+      provider,
+      envOverride: {
+        BILLING_API_ACTIONS_ENABLED: 'true',
+        BILLING_API_BASE_URL: 'https://billing.test',
+        BILLING_API_KEY: 'billing-api-key',
+      },
+    });
+
+    const result = await createSetupCheckoutHandoff({
+      ctx,
+      body: { organizationId: 'organization-1' },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body.url).toBe('https://billing.test/setup');
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createSetupCheckoutSession).not.toHaveBeenCalled();
+    expect(operationStore.markSucceeded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: 'attempt-1',
+        handoffUrl: 'https://billing.test/setup',
+      }),
+    );
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/payment-method-setup-sessions',
+    );
+  });
+
   it('ポータルハンドオフ作成失敗時に portal 操作を失敗として記録する', async () => {
     const provider = createProvider({
       createBillingPortalSession: vi.fn(async () => {
@@ -309,6 +530,43 @@ describe('課金アクションユースケース', () => {
       attemptId: 'attempt-1',
       failureReason: 'portal failed',
     });
+  });
+
+  it('Billing API action flag が有効なら portal は Billing API 経由で作成する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: 'https://billing.test/portal',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
+    const { ctx, operationStore } = createContext({
+      billing: paidBilling,
+      provider,
+      envOverride: {
+        BILLING_API_ACTIONS_ENABLED: 'true',
+        BILLING_API_BASE_URL: 'https://billing.test',
+        BILLING_API_KEY: 'billing-api-key',
+      },
+    });
+
+    const result = await createSubscriptionUpdatePortalHandoff({
+      ctx,
+      body: { organizationId: 'organization-1' },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body.url).toBe('https://billing.test/portal');
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createBillingPortalSession).not.toHaveBeenCalled();
+    expect(operationStore.markSucceeded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: 'attempt-1',
+        handoffUrl: 'https://billing.test/portal',
+      }),
+    );
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/billing-portal-sessions',
+    );
   });
 
   it('非オーナーの課金アクションでは操作取得前に 403 を返す', async () => {

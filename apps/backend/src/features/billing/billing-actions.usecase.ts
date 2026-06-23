@@ -1,3 +1,5 @@
+import { BillingClientError } from '@repo/billing-client';
+import type { BillingApiHandoffRequest, BillingApiHandoffResponse } from '@repo/billing-types';
 import {
   BILLING_HANDOFF_REUSE_WINDOW_MS,
   type OrganizationBillingOperationAttempt,
@@ -18,6 +20,12 @@ import {
   buildOrganizationBillingCatalog,
   resolveOrganizationBillingPriceId,
 } from './billing.catalog.js';
+import {
+  buildBillingApiOrganizationSubjectSyncRequest,
+  resolveBillingApiActionClient,
+  toBillingApiOrganizationSubjectInput,
+  type BillingApiActionClient,
+} from './billing-api-client.js';
 import { buildBillingActionEnvelope } from './billing.presenter.js';
 import type { BillingIdentity, BillingRouteContext } from './billing.route-context.js';
 import type {
@@ -202,6 +210,189 @@ const reusedHandoffResult = async ({
     200,
   );
 
+const toBillingApiActionFailure = (
+  error: unknown,
+  fallbackMessage: string,
+): {
+  statusCode: 409 | 500;
+  actionStatus: 'conflict' | 'failed';
+  attemptState: 'conflict' | 'failed';
+  message: string;
+} => {
+  const statusCode = error instanceof BillingClientError && error.status === 409 ? 409 : 500;
+  return {
+    statusCode,
+    actionStatus: statusCode === 409 ? 'conflict' : 'failed',
+    attemptState: statusCode === 409 ? 'conflict' : 'failed',
+    message: toBillingOperationFailureMessage(error, fallbackMessage),
+  };
+};
+
+const buildBillingApiActionSubject = async ({
+  ctx,
+  identity,
+  organizationId,
+}: {
+  ctx: BillingRouteContext;
+  identity: BillingIdentity;
+  organizationId: string;
+}) => {
+  const organizationSubject = await ctx.readOrganizationSubject({ organizationId });
+  return {
+    organizationId,
+    organizationName: organizationSubject?.name ?? organizationId,
+    organizationSlug: organizationSubject?.slug ?? organizationId,
+    billingEmail: identity.email,
+  };
+};
+
+const syncBillingApiActionSubject = async ({
+  client,
+  ctx,
+  identity,
+  organizationId,
+  attempt,
+}: {
+  client: Pick<BillingApiActionClient, 'syncSubject'>;
+  ctx: BillingRouteContext;
+  identity: BillingIdentity;
+  organizationId: string;
+  attempt: OrganizationBillingOperationAttempt;
+}) => {
+  const subject = await buildBillingApiActionSubject({ ctx, identity, organizationId });
+  const billingSubject = toBillingApiOrganizationSubjectInput(subject);
+  await client.syncSubject(
+    billingSubject,
+    buildBillingApiOrganizationSubjectSyncRequest({
+      subject,
+      source: 'reserve-app-backend-action',
+      contactRole: 'current_billing_actor',
+    }),
+    {
+      idempotencyKey: `reserve-action-sync:${organizationId}:${attempt.id}`,
+    },
+  );
+  return billingSubject;
+};
+
+const createBillingApiHandoffResult = async ({
+  ctx,
+  identity,
+  organizationId,
+  role,
+  client,
+  attempt,
+  purpose,
+  request,
+  now,
+  failureMessage,
+  callHandoff,
+}: {
+  ctx: BillingRouteContext;
+  identity: BillingIdentity;
+  organizationId: string;
+  role: 'owner';
+  client: BillingApiActionClient;
+  attempt: OrganizationBillingOperationAttempt;
+  purpose: Extract<
+    OrganizationBillingOperationPurpose,
+    'paid_checkout' | 'payment_method_setup' | 'billing_portal'
+  >;
+  request: BillingApiHandoffRequest;
+  now: Date;
+  failureMessage: string;
+  callHandoff(input: {
+    subject: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+    request: BillingApiHandoffRequest;
+  }): Promise<BillingApiHandoffResponse>;
+}): Promise<JsonRouteResult> => {
+  try {
+    const subject = await syncBillingApiActionSubject({
+      client,
+      ctx,
+      identity,
+      organizationId,
+      attempt,
+    });
+    const handoff = await callHandoff({ subject, request });
+    if (handoff.status === 'conflict') {
+      const failedAttempt = await ctx.operationStore.markFailed({
+        attemptId: attempt.id,
+        state: 'conflict',
+        failureReason: handoff.message,
+      });
+      return jsonResult(
+        await buildActionEnvelope(ctx, {
+          organizationId,
+          role,
+          status: 'conflict',
+          message: handoff.message,
+          handoffAttempt: failedAttempt,
+          handoffPurpose: purpose,
+          handoffReused: handoff.reused,
+        }),
+        409,
+      );
+    }
+    if (handoff.status === 'failed') {
+      const failedAttempt = await ctx.operationStore.markFailed({
+        attemptId: attempt.id,
+        state: 'failed',
+        failureReason: handoff.message,
+      });
+      return jsonResult(
+        await buildActionEnvelope(ctx, {
+          organizationId,
+          role,
+          status: 'failed',
+          message: handoff.message,
+          handoffAttempt: failedAttempt,
+          handoffPurpose: purpose,
+          handoffReused: handoff.reused,
+        }),
+        500,
+      );
+    }
+    if (!handoff.url) {
+      throw new Error('Billing API handoff did not return a URL.');
+    }
+
+    const succeededAttempt = await ctx.operationStore.markSucceeded({
+      attemptId: attempt.id,
+      handoffUrl: handoff.url,
+      handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
+    });
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: handoff.status === 'succeeded' ? 'succeeded' : 'processing',
+        message: handoff.message,
+        handoffAttempt: succeededAttempt,
+        handoffPurpose: purpose,
+        handoffReused: handoff.reused,
+      }),
+      200,
+    );
+  } catch (error) {
+    const failure = toBillingApiActionFailure(error, failureMessage);
+    await ctx.operationStore.markFailed({
+      attemptId: attempt.id,
+      state: failure.attemptState,
+      failureReason: failure.message,
+    });
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: failure.actionStatus,
+        message: failure.message,
+      }),
+      failure.statusCode,
+    );
+  }
+};
+
 export const createSubscriptionCheckoutHandoff = async ({
   ctx,
   body,
@@ -220,12 +411,16 @@ export const createSubscriptionCheckoutHandoff = async ({
     return ownerContext.result;
   }
   const { identity, organizationId, role } = ownerContext;
+  const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
 
   const resolvedPrice = resolveOrganizationBillingPriceId({
     catalogResult: buildOrganizationBillingCatalog(ctx.env),
     interval: body.billingInterval,
   });
-  if (!ctx.env.STRIPE_SECRET_KEY?.trim() || !resolvedPrice.ok) {
+  if (
+    !billingApiActionClient.enabled &&
+    (!ctx.env.STRIPE_SECRET_KEY?.trim() || !resolvedPrice.ok)
+  ) {
     return jsonResult(
       await buildActionEnvelope(ctx, {
         organizationId,
@@ -272,6 +467,44 @@ export const createSubscriptionCheckoutHandoff = async ({
   }
   if (operation.reused) {
     return operationConflictResult({ ctx, organizationId, role });
+  }
+  if (billingApiActionClient.enabled) {
+    return createBillingApiHandoffResult({
+      ctx,
+      identity,
+      organizationId,
+      role,
+      client: billingApiActionClient.client,
+      attempt: operation.attempt,
+      purpose: 'paid_checkout',
+      request: {
+        actor: {
+          type: 'user',
+          id: identity.userId,
+          email: identity.email,
+        },
+        planCode: 'premium',
+        interval: body.billingInterval,
+        returnUrlKey: 'default',
+      },
+      now,
+      failureMessage: 'Billing API checkout handoff failed.',
+      callHandoff: ({ subject, request }) =>
+        billingApiActionClient.client.createCheckoutSession(subject, request, {
+          idempotencyKey: operation.attempt.idempotencyKey,
+        }),
+    });
+  }
+  if (!resolvedPrice.ok) {
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: 'failed',
+        message: resolvedPrice.error.message,
+      }),
+      422,
+    );
   }
 
   const contractsUrl = buildContractsUrl(ctx);
@@ -556,8 +789,9 @@ export const createSetupCheckoutHandoff = async ({
     return ownerContext.result;
   }
   const { identity, organizationId, role } = ownerContext;
+  const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
 
-  if (!ctx.env.STRIPE_SECRET_KEY?.trim()) {
+  if (!billingApiActionClient.enabled && !ctx.env.STRIPE_SECRET_KEY?.trim()) {
     return jsonResult(
       await buildActionEnvelope(ctx, {
         organizationId,
@@ -601,6 +835,33 @@ export const createSetupCheckoutHandoff = async ({
   }
   if (operation.reused) {
     return operationConflictResult({ ctx, organizationId, role });
+  }
+  if (billingApiActionClient.enabled) {
+    return createBillingApiHandoffResult({
+      ctx,
+      identity,
+      organizationId,
+      role,
+      client: billingApiActionClient.client,
+      attempt: operation.attempt,
+      purpose: 'payment_method_setup',
+      request: {
+        actor: {
+          type: 'user',
+          id: identity.userId,
+          email: identity.email,
+        },
+        planCode: 'premium',
+        interval: billing.billingInterval === 'year' ? 'year' : 'month',
+        returnUrlKey: 'default',
+      },
+      now,
+      failureMessage: 'Billing API payment method setup handoff failed.',
+      callHandoff: ({ subject, request }) =>
+        billingApiActionClient.client.createPaymentMethodSetupSession(subject, request, {
+          idempotencyKey: operation.attempt.idempotencyKey,
+        }),
+    });
   }
 
   try {
@@ -784,8 +1045,9 @@ export const createSubscriptionUpdatePortalHandoff = async ({
     return ownerContext.result;
   }
   const { identity, organizationId, role } = ownerContext;
+  const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
 
-  if (!ctx.env.STRIPE_SECRET_KEY?.trim()) {
+  if (!billingApiActionClient.enabled && !ctx.env.STRIPE_SECRET_KEY?.trim()) {
     return jsonResult(
       await buildActionEnvelope(ctx, {
         organizationId,
@@ -836,6 +1098,33 @@ export const createSubscriptionUpdatePortalHandoff = async ({
   }
   if (operation.reused) {
     return operationConflictResult({ ctx, organizationId, role });
+  }
+  if (billingApiActionClient.enabled) {
+    return createBillingApiHandoffResult({
+      ctx,
+      identity,
+      organizationId,
+      role,
+      client: billingApiActionClient.client,
+      attempt: operation.attempt,
+      purpose: 'billing_portal',
+      request: {
+        actor: {
+          type: 'user',
+          id: identity.userId,
+          email: identity.email,
+        },
+        planCode: 'premium',
+        interval: billing.billingInterval === 'year' ? 'year' : 'month',
+        returnUrlKey: 'default',
+      },
+      now,
+      failureMessage: 'Billing API portal handoff failed.',
+      callHandoff: ({ subject, request }) =>
+        billingApiActionClient.client.createBillingPortalSession(subject, request, {
+          idempotencyKey: operation.attempt.idempotencyKey,
+        }),
+    });
   }
 
   try {

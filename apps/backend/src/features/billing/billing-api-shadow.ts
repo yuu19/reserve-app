@@ -1,5 +1,3 @@
-import type { BillingClientRequestOptions } from '@repo/billing-client';
-import { createBillingClient } from '@repo/billing-client';
 import type {
   BillingApiEntitlementsResponse,
   BillingApiPriceResolution,
@@ -14,13 +12,20 @@ import type {
   ReserveAppBillingPlanCode,
   ReserveAppBillingSubscriptionStatus,
 } from './policies/reserve-app-billing-policy.js';
+import {
+  buildBillingApiOrganizationSubjectSyncRequest,
+  resolveBillingApiClient,
+  sha256Hex,
+  toBillingApiOrganizationSubjectInput,
+  type BillingApiClientDisabledReason,
+  type BillingApiClientResolution,
+  type BillingApiOrganizationSubject,
+  type BillingApiSubjectSyncClient,
+} from './billing-api-client.js';
 
 export type BillingApiShadowStatus = 'disabled' | 'matched' | 'mismatch' | 'unavailable';
 
-export type BillingApiShadowDisabledReason =
-  | 'disabled_by_flag'
-  | 'missing_base_url'
-  | 'missing_api_key';
+export type BillingApiShadowDisabledReason = BillingApiClientDisabledReason;
 
 export type BillingApiShadowDifference = {
   field: string;
@@ -50,47 +55,16 @@ export type BillingApiShadowDiagnostic = {
   differences: BillingApiShadowDifference[];
 };
 
-export type BillingApiShadowSubject = {
-  organizationId: string;
-  organizationName: string;
-  organizationSlug: string;
-  billingEmail?: string | null;
-};
+export type BillingApiShadowSubject = BillingApiOrganizationSubject;
 
-export type BillingApiShadowClient = {
-  syncSubject(
-    subject: { subjectType: string; subjectId: string },
-    body: {
-      displayName: string;
-      billingEmail?: string | null;
-      billingName?: string | null;
-      billingContacts?: Array<{ email: string; name?: string | null; role?: string | null }>;
-      metadata?: Record<string, unknown>;
-    },
-    options: BillingClientRequestOptions,
-  ): Promise<unknown>;
+export type BillingApiShadowClient = BillingApiSubjectSyncClient & {
   readEntitlements(subject: {
     subjectType: string;
     subjectId: string;
   }): Promise<BillingApiEntitlementsResponse>;
 };
 
-export type BillingApiShadowClientResolution =
-  | {
-      enabled: true;
-      client: BillingApiShadowClient;
-    }
-  | {
-      enabled: false;
-      disabledReason: BillingApiShadowDisabledReason;
-    };
-
-const sha256Hex = async (value: string): Promise<string> => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-};
+export type BillingApiShadowClientResolution = BillingApiClientResolution<BillingApiShadowClient>;
 
 const toUnavailableReason = (error: unknown): string => {
   if (error instanceof Error && error.message.length > 0) {
@@ -200,29 +174,13 @@ export const resolveBillingApiShadowClient = ({
   env: AuthRuntimeEnv;
   fetch?: typeof fetch;
 }): BillingApiShadowClientResolution => {
-  if (env.BILLING_API_SHADOW_ENABLED !== 'true') {
-    return { enabled: false, disabledReason: 'disabled_by_flag' };
-  }
+  const resolution = resolveBillingApiClient({
+    env,
+    enabled: env.BILLING_API_SHADOW_ENABLED === 'true',
+    fetch: fetchImpl,
+  });
 
-  const baseUrl = env.BILLING_API_BASE_URL?.trim();
-  if (!baseUrl) {
-    return { enabled: false, disabledReason: 'missing_base_url' };
-  }
-
-  const apiKey = env.BILLING_API_KEY?.trim();
-  if (!apiKey) {
-    return { enabled: false, disabledReason: 'missing_api_key' };
-  }
-
-  return {
-    enabled: true,
-    client: createBillingClient({
-      baseUrl,
-      appId: 'reserve',
-      apiKey,
-      fetch: fetchImpl,
-    }),
-  };
+  return resolution;
 };
 
 export const readBillingApiShadowDiagnostic = async ({
@@ -246,28 +204,12 @@ export const readBillingApiShadowDiagnostic = async ({
     });
   }
 
-  const billingSubject = {
-    subjectType: 'organization',
-    subjectId: subject.organizationId,
-  };
-  const syncBody = {
-    displayName: subject.organizationName,
-    billingEmail: subject.billingEmail ?? null,
-    billingName: subject.organizationName,
-    billingContacts: subject.billingEmail
-      ? [
-          {
-            email: subject.billingEmail,
-            name: subject.organizationName,
-            role: 'current_billing_viewer',
-          },
-        ]
-      : [],
-    metadata: {
-      source: 'reserve-app-backend-shadow',
-      organizationSlug: subject.organizationSlug,
-    },
-  };
+  const billingSubject = toBillingApiOrganizationSubjectInput(subject);
+  const syncBody = buildBillingApiOrganizationSubjectSyncRequest({
+    subject,
+    source: 'reserve-app-backend-shadow',
+    contactRole: 'current_billing_viewer',
+  });
 
   try {
     const syncBodyHash = await sha256Hex(JSON.stringify(syncBody));
