@@ -20,6 +20,12 @@ export type BillingIdentity = {
   activeOrganizationId: string | null;
 };
 
+export type BillingOrganizationSubject = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
 export type BillingProviderFactory = (input: {
   env: AuthRuntimeEnv;
   testClockId?: string | null;
@@ -41,6 +47,9 @@ export type BillingRouteContext = {
     organizationId: string;
     userId: string;
   }): Promise<OrganizationRole>;
+  readOrganizationSubject(input: {
+    organizationId: string;
+  }): Promise<BillingOrganizationSubject | null>;
   resolveE2eStripeTestClockId(headers: Headers): string | null;
 };
 
@@ -146,6 +155,20 @@ export const createBillingRouteContext = ({
       return role;
     }
     return null;
+  },
+
+  async readOrganizationSubject({ organizationId }) {
+    const rows = await database
+      .select({
+        id: dbSchema.organization.id,
+        name: dbSchema.organization.name,
+        slug: dbSchema.organization.slug,
+      })
+      .from(dbSchema.organization)
+      .where(eq(dbSchema.organization.id, organizationId))
+      .limit(1);
+
+    return rows[0] ?? null;
   },
 
   resolveE2eStripeTestClockId(headers) {

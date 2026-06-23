@@ -33,6 +33,8 @@
     "@hono/zod-openapi": "^1.2.1",
     "@react-email/components": "^1.0.7",
     "@react-email/render": "^2.0.4",
+    "@repo/billing-client": "workspace:*",
+    "@repo/billing-types": "workspace:*",
     "@repo/rich-text": "workspace:*",
     "@repo/saas-billing-core": "workspace:*",
     "@repo/saas-billing-drizzle": "workspace:*",

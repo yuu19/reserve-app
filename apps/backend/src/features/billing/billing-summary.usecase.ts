@@ -8,6 +8,7 @@ import {
 } from '../../shared/route-result.js';
 import type { BillingRouteContext } from './billing.route-context.js';
 import type { OrganizationBillingQuery } from './billing.schemas.js';
+import { resolveBillingApiShadowClient } from './billing-api-shadow.js';
 import { readOrganizationBillingSummaryPayload } from './billing.presenter.js';
 
 export const getOrganizationBillingSummary = async ({
@@ -40,12 +41,23 @@ export const getOrganizationBillingSummary = async ({
     return forbidden();
   }
 
+  const organizationSubject = await ctx.readOrganizationSubject({ organizationId });
+
   return jsonResult(
     await readOrganizationBillingSummaryPayload({
       store: ctx.store,
       env: ctx.env,
       organizationId,
       role,
+      billingApiShadow: {
+        clientResolution: resolveBillingApiShadowClient({ env: ctx.env }),
+        subject: {
+          organizationId,
+          organizationName: organizationSubject?.name ?? organizationId,
+          organizationSlug: organizationSubject?.slug ?? organizationId,
+          billingEmail: role === 'owner' ? identity.email : null,
+        },
+      },
     }),
     200,
   );

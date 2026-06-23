@@ -68,6 +68,45 @@ export const organizationBillingProfileReadinessSchema = z.object({
   gatesPremiumEligibility: z.literal(false),
 });
 
+/** 共有 Billing API への shadow read 結果を、既存判定に影響させず診断用に返す schema。 */
+export const organizationBillingApiShadowSchema = z.object({
+  status: z.enum(['disabled', 'matched', 'mismatch', 'unavailable']),
+  checkedAt: z.string(),
+  disabledReason: z.enum(['disabled_by_flag', 'missing_base_url', 'missing_api_key']).nullable(),
+  unavailableReason: z.string().nullable(),
+  priceResolution: z.enum(['not_applicable', 'known', 'unknown']).nullable(),
+  planCode: z.string().nullable(),
+  subscriptionStatus: z
+    .enum(['free', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete'])
+    .nullable(),
+  features: z.record(z.string(), z.unknown()).nullable(),
+  legacy: z.object({
+    planCode: z.enum(['free', 'premium']),
+    subscriptionStatus: z.enum([
+      'free',
+      'trialing',
+      'active',
+      'past_due',
+      'canceled',
+      'unpaid',
+      'incomplete',
+    ]),
+    entitlementState: z.enum(['free_only', 'premium_enabled']),
+    premiumEligible: z.boolean(),
+    capabilities: z.array(
+      z.enum(['organization_premium_features', 'advanced_billing_communications']),
+    ),
+  }),
+  differences: z.array(
+    z.object({
+      field: z.string().min(1),
+      legacy: z.unknown(),
+      billingApi: z.unknown(),
+      reason: z.string().min(1),
+    }),
+  ),
+});
+
 /** Invoice/payment webhook 由来の owner 向け payment event を返す schema。 */
 export const organizationBillingInvoicePaymentEventSchema = z.object({
   id: z.string().min(1),
@@ -146,6 +185,7 @@ export const organizationBillingSummarySchema = z.object({
   canManageBilling: z.boolean(),
   actionAvailability: organizationBillingActionAvailabilitySchema,
   billingProfileReadiness: organizationBillingProfileReadinessSchema,
+  billingApiShadow: organizationBillingApiShadowSchema.nullable(),
   history: z
     .array(
       z.object({

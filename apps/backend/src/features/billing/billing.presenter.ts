@@ -16,6 +16,11 @@ import {
   listOrganizationBillingCatalogIntervals,
 } from './billing.catalog.js';
 import {
+  readBillingApiShadowDiagnostic,
+  type BillingApiShadowClientResolution,
+  type BillingApiShadowSubject,
+} from './billing-api-shadow.js';
+import {
   isReserveAppBillingInterval,
   isReserveAppBillingSubscriptionStatus,
   resolveReserveAppBillingPaymentIssueState,
@@ -163,11 +168,16 @@ export const readOrganizationBillingSummaryPayload = async ({
   env,
   organizationId,
   role,
+  billingApiShadow,
 }: {
   store: ReserveAppBillingStore;
   env: AuthRuntimeEnv;
   organizationId: string;
   role: OrganizationRole;
+  billingApiShadow?: {
+    clientResolution: BillingApiShadowClientResolution;
+    subject: BillingApiShadowSubject;
+  };
 }) => {
   const billing = await store.selectSummary(organizationId);
   const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
@@ -203,6 +213,20 @@ export const readOrganizationBillingSummaryPayload = async ({
     stripeBillingConfigured: Boolean(env.STRIPE_SECRET_KEY?.trim()),
     availableIntervals: resolveBillingAvailableIntervals(env),
   });
+  const capabilities = entitlementPolicy.paidTier?.capabilities ?? [];
+  const billingApiShadowDiagnostic = billingApiShadow
+    ? await readBillingApiShadowDiagnostic({
+        clientResolution: billingApiShadow.clientResolution,
+        subject: billingApiShadow.subject,
+        legacy: {
+          planCode,
+          subscriptionStatus,
+          entitlementState: entitlementPolicy.entitlementState,
+          premiumEligible: entitlementPolicy.isPremiumEligible,
+          capabilities,
+        },
+      })
+    : null;
   const invoicePaymentEventsForContext = await store.readInvoicePaymentEvents({
     organizationId,
   });
@@ -252,7 +276,7 @@ export const readOrganizationBillingSummaryPayload = async ({
     premiumEligible: entitlementPolicy.isPremiumEligible,
     entitlementState: entitlementPolicy.entitlementState,
     entitlementReason: entitlementPolicy.reason,
-    capabilities: entitlementPolicy.paidTier?.capabilities ?? [],
+    capabilities,
     paymentMethodStatus,
     canViewBilling: true,
     canManageBilling,
@@ -261,6 +285,7 @@ export const readOrganizationBillingSummaryPayload = async ({
     history,
     paymentDocuments,
     invoicePaymentEvents,
+    billingApiShadow: billingApiShadowDiagnostic,
   };
 };
 

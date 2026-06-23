@@ -53,6 +53,12 @@ importers:
       '@react-email/render':
         specifier: ^2.0.4
         version: 2.0.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@repo/billing-client':
+        specifier: workspace:*
+        version: link:../../packages/billing-client
+      '@repo/billing-types':
+        specifier: workspace:*
+        version: link:../../packages/billing-types
       '@repo/rich-text':
         specifier: workspace:*
         version: link:../../packages/rich-text

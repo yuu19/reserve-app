@@ -124,6 +124,43 @@ describe('課金プレゼンター', () => {
     });
   });
 
+  it('Billing API shadow が disabled でも既存の契約判定を変えない', async () => {
+    const store = createStore();
+
+    const result = await readOrganizationBillingSummaryPayload({
+      store,
+      env,
+      organizationId: 'organization-1',
+      role: 'owner',
+      billingApiShadow: {
+        clientResolution: {
+          enabled: false,
+          disabledReason: 'disabled_by_flag',
+        },
+        subject: {
+          organizationId: 'organization-1',
+          organizationName: '予約テスト組織',
+          organizationSlug: 'reserve-test',
+          billingEmail: 'owner@example.com',
+        },
+      },
+    });
+
+    expect(result.premiumEligible).toBe(true);
+    expect(result.entitlementState).toBe('premium_enabled');
+    expect(result.billingApiShadow).toMatchObject({
+      status: 'disabled',
+      disabledReason: 'disabled_by_flag',
+      legacy: {
+        planCode: 'premium',
+        subscriptionStatus: 'active',
+        entitlementState: 'premium_enabled',
+        premiumEligible: true,
+      },
+      differences: [],
+    });
+  });
+
   it.each(['admin', 'member'] as const)(
     'hides owner-only billing detail for %s role',
     async (role) => {

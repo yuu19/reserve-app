@@ -88,6 +88,44 @@ export type OrganizationBillingPayload = {
 		gatesCheckout: false;
 		gatesPremiumEligibility: false;
 	};
+	billingApiShadow: {
+		status: 'disabled' | 'matched' | 'mismatch' | 'unavailable';
+		checkedAt: string;
+		disabledReason: 'disabled_by_flag' | 'missing_base_url' | 'missing_api_key' | null;
+		unavailableReason: string | null;
+		priceResolution: 'not_applicable' | 'known' | 'unknown' | null;
+		planCode: string | null;
+		subscriptionStatus:
+			| 'free'
+			| 'trialing'
+			| 'active'
+			| 'past_due'
+			| 'canceled'
+			| 'unpaid'
+			| 'incomplete'
+			| null;
+		features: Record<string, unknown> | null;
+		legacy: {
+			planCode: 'free' | 'premium';
+			subscriptionStatus:
+				| 'free'
+				| 'trialing'
+				| 'active'
+				| 'past_due'
+				| 'canceled'
+				| 'unpaid'
+				| 'incomplete';
+			entitlementState: 'free_only' | 'premium_enabled';
+			premiumEligible: boolean;
+			capabilities: Array<'organization_premium_features' | 'advanced_billing_communications'>;
+		};
+		differences: Array<{
+			field: string;
+			legacy: unknown;
+			billingApi: unknown;
+			reason: string;
+		}>;
+	} | null;
 	history?: Array<{
 		id: string;
 		eventType: 'plan_transition' | 'notification' | 'reconciliation' | 'payment_event';
