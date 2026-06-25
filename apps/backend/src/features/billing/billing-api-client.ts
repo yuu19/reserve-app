@@ -37,6 +37,10 @@ export type BillingApiActionClient = Pick<
 
 export type BillingApiActionClientResolution = BillingApiClientResolution<BillingApiActionClient>;
 
+export type BillingApiSummaryClient = Pick<BillingApiClient, 'syncSubject' | 'readSummary'>;
+
+export type BillingApiSummaryClientResolution = BillingApiClientResolution<BillingApiSummaryClient>;
+
 export const sha256Hex = async (value: string): Promise<string> => {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest))
@@ -57,7 +61,10 @@ export const buildBillingApiOrganizationSubjectSyncRequest = ({
   contactRole,
 }: {
   subject: BillingApiOrganizationSubject;
-  source: 'reserve-app-backend-shadow' | 'reserve-app-backend-action';
+  source:
+    | 'reserve-app-backend-shadow'
+    | 'reserve-app-backend-action'
+    | 'reserve-app-backend-summary';
   contactRole: string;
 }): BillingApiSubjectSyncRequest => ({
   displayName: subject.organizationName,
@@ -122,6 +129,22 @@ export const resolveBillingApiActionClient = ({
   const resolution = resolveBillingApiClient({
     env,
     enabled: env.BILLING_API_ACTIONS_ENABLED === 'true',
+    fetch: fetchImpl,
+  });
+
+  return resolution;
+};
+
+export const resolveBillingApiSummaryClient = ({
+  env,
+  fetch: fetchImpl,
+}: {
+  env: AuthRuntimeEnv;
+  fetch?: typeof fetch;
+}): BillingApiSummaryClientResolution => {
+  const resolution = resolveBillingApiClient({
+    env,
+    enabled: env.BILLING_API_SUMMARY_ENABLED === 'true',
     fetch: fetchImpl,
   });
 

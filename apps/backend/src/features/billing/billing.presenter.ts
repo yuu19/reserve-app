@@ -1,3 +1,4 @@
+import type { BillingApiSummaryResponse } from '@repo/billing-types';
 import type { OrganizationRole } from '../../domain/booking/authorization.js';
 import { buildBillingDocumentReadiness } from '../../domain/billing/reserve-app-billing-documents.js';
 import type { ReserveAppBillingInvoiceEvent } from '../../domain/billing/reserve-app-billing-invoice-events.js';
@@ -16,6 +17,13 @@ import {
   listOrganizationBillingCatalogIntervals,
 } from './billing.catalog.js';
 import {
+  buildBillingApiOrganizationSubjectSyncRequest,
+  sha256Hex,
+  toBillingApiOrganizationSubjectInput,
+  type BillingApiSummaryClientResolution,
+  type BillingApiOrganizationSubject,
+} from './billing-api-client.js';
+import {
   readBillingApiShadowDiagnostic,
   type BillingApiShadowClientResolution,
   type BillingApiShadowSubject,
@@ -28,7 +36,8 @@ import {
   resolveReserveAppBillingPaymentMethodStatus,
   type ReserveAppBillingSubscriptionStatus,
 } from './policies/reserve-app-billing-policy.js';
-import type { ReserveAppBillingStore } from './billing.store.js';
+import { RESERVE_APP_ENTITLEMENTS } from './policies/reserve-app-entitlements.js';
+import type { ReserveAppBillingStore, ReserveAppBillingSummaryRow } from './billing.store.js';
 
 export const toIsoDateString = (value: unknown): string | null => {
   if (value instanceof Date) {
@@ -163,34 +172,118 @@ const resolveBillingAvailableIntervals = (env: AuthRuntimeEnv): Array<'month' | 
   return listOrganizationBillingCatalogIntervals(buildOrganizationBillingCatalog(env));
 };
 
+const toDateOrNull = (value: unknown): Date | null => {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+};
+
+const hasBillingApiPremiumEntitlement = (summary: BillingApiSummaryResponse): boolean =>
+  summary.entitlements.features[RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM] === true;
+
+const readBillingApiSummary = async ({
+  clientResolution,
+  subject,
+}: {
+  clientResolution: BillingApiSummaryClientResolution;
+  subject: BillingApiOrganizationSubject;
+}): Promise<BillingApiSummaryResponse | null> => {
+  if (!clientResolution.enabled) {
+    return null;
+  }
+
+  const billingSubject = toBillingApiOrganizationSubjectInput(subject);
+  const syncBody = buildBillingApiOrganizationSubjectSyncRequest({
+    subject,
+    source: 'reserve-app-backend-summary',
+    contactRole: 'current_billing_viewer',
+  });
+  const syncBodyHash = await sha256Hex(JSON.stringify(syncBody));
+
+  try {
+    await clientResolution.client.syncSubject(billingSubject, syncBody, {
+      idempotencyKey: `reserve-summary-sync:${subject.organizationId}:${syncBodyHash.slice(0, 16)}`,
+    });
+    return await clientResolution.client.readSummary(billingSubject);
+  } catch {
+    return null;
+  }
+};
+
 export const readOrganizationBillingSummaryPayload = async ({
   store,
   env,
   organizationId,
   role,
+  billingApiSummary,
   billingApiShadow,
 }: {
   store: ReserveAppBillingStore;
   env: AuthRuntimeEnv;
   organizationId: string;
   role: OrganizationRole;
+  billingApiSummary?: {
+    clientResolution: BillingApiSummaryClientResolution;
+    subject: BillingApiOrganizationSubject;
+  };
   billingApiShadow?: {
     clientResolution: BillingApiShadowClientResolution;
     subject: BillingApiShadowSubject;
   };
 }) => {
   const billing = await store.selectSummary(organizationId);
-  const planCode: 'free' | 'premium' = billing?.planCode === 'premium' ? 'premium' : 'free';
-  const billingInterval = isReserveAppBillingInterval(billing?.billingInterval ?? null);
+  const billingApiSummaryResponse = billingApiSummary
+    ? await readBillingApiSummary({
+        clientResolution: billingApiSummary.clientResolution,
+        subject: billingApiSummary.subject,
+      })
+    : null;
+  const planCode: 'free' | 'premium' =
+    billingApiSummaryResponse?.subscription?.planCode === 'premium' ||
+    billingApiSummaryResponse?.entitlements.planCode === 'premium'
+      ? 'premium'
+      : billing?.planCode === 'premium'
+        ? 'premium'
+        : 'free';
+  const billingInterval =
+    isReserveAppBillingInterval(billingApiSummaryResponse?.subscription?.interval ?? null) ??
+    isReserveAppBillingInterval(billing?.billingInterval ?? null);
   const subscriptionStatus =
-    isReserveAppBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ?? 'free';
-  const trialStartedAt = toIsoDateString(billing?.trialStartedAt);
-  const currentPeriodEnd = toIsoDateString(billing?.currentPeriodEnd);
+    isReserveAppBillingSubscriptionStatus(billingApiSummaryResponse?.entitlements.status ?? null) ??
+    isReserveAppBillingSubscriptionStatus(
+      billingApiSummaryResponse?.subscription?.status ?? null,
+    ) ??
+    isReserveAppBillingSubscriptionStatus(billing?.subscriptionStatus ?? null) ??
+    'free';
+  const trialStartedAt =
+    toIsoDateString(billingApiSummaryResponse?.subscription?.trialStart) ??
+    toIsoDateString(billing?.trialStartedAt);
+  const currentPeriodEnd =
+    toIsoDateString(billingApiSummaryResponse?.subscription?.currentPeriodEnd) ??
+    toIsoDateString(billing?.currentPeriodEnd);
   const pastDueGraceEndsAt = toIsoDateString(billing?.pastDueGraceEndsAt);
+  const stripeCustomerId =
+    billingApiSummaryResponse?.account.providerCustomerId ?? billing?.stripeCustomerId ?? null;
+  const stripeSubscriptionId =
+    billingApiSummaryResponse?.subscription?.providerSubscriptionId ??
+    billing?.stripeSubscriptionId ??
+    null;
+  const stripePriceId =
+    billingApiSummaryResponse?.subscription?.providerPriceId ?? billing?.stripePriceId ?? null;
+  const cancelAtPeriodEnd =
+    billingApiSummaryResponse?.subscription?.cancelAtPeriodEnd ??
+    Boolean(billing?.cancelAtPeriodEnd);
   const paymentMethodStatus = await resolveReserveAppBillingPaymentMethodStatus({
     env,
     planCode,
-    stripeCustomerId: billing?.stripeCustomerId ?? null,
+    stripeCustomerId,
   });
   const entitlementPolicy = resolveReserveAppPremiumEntitlementPolicy({
     planCode,
@@ -198,22 +291,52 @@ export const readOrganizationBillingSummaryPayload = async ({
     paymentMethodStatus,
     currentPeriodEnd,
     pastDueGraceEndsAt,
-    cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
-    stripePriceId: billing?.stripePriceId ?? null,
+    cancelAtPeriodEnd,
+    stripePriceId,
     env,
   });
   const canManageBilling = role === 'owner';
   const trialUsed = await store.hasStartedPremiumTrial({
     organizationId,
   });
+  const billingForActionAvailability: ReserveAppBillingSummaryRow = billingApiSummaryResponse
+    ? {
+        planCode,
+        billingInterval,
+        subscriptionStatus,
+        cancelAtPeriodEnd,
+        trialStartedAt: toDateOrNull(billingApiSummaryResponse.subscription?.trialStart),
+        trialEndedAt: toDateOrNull(billingApiSummaryResponse.subscription?.trialEnd),
+        currentPeriodStart: toDateOrNull(
+          billingApiSummaryResponse.subscription?.currentPeriodStart,
+        ),
+        currentPeriodEnd: toDateOrNull(billingApiSummaryResponse.subscription?.currentPeriodEnd),
+        paymentIssueStartedAt: billing?.paymentIssueStartedAt ?? null,
+        pastDueGraceEndsAt: billing?.pastDueGraceEndsAt ?? null,
+        billingProfileReadiness: billing?.billingProfileReadiness ?? 'not_required',
+        billingProfileNextAction: billing?.billingProfileNextAction ?? null,
+        billingProfileCheckedAt: billing?.billingProfileCheckedAt ?? null,
+        lastReconciledAt: billing?.lastReconciledAt ?? null,
+        lastReconciliationReason: billing?.lastReconciliationReason ?? null,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        stripePriceId,
+      }
+    : billing;
   const actionAvailability = resolveOrganizationBillingActionAvailability({
-    billing,
+    billing: billingForActionAvailability,
     canManageBilling,
     trialUsed,
     stripeBillingConfigured: Boolean(env.STRIPE_SECRET_KEY?.trim()),
     availableIntervals: resolveBillingAvailableIntervals(env),
   });
-  const capabilities = entitlementPolicy.paidTier?.capabilities ?? [];
+  const billingApiPremiumEligible = billingApiSummaryResponse
+    ? hasBillingApiPremiumEntitlement(billingApiSummaryResponse)
+    : null;
+  const premiumEligible = billingApiPremiumEligible ?? entitlementPolicy.isPremiumEligible;
+  const entitlementState = premiumEligible ? 'premium_enabled' : 'free_only';
+  const paidTier = premiumEligible ? entitlementPolicy.paidTier : null;
+  const capabilities = paidTier?.capabilities ?? [];
   const billingApiShadowDiagnostic = billingApiShadow
     ? await readBillingApiShadowDiagnostic({
         clientResolution: billingApiShadow.clientResolution,
@@ -249,8 +372,8 @@ export const readOrganizationBillingSummaryPayload = async ({
     role === 'owner'
       ? buildBillingDocumentReadiness({
           organizationId,
-          stripeCustomerId: billing?.stripeCustomerId ?? null,
-          stripeSubscriptionId: billing?.stripeSubscriptionId ?? null,
+          stripeCustomerId,
+          stripeSubscriptionId,
           documents: documentReferences,
         })
       : null;
@@ -259,10 +382,10 @@ export const readOrganizationBillingSummaryPayload = async ({
     organizationId,
     planCode,
     planState: entitlementPolicy.planState,
-    paidTier: entitlementPolicy.paidTier,
+    paidTier,
     billingInterval,
     subscriptionStatus,
-    cancelAtPeriodEnd: Boolean(billing?.cancelAtPeriodEnd),
+    cancelAtPeriodEnd,
     trialStartedAt,
     currentPeriodEnd,
     paymentIssueStartedAt: toIsoDateString(billing?.paymentIssueStartedAt),
@@ -273,8 +396,8 @@ export const readOrganizationBillingSummaryPayload = async ({
     lastReconciledAt: toIsoDateString(billing?.lastReconciledAt),
     lastReconciliationReason: billing?.lastReconciliationReason ?? null,
     trialEndsAt: entitlementPolicy.trialEndsAt,
-    premiumEligible: entitlementPolicy.isPremiumEligible,
-    entitlementState: entitlementPolicy.entitlementState,
+    premiumEligible,
+    entitlementState,
     entitlementReason: entitlementPolicy.reason,
     capabilities,
     paymentMethodStatus,

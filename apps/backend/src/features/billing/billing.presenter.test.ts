@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BillingApiSummaryResponse } from '@repo/billing-types';
 import type { AuthRuntimeEnv } from '../../auth-runtime.js';
 import type { ReserveAppBillingStore } from './billing.store.js';
 import { readOrganizationBillingSummaryPayload } from './billing.presenter.js';
@@ -158,6 +159,112 @@ describe('課金プレゼンター', () => {
         premiumEligible: true,
       },
       differences: [],
+    });
+  });
+
+  it('Billing API summary が有効な場合は契約状態と entitlement を Billing API から返す', async () => {
+    const store = createStore();
+    vi.mocked(store.selectSummary).mockResolvedValue({
+      ...billing,
+      planCode: 'free',
+      billingInterval: null,
+      subscriptionStatus: 'free',
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      stripePriceId: null,
+    });
+    const billingApiSummary = {
+      subject: {
+        appId: 'reserve',
+        subjectType: 'organization',
+        subjectId: 'organization-1',
+        status: 'active',
+        displayName: '予約テスト組織',
+        billingEmail: 'owner@example.com',
+        billingName: '予約テスト組織',
+        billingContacts: [],
+        metadata: {},
+        createdAt: '2026-05-21T00:00:00.000Z',
+        updatedAt: '2026-05-21T00:00:00.000Z',
+      },
+      account: {
+        id: 'billing-account-1',
+        provider: 'stripe',
+        providerCustomerId: 'cus_billing_api',
+        createdAt: '2026-05-21T00:00:00.000Z',
+        updatedAt: '2026-05-21T00:00:00.000Z',
+      },
+      subscription: {
+        id: 'billing-subscription-1',
+        provider: 'stripe',
+        providerSubscriptionId: 'sub_billing_api',
+        planCode: 'premium',
+        priceCode: 'premium_monthly',
+        providerPriceId: 'price_monthly',
+        priceResolution: 'known',
+        interval: 'month',
+        status: 'active',
+        currentPeriodStart: '2026-05-21T00:00:00.000Z',
+        currentPeriodEnd: '2026-06-21T00:00:00.000Z',
+        trialStart: null,
+        trialEnd: null,
+        cancelAtPeriodEnd: false,
+        createdAt: '2026-05-21T00:00:00.000Z',
+        updatedAt: '2026-05-21T00:00:00.000Z',
+      },
+      entitlements: {
+        appId: 'reserve',
+        subjectType: 'organization',
+        subjectId: 'organization-1',
+        planCode: 'premium',
+        status: 'active',
+        priceResolution: 'known',
+        features: {
+          'organization.premium': true,
+          'store.multiple': true,
+        },
+        entitlements: [],
+        syncedAt: '2026-05-21T00:00:00.000Z',
+        maxStaleSeconds: 300,
+      },
+    } satisfies BillingApiSummaryResponse;
+    const summaryClient = {
+      syncSubject: vi.fn(async () => billingApiSummary),
+      readSummary: vi.fn(async () => billingApiSummary),
+    };
+
+    const result = await readOrganizationBillingSummaryPayload({
+      store,
+      env,
+      organizationId: 'organization-1',
+      role: 'owner',
+      billingApiSummary: {
+        clientResolution: {
+          enabled: true,
+          client: summaryClient,
+        },
+        subject: {
+          organizationId: 'organization-1',
+          organizationName: '予約テスト組織',
+          organizationSlug: 'reserve-test',
+          billingEmail: 'owner@example.com',
+        },
+      },
+    });
+
+    expect(summaryClient.syncSubject).toHaveBeenCalled();
+    expect(summaryClient.readSummary).toHaveBeenCalledWith({
+      subjectType: 'organization',
+      subjectId: 'organization-1',
+    });
+    expect(result.planCode).toBe('premium');
+    expect(result.billingInterval).toBe('month');
+    expect(result.subscriptionStatus).toBe('active');
+    expect(result.premiumEligible).toBe(true);
+    expect(result.entitlementState).toBe('premium_enabled');
+    expect(result.paymentDocuments).toMatchObject({
+      stripeCustomerId: 'cus_billing_api',
+      stripeSubscriptionId: 'sub_billing_api',
     });
   });
 

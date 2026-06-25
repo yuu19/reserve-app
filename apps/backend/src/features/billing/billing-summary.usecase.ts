@@ -8,6 +8,7 @@ import {
 } from '../../shared/route-result.js';
 import type { BillingRouteContext } from './billing.route-context.js';
 import type { OrganizationBillingQuery } from './billing.schemas.js';
+import { resolveBillingApiSummaryClient } from './billing-api-client.js';
 import { resolveBillingApiShadowClient } from './billing-api-shadow.js';
 import { readOrganizationBillingSummaryPayload } from './billing.presenter.js';
 
@@ -42,6 +43,12 @@ export const getOrganizationBillingSummary = async ({
   }
 
   const organizationSubject = await ctx.readOrganizationSubject({ organizationId });
+  const billingApiSubject = {
+    organizationId,
+    organizationName: organizationSubject?.name ?? organizationId,
+    organizationSlug: organizationSubject?.slug ?? organizationId,
+    billingEmail: role === 'owner' ? identity.email : null,
+  };
 
   return jsonResult(
     await readOrganizationBillingSummaryPayload({
@@ -49,14 +56,13 @@ export const getOrganizationBillingSummary = async ({
       env: ctx.env,
       organizationId,
       role,
+      billingApiSummary: {
+        clientResolution: resolveBillingApiSummaryClient({ env: ctx.env }),
+        subject: billingApiSubject,
+      },
       billingApiShadow: {
         clientResolution: resolveBillingApiShadowClient({ env: ctx.env }),
-        subject: {
-          organizationId,
-          organizationName: organizationSubject?.name ?? organizationId,
-          organizationSlug: organizationSubject?.slug ?? organizationId,
-          billingEmail: role === 'owner' ? identity.email : null,
-        },
+        subject: billingApiSubject,
       },
     }),
     200,
