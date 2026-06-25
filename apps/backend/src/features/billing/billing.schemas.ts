@@ -606,12 +606,12 @@ export const getOrganizationBillingRoute = createRoute({
   },
 });
 
-/** Owner が Premium subscription 用 Checkout handoff を作成する OpenAPI route 定義。 */
+/** Owner が Premium subscription 用 Checkout handoff を Billing API 経由で作成する OpenAPI route 定義。 */
 export const createOrganizationBillingCheckoutRoute = createRoute({
   method: 'post',
   path: '/organizations/billing/checkout',
   tags: ['Organization Billing'],
-  summary: 'Create Stripe Checkout URL for premium subscription',
+  summary: 'Create Billing API Checkout URL for premium subscription',
   request: {
     body: {
       required: true,
@@ -624,7 +624,7 @@ export const createOrganizationBillingCheckoutRoute = createRoute({
   },
   responses: {
     200: {
-      description: 'Stripe Checkout URL',
+      description: 'Billing API Checkout URL',
       content: {
         'application/json': {
           schema: organizationBillingActionResponseSchema,
@@ -644,7 +644,7 @@ export const createOrganizationBillingCheckoutRoute = createRoute({
       content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
     422: {
-      description: 'Stripe billing is not configured',
+      description: 'Billing API action is not configured',
       content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
     500: {

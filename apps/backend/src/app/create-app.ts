@@ -27,6 +27,70 @@ type CreateAppOptions = {
   serviceImageUploadService?: ServiceImageUploadService | null;
 };
 
+const trimBaseUrl = (value: string) => value.replace(/\/+$/, '');
+
+const forwardStripeBillingWebhookToBillingApi = async ({
+  env,
+  rawBody,
+  signatureHeader,
+}: {
+  env: AuthRuntimeEnv;
+  rawBody: string;
+  signatureHeader: string;
+}): Promise<
+  | {
+      ok: true;
+      body: unknown;
+    }
+  | {
+      ok: false;
+      status: 502 | 503;
+      message: string;
+    }
+> => {
+  const baseUrl = env.BILLING_API_BASE_URL?.trim();
+  if (!baseUrl) {
+    return {
+      ok: false,
+      status: 503,
+      message: 'Billing API base URL is not configured for Stripe webhook forwarding.',
+    };
+  }
+
+  try {
+    const response = await fetch(`${trimBaseUrl(baseUrl)}/api/v1/webhooks/stripe/billing`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': signatureHeader,
+      },
+      body: rawBody,
+    });
+    const text = await response.text();
+    const body = text ? (JSON.parse(text) as unknown) : { received: true };
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: 502,
+        message:
+          typeof body === 'object' &&
+          body !== null &&
+          'error' in body &&
+          typeof (body as { error?: { message?: unknown } }).error?.message === 'string'
+            ? (body as { error: { message: string } }).error.message
+            : `Billing API webhook forwarding failed with status ${response.status}.`,
+      };
+    }
+    return { ok: true, body };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      message: error instanceof Error ? error.message : 'Billing API webhook forwarding failed.',
+    };
+  }
+};
+
 /**
  * Better Auth、OpenAPI route、公開 route、Stripe webhook、機能別 route を
  * 単一の D1-backed runtime に束ねて Worker の HTTP 窓口を構成する。
@@ -147,6 +211,18 @@ export const createApp = ({
         database,
       });
       return c.json({ message: 'Invalid Stripe payload.' }, 400);
+    }
+
+    if (env.BILLING_API_WEBHOOK_FORWARD_ENABLED === 'true') {
+      const forwardResult = await forwardStripeBillingWebhookToBillingApi({
+        env,
+        rawBody,
+        signatureHeader: signatureHeader ?? '',
+      });
+      if (!forwardResult.ok) {
+        return c.json({ message: forwardResult.message }, forwardResult.status);
+      }
+      return c.json(forwardResult.body, 200);
     }
 
     const billingWebhook = await handleStripeOrganizationBillingWebhook({

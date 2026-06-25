@@ -18,6 +18,9 @@ const env = {
   STRIPE_SECRET_KEY: 'sk_test',
   STRIPE_PREMIUM_MONTHLY_PRICE_ID: 'price_monthly',
   STRIPE_PREMIUM_YEARLY_PRICE_ID: 'price_yearly',
+  BILLING_API_ACTIONS_ENABLED: 'true',
+  BILLING_API_BASE_URL: 'https://billing.test',
+  BILLING_API_KEY: 'billing-api-key',
 } as AuthRuntimeEnv;
 
 const baseAttempt = {
@@ -252,33 +255,12 @@ describe('課金アクションユースケース', () => {
     vi.unstubAllGlobals();
   });
 
-  it('Stripe Checkout ハンドオフ作成時に checkout 操作を成功として記録する', async () => {
-    const { ctx, operationStore } = createContext();
-
-    const result = await createSubscriptionCheckoutHandoff({
-      ctx,
-      body: { organizationId: 'organization-1', billingInterval: 'month' },
-      headers: new Headers(),
+  it('Billing API Checkout ハンドオフ作成時に checkout 操作を成功として記録する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: 'https://billing.test/checkout',
     });
-
-    expect(result.status).toBe(200);
-    expect(operationStore.markSucceeded).toHaveBeenCalledWith(
-      expect.objectContaining({
-        attemptId: 'attempt-1',
-        handoffUrl: 'https://stripe.test/checkout',
-        stripeCustomerId: 'cus_free',
-        stripeCheckoutSessionId: 'cs_checkout',
-      }),
-    );
-    expect(operationStore.markFailed).not.toHaveBeenCalled();
-  });
-
-  it('Stripe Checkout ハンドオフ作成失敗時に checkout 操作を失敗として記録する', async () => {
-    const provider = createProvider({
-      createSubscriptionCheckoutSession: vi.fn(async () => {
-        throw new Error('checkout failed');
-      }),
-    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
     const { ctx, operationStore } = createContext({ provider });
 
     const result = await createSubscriptionCheckoutHandoff({
@@ -287,12 +269,38 @@ describe('課金アクションユースケース', () => {
       headers: new Headers(),
     });
 
-    expect(result.status).toBe(500);
-    expect(operationStore.markFailed).toHaveBeenCalledWith({
-      attemptId: 'attempt-1',
-      failureReason: 'checkout failed',
+    expect(result.status).toBe(200);
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createSubscriptionCheckoutSession).not.toHaveBeenCalled();
+    expect(operationStore.markSucceeded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: 'attempt-1',
+        handoffUrl: 'https://billing.test/checkout',
+      }),
+    );
+    expect(operationStore.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('Billing API action が無効なら legacy Stripe に fallback せず checkout を失敗にする', async () => {
+    const provider = createProvider();
+    const { ctx, operationStore } = createContext({
+      provider,
+      envOverride: {
+        BILLING_API_ACTIONS_ENABLED: 'false',
+      },
     });
-    expect(operationStore.markSucceeded).not.toHaveBeenCalled();
+
+    const result = await createSubscriptionCheckoutHandoff({
+      ctx,
+      body: { organizationId: 'organization-1', billingInterval: 'month' },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(422);
+    expect(result.body.message).toBe('Billing API actions are disabled.');
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createSubscriptionCheckoutSession).not.toHaveBeenCalled();
+    expect(operationStore.createAttempt).not.toHaveBeenCalled();
   });
 
   it('Billing API action flag が有効なら checkout は subject sync 後に Billing API 経由で作成する', async () => {
@@ -453,12 +461,19 @@ describe('課金アクションユースケース', () => {
     });
   });
 
-  it('setup ハンドオフ作成失敗時に setup 操作を失敗として記録する', async () => {
-    const provider = createProvider({
-      createSetupCheckoutSession: vi.fn(async () => {
-        throw new Error('setup failed');
-      }),
+  it('Billing API setup ハンドオフ作成失敗時に setup 操作を失敗として記録する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: 'https://billing.test/setup',
+      handoffStatus: 503,
+      handoffBody: {
+        error: {
+          code: 'provider_not_configured',
+          message: 'Billing API setup failed.',
+        },
+      },
     });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
     const { ctx, operationStore } = createContext({ billing: trialBilling, provider });
 
     const result = await createSetupCheckoutHandoff({
@@ -468,9 +483,12 @@ describe('課金アクションユースケース', () => {
     });
 
     expect(result.status).toBe(500);
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createSetupCheckoutSession).not.toHaveBeenCalled();
     expect(operationStore.markFailed).toHaveBeenCalledWith({
       attemptId: 'attempt-1',
-      failureReason: 'setup failed',
+      state: 'failed',
+      failureReason: 'Billing API setup failed.',
     });
   });
 
@@ -511,12 +529,19 @@ describe('課金アクションユースケース', () => {
     );
   });
 
-  it('ポータルハンドオフ作成失敗時に portal 操作を失敗として記録する', async () => {
-    const provider = createProvider({
-      createBillingPortalSession: vi.fn(async () => {
-        throw new Error('portal failed');
-      }),
+  it('Billing API portal ハンドオフ作成失敗時に portal 操作を失敗として記録する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: 'https://billing.test/portal',
+      handoffStatus: 503,
+      handoffBody: {
+        error: {
+          code: 'provider_not_configured',
+          message: 'Billing API portal failed.',
+        },
+      },
     });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
     const { ctx, operationStore } = createContext({ billing: paidBilling, provider });
 
     const result = await createSubscriptionUpdatePortalHandoff({
@@ -526,9 +551,12 @@ describe('課金アクションユースケース', () => {
     });
 
     expect(result.status).toBe(500);
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createBillingPortalSession).not.toHaveBeenCalled();
     expect(operationStore.markFailed).toHaveBeenCalledWith({
       attemptId: 'attempt-1',
-      failureReason: 'portal failed',
+      state: 'failed',
+      failureReason: 'Billing API portal failed.',
     });
   });
 

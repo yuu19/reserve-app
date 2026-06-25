@@ -134,6 +134,10 @@ Stripe で扱う主な対象は次のとおり。
 - 年額 Price: [`STRIPE_PREMIUM_YEARLY_PRICE_ID`](../../apps/backend/.env.example)
 - カタログ作成補助: [`pnpm --filter @apps/backend run stripe:catalog:create`](../../apps/backend/scripts/create-stripe-billing-catalog.mjs)
 - 有料契約の開始: [`POST /api/v1/auth/organizations/billing/checkout`](../../apps/backend/src/routes/auth-routes.ts)
+- Checkout handoff の作成元: [`Billing API`](../../apps/billing-api/src/app.ts)
+
+reserve-app backend は、有料契約開始の Stripe Checkout Session を直接作成しない。
+owner 操作を受けたら Billing API に課金対象を同期し、Billing API が Stripe Customer と Checkout Session を作成する。
 
 ## 6. 支払い方法の登録と契約管理
 
@@ -153,6 +157,9 @@ Stripe Checkout の setup 完了通知を受け取ったら、作成された Pa
 
 プレミアム契約中のプラン変更や契約管理も owner だけが開始できる。  
 契約管理は Stripe Customer Portal へ移動して行う。
+
+支払い方法登録と Customer Portal の handoff も Billing API が作成する。
+reserve-app backend は Billing API の URL を利用者に返し、Stripe provider への直接 handoff 作成には fallback しない。
 
 Customer Portal は、Stripe と連携済みで `active`、`trialing`、`past_due`、`unpaid`、`incomplete` の契約だけで使える。  
 無料プラン、解約済み、または Stripe subscription がない組織では表示しない。
@@ -237,7 +244,8 @@ Stripe 側の状態とアプリ側の契約状態がずれた場合は、調査�
 Stripe からの通知は、正当な送信元であることを確認してから処理する。  
 確認できない通知では、契約状態を変えない。
 
-Stripe からの通知は [`POST /api/webhooks/stripe`](../../apps/backend/src/app.ts) で受け取る。
+Stripe からの通知は [`POST /api/webhooks/stripe`](../../apps/backend/src/app/create-app.ts) で受け取り、Billing API へ転送する。
+Billing API 側の受け口は [`POST /api/v1/webhooks/stripe/billing`](../../apps/billing-api/src/app.ts) とする。
 署名がない、署名が一致しない、期限切れである場合は契約状態を変更しない。
 
 その場合も、支払い情報や raw payload は保存しない。  
@@ -269,10 +277,11 @@ Stripe と連携済みの契約全体も、日次で照合する。
 
 実装メモ:
 
-- Stripe 通知: [`POST /api/webhooks/stripe`](../../apps/backend/src/app.ts)
+- Stripe 通知の外部受け口: [`POST /api/webhooks/stripe`](../../apps/backend/src/app/create-app.ts)
+- Stripe 通知の正本処理: [`POST /api/v1/webhooks/stripe/billing`](../../apps/billing-api/src/app.ts)
 - 署名検証: [`apps/backend/src/infra/payment/stripe.ts`](../../apps/backend/src/infra/payment/stripe.ts)
-- Stripe 通知の同期: [`apps/backend/src/domain/billing/stripe-webhook-sync.ts`](../../apps/backend/src/domain/billing/stripe-webhook-sync.ts)
-- Stripe 通知の処理履歴: [`billing_provider_event`](../../apps/backend/src/infra/db/schema.ts)
+- Stripe 通知の同期: [`apps/billing-api/src/app.ts`](../../apps/billing-api/src/app.ts)
+- Stripe 通知の処理履歴: [`billing_provider_event`](../../apps/billing-api/src/db/schema.ts)
 - 対象限定照合: [`reconcileRiskyOrganizationBillingStates`](../../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
 - 全体照合: [`reconcileProviderLinkedOrganizationBillingStates`](../../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
 - scheduled handler: [`apps/backend/src/worker.ts`](../../apps/backend/src/worker.ts)
@@ -374,7 +383,7 @@ Stripe Dashboard では、次の状態を確認する。
 - Customer Portal で契約管理と支払い方法更新を利用できる。
 - Customer Portal の subscription update に Premium の月額・年額 Price が含まれている。
 - Webhook endpoint が必要な `checkout.session.*`、`customer.subscription.*`、`invoice.*` の通知を受け取れる。
-- Webhook endpoint の signing secret が [`STRIPE_WEBHOOK_SECRET`](../../apps/backend/.env.example) と一致している。
+- backend と Billing API の Webhook endpoint signing secret が同じ Stripe webhook secret と一致している。
 - 請求書または領収書リンクが owner のテストアカウントで開ける。
 - owner 向け課金通知を検証する環境では Resend の送信元が有効である。
 - Cloudflare scheduled trigger が照合処理を期待頻度で実行できる。
@@ -396,7 +405,8 @@ Stripe Dashboard では、次の状態を確認する。
 - 支払い方法登録: [`POST /api/v1/auth/organizations/billing/payment-method`](../../apps/backend/src/routes/auth-routes.ts)
 - 有料契約の開始: [`POST /api/v1/auth/organizations/billing/checkout`](../../apps/backend/src/routes/auth-routes.ts)
 - 契約管理: [`POST /api/v1/auth/organizations/billing/portal`](../../apps/backend/src/routes/auth-routes.ts)
-- Stripe 通知: [`POST /api/webhooks/stripe`](../../apps/backend/src/app.ts)
+- Stripe 通知の外部受け口: [`POST /api/webhooks/stripe`](../../apps/backend/src/app/create-app.ts)
+- Stripe 通知の正本処理: [`POST /api/v1/webhooks/stripe/billing`](../../apps/billing-api/src/app.ts)
 - 社内調査: [`GET /api/v1/auth/internal/organizations/{organizationId}/billing-inspection`](../../apps/backend/src/routes/auth-routes.ts)
 
 ### 主な保存先
@@ -417,6 +427,8 @@ Stripe Dashboard では、次の状態を確認する。
 - [`STRIPE_PREMIUM_MONTHLY_PRICE_ID`](../../apps/backend/.env.example)
 - [`STRIPE_PREMIUM_YEARLY_PRICE_ID`](../../apps/backend/.env.example)
 - [`STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED`](../../apps/backend/.env.example)
+- [`BILLING_API_WEBHOOK_FORWARD_ENABLED`](../../apps/backend/wrangler.jsonc)
+- [`BILLING_API_BASE_URL`](../../apps/backend/wrangler.jsonc)
 - [`STRIPE_BILLING_PRODUCT_NAME`](../../apps/backend/.env.example)
 - [`STRIPE_BILLING_MONTHLY_LOOKUP_KEY`](../../apps/backend/.env.example)
 - [`STRIPE_BILLING_YEARLY_LOOKUP_KEY`](../../apps/backend/.env.example)

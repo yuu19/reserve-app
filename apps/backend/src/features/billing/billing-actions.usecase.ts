@@ -25,6 +25,7 @@ import {
   resolveBillingApiActionClient,
   toBillingApiOrganizationSubjectInput,
   type BillingApiActionClient,
+  type BillingApiClientDisabledReason,
 } from './billing-api-client.js';
 import { buildBillingActionEnvelope } from './billing.presenter.js';
 import type { BillingIdentity, BillingRouteContext } from './billing.route-context.js';
@@ -151,11 +152,6 @@ const toBillingOperationFailureMessage = (error: unknown, fallbackMessage: strin
   return fallbackMessage;
 };
 
-const buildContractsUrl = (ctx: BillingRouteContext) => {
-  const webBaseUrl = (ctx.env.WEB_BASE_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
-  return `${webBaseUrl}/admin/contracts`;
-};
-
 const isActivePremiumSubscriptionStatus = (value: unknown) =>
   value === 'trialing' ||
   value === 'active' ||
@@ -227,6 +223,37 @@ const toBillingApiActionFailure = (
     message: toBillingOperationFailureMessage(error, fallbackMessage),
   };
 };
+
+const toBillingApiActionDisabledMessage = (disabledReason: BillingApiClientDisabledReason) => {
+  if (disabledReason === 'missing_base_url') {
+    return 'Billing API base URL is not configured.';
+  }
+  if (disabledReason === 'missing_api_key') {
+    return 'Billing API key is not configured.';
+  }
+  return 'Billing API actions are disabled.';
+};
+
+const billingApiActionUnavailableResult = async ({
+  ctx,
+  organizationId,
+  role,
+  disabledReason,
+}: {
+  ctx: BillingRouteContext;
+  organizationId: string;
+  role: 'owner';
+  disabledReason: BillingApiClientDisabledReason;
+}) =>
+  jsonResult(
+    await buildActionEnvelope(ctx, {
+      organizationId,
+      role,
+      status: 'failed',
+      message: toBillingApiActionDisabledMessage(disabledReason),
+    }),
+    422,
+  );
 
 const buildBillingApiActionSubject = async ({
   ctx,
@@ -412,26 +439,13 @@ export const createSubscriptionCheckoutHandoff = async ({
   }
   const { identity, organizationId, role } = ownerContext;
   const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
-
-  const resolvedPrice = resolveOrganizationBillingPriceId({
-    catalogResult: buildOrganizationBillingCatalog(ctx.env),
-    interval: body.billingInterval,
-  });
-  if (
-    !billingApiActionClient.enabled &&
-    (!ctx.env.STRIPE_SECRET_KEY?.trim() || !resolvedPrice.ok)
-  ) {
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message: resolvedPrice.ok
-          ? 'Stripe billing is not configured.'
-          : resolvedPrice.error.message,
-      }),
-      422,
-    );
+  if (!billingApiActionClient.enabled) {
+    return billingApiActionUnavailableResult({
+      ctx,
+      organizationId,
+      role,
+      disabledReason: billingApiActionClient.disabledReason,
+    });
   }
 
   const billing = await ctx.store.selectSummary(organizationId);
@@ -468,136 +482,31 @@ export const createSubscriptionCheckoutHandoff = async ({
   if (operation.reused) {
     return operationConflictResult({ ctx, organizationId, role });
   }
-  if (billingApiActionClient.enabled) {
-    return createBillingApiHandoffResult({
-      ctx,
-      identity,
-      organizationId,
-      role,
-      client: billingApiActionClient.client,
-      attempt: operation.attempt,
-      purpose: 'paid_checkout',
-      request: {
-        actor: {
-          type: 'user',
-          id: identity.userId,
-          email: identity.email,
-        },
-        planCode: 'premium',
-        interval: body.billingInterval,
-        returnUrlKey: 'default',
+  return createBillingApiHandoffResult({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    attempt: operation.attempt,
+    purpose: 'paid_checkout',
+    request: {
+      actor: {
+        type: 'user',
+        id: identity.userId,
+        email: identity.email,
       },
-      now,
-      failureMessage: 'Billing API checkout handoff failed.',
-      callHandoff: ({ subject, request }) =>
-        billingApiActionClient.client.createCheckoutSession(subject, request, {
-          idempotencyKey: operation.attempt.idempotencyKey,
-        }),
-    });
-  }
-  if (!resolvedPrice.ok) {
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message: resolvedPrice.error.message,
+      planCode: 'premium',
+      interval: body.billingInterval,
+      returnUrlKey: 'default',
+    },
+    now,
+    failureMessage: 'Billing API checkout handoff failed.',
+    callHandoff: ({ subject, request }) =>
+      billingApiActionClient.client.createCheckoutSession(subject, request, {
+        idempotencyKey: operation.attempt.idempotencyKey,
       }),
-      422,
-    );
-  }
-
-  const contractsUrl = buildContractsUrl(ctx);
-  try {
-    const provider = ctx.createProvider({ env: ctx.env });
-    let stripeCustomerId = billing?.stripeCustomerId ?? null;
-    if (!stripeCustomerId) {
-      const previousBillingSnapshot = await ctx.store.readObservationSnapshot({
-        organizationId,
-      });
-      const customer = await provider.createCustomer({
-        idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
-        metadata: {
-          billingPurpose: 'organization_plan',
-          organizationId,
-          billingOperationAttemptId: operation.attempt.id,
-        },
-      });
-      stripeCustomerId = customer.id;
-      await ctx.store.updateStripeCustomerId({
-        organizationId,
-        stripeCustomerId,
-      });
-      const nextBillingSnapshot = await ctx.store.readObservationSnapshot({
-        organizationId,
-      });
-      await ctx.store.appendAuditEvent({
-        organizationId,
-        sourceKind: 'paid_checkout_started',
-        previousSnapshot: previousBillingSnapshot,
-        nextSnapshot: nextBillingSnapshot,
-        sourceContext: 'stripe_customer_created_for_paid_checkout',
-      });
-    }
-
-    const session = await provider.createSubscriptionCheckoutSession({
-      priceId: resolvedPrice.priceId,
-      successUrl: `${contractsUrl}?subscription=success`,
-      cancelUrl: `${contractsUrl}?subscription=cancel`,
-      customerId: stripeCustomerId,
-      idempotencyKey: operation.attempt.idempotencyKey,
-      metadata: {
-        billingPurpose: 'organization_plan',
-        organizationId,
-        planCode: 'premium',
-        billingInterval: body.billingInterval,
-        billingOperationAttemptId: operation.attempt.id,
-      },
-    });
-    const succeededAttempt = await ctx.operationStore.markSucceeded({
-      attemptId: operation.attempt.id,
-      handoffUrl: session.url,
-      handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
-      stripeCustomerId,
-      stripeCheckoutSessionId: session.id,
-    });
-
-    await ctx.store.appendAuditEvent({
-      organizationId,
-      sourceKind: 'paid_checkout_started',
-      previousSnapshot: await ctx.store.readObservationSnapshot({ organizationId }),
-      nextSnapshot: await ctx.store.readObservationSnapshot({ organizationId }),
-      sourceContext: 'owner_started_paid_checkout_handoff',
-    });
-
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'processing',
-        message: 'Stripe Checkout handoff is ready.',
-        handoffAttempt: succeededAttempt,
-        handoffPurpose: 'paid_checkout',
-        handoffReused: false,
-      }),
-      200,
-    );
-  } catch (error) {
-    const message = toBillingOperationFailureMessage(error, 'Stripe Checkout creation failed.');
-    await ctx.operationStore.markFailed({
-      attemptId: operation.attempt.id,
-      failureReason: message,
-    });
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message,
-      }),
-      500,
-    );
-  }
+  });
 };
 
 export const startTrialSubscription = async ({
@@ -791,16 +700,13 @@ export const createSetupCheckoutHandoff = async ({
   const { identity, organizationId, role } = ownerContext;
   const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
 
-  if (!billingApiActionClient.enabled && !ctx.env.STRIPE_SECRET_KEY?.trim()) {
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message: 'Stripe billing is not configured.',
-      }),
-      422,
-    );
+  if (!billingApiActionClient.enabled) {
+    return billingApiActionUnavailableResult({
+      ctx,
+      organizationId,
+      role,
+      disabledReason: billingApiActionClient.disabledReason,
+    });
   }
 
   const billing = await ctx.store.selectSummary(organizationId);
@@ -836,115 +742,31 @@ export const createSetupCheckoutHandoff = async ({
   if (operation.reused) {
     return operationConflictResult({ ctx, organizationId, role });
   }
-  if (billingApiActionClient.enabled) {
-    return createBillingApiHandoffResult({
-      ctx,
-      identity,
-      organizationId,
-      role,
-      client: billingApiActionClient.client,
-      attempt: operation.attempt,
-      purpose: 'payment_method_setup',
-      request: {
-        actor: {
-          type: 'user',
-          id: identity.userId,
-          email: identity.email,
-        },
-        planCode: 'premium',
-        interval: billing.billingInterval === 'year' ? 'year' : 'month',
-        returnUrlKey: 'default',
+  return createBillingApiHandoffResult({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    attempt: operation.attempt,
+    purpose: 'payment_method_setup',
+    request: {
+      actor: {
+        type: 'user',
+        id: identity.userId,
+        email: identity.email,
       },
-      now,
-      failureMessage: 'Billing API payment method setup handoff failed.',
-      callHandoff: ({ subject, request }) =>
-        billingApiActionClient.client.createPaymentMethodSetupSession(subject, request, {
-          idempotencyKey: operation.attempt.idempotencyKey,
-        }),
-    });
-  }
-
-  try {
-    const provider = ctx.createProvider({ env: ctx.env });
-    let customerId = billing.stripeCustomerId;
-    if (!customerId) {
-      const previousBillingSnapshot = await ctx.store.readObservationSnapshot({
-        organizationId,
-      });
-      const customer = await provider.createCustomer({
-        idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
-        metadata: {
-          billingPurpose: 'organization_payment_method',
-          organizationId,
-          billingOperationAttemptId: operation.attempt.id,
-        },
-      });
-      customerId = customer.id;
-      await ctx.store.updateStripeCustomerId({
-        organizationId,
-        stripeCustomerId: customerId,
-      });
-      const nextBillingSnapshot = await ctx.store.readObservationSnapshot({
-        organizationId,
-      });
-      await ctx.store.appendAuditEvent({
-        organizationId,
-        sourceKind: 'payment_method_customer_linked',
-        previousSnapshot: previousBillingSnapshot,
-        nextSnapshot: nextBillingSnapshot,
-        sourceContext: 'stripe_customer_created_for_payment_method_registration',
-      });
-    }
-
-    const contractsUrl = buildContractsUrl(ctx);
-    const session = await provider.createSetupCheckoutSession({
-      customerId,
-      successUrl: `${contractsUrl}?paymentMethod=success`,
-      cancelUrl: `${contractsUrl}?paymentMethod=cancel`,
-      idempotencyKey: operation.attempt.idempotencyKey,
-      metadata: {
-        billingPurpose: 'organization_payment_method',
-        organizationId,
-        billingOperationAttemptId: operation.attempt.id,
-      },
-    });
-    const succeededAttempt = await ctx.operationStore.markSucceeded({
-      attemptId: operation.attempt.id,
-      handoffUrl: session.url,
-      handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
-      stripeCustomerId: customerId,
-      stripeSubscriptionId: billing.stripeSubscriptionId ?? null,
-      stripeCheckoutSessionId: session.id,
-    });
-
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'processing',
-        message: 'Payment method setup handoff is ready.',
-        handoffAttempt: succeededAttempt,
-        handoffPurpose: 'payment_method_setup',
-        handoffReused: false,
+      planCode: 'premium',
+      interval: billing.billingInterval === 'year' ? 'year' : 'month',
+      returnUrlKey: 'default',
+    },
+    now,
+    failureMessage: 'Billing API payment method setup handoff failed.',
+    callHandoff: ({ subject, request }) =>
+      billingApiActionClient.client.createPaymentMethodSetupSession(subject, request, {
+        idempotencyKey: operation.attempt.idempotencyKey,
       }),
-      200,
-    );
-  } catch (error) {
-    const message = toBillingOperationFailureMessage(error, 'Payment method setup handoff failed.');
-    await ctx.operationStore.markFailed({
-      attemptId: operation.attempt.id,
-      failureReason: message,
-    });
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message,
-      }),
-      500,
-    );
-  }
+  });
 };
 
 export const completeTrialLifecycle = async ({
@@ -1047,16 +869,13 @@ export const createSubscriptionUpdatePortalHandoff = async ({
   const { identity, organizationId, role } = ownerContext;
   const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
 
-  if (!billingApiActionClient.enabled && !ctx.env.STRIPE_SECRET_KEY?.trim()) {
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message: 'Stripe billing is not configured.',
-      }),
-      422,
-    );
+  if (!billingApiActionClient.enabled) {
+    return billingApiActionUnavailableResult({
+      ctx,
+      organizationId,
+      role,
+      disabledReason: billingApiActionClient.disabledReason,
+    });
   }
 
   const billing = await ctx.store.selectSummary(organizationId);
@@ -1099,81 +918,29 @@ export const createSubscriptionUpdatePortalHandoff = async ({
   if (operation.reused) {
     return operationConflictResult({ ctx, organizationId, role });
   }
-  if (billingApiActionClient.enabled) {
-    return createBillingApiHandoffResult({
-      ctx,
-      identity,
-      organizationId,
-      role,
-      client: billingApiActionClient.client,
-      attempt: operation.attempt,
-      purpose: 'billing_portal',
-      request: {
-        actor: {
-          type: 'user',
-          id: identity.userId,
-          email: identity.email,
-        },
-        planCode: 'premium',
-        interval: billing.billingInterval === 'year' ? 'year' : 'month',
-        returnUrlKey: 'default',
+  return createBillingApiHandoffResult({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    attempt: operation.attempt,
+    purpose: 'billing_portal',
+    request: {
+      actor: {
+        type: 'user',
+        id: identity.userId,
+        email: identity.email,
       },
-      now,
-      failureMessage: 'Billing API portal handoff failed.',
-      callHandoff: ({ subject, request }) =>
-        billingApiActionClient.client.createBillingPortalSession(subject, request, {
-          idempotencyKey: operation.attempt.idempotencyKey,
-        }),
-    });
-  }
-
-  try {
-    const contractsUrl = buildContractsUrl(ctx);
-    const provider = ctx.createProvider({ env: ctx.env });
-    const portalSession = await provider.createBillingPortalSession({
-      customerId: billing.stripeCustomerId,
-      returnUrl: contractsUrl,
-      idempotencyKey: operation.attempt.idempotencyKey,
-      flow: {
-        type: 'subscription_update',
-        subscriptionId: billing.stripeSubscriptionId,
-      },
-    });
-    const succeededAttempt = await ctx.operationStore.markSucceeded({
-      attemptId: operation.attempt.id,
-      handoffUrl: portalSession.url,
-      handoffExpiresAt: new Date(now.getTime() + BILLING_HANDOFF_REUSE_WINDOW_MS),
-      stripeCustomerId: billing.stripeCustomerId,
-      stripeSubscriptionId: billing.stripeSubscriptionId,
-      stripePortalSessionId: portalSession.id,
-    });
-
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'processing',
-        message: 'Billing portal handoff is ready.',
-        handoffAttempt: succeededAttempt,
-        handoffPurpose: 'billing_portal',
-        handoffReused: false,
+      planCode: 'premium',
+      interval: billing.billingInterval === 'year' ? 'year' : 'month',
+      returnUrlKey: 'default',
+    },
+    now,
+    failureMessage: 'Billing API portal handoff failed.',
+    callHandoff: ({ subject, request }) =>
+      billingApiActionClient.client.createBillingPortalSession(subject, request, {
+        idempotencyKey: operation.attempt.idempotencyKey,
       }),
-      200,
-    );
-  } catch (error) {
-    const message = toBillingOperationFailureMessage(error, 'Billing portal handoff failed.');
-    await ctx.operationStore.markFailed({
-      attemptId: operation.attempt.id,
-      failureReason: message,
-    });
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message,
-      }),
-      500,
-    );
-  }
+  });
 };
