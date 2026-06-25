@@ -95,10 +95,13 @@ Stripe の Premium Price が設定され、[`STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_E
 
 実装メモ:
 
+- トライアル開始と完了判定の状態更新は Billing API を正本とする。reserve-app の backend は owner 権限、組織、冪等性を確認したうえで Billing API の trial action を呼び、ローカルの課金状態へ直接 fallback しない。
 - トライアル日数: [`ORGANIZATION_PREMIUM_TRIAL_DURATION_DAYS`](../../apps/backend/src/domain/billing/organization-billing.ts)
 - トライアル時の Stripe subscription 作成: [`STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED`](../../apps/backend/.env.example)
 - トライアル開始: [`POST /api/v1/auth/organizations/billing/trial`](../../apps/backend/src/routes/auth-routes.ts)
 - トライアル完了判定: [`POST /api/v1/auth/organizations/billing/trial/complete`](../../apps/backend/src/routes/auth-routes.ts)
+- Billing API のトライアル開始: [`POST /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/trial`](shared-billing-api-architecture.md)
+- Billing API のトライアル完了判定: [`POST /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/trial/complete`](shared-billing-api-architecture.md)
 
 ## 5. 有料契約と Stripe で扱う対象
 
@@ -401,7 +404,7 @@ Stripe Dashboard では、次の状態を確認する。
 
 - 契約画面: [`apps/web/src/routes/contracts/+page.svelte`](../../apps/web/src/routes/contracts/+page.svelte)
 - 契約状態の取得: [`GET /api/v1/auth/organizations/billing`](../../apps/backend/src/routes/auth-routes.ts)
-- トライアル開始: [`POST /api/v1/auth/organizations/billing/trial`](../../apps/backend/src/routes/auth-routes.ts)
+- トライアル開始: [`POST /api/v1/auth/organizations/billing/trial`](../../apps/backend/src/routes/auth-routes.ts) から Billing API の trial action を呼ぶ
 - 支払い方法登録: [`POST /api/v1/auth/organizations/billing/payment-method`](../../apps/backend/src/routes/auth-routes.ts)
 - 有料契約の開始: [`POST /api/v1/auth/organizations/billing/checkout`](../../apps/backend/src/routes/auth-routes.ts)
 - 契約管理: [`POST /api/v1/auth/organizations/billing/portal`](../../apps/backend/src/routes/auth-routes.ts)

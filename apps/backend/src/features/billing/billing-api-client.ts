@@ -30,9 +30,11 @@ export type BillingApiOrganizationSubject = {
 export type BillingApiActionClient = Pick<
   BillingApiClient,
   | 'syncSubject'
+  | 'startTrial'
   | 'createCheckoutSession'
   | 'createPaymentMethodSetupSession'
   | 'createBillingPortalSession'
+  | 'completeTrial'
 >;
 
 export type BillingApiActionClientResolution = BillingApiClientResolution<BillingApiActionClient>;

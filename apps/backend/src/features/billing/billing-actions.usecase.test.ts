@@ -444,9 +444,54 @@ describe('課金アクションユースケース', () => {
     });
   });
 
-  it('トライアル状態更新失敗時に trial 操作を失敗として記録する', async () => {
-    const { ctx, store, operationStore } = createContext();
-    vi.mocked(store.startPremiumTrial).mockRejectedValue(new Error('trial update failed'));
+  it('Billing API action flag が有効なら trial start は Billing API 経由で実行する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: '',
+      handoffBody: {
+        status: 'succeeded',
+        message: 'Started trial.',
+        url: null,
+        operationAttemptId: null,
+        reused: false,
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
+    const { ctx, store, operationStore } = createContext({ provider });
+
+    const result = await startTrialSubscription({
+      ctx,
+      body: { organizationId: 'organization-1' },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body.status).toBe('succeeded');
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createTrialSubscription).not.toHaveBeenCalled();
+    expect(store.startPremiumTrial).not.toHaveBeenCalled();
+    expect(operationStore.markSucceeded).toHaveBeenCalledWith({
+      attemptId: 'attempt-1',
+    });
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/trial',
+    );
+  });
+
+  it('Billing API trial start 失敗時は local trial mutation に fallback しない', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: '',
+      handoffStatus: 503,
+      handoffBody: {
+        error: {
+          code: 'internal_error',
+          message: 'Billing API trial failed.',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
+    const { ctx, store, operationStore } = createContext({ provider });
 
     const result = await startTrialSubscription({
       ctx,
@@ -455,9 +500,13 @@ describe('課金アクションユースケース', () => {
     });
 
     expect(result.status).toBe(500);
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(provider.createTrialSubscription).not.toHaveBeenCalled();
+    expect(store.startPremiumTrial).not.toHaveBeenCalled();
     expect(operationStore.markFailed).toHaveBeenCalledWith({
       attemptId: 'attempt-1',
-      failureReason: 'trial update failed',
+      state: 'failed',
+      failureReason: 'Billing API trial failed.',
     });
   });
 
@@ -594,6 +643,38 @@ describe('課金アクションユースケース', () => {
     );
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
       'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/billing-portal-sessions',
+    );
+  });
+
+  it('Billing API action flag が有効なら trial complete は Billing API 経由で実行する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: '',
+      handoffBody: {
+        status: 'succeeded',
+        message: 'Trial completed and subject returned to free.',
+        url: null,
+        operationAttemptId: null,
+        reused: false,
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { ctx, store, operationStore } = createContext({ billing: trialBilling });
+
+    const result = await completeTrialLifecycle({
+      ctx,
+      body: { organizationId: 'organization-1' },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body.status).toBe('succeeded');
+    expect(store.applyTrialCompletion).not.toHaveBeenCalled();
+    expect(operationStore.createAttempt).not.toHaveBeenCalled();
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/trial/complete',
+    );
+    expect((fetchMock.mock.calls[1]?.[1]?.headers as Headers).get('idempotency-key')).toBe(
+      'reserve-trial-complete:organization-1:user-1',
     );
   });
 

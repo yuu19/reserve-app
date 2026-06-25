@@ -707,7 +707,7 @@ export const createOrganizationBillingTrialRoute = createRoute({
   method: 'post',
   path: '/organizations/billing/trial',
   tags: ['Organization Billing'],
-  summary: 'Start a 7-day premium trial for the active organization',
+  summary: 'Request Billing API to start a 7-day premium trial for the active organization',
   request: {
     body: {
       required: true,
@@ -803,7 +803,7 @@ export const createOrganizationBillingTrialCompletionRoute = createRoute({
   method: 'post',
   path: '/organizations/billing/trial/complete',
   tags: ['Organization Billing'],
-  summary: 'Evaluate and apply premium trial completion lifecycle rules',
+  summary: 'Request Billing API to complete premium trial lifecycle rules',
   request: {
     body: {
       required: true,

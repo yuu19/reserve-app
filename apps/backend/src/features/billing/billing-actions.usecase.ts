@@ -5,10 +5,7 @@ import {
   type OrganizationBillingOperationAttempt,
   type OrganizationBillingOperationPurpose,
 } from '../../domain/billing/organization-billing-operations.js';
-import {
-  RESERVE_APP_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
-  RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS,
-} from './policies/reserve-app-billing-policy.js';
+import { RESERVE_APP_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE } from './policies/reserve-app-billing-policy.js';
 import {
   forbidden,
   jsonResult,
@@ -16,10 +13,6 @@ import {
   validationError,
   type JsonRouteResult,
 } from '../../shared/route-result.js';
-import {
-  buildOrganizationBillingCatalog,
-  resolveOrganizationBillingPriceId,
-} from './billing.catalog.js';
 import {
   buildBillingApiOrganizationSubjectSyncRequest,
   resolveBillingApiActionClient,
@@ -105,42 +98,6 @@ const buildActionEnvelope = (
     env: ctx.env,
     ...input,
   });
-
-const resolveDefaultPremiumTrialPriceConfig = (
-  ctx: BillingRouteContext,
-): {
-  priceId: string;
-  billingInterval: 'month' | 'year';
-} | null => {
-  if (ctx.env.STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED !== 'true') {
-    return null;
-  }
-
-  const catalogResult = buildOrganizationBillingCatalog(ctx.env);
-  const monthlyPrice = resolveOrganizationBillingPriceId({
-    catalogResult,
-    interval: 'month',
-  });
-  if (monthlyPrice.ok) {
-    return {
-      priceId: monthlyPrice.priceId,
-      billingInterval: 'month',
-    };
-  }
-
-  const yearlyPrice = resolveOrganizationBillingPriceId({
-    catalogResult,
-    interval: 'year',
-  });
-  if (yearlyPrice.ok) {
-    return {
-      priceId: yearlyPrice.priceId,
-      billingInterval: 'year',
-    };
-  }
-
-  return null;
-};
 
 const toBillingOperationFailureMessage = (error: unknown, fallbackMessage: string): string => {
   if (error instanceof Error && error.message.length > 0) {
@@ -278,13 +235,13 @@ const syncBillingApiActionSubject = async ({
   ctx,
   identity,
   organizationId,
-  attempt,
+  idempotencyKeySuffix,
 }: {
   client: Pick<BillingApiActionClient, 'syncSubject'>;
   ctx: BillingRouteContext;
   identity: BillingIdentity;
   organizationId: string;
-  attempt: OrganizationBillingOperationAttempt;
+  idempotencyKeySuffix: string;
 }) => {
   const subject = await buildBillingApiActionSubject({ ctx, identity, organizationId });
   const billingSubject = toBillingApiOrganizationSubjectInput(subject);
@@ -296,7 +253,7 @@ const syncBillingApiActionSubject = async ({
       contactRole: 'current_billing_actor',
     }),
     {
-      idempotencyKey: `reserve-action-sync:${organizationId}:${attempt.id}`,
+      idempotencyKey: `reserve-action-sync:${organizationId}:${idempotencyKeySuffix}`,
     },
   );
   return billingSubject;
@@ -339,7 +296,7 @@ const createBillingApiHandoffResult = async ({
       ctx,
       identity,
       organizationId,
-      attempt,
+      idempotencyKeySuffix: attempt.id,
     });
     const handoff = await callHandoff({ subject, request });
     if (handoff.status === 'conflict') {
@@ -408,6 +365,122 @@ const createBillingApiHandoffResult = async ({
       state: failure.attemptState,
       failureReason: failure.message,
     });
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: failure.actionStatus,
+        message: failure.message,
+      }),
+      failure.statusCode,
+    );
+  }
+};
+
+const createBillingApiLifecycleActionResult = async ({
+  ctx,
+  identity,
+  organizationId,
+  role,
+  client,
+  attempt,
+  request,
+  successStatus = 200,
+  failureMessage,
+  callAction,
+}: {
+  ctx: BillingRouteContext;
+  identity: BillingIdentity;
+  organizationId: string;
+  role: 'owner';
+  client: BillingApiActionClient;
+  attempt: OrganizationBillingOperationAttempt | null;
+  request: BillingApiHandoffRequest;
+  successStatus?: 200;
+  failureMessage: string;
+  callAction(input: {
+    subject: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+    request: BillingApiHandoffRequest;
+  }): Promise<BillingApiHandoffResponse>;
+}): Promise<JsonRouteResult> => {
+  try {
+    const subject = await syncBillingApiActionSubject({
+      client,
+      ctx,
+      identity,
+      organizationId,
+      idempotencyKeySuffix: attempt?.id ?? `manual:${organizationId}:${identity.userId}`,
+    });
+    const action = await callAction({ subject, request });
+    if (action.status === 'conflict') {
+      const failedAttempt = attempt
+        ? await ctx.operationStore.markFailed({
+            attemptId: attempt.id,
+            state: 'conflict',
+            failureReason: action.message,
+          })
+        : null;
+      return jsonResult(
+        await buildActionEnvelope(ctx, {
+          organizationId,
+          role,
+          status: 'conflict',
+          message: action.message,
+          handoffAttempt: failedAttempt,
+          handoffPurpose: attempt?.purpose,
+          handoffReused: action.reused,
+        }),
+        409,
+      );
+    }
+    if (action.status === 'failed') {
+      const failedAttempt = attempt
+        ? await ctx.operationStore.markFailed({
+            attemptId: attempt.id,
+            state: 'failed',
+            failureReason: action.message,
+          })
+        : null;
+      return jsonResult(
+        await buildActionEnvelope(ctx, {
+          organizationId,
+          role,
+          status: 'failed',
+          message: action.message,
+          handoffAttempt: failedAttempt,
+          handoffPurpose: attempt?.purpose,
+          handoffReused: action.reused,
+        }),
+        500,
+      );
+    }
+
+    const succeededAttempt = attempt
+      ? await ctx.operationStore.markSucceeded({
+          attemptId: attempt.id,
+        })
+      : null;
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: action.status === 'processing' ? 'processing' : 'succeeded',
+        message: action.message,
+        handoffAttempt: succeededAttempt,
+        handoffPurpose: attempt?.purpose,
+        handoffReused: action.reused,
+      }),
+      successStatus,
+    );
+  } catch (error) {
+    const failure = toBillingApiActionFailure(error, failureMessage);
+    if (attempt) {
+      await ctx.operationStore.markFailed({
+        attemptId: attempt.id,
+        state: failure.attemptState,
+        failureReason: failure.message,
+      });
+    }
     return jsonResult(
       await buildActionEnvelope(ctx, {
         organizationId,
@@ -527,6 +600,15 @@ export const startTrialSubscription = async ({
     return ownerContext.result;
   }
   const { identity, organizationId, role } = ownerContext;
+  const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
+  if (!billingApiActionClient.enabled) {
+    return billingApiActionUnavailableResult({
+      ctx,
+      organizationId,
+      role,
+      disabledReason: billingApiActionClient.disabledReason,
+    });
+  }
 
   const billing = await ctx.store.selectSummary(organizationId);
   if (billing && isActivePremiumSubscriptionStatus(billing.subscriptionStatus)) {
@@ -552,25 +634,6 @@ export const startTrialSubscription = async ({
     );
   }
 
-  const shouldCreateStripeTrialSubscription =
-    ctx.env.STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED === 'true';
-  const defaultTrialPrice = resolveDefaultPremiumTrialPriceConfig(ctx);
-  if (
-    shouldCreateStripeTrialSubscription &&
-    ctx.env.STRIPE_SECRET_KEY?.trim() &&
-    !defaultTrialPrice
-  ) {
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message: 'Stripe premium trial price id is not configured.',
-      }),
-      422,
-    );
-  }
-
   const operation = await ctx.operationStore.createAttempt({
     organizationId,
     purpose: 'trial_start',
@@ -579,105 +642,28 @@ export const startTrialSubscription = async ({
   if (operation.reused) {
     return operationConflictResult({ ctx, organizationId, role });
   }
-  try {
-    const previousBillingSnapshot = await ctx.store.readObservationSnapshot({
-      organizationId,
-    });
-    const e2eStripeTestClockId = ctx.resolveE2eStripeTestClockId(headers);
-    let stripeCustomerId = billing?.stripeCustomerId ?? null;
-    let stripeSubscriptionId: string | null = null;
-    let stripePriceId: string | null = null;
-    let billingInterval: 'month' | 'year' | null = null;
-    let trialStartedAt: Date | undefined;
-    let trialEndsAt: Date | undefined;
-
-    if (ctx.env.STRIPE_SECRET_KEY?.trim() && defaultTrialPrice) {
-      const provider = ctx.createProvider({
-        env: ctx.env,
-        testClockId: e2eStripeTestClockId,
-      });
-      if (!stripeCustomerId) {
-        const customer = await provider.createCustomer({
-          idempotencyKey: `${operation.attempt.idempotencyKey}:customer`,
-          metadata: {
-            billingPurpose: 'organization_trial',
-            organizationId,
-            billingOperationAttemptId: operation.attempt.id,
-          },
-        });
-        stripeCustomerId = customer.id;
-      }
-
-      const subscription = await provider.createTrialSubscription({
-        customerId: stripeCustomerId,
-        priceId: defaultTrialPrice.priceId,
-        trialDays: RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS,
+  return createBillingApiLifecycleActionResult({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    attempt: operation.attempt,
+    request: {
+      actor: {
+        type: 'user',
+        id: identity.userId,
+        email: identity.email,
+      },
+      planCode: 'premium',
+      returnUrlKey: 'default',
+    },
+    failureMessage: 'Billing API trial start failed.',
+    callAction: ({ subject, request }) =>
+      billingApiActionClient.client.startTrial(subject, request, {
         idempotencyKey: operation.attempt.idempotencyKey,
-        metadata: {
-          billingPurpose: 'organization_plan',
-          organizationId,
-          planCode: 'premium',
-          billingInterval: defaultTrialPrice.billingInterval,
-          billingOperationAttemptId: operation.attempt.id,
-        },
-      });
-      stripeSubscriptionId = subscription.id;
-      stripePriceId = subscription.priceId ?? defaultTrialPrice.priceId;
-      billingInterval = defaultTrialPrice.billingInterval;
-      trialStartedAt = subscription.currentPeriodStart ?? undefined;
-      trialEndsAt = subscription.currentPeriodEnd ?? undefined;
-    }
-
-    await ctx.store.startPremiumTrial({
-      organizationId,
-      trialStartedAt,
-      trialEndsAt,
-      stripeCustomerId,
-      stripeSubscriptionId,
-      stripePriceId,
-      billingInterval,
-    });
-    const nextBillingSnapshot = await ctx.store.readObservationSnapshot({
-      organizationId,
-    });
-    await ctx.store.appendAuditEvent({
-      organizationId,
-      sourceKind: 'trial_start',
-      previousSnapshot: previousBillingSnapshot,
-      nextSnapshot: nextBillingSnapshot,
-      sourceContext: 'owner_started_premium_trial',
-    });
-    await ctx.operationStore.markSucceeded({
-      attemptId: operation.attempt.id,
-      stripeCustomerId,
-      stripeSubscriptionId,
-    });
-
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'succeeded',
-        message: `Started a ${RESERVE_APP_PREMIUM_TRIAL_DURATION_DAYS}-day premium trial.`,
       }),
-      200,
-    );
-  } catch (error) {
-    const message = toBillingOperationFailureMessage(error, 'Premium trial start failed.');
-    await ctx.operationStore.markFailed({
-      attemptId: operation.attempt.id,
-      failureReason: message,
-    });
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'failed',
-        message,
-      }),
-      500,
-    );
-  }
+  });
 };
 
 export const createSetupCheckoutHandoff = async ({
@@ -786,67 +772,39 @@ export const completeTrialLifecycle = async ({
   if (!ownerContext.ok) {
     return ownerContext.result;
   }
-  const { organizationId, role } = ownerContext;
-
-  const previousBillingSnapshot = await ctx.store.readObservationSnapshot({
-    organizationId,
-  });
-  const completion = await ctx.store.applyTrialCompletion({
-    organizationId,
-  });
-  if (!completion.ok) {
-    const currentBillingSnapshot = await ctx.store.readObservationSnapshot({
-      organizationId,
-    });
-    await ctx.store.appendSignal({
-      organizationId,
-      signalKind: 'reconciliation',
-      signalStatus: completion.status === 503 ? 'pending' : 'unavailable',
-      sourceKind: 'trial_completion',
-      reason:
-        completion.status === 503
-          ? 'trial_completion_pending'
-          : 'trial_completion_not_ready_or_unavailable',
-      appSnapshot: currentBillingSnapshot,
-    });
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: completion.status === 409 ? 'conflict' : 'failed',
-        message: completion.message,
-      }),
-      completion.status,
-    );
-  }
-
-  const nextBillingSnapshot = await ctx.store.readObservationSnapshot({
-    organizationId,
-  });
-  await ctx.store.appendAuditEvent({
-    organizationId,
-    sourceKind: 'trial_completion',
-    previousSnapshot: previousBillingSnapshot,
-    nextSnapshot: nextBillingSnapshot,
-    sourceContext: completion.message,
-  });
-  await ctx.store.appendResolvedSignalIfNeeded({
-    organizationId,
-    signalKind: 'reconciliation',
-    sourceKind: 'trial_completion',
-    reason: 'trial_completion_applied',
-    appSnapshot: nextBillingSnapshot,
-  });
-
-  return jsonResult(
-    await buildActionEnvelope(ctx, {
+  const { identity, organizationId, role } = ownerContext;
+  const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
+  if (!billingApiActionClient.enabled) {
+    return billingApiActionUnavailableResult({
+      ctx,
       organizationId,
       role,
-      status: 'succeeded',
-      message: completion.message,
-    }),
-    200,
-  );
+      disabledReason: billingApiActionClient.disabledReason,
+    });
+  }
+
+  return createBillingApiLifecycleActionResult({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    attempt: null,
+    request: {
+      actor: {
+        type: 'user',
+        id: identity.userId,
+        email: identity.email,
+      },
+      planCode: 'premium',
+      returnUrlKey: 'default',
+    },
+    failureMessage: 'Billing API trial completion failed.',
+    callAction: ({ subject, request }) =>
+      billingApiActionClient.client.completeTrial(subject, request, {
+        idempotencyKey: `reserve-trial-complete:${organizationId}:${identity.userId}`,
+      }),
+  });
 };
 
 export const createSubscriptionUpdatePortalHandoff = async ({
