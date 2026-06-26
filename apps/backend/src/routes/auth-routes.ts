@@ -1368,17 +1368,13 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   const organizationLogoService = options.organizationLogoService ?? null;
   const serviceImageUploadService = options.serviceImageUploadService ?? null;
   const authRoutes = new OpenAPIHono<AuthRouteBindings>();
-  const readRemoteOrganizationPremiumEntitlement = async ({
+  const readRemoteOrganizationEntitlement = async ({
     organizationId,
     key,
   }: {
     organizationId: string;
     key: string;
   }) => {
-    if (key !== RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM) {
-      return null;
-    }
-
     return readBillingApiOrganizationFeatureEntitlement({
       database,
       env,
@@ -3346,6 +3342,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         env,
         organizationId: organization.id,
         key: RESERVE_APP_ENTITLEMENTS.STORE_MULTIPLE,
+        readRemoteEntitlement: readRemoteOrganizationEntitlement,
+        requireRemoteEntitlement: true,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -4179,6 +4177,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         env,
         organizationId: organization.id,
         key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
+        readRemoteEntitlement: readRemoteOrganizationEntitlement,
+        requireRemoteEntitlement: true,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -4295,6 +4295,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         env,
         organizationId: organization.id,
         key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
+        readRemoteEntitlement: readRemoteOrganizationEntitlement,
+        requireRemoteEntitlement: true,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -4354,6 +4356,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         env,
         organizationId: storeContext.organizationId,
         key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
+        readRemoteEntitlement: readRemoteOrganizationEntitlement,
+        requireRemoteEntitlement: true,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -4480,6 +4484,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         env,
         organizationId: storeContext.organizationId,
         key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
+        readRemoteEntitlement: readRemoteOrganizationEntitlement,
+        requireRemoteEntitlement: true,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
@@ -4577,6 +4583,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
           env,
           organizationId: invitation.organizationId,
           key: RESERVE_APP_ENTITLEMENTS.STAFF_INVITE,
+          readRemoteEntitlement: readRemoteOrganizationEntitlement,
+          requireRemoteEntitlement: true,
         });
         if (!premiumGate.allowed) {
           return c.json(premiumGate.body, premiumGate.status);
@@ -4765,7 +4773,8 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         env,
         organizationId: storeContext.organizationId,
         key: RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM,
-        readRemoteEntitlement: readRemoteOrganizationPremiumEntitlement,
+        readRemoteEntitlement: readRemoteOrganizationEntitlement,
+        requireRemoteEntitlement: true,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);

@@ -787,6 +787,10 @@ const buildSummaryResponse = ({
     subscription,
     entitlements,
   }),
+  provider: {
+    stripeConfigured: Boolean(env.STRIPE_SECRET_KEY?.trim()),
+    stripeWebhookConfigured: Boolean(env.STRIPE_WEBHOOK_SECRET?.trim()),
+  },
 });
 
 const readInvoiceEvents = async ({

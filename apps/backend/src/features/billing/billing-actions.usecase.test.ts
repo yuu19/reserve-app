@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BillingProvider } from '@repo/saas-billing-core';
+import type { BillingApiSummaryResponse } from '@repo/billing-types';
 import type { AuthRuntimeEnv } from '../../auth-runtime.js';
 import type { OrganizationBillingOperationAttempt } from '../../domain/billing/organization-billing-operations.js';
 import type { BillingRouteContext } from './billing.route-context.js';
@@ -82,6 +83,85 @@ const paidBilling = {
   stripeCustomerId: 'cus_paid',
   stripeSubscriptionId: 'sub_paid',
 };
+
+const buildBillingApiSummary = ({
+  billing = freeBilling,
+  providerConfigured = true,
+}: {
+  billing?: typeof freeBilling;
+  providerConfigured?: boolean;
+} = {}): BillingApiSummaryResponse => ({
+  subject: {
+    appId: 'reserve',
+    subjectType: 'organization',
+    subjectId: 'organization-1',
+    status: 'active',
+    displayName: '予約テスト組織',
+    billingEmail: 'owner@example.com',
+    billingName: '予約テスト組織',
+    billingContacts: [],
+    metadata: {},
+    createdAt: '2026-05-21T00:00:00.000Z',
+    updatedAt: '2026-05-21T00:00:00.000Z',
+  },
+  account: {
+    id: 'billing-account-1',
+    provider: 'stripe',
+    providerCustomerId: billing.stripeCustomerId,
+    createdAt: '2026-05-21T00:00:00.000Z',
+    updatedAt: '2026-05-21T00:00:00.000Z',
+  },
+  subscription:
+    billing.planCode === 'premium'
+      ? {
+          id: 'billing-subscription-1',
+          provider: 'stripe',
+          providerSubscriptionId: billing.stripeSubscriptionId,
+          planCode: 'premium',
+          priceCode: 'premium_monthly',
+          providerPriceId: billing.stripePriceId,
+          priceResolution: 'known',
+          interval: billing.billingInterval,
+          status: billing.subscriptionStatus,
+          currentPeriodStart: null,
+          currentPeriodEnd:
+            billing.currentPeriodEnd instanceof Date
+              ? billing.currentPeriodEnd.toISOString()
+              : null,
+          trialStart: null,
+          trialEnd:
+            billing.subscriptionStatus === 'trialing' && billing.currentPeriodEnd instanceof Date
+              ? billing.currentPeriodEnd.toISOString()
+              : null,
+          cancelAtPeriodEnd: false,
+          createdAt: '2026-05-21T00:00:00.000Z',
+          updatedAt: '2026-05-21T00:00:00.000Z',
+        }
+      : null,
+  entitlements: {
+    appId: 'reserve',
+    subjectType: 'organization',
+    subjectId: 'organization-1',
+    planCode: billing.planCode,
+    status: billing.subscriptionStatus,
+    priceResolution: billing.planCode === 'premium' ? 'known' : 'not_applicable',
+    features:
+      billing.planCode === 'premium'
+        ? {
+            'organization.premium': true,
+            'store.multiple': true,
+            'staff.invite': true,
+          }
+        : {},
+    entitlements: [],
+    syncedAt: '2026-05-21T00:00:00.000Z',
+    maxStaleSeconds: 300,
+  },
+  provider: {
+    stripeConfigured: providerConfigured,
+    stripeWebhookConfigured: providerConfigured,
+  },
+});
 
 const snapshot = {
   planCode: 'free',
@@ -172,14 +252,19 @@ const createBillingApiFetch = ({
   handoffUrl,
   handoffStatus = 200,
   handoffBody,
+  summary,
 }: {
   handoffUrl: string;
   handoffStatus?: number;
   handoffBody?: unknown;
+  summary?: BillingApiSummaryResponse;
 }) =>
-  vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+  vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'PUT') {
       return new Response(JSON.stringify({ synced: true }), { status: 200 });
+    }
+    if (init?.method === 'GET' && String(input).endsWith('/summary')) {
+      return new Response(JSON.stringify(summary ?? buildBillingApiSummary()), { status: 200 });
     }
 
     return new Response(
@@ -334,7 +419,7 @@ describe('課金アクションユースケース', () => {
         handoffUrl: 'https://billing.test/checkout',
       }),
     );
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1',
     );
@@ -343,7 +428,7 @@ describe('課金アクションユースケース', () => {
       'Bearer billing-api-key',
     );
     expect((fetchMock.mock.calls[0]?.[1]?.headers as Headers).get('idempotency-key')).toBe(
-      'reserve-action-sync:organization-1:attempt-1',
+      'reserve-action-sync:organization-1:paid-checkout-precondition',
     );
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
       displayName: '予約テスト組織',
@@ -354,9 +439,12 @@ describe('課金アクションユースケース', () => {
       },
     });
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/summary',
+    );
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
       'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/checkout-sessions',
     );
-    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toMatchObject({
+    expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string)).toMatchObject({
       actor: {
         type: 'user',
         id: 'user-1',
@@ -473,7 +561,7 @@ describe('課金アクションユースケース', () => {
     expect(operationStore.markSucceeded).toHaveBeenCalledWith({
       attemptId: 'attempt-1',
     });
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
       'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/trial',
     );
   });
@@ -514,6 +602,7 @@ describe('課金アクションユースケース', () => {
     const fetchMock = createBillingApiFetch({
       handoffUrl: 'https://billing.test/setup',
       handoffStatus: 503,
+      summary: buildBillingApiSummary({ billing: trialBilling }),
       handoffBody: {
         error: {
           code: 'provider_not_configured',
@@ -544,6 +633,7 @@ describe('課金アクションユースケース', () => {
   it('Billing API action flag が有効なら setup は Billing API 経由で作成する', async () => {
     const fetchMock = createBillingApiFetch({
       handoffUrl: 'https://billing.test/setup',
+      summary: buildBillingApiSummary({ billing: trialBilling }),
     });
     vi.stubGlobal('fetch', fetchMock);
     const provider = createProvider();
@@ -573,7 +663,7 @@ describe('課金アクションユースケース', () => {
         handoffUrl: 'https://billing.test/setup',
       }),
     );
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
       'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/payment-method-setup-sessions',
     );
   });
@@ -582,6 +672,7 @@ describe('課金アクションユースケース', () => {
     const fetchMock = createBillingApiFetch({
       handoffUrl: 'https://billing.test/portal',
       handoffStatus: 503,
+      summary: buildBillingApiSummary({ billing: paidBilling }),
       handoffBody: {
         error: {
           code: 'provider_not_configured',
@@ -612,6 +703,7 @@ describe('課金アクションユースケース', () => {
   it('Billing API action flag が有効なら portal は Billing API 経由で作成する', async () => {
     const fetchMock = createBillingApiFetch({
       handoffUrl: 'https://billing.test/portal',
+      summary: buildBillingApiSummary({ billing: paidBilling }),
     });
     vi.stubGlobal('fetch', fetchMock);
     const provider = createProvider();
@@ -641,7 +733,7 @@ describe('課金アクションユースケース', () => {
         handoffUrl: 'https://billing.test/portal',
       }),
     );
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
       'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/billing-portal-sessions',
     );
   });
@@ -649,6 +741,7 @@ describe('課金アクションユースケース', () => {
   it('Billing API action flag が有効なら trial complete は Billing API 経由で実行する', async () => {
     const fetchMock = createBillingApiFetch({
       handoffUrl: '',
+      summary: buildBillingApiSummary({ billing: trialBilling }),
       handoffBody: {
         status: 'succeeded',
         message: 'Trial completed and subject returned to free.',
@@ -670,10 +763,10 @@ describe('課金アクションユースケース', () => {
     expect(result.body.status).toBe('succeeded');
     expect(store.applyTrialCompletion).not.toHaveBeenCalled();
     expect(operationStore.createAttempt).not.toHaveBeenCalled();
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
       'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/trial/complete',
     );
-    expect((fetchMock.mock.calls[1]?.[1]?.headers as Headers).get('idempotency-key')).toBe(
+    expect((fetchMock.mock.calls[2]?.[1]?.headers as Headers).get('idempotency-key')).toBe(
       'reserve-trial-complete:organization-1:user-1',
     );
   });

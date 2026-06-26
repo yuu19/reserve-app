@@ -346,6 +346,7 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
         env,
         organizationId,
         readRemoteEntitlement: readRemoteOrganizationEntitlement,
+        requireRemoteEntitlement: true,
       }),
     requireOrganizationEntitlement: ({ organizationId, key }) =>
       readOrganizationEntitlementGate({
@@ -354,6 +355,7 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
         organizationId,
         key,
         readRemoteEntitlement: readRemoteOrganizationEntitlement,
+        requireRemoteEntitlement: true,
       }),
   };
 };

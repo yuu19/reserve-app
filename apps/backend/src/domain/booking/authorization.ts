@@ -173,11 +173,15 @@ export const canManageParticipantsByStoreRole = (role: StoreStaffRole): boolean 
 /** Premium entitlement がない機能で返す共通 error message。 */
 export const ORGANIZATION_PREMIUM_REQUIRED_MESSAGE =
   'Organization premium plan is required for this feature.';
+export const ORGANIZATION_ENTITLEMENT_UNAVAILABLE_MESSAGE =
+  'Billing entitlement state is unavailable.';
 
 /** Premium 機能が拒否されたとき route が返す payload。 */
 export type OrganizationPremiumFeatureDeniedPayload = {
-  message: typeof ORGANIZATION_PREMIUM_REQUIRED_MESSAGE;
-  code: 'organization_premium_required';
+  message:
+    | typeof ORGANIZATION_PREMIUM_REQUIRED_MESSAGE
+    | typeof ORGANIZATION_ENTITLEMENT_UNAVAILABLE_MESSAGE;
+  code: 'organization_premium_required' | 'billing_entitlement_unavailable';
   source: ReserveAppPremiumEntitlementPolicyResult['source'];
   reason: ReserveAppPremiumEntitlementPolicyResult['reason'];
   entitlementState: ReserveAppPremiumEntitlementPolicyResult['entitlementState'];
@@ -210,6 +214,7 @@ export type OrganizationEntitlementGateInput = {
     key: string;
     now: Date;
   }) => Promise<boolean | null>;
+  requireRemoteEntitlement?: boolean;
 };
 
 /** Organization entitlement gate の評価結果。 */
@@ -222,6 +227,21 @@ export const buildOrganizationPremiumFeatureDeniedPayload = (
   return {
     message: ORGANIZATION_PREMIUM_REQUIRED_MESSAGE,
     code: 'organization_premium_required',
+    source: policy.source,
+    reason: policy.reason,
+    entitlementState: policy.entitlementState,
+    planState: policy.planState,
+    trialEndsAt: policy.trialEndsAt,
+  };
+};
+
+/** Billing API 正本の entitlement を読めないとき route error payload を作る。 */
+export const buildOrganizationEntitlementUnavailablePayload = (
+  policy: ReserveAppPremiumEntitlementPolicyResult,
+): OrganizationPremiumFeatureDeniedPayload => {
+  return {
+    message: ORGANIZATION_ENTITLEMENT_UNAVAILABLE_MESSAGE,
+    code: 'billing_entitlement_unavailable',
     source: policy.source,
     reason: policy.reason,
     entitlementState: policy.entitlementState,
@@ -279,6 +299,7 @@ export const readOrganizationEntitlementGate = async ({
   key,
   now = new Date(),
   readRemoteEntitlement,
+  requireRemoteEntitlement = false,
 }: OrganizationEntitlementGateInput): Promise<OrganizationEntitlementGate> => {
   const policy = await readReserveAppPremiumEntitlementPolicy({
     database,
@@ -304,6 +325,14 @@ export const readOrganizationEntitlementGate = async ({
       body: buildOrganizationPremiumFeatureDeniedPayload(policy),
     };
   }
+  if (requireRemoteEntitlement) {
+    return {
+      allowed: false,
+      policy,
+      status: 403,
+      body: buildOrganizationEntitlementUnavailablePayload(policy),
+    };
+  }
 
   if (await hasActiveBillingEntitlement({ database, organizationId, key, now })) {
     return {
@@ -327,12 +356,14 @@ export const readOrganizationPremiumFeatureGate = async ({
   organizationId,
   now,
   readRemoteEntitlement,
+  requireRemoteEntitlement,
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
   organizationId: string;
   now?: Date;
   readRemoteEntitlement?: OrganizationEntitlementGateInput['readRemoteEntitlement'];
+  requireRemoteEntitlement?: boolean;
 }): Promise<OrganizationPremiumFeatureGate> => {
   return readOrganizationEntitlementGate({
     database,
@@ -341,6 +372,7 @@ export const readOrganizationPremiumFeatureGate = async ({
     key: 'organization.premium',
     now,
     readRemoteEntitlement,
+    requireRemoteEntitlement,
   });
 };
 

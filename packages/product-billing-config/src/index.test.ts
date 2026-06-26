@@ -26,6 +26,10 @@ describe('product billing config', () => {
       ),
     ).toEqual({
       'organization.premium': true,
+      'store.multiple': true,
+      'staff.invite': true,
+      'booking.approval': true,
+      'ticket.enabled': true,
       staffLimit: 10,
       shopLimit: 3,
       monthlyReservationLimit: 3000,

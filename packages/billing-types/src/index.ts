@@ -151,6 +151,10 @@ export type BillingApiSummaryResponse = {
   account: BillingApiAccount;
   subscription: BillingApiSubscription;
   entitlements: BillingApiEntitlementsResponse;
+  provider: {
+    stripeConfigured: boolean;
+    stripeWebhookConfigured: boolean;
+  };
 };
 
 export type BillingApiHandoffRequest = {

@@ -227,6 +227,10 @@ describe('課金プレゼンター', () => {
         syncedAt: '2026-05-21T00:00:00.000Z',
         maxStaleSeconds: 300,
       },
+      provider: {
+        stripeConfigured: true,
+        stripeWebhookConfigured: true,
+      },
     } satisfies BillingApiSummaryResponse;
     const summaryClient = {
       syncSubject: vi.fn(async () => billingApiSummary),

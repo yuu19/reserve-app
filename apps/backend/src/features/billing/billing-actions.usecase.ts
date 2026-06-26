@@ -1,5 +1,9 @@
 import { BillingClientError } from '@repo/billing-client';
-import type { BillingApiHandoffRequest, BillingApiHandoffResponse } from '@repo/billing-types';
+import type {
+  BillingApiHandoffRequest,
+  BillingApiHandoffResponse,
+  BillingApiSummaryResponse,
+} from '@repo/billing-types';
 import {
   BILLING_HANDOFF_REUSE_WINDOW_MS,
   type OrganizationBillingOperationAttempt,
@@ -115,6 +119,16 @@ const isActivePremiumSubscriptionStatus = (value: unknown) =>
   value === 'past_due' ||
   value === 'unpaid' ||
   value === 'incomplete';
+
+const readBillingApiActionSubscriptionStatus = (summary: BillingApiSummaryResponse) =>
+  summary.entitlements.status ?? summary.subscription?.status ?? 'free';
+
+const isBillingApiPremiumPlan = (summary: BillingApiSummaryResponse) =>
+  summary.entitlements.planCode === 'premium' || summary.subscription?.planCode === 'premium';
+
+const isBillingApiActivePremiumLifecycle = (summary: BillingApiSummaryResponse) =>
+  isBillingApiPremiumPlan(summary) &&
+  isActivePremiumSubscriptionStatus(readBillingApiActionSubscriptionStatus(summary));
 
 const operationConflictResult = async ({
   ctx,
@@ -259,6 +273,61 @@ const syncBillingApiActionSubject = async ({
   return billingSubject;
 };
 
+const readRequiredBillingApiActionSummary = async ({
+  ctx,
+  identity,
+  organizationId,
+  role,
+  client,
+  idempotencyKeySuffix,
+}: {
+  ctx: BillingRouteContext;
+  identity: BillingIdentity;
+  organizationId: string;
+  role: 'owner';
+  client: BillingApiActionClient;
+  idempotencyKeySuffix: string;
+}): Promise<
+  | {
+      ok: true;
+      subject: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+      summary: BillingApiSummaryResponse;
+    }
+  | {
+      ok: false;
+      result: JsonRouteResult;
+    }
+> => {
+  try {
+    const subject = await syncBillingApiActionSubject({
+      client,
+      ctx,
+      identity,
+      organizationId,
+      idempotencyKeySuffix,
+    });
+    const summary = await client.readSummary(subject);
+    return {
+      ok: true,
+      subject,
+      summary,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      result: jsonResult(
+        await buildActionEnvelope(ctx, {
+          organizationId,
+          role,
+          status: 'failed',
+          message: toBillingOperationFailureMessage(error, 'Billing API summary is unavailable.'),
+        }),
+        503,
+      ),
+    };
+  }
+};
+
 const createBillingApiHandoffResult = async ({
   ctx,
   identity,
@@ -271,6 +340,7 @@ const createBillingApiHandoffResult = async ({
   now,
   failureMessage,
   callHandoff,
+  syncedSubject,
 }: {
   ctx: BillingRouteContext;
   identity: BillingIdentity;
@@ -289,15 +359,18 @@ const createBillingApiHandoffResult = async ({
     subject: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
     request: BillingApiHandoffRequest;
   }): Promise<BillingApiHandoffResponse>;
+  syncedSubject?: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
 }): Promise<JsonRouteResult> => {
   try {
-    const subject = await syncBillingApiActionSubject({
-      client,
-      ctx,
-      identity,
-      organizationId,
-      idempotencyKeySuffix: attempt.id,
-    });
+    const subject =
+      syncedSubject ??
+      (await syncBillingApiActionSubject({
+        client,
+        ctx,
+        identity,
+        organizationId,
+        idempotencyKeySuffix: attempt.id,
+      }));
     const handoff = await callHandoff({ subject, request });
     if (handoff.status === 'conflict') {
       const failedAttempt = await ctx.operationStore.markFailed({
@@ -388,6 +461,7 @@ const createBillingApiLifecycleActionResult = async ({
   successStatus = 200,
   failureMessage,
   callAction,
+  syncedSubject,
 }: {
   ctx: BillingRouteContext;
   identity: BillingIdentity;
@@ -402,15 +476,18 @@ const createBillingApiLifecycleActionResult = async ({
     subject: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
     request: BillingApiHandoffRequest;
   }): Promise<BillingApiHandoffResponse>;
+  syncedSubject?: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
 }): Promise<JsonRouteResult> => {
   try {
-    const subject = await syncBillingApiActionSubject({
-      client,
-      ctx,
-      identity,
-      organizationId,
-      idempotencyKeySuffix: attempt?.id ?? `manual:${organizationId}:${identity.userId}`,
-    });
+    const subject =
+      syncedSubject ??
+      (await syncBillingApiActionSubject({
+        client,
+        ctx,
+        identity,
+        organizationId,
+        idempotencyKeySuffix: attempt?.id ?? `manual:${organizationId}:${identity.userId}`,
+      }));
     const action = await callAction({ subject, request });
     if (action.status === 'conflict') {
       const failedAttempt = attempt
@@ -521,8 +598,18 @@ export const createSubscriptionCheckoutHandoff = async ({
     });
   }
 
-  const billing = await ctx.store.selectSummary(organizationId);
-  if (billing && isActivePremiumSubscriptionStatus(billing.subscriptionStatus)) {
+  const billingApiSummary = await readRequiredBillingApiActionSummary({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    idempotencyKeySuffix: 'paid-checkout-precondition',
+  });
+  if (!billingApiSummary.ok) {
+    return billingApiSummary.result;
+  }
+  if (isBillingApiActivePremiumLifecycle(billingApiSummary.summary)) {
     return jsonResult(
       await buildActionEnvelope(ctx, {
         organizationId,
@@ -579,6 +666,7 @@ export const createSubscriptionCheckoutHandoff = async ({
       billingApiActionClient.client.createCheckoutSession(subject, request, {
         idempotencyKey: operation.attempt.idempotencyKey,
       }),
+    syncedSubject: billingApiSummary.subject,
   });
 };
 
@@ -610,19 +698,18 @@ export const startTrialSubscription = async ({
     });
   }
 
-  const billing = await ctx.store.selectSummary(organizationId);
-  if (billing && isActivePremiumSubscriptionStatus(billing.subscriptionStatus)) {
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'conflict',
-        message: RESERVE_APP_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
-      }),
-      409,
-    );
+  const billingApiSummary = await readRequiredBillingApiActionSummary({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    idempotencyKeySuffix: 'trial-start-precondition',
+  });
+  if (!billingApiSummary.ok) {
+    return billingApiSummary.result;
   }
-  if (await ctx.store.hasStartedPremiumTrial({ organizationId })) {
+  if (isBillingApiActivePremiumLifecycle(billingApiSummary.summary)) {
     return jsonResult(
       await buildActionEnvelope(ctx, {
         organizationId,
@@ -663,6 +750,7 @@ export const startTrialSubscription = async ({
       billingApiActionClient.client.startTrial(subject, request, {
         idempotencyKey: operation.attempt.idempotencyKey,
       }),
+    syncedSubject: billingApiSummary.subject,
   });
 };
 
@@ -695,8 +783,19 @@ export const createSetupCheckoutHandoff = async ({
     });
   }
 
-  const billing = await ctx.store.selectSummary(organizationId);
-  if (billing?.planCode !== 'premium' || billing.subscriptionStatus !== 'trialing') {
+  const billingApiSummary = await readRequiredBillingApiActionSummary({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    idempotencyKeySuffix: 'payment-method-setup-precondition',
+  });
+  if (!billingApiSummary.ok) {
+    return billingApiSummary.result;
+  }
+  const billingApiStatus = readBillingApiActionSubscriptionStatus(billingApiSummary.summary);
+  if (!isBillingApiPremiumPlan(billingApiSummary.summary) || billingApiStatus !== 'trialing') {
     return jsonResult(
       await buildActionEnvelope(ctx, {
         organizationId,
@@ -743,7 +842,7 @@ export const createSetupCheckoutHandoff = async ({
         email: identity.email,
       },
       planCode: 'premium',
-      interval: billing.billingInterval === 'year' ? 'year' : 'month',
+      interval: billingApiSummary.summary.subscription?.interval === 'year' ? 'year' : 'month',
       returnUrlKey: 'default',
     },
     now,
@@ -752,6 +851,7 @@ export const createSetupCheckoutHandoff = async ({
       billingApiActionClient.client.createPaymentMethodSetupSession(subject, request, {
         idempotencyKey: operation.attempt.idempotencyKey,
       }),
+    syncedSubject: billingApiSummary.subject,
   });
 };
 
@@ -783,6 +883,30 @@ export const completeTrialLifecycle = async ({
     });
   }
 
+  const billingApiSummary = await readRequiredBillingApiActionSummary({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    idempotencyKeySuffix: 'trial-complete-precondition',
+  });
+  if (!billingApiSummary.ok) {
+    return billingApiSummary.result;
+  }
+  const billingApiStatus = readBillingApiActionSubscriptionStatus(billingApiSummary.summary);
+  if (!isBillingApiPremiumPlan(billingApiSummary.summary) || billingApiStatus !== 'trialing') {
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: 'conflict',
+        message: 'Organization does not have an active premium trial.',
+      }),
+      409,
+    );
+  }
+
   return createBillingApiLifecycleActionResult({
     ctx,
     identity,
@@ -804,6 +928,7 @@ export const completeTrialLifecycle = async ({
       billingApiActionClient.client.completeTrial(subject, request, {
         idempotencyKey: `reserve-trial-complete:${organizationId}:${identity.userId}`,
       }),
+    syncedSubject: billingApiSummary.subject,
   });
 };
 
@@ -836,12 +961,21 @@ export const createSubscriptionUpdatePortalHandoff = async ({
     });
   }
 
-  const billing = await ctx.store.selectSummary(organizationId);
+  const billingApiSummary = await readRequiredBillingApiActionSummary({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    idempotencyKeySuffix: 'billing-portal-precondition',
+  });
+  if (!billingApiSummary.ok) {
+    return billingApiSummary.result;
+  }
   if (
-    !billing?.stripeCustomerId ||
-    !billing.stripeSubscriptionId ||
-    billing.planCode !== 'premium' ||
-    !isActivePremiumSubscriptionStatus(billing.subscriptionStatus)
+    !billingApiSummary.summary.account.providerCustomerId ||
+    !billingApiSummary.summary.subscription?.providerSubscriptionId ||
+    !isBillingApiActivePremiumLifecycle(billingApiSummary.summary)
   ) {
     return jsonResult(
       await buildActionEnvelope(ctx, {
@@ -859,7 +993,7 @@ export const createSubscriptionUpdatePortalHandoff = async ({
   const operation = await ctx.operationStore.createAttempt({
     organizationId,
     purpose: 'billing_portal',
-    stripeSubscriptionId: billing.stripeSubscriptionId,
+    stripeSubscriptionId: billingApiSummary.summary.subscription.providerSubscriptionId,
     createdByUserId: identity.userId,
     now,
   });
@@ -891,7 +1025,7 @@ export const createSubscriptionUpdatePortalHandoff = async ({
         email: identity.email,
       },
       planCode: 'premium',
-      interval: billing.billingInterval === 'year' ? 'year' : 'month',
+      interval: billingApiSummary.summary.subscription?.interval === 'year' ? 'year' : 'month',
       returnUrlKey: 'default',
     },
     now,
@@ -900,5 +1034,6 @@ export const createSubscriptionUpdatePortalHandoff = async ({
       billingApiActionClient.client.createBillingPortalSession(subject, request, {
         idempotencyKey: operation.attempt.idempotencyKey,
       }),
+    syncedSubject: billingApiSummary.subject,
   });
 };

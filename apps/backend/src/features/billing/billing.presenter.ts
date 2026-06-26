@@ -293,7 +293,9 @@ export const readOrganizationBillingSummaryPayload = async ({
     billing: billingForActionAvailability,
     canManageBilling,
     trialUsed,
-    stripeBillingConfigured: Boolean(env.STRIPE_SECRET_KEY?.trim()),
+    stripeBillingConfigured: billingApiSummaryResponse
+      ? billingApiSummaryResponse.provider.stripeConfigured
+      : Boolean(env.STRIPE_SECRET_KEY?.trim()),
     availableIntervals: resolveBillingAvailableIntervals(env),
   });
   const billingApiPremiumEligible = billingApiSummaryResponse

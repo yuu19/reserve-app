@@ -56,6 +56,10 @@ const baseSummary = {
     syncedAt: '2026-06-26T00:00:00.000Z',
     maxStaleSeconds: 300,
   },
+  provider: {
+    stripeConfigured: true,
+    stripeWebhookConfigured: true,
+  },
 } satisfies BillingApiSummaryResponse;
 
 const buildSummary = (
