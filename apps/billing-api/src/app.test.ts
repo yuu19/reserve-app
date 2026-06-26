@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   buildBillingApiFeatures,
   createBillingApiApp,
+  isSupportedStripeBillingEventType,
   readStripeSubscriptionSnapshot,
 } from './app.js';
 
@@ -107,5 +108,10 @@ describe('createBillingApiApp', () => {
     });
     expect(snapshot?.currentPeriodStart?.toISOString()).toBe('2026-05-28T20:26:40.000Z');
     expect(snapshot?.currentPeriodEnd?.toISOString()).toBe('2026-06-27T20:26:40.000Z');
+  });
+
+  test('supports invoice finalized webhook as a billing event', () => {
+    expect(isSupportedStripeBillingEventType('invoice.finalized')).toBe(true);
+    expect(isSupportedStripeBillingEventType('customer.subscription.trial_will_end')).toBe(false);
   });
 });

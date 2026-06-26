@@ -2094,11 +2094,15 @@ const supportedStripeBillingEventTypes = new Set([
   'customer.subscription.created',
   'customer.subscription.updated',
   'customer.subscription.deleted',
+  'invoice.finalized',
   'invoice.paid',
   'invoice.payment_succeeded',
   'invoice.payment_failed',
   'invoice.payment_action_required',
 ]);
+
+export const isSupportedStripeBillingEventType = (eventType: string): boolean =>
+  supportedStripeBillingEventTypes.has(eventType);
 
 const readStripeMetadata = (value: unknown): Record<string, string> => {
   const metadata = readObject(value);

@@ -93,11 +93,11 @@ describe('createApp Stripe webhook Billing API forwarding', () => {
 
     expect(
       shouldForwardStripeBillingWebhookToBillingApi({
-        id: 'evt_invoice_payment_failed',
-        type: 'invoice.payment_failed',
+        id: 'evt_invoice_finalized',
+        type: 'invoice.finalized',
         data: {
           object: {
-            id: 'in_failed',
+            id: 'in_finalized',
           },
         },
       }),

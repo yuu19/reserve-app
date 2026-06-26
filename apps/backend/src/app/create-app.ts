@@ -34,6 +34,7 @@ const billingApiForwardableStripeEvents = new Set([
   'customer.subscription.created',
   'customer.subscription.updated',
   'customer.subscription.deleted',
+  'invoice.finalized',
   'invoice.paid',
   'invoice.payment_succeeded',
   'invoice.payment_failed',
