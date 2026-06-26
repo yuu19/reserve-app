@@ -1,0 +1,1283 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Billing API ER Reference</title>
+    <style>
+      :root {
+        --bg: #f8f7f6;
+        --surface: #ffffff;
+        --surface2: #f2f1f0;
+        --head: #edebe8;
+        --border: #d6d3d0;
+        --border2: #aaa69f;
+        --text: #23221e;
+        --text2: #4e4c49;
+        --text3: #706d65;
+        --muted: #8b8780;
+        --accent: #0077c7;
+        --accent2: #00c4cc;
+        --warn: #8a5a00;
+        --warn-bg: #fff8d6;
+        --success: #147a4b;
+        --danger: #e01e5a;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+        --sans: system-ui, 'Yu Gothic', YuGothic, 'Hiragino Sans', Meiryo, sans-serif;
+        --radius: 8px;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+        background: var(--bg);
+      }
+      body {
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.5;
+        letter-spacing: 0;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 56px;
+        padding: 0 28px;
+        background: rgba(255, 255, 255, 0.96);
+        border-bottom: 1px solid var(--border);
+      }
+      .logo {
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .logo span {
+        color: var(--accent);
+      }
+      .v-badge,
+      .pill {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text2);
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 8px;
+      }
+      .v-badge {
+        border-radius: 4px;
+      }
+      .summary {
+        display: flex;
+        gap: 8px;
+        margin-left: auto;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .pill.warn {
+        color: var(--warn);
+        border-color: #e6c34d;
+        background: var(--warn-bg);
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 268px 1fr;
+        min-height: calc(100vh - 56px);
+      }
+      aside {
+        position: sticky;
+        top: 56px;
+        height: calc(100vh - 56px);
+        overflow-y: auto;
+        border-right: 1px solid var(--border);
+        padding: 18px 0;
+        background: var(--surface);
+      }
+      .sb-section {
+        padding: 0 16px;
+        margin-bottom: 8px;
+      }
+      .sb-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text3);
+        margin-bottom: 4px;
+        padding: 0 6px;
+      }
+      .sb-link {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        text-decoration: none;
+        color: var(--text2);
+        font-size: 12px;
+        font-family: var(--mono);
+      }
+      .sb-link:hover {
+        background: var(--surface2);
+        color: var(--accent);
+      }
+      .sb-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        background: var(--border2);
+      }
+      .sb-divider {
+        margin: 10px 16px;
+        border: none;
+        border-top: 1px solid var(--border);
+      }
+      main {
+        padding: 28px 36px;
+        overflow-y: auto;
+      }
+      .tab-input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .tabbar {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-bottom: 22px;
+      }
+      .tab {
+        padding: 7px 16px;
+        border-radius: 6px;
+        font-family: var(--mono);
+        font-size: 12px;
+        cursor: pointer;
+        color: var(--text2);
+        border: 1px solid transparent;
+        background: transparent;
+      }
+      .tab:hover {
+        background: var(--surface2);
+        color: var(--text);
+      }
+      #tab-tables:checked ~ .tabbar label[for='tab-tables'],
+      #tab-relations:checked ~ .tabbar label[for='tab-relations'],
+      #tab-diagram:checked ~ .tabbar label[for='tab-diagram'],
+      #tab-source:checked ~ .tabbar label[for='tab-source'] {
+        background: var(--surface);
+        border-color: var(--border);
+        color: var(--accent);
+        box-shadow: 0 1px 2px rgba(35, 34, 30, 0.06);
+      }
+      .pane {
+        display: none;
+      }
+      #tab-tables:checked ~ .panes #pane-tables,
+      #tab-relations:checked ~ .panes #pane-relations,
+      #tab-diagram:checked ~ .panes #pane-diagram,
+      #tab-source:checked ~ .panes #pane-source {
+        display: block;
+      }
+      .sec-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text3);
+        margin-bottom: 14px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+      }
+      .source-note {
+        margin-bottom: 18px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: var(--text2);
+        line-height: 1.7;
+      }
+      .source-note code {
+        font-family: var(--mono);
+        color: var(--text);
+      }
+      .table-group {
+        margin-bottom: 28px;
+      }
+      .table-group h3 {
+        font-size: 16px;
+        line-height: 1.25;
+        margin-bottom: 12px;
+      }
+      .tables-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+        gap: 16px;
+      }
+      .tcard {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--surface);
+        box-shadow: 0 1px 2px rgba(35, 34, 30, 0.04);
+      }
+      .tdesc {
+        padding: 9px 14px;
+        color: var(--text3);
+        font-size: 12px;
+        line-height: 1.55;
+        border-bottom: 1px solid var(--border);
+      }
+      .tcard-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--head);
+      }
+      .tname {
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--accent);
+        word-break: break-all;
+      }
+      .tcard-badges {
+        display: flex;
+        gap: 5px;
+        margin-left: auto;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .tbadge {
+        font-size: 10px;
+        font-family: var(--mono);
+        padding: 2px 6px;
+        border-radius: 3px;
+        background: var(--surface);
+        color: var(--text3);
+        border: 1px solid var(--border);
+      }
+      .col-header,
+      .frow {
+        display: grid;
+        grid-template-columns: minmax(145px, 0.9fr) 132px minmax(190px, 1.5fr);
+      }
+      .col-header {
+        padding: 6px 14px;
+        font-size: 10px;
+        font-family: var(--mono);
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        background: #fbfaf9;
+      }
+      .frow {
+        padding: 6px 14px;
+        font-size: 12px;
+        border-bottom: 1px solid var(--border);
+        align-items: start;
+      }
+      .frow:last-child {
+        border-bottom: none;
+      }
+      .frow.truth {
+        background: rgba(0, 119, 199, 0.045);
+      }
+      .fname {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text);
+        word-break: break-all;
+        line-height: 1.55;
+      }
+      .ftag {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 9px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        margin-left: 3px;
+        vertical-align: middle;
+      }
+      .tag-pk {
+        background: rgba(0, 119, 199, 0.1);
+        color: var(--accent);
+        border: 1px solid rgba(0, 119, 199, 0.22);
+      }
+      .tag-fk {
+        background: rgba(20, 122, 75, 0.1);
+        color: var(--success);
+        border: 1px solid rgba(20, 122, 75, 0.2);
+      }
+      .tag-uk {
+        background: rgba(224, 30, 90, 0.08);
+        color: var(--danger);
+        border: 1px solid rgba(224, 30, 90, 0.18);
+      }
+      .tag-meta {
+        background: var(--surface2);
+        color: var(--text3);
+        border: 1px solid var(--border);
+      }
+      .ftype {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--text3);
+        word-break: break-word;
+      }
+      .fdesc {
+        font-size: 12px;
+        color: var(--text2);
+        line-height: 1.45;
+      }
+      .rel-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+        gap: 8px;
+      }
+      .rel-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+      .rel-row.logical {
+        border-color: #e6c34d;
+        background: var(--warn-bg);
+      }
+      .rel-entity {
+        color: var(--accent);
+        white-space: nowrap;
+      }
+      .rel-conn {
+        color: var(--text3);
+        white-space: nowrap;
+        font-size: 10px;
+      }
+      .rel-note {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--text3);
+        text-align: right;
+        line-height: 1.4;
+      }
+      .diagram-help {
+        margin-bottom: 10px;
+        color: var(--text3);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      #diagram-scroll {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 24px;
+        overflow: auto;
+        min-height: 420px;
+      }
+      .er-svg {
+        width: 1680px;
+        height: auto;
+        max-width: none;
+        display: block;
+      }
+      .edge {
+        fill: none;
+        stroke: #aaa69f;
+        stroke-width: 1.2;
+        opacity: 0.58;
+      }
+      .edge-strong {
+        stroke: #0077c7;
+        opacity: 0.8;
+        stroke-width: 1.6;
+      }
+      .edge-logical {
+        stroke: #8a5a00;
+        stroke-dasharray: 5 4;
+        opacity: 0.76;
+      }
+      .edge-label {
+        font-family: var(--mono);
+        font-size: 10px;
+        fill: #706d65;
+      }
+      .node-box {
+        fill: #ffffff;
+        stroke: #d6d3d0;
+        stroke-width: 1.2;
+      }
+      .node-box.core {
+        stroke: #0077c7;
+      }
+      .node-title {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 700;
+        fill: #23221e;
+      }
+      .node-sub,
+      .node-meta,
+      .node-fk {
+        font-family: var(--mono);
+        font-size: 10px;
+        fill: #706d65;
+      }
+      .node-meta {
+        fill: #0077c7;
+      }
+      .node-fk {
+        fill: #147a4b;
+      }
+      .group-label {
+        font-family: var(--sans);
+        font-size: 13px;
+        font-weight: 700;
+        fill: #4e4c49;
+      }
+      .codebox {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px;
+        overflow: auto;
+        color: var(--text2);
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.6;
+      }
+      .copy-note {
+        color: var(--text3);
+        font-size: 12px;
+        margin-bottom: 12px;
+        line-height: 1.6;
+      }
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        aside {
+          position: static;
+          height: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        main {
+          padding: 20px;
+        }
+        .tables-grid,
+        .rel-grid {
+          grid-template-columns: 1fr;
+        }
+        .summary {
+          display: none;
+        }
+        .col-header,
+        .frow {
+          grid-template-columns: 1fr;
+          gap: 3px;
+        }
+      }
+      @media print {
+        header,
+        aside,
+        .tabbar {
+          display: none;
+        }
+        .layout {
+          display: block;
+        }
+        main {
+          padding: 0;
+        }
+        .pane {
+          display: block !important;
+          page-break-after: always;
+        }
+        body {
+          background: #fff;
+          color: #111;
+        }
+        .tcard,
+        .rel-row,
+        #diagram-scroll,
+        .codebox,
+        .source-note {
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo">Billing API <span>/</span> schema</div>
+      <div class="v-badge">schema.ts / migrations 0001-0004</div>
+      <div class="summary">
+        <div class="pill">外部リソースなし</div>
+        <div class="pill">16 tables</div>
+        <div class="pill">28 relations</div>
+        <div class="pill warn">実装由来 / 物理FK + 論理参照</div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside>
+        <div class="sb-section">
+          <div class="sb-label">アプリ・認証</div>
+          <a class="sb-link" href="#table-billing_app"><span class="sb-dot"></span>billing_app</a>
+          <a class="sb-link" href="#table-billing_app_credential"><span class="sb-dot"></span>billing_app_credential</a>
+        </div>
+        <hr class="sb-divider" />
+        <div class="sb-section">
+          <div class="sb-label">課金対象</div>
+          <a class="sb-link" href="#table-billing_party"><span class="sb-dot"></span>billing_party</a>
+          <a class="sb-link" href="#table-billing_subject"><span class="sb-dot"></span>billing_subject</a>
+          <a class="sb-link" href="#table-billing_account"><span class="sb-dot"></span>billing_account</a>
+        </div>
+        <hr class="sb-divider" />
+        <div class="sb-section">
+          <div class="sb-label">契約・利用権限</div>
+          <a class="sb-link" href="#table-billing_subscription"><span class="sb-dot"></span>billing_subscription</a>
+          <a class="sb-link" href="#table-billing_entitlement"><span class="sb-dot"></span>billing_entitlement</a>
+        </div>
+        <hr class="sb-divider" />
+        <div class="sb-section">
+          <div class="sb-label">カタログ</div>
+          <a class="sb-link" href="#table-billing_product"><span class="sb-dot"></span>billing_product</a>
+          <a class="sb-link" href="#table-billing_plan"><span class="sb-dot"></span>billing_plan</a>
+          <a class="sb-link" href="#table-billing_price"><span class="sb-dot"></span>billing_price</a>
+          <a class="sb-link" href="#table-billing_entitlement_rule"><span class="sb-dot"></span>billing_entitlement_rule</a>
+          <a class="sb-link" href="#table-billing_redirect_template"><span class="sb-dot"></span>billing_redirect_template</a>
+        </div>
+        <hr class="sb-divider" />
+        <div class="sb-section">
+          <div class="sb-label">実行・イベント</div>
+          <a class="sb-link" href="#table-billing_api_idempotency"><span class="sb-dot"></span>billing_api_idempotency</a>
+          <a class="sb-link" href="#table-billing_operation_attempt"><span class="sb-dot"></span>billing_operation_attempt</a>
+          <a class="sb-link" href="#table-billing_provider_event"><span class="sb-dot"></span>billing_provider_event</a>
+          <a class="sb-link" href="#table-billing_invoice_event"><span class="sb-dot"></span>billing_invoice_event</a>
+        </div>
+      </aside>
+
+      <main>
+        <input class="tab-input" type="radio" name="tabs" id="tab-tables" checked />
+        <input class="tab-input" type="radio" name="tabs" id="tab-relations" />
+        <input class="tab-input" type="radio" name="tabs" id="tab-diagram" />
+        <input class="tab-input" type="radio" name="tabs" id="tab-source" />
+        <div class="tabbar">
+          <label class="tab" for="tab-tables">Tables</label>
+          <label class="tab" for="tab-relations">Relations</label>
+          <label class="tab" for="tab-diagram">ER Diagram</label>
+          <label class="tab" for="tab-source">Mermaid Source</label>
+        </div>
+
+        <div class="panes">
+          <section class="pane" id="pane-tables">
+            <div class="sec-title">Table definitions</div>
+            <div class="source-note">
+              生成元は <code>apps/billing-api/src/db/schema.ts</code>、<code>apps/billing-api/drizzle/0001_billing_api_initial.sql</code> から
+              <code>0004_billing_invoice_event.sql</code>、および <code>apps/billing-api/src/app.ts</code> の読み書き実装です。
+              <code>billing_app_credential.key_hash</code> は API key の SHA-256 hash のみを保持し、raw key は保存しません。
+              <code>billing_entitlement_rule.plan_code</code> と <code>billing_subscription.provider_price_id</code> は物理 FK ではなく、実装が code / Stripe Price ID で解決する論理参照として扱っています。
+            </div>
+
+            <section class="table-group">
+              <h3>アプリ・認証</h3>
+              <div class="tables-grid">
+                <article class="tcard" id="table-billing_app">
+                  <div class="tcard-header"><div class="tname">billing_app</div><div class="tcard-badges"><span class="tbadge">5 cols</span><span class="tbadge">0 FK</span><span class="tbadge">0 UK</span></div></div>
+                  <div class="tdesc">Billing API を利用する SaaS アプリ単位。すべての app scoped data の起点。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">アプリ識別子。例: reserve。</div></div>
+                  <div class="frow"><div class="fname">name</div><div class="ftype">text</div><div class="fdesc">表示名。</div></div>
+                  <div class="frow"><div class="fname">status<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">アプリ状態。既定値は active。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_app_credential">
+                  <div class="tcard-header"><div class="tname">billing_app_credential</div><div class="tcard-badges"><span class="tbadge">8 cols</span><span class="tbadge">1 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">SaaS から Billing API を呼ぶための API key hash と scope。raw key は保存しない。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">credential 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">key_prefix</div><div class="ftype">text</div><div class="fdesc">表示・識別用 prefix。</div></div>
+                  <div class="frow"><div class="fname">key_hash<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">API key の SHA-256 hex。平文は保存しない。</div></div>
+                  <div class="frow"><div class="fname">scopes_json</div><div class="ftype">text(json)</div><div class="fdesc">許可 scope 配列。</div></div>
+                  <div class="frow"><div class="fname">revoked_at<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">失効日時。NULL の credential だけ認証対象。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="table-group">
+              <h3>課金対象</h3>
+              <div class="tables-grid">
+                <article class="tcard" id="table-billing_party">
+                  <div class="tcard-header"><div class="tname">billing_party</div><div class="tcard-badges"><span class="tbadge">5 cols</span><span class="tbadge">0 FK</span><span class="tbadge">0 UK</span></div></div>
+                  <div class="tdesc">請求先 party。複数 app/subject にまたがる可能性がある請求主体情報。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">party 行ID。</div></div>
+                  <div class="frow"><div class="fname">display_name</div><div class="ftype">text</div><div class="fdesc">請求主体の表示名。</div></div>
+                  <div class="frow"><div class="fname">primary_email<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">代表メールアドレス。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_subject">
+                  <div class="tcard-header"><div class="tname">billing_subject</div><div class="tcard-badges"><span class="tbadge">13 cols</span><span class="tbadge">2 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">各 SaaS の organization / workspace など、契約・利用権限の対象。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">subject 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + subject_type + subject_id で一意。</div></div>
+                  <div class="frow"><div class="fname">subject_type<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">対象種別。例: organization。</div></div>
+                  <div class="frow"><div class="fname">subject_id<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">SaaS 側の対象ID。</div></div>
+                  <div class="frow"><div class="fname">party_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_party.id。削除時 restrict。</div></div>
+                  <div class="frow"><div class="fname">status<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">対象状態。既定値 active。</div></div>
+                  <div class="frow"><div class="fname">display_name</div><div class="ftype">text</div><div class="fdesc">対象表示名。</div></div>
+                  <div class="frow"><div class="fname">billing_email<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">請求連絡先メール。</div></div>
+                  <div class="frow"><div class="fname">billing_name<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">請求名義。</div></div>
+                  <div class="frow"><div class="fname">billing_contacts_json<span class="ftag tag-meta">default</span></div><div class="ftype">text(json)</div><div class="fdesc">請求連絡先配列。既定値 []。</div></div>
+                  <div class="frow"><div class="fname">metadata_json<span class="ftag tag-meta">default</span></div><div class="ftype">text(json)</div><div class="fdesc">SaaS 由来の補足情報。既定値 {}。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_account">
+                  <div class="tcard-header"><div class="tname">billing_account</div><div class="tcard-badges"><span class="tbadge">10 cols</span><span class="tbadge">3 FK</span><span class="tbadge">2 UK</span></div></div>
+                  <div class="tdesc">Stripe customer と Billing subject を接続する請求アカウント。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">account 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + subject_row_id で一意。</div></div>
+                  <div class="frow"><div class="fname">subject_row_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_subject.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">party_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_party.id。削除時 restrict。</div></div>
+                  <div class="frow"><div class="fname">provider<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">請求プロバイダ。既定値 stripe。</div></div>
+                  <div class="frow"><div class="fname">provider_customer_id<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe customer ID。provider と一意。</div></div>
+                  <div class="frow"><div class="fname">billing_email<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">provider 側に渡すメール。</div></div>
+                  <div class="frow"><div class="fname">billing_name<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">provider 側に渡す請求名義。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="table-group">
+              <h3>契約・利用権限</h3>
+              <div class="tables-grid">
+                <article class="tcard" id="table-billing_subscription">
+                  <div class="tcard-header"><div class="tname">billing_subscription</div><div class="tcard-badges"><span class="tbadge">20 cols</span><span class="tbadge">2 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">契約ライフサイクルの現在値。Stripe subscription snapshot とローカルトライアルを保持する。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">subscription 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">billing_account_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_account.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">provider<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">プロバイダ。既定値 stripe。</div></div>
+                  <div class="frow"><div class="fname">provider_subscription_id<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe subscription ID。provider と一意。</div></div>
+                  <div class="frow"><div class="fname">provider_schedule_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe schedule ID。</div></div>
+                  <div class="frow"><div class="fname">plan_code<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">適用中プラン code。既定値 free。</div></div>
+                  <div class="frow"><div class="fname">price_code<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">解決済み price code。</div></div>
+                  <div class="frow"><div class="fname">provider_price_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe Price ID。catalog price へ論理解決する。</div></div>
+                  <div class="frow"><div class="fname">price_resolution<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">known / unknown / not_applicable。</div></div>
+                  <div class="frow"><div class="fname">interval<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">month / year などの課金間隔。</div></div>
+                  <div class="frow"><div class="fname">status<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">free / trialing / active / past_due など。</div></div>
+                  <div class="frow"><div class="fname">current_period_start<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">現在期間の開始。</div></div>
+                  <div class="frow"><div class="fname">current_period_end<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">現在期間の終了。</div></div>
+                  <div class="frow"><div class="fname">trial_start<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">トライアル開始。</div></div>
+                  <div class="frow"><div class="fname">trial_end<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">トライアル終了。</div></div>
+                  <div class="frow"><div class="fname">cancel_at<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">解約予定日時。</div></div>
+                  <div class="frow"><div class="fname">cancel_at_period_end<span class="ftag tag-meta">default</span></div><div class="ftype">integer(boolean)</div><div class="fdesc">期間末解約フラグ。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_entitlement">
+                  <div class="tcard-header"><div class="tname">billing_entitlement</div><div class="tcard-badges"><span class="tbadge">15 cols</span><span class="tbadge">3 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">現在有効な利用権限。trialing / active の契約状態から entitlement rule を展開して保存する。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">entitlement 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + subject_row_id + key で一意。</div></div>
+                  <div class="frow"><div class="fname">subject_row_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_subject.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">billing_account_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_account.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">key<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">権限キー。例: staffLimit。</div></div>
+                  <div class="frow"><div class="fname">active</div><div class="ftype">integer(boolean)</div><div class="fdesc">有効フラグ。</div></div>
+                  <div class="frow"><div class="fname">value_type<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">boolean / number など。</div></div>
+                  <div class="frow"><div class="fname">value_json<span class="ftag tag-meta">default</span></div><div class="ftype">text(json)</div><div class="fdesc">権限値。既定値 true。</div></div>
+                  <div class="frow"><div class="fname">source</div><div class="ftype">text</div><div class="fdesc">trial / paid などの発生元。</div></div>
+                  <div class="frow"><div class="fname">reason</div><div class="ftype">text</div><div class="fdesc">生成理由。</div></div>
+                  <div class="frow"><div class="fname">valid_from<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">有効開始。</div></div>
+                  <div class="frow"><div class="fname">valid_until<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">有効終了。</div></div>
+                  <div class="frow"><div class="fname">generated_at</div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">生成日時。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="table-group">
+              <h3>カタログ</h3>
+              <div class="tables-grid">
+                <article class="tcard" id="table-billing_product">
+                  <div class="tcard-header"><div class="tname">billing_product</div><div class="tcard-badges"><span class="tbadge">8 cols</span><span class="tbadge">1 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">アプリ別の課金 product。Stripe product ID を任意で保持する。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">product 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + code で一意。</div></div>
+                  <div class="frow"><div class="fname">code<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">product code。</div></div>
+                  <div class="frow"><div class="fname">name</div><div class="ftype">text</div><div class="fdesc">表示名。</div></div>
+                  <div class="frow"><div class="fname">provider_product_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe product ID。</div></div>
+                  <div class="frow"><div class="fname">active<span class="ftag tag-meta">default</span></div><div class="ftype">integer(boolean)</div><div class="fdesc">有効フラグ。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_plan">
+                  <div class="tcard-header"><div class="tname">billing_plan</div><div class="tcard-badges"><span class="tbadge">8 cols</span><span class="tbadge">2 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">アプリ別の plan。product に任意でぶら下がり、Checkout の planCode 解決に使う。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">plan 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + code で一意。</div></div>
+                  <div class="frow"><div class="fname">product_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">billing_product.id。削除時 set null。</div></div>
+                  <div class="frow"><div class="fname">code<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">plan code。</div></div>
+                  <div class="frow"><div class="fname">name</div><div class="ftype">text</div><div class="fdesc">表示名。</div></div>
+                  <div class="frow"><div class="fname">active<span class="ftag tag-meta">default</span></div><div class="ftype">integer(boolean)</div><div class="fdesc">有効フラグ。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_price">
+                  <div class="tcard-header"><div class="tname">billing_price</div><div class="tcard-badges"><span class="tbadge">12 cols</span><span class="tbadge">2 FK</span><span class="tbadge">2 UK</span></div></div>
+                  <div class="tdesc">plan の課金価格。Stripe Price ID と interval を保持し、Checkout と webhook price 解決に使う。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">price 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + code で一意。</div></div>
+                  <div class="frow"><div class="fname">plan_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_plan.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">code<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">price code。</div></div>
+                  <div class="frow"><div class="fname">interval<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">month / year。</div></div>
+                  <div class="frow"><div class="fname">provider<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">既定値 stripe。</div></div>
+                  <div class="frow"><div class="fname">provider_price_id<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe Price ID。provider と一意。</div></div>
+                  <div class="frow"><div class="fname">currency<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">通貨。既定値 jpy。</div></div>
+                  <div class="frow"><div class="fname">unit_amount<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer</div><div class="fdesc">最小通貨単位の価格。</div></div>
+                  <div class="frow"><div class="fname">active<span class="ftag tag-meta">default</span></div><div class="ftype">integer(boolean)</div><div class="fdesc">有効フラグ。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_entitlement_rule">
+                  <div class="tcard-header"><div class="tname">billing_entitlement_rule</div><div class="tcard-badges"><span class="tbadge">9 cols</span><span class="tbadge">1 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">planCode から生成する entitlement の catalog rule。plan_code は物理 FK ではなく code で参照する。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">rule 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + plan_code + entitlement_key で一意。</div></div>
+                  <div class="frow"><div class="fname">plan_code<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">logical</span></div><div class="ftype">text</div><div class="fdesc">billing_plan.code へ実装上対応する。</div></div>
+                  <div class="frow"><div class="fname">entitlement_key<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">生成する権限キー。</div></div>
+                  <div class="frow"><div class="fname">value_type<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">boolean / number など。</div></div>
+                  <div class="frow"><div class="fname">value_json<span class="ftag tag-meta">default</span></div><div class="ftype">text(json)</div><div class="fdesc">権限値。</div></div>
+                  <div class="frow"><div class="fname">active<span class="ftag tag-meta">default</span></div><div class="ftype">integer(boolean)</div><div class="fdesc">有効フラグ。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_redirect_template">
+                  <div class="tcard-header"><div class="tname">billing_redirect_template</div><div class="tcard-badges"><span class="tbadge">7 cols</span><span class="tbadge">1 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">Checkout / Customer Portal の戻り先テンプレート。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">template 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + key で一意。</div></div>
+                  <div class="frow"><div class="fname">key<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">returnUrlKey。</div></div>
+                  <div class="frow"><div class="fname">success_url</div><div class="ftype">text</div><div class="fdesc">成功時の戻り先。</div></div>
+                  <div class="frow"><div class="fname">cancel_url<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">キャンセル時の戻り先。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="table-group">
+              <h3>実行・イベント</h3>
+              <div class="tables-grid">
+                <article class="tcard" id="table-billing_api_idempotency">
+                  <div class="tcard-header"><div class="tname">billing_api_idempotency</div><div class="tcard-badges"><span class="tbadge">11 cols</span><span class="tbadge">1 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">書き込み API の Idempotency-Key とレスポンスキャッシュ。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">idempotency 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app + idempotency_key で一意。</div></div>
+                  <div class="frow"><div class="fname">idempotency_key<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">リクエスト header の key。</div></div>
+                  <div class="frow"><div class="fname">method</div><div class="ftype">text</div><div class="fdesc">HTTP method。</div></div>
+                  <div class="frow"><div class="fname">path</div><div class="ftype">text</div><div class="fdesc">API path。</div></div>
+                  <div class="frow"><div class="fname">request_hash</div><div class="ftype">text</div><div class="fdesc">request body hash。異なる body の再利用を拒否する。</div></div>
+                  <div class="frow"><div class="fname">status_code<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer</div><div class="fdesc">保存済みレスポンス status。</div></div>
+                  <div class="frow"><div class="fname">response_json<span class="ftag tag-meta">nullable</span></div><div class="ftype">text(json)</div><div class="fdesc">保存済みレスポンス body。</div></div>
+                  <div class="frow"><div class="fname">expires_at</div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">再利用期限。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_operation_attempt">
+                  <div class="tcard-header"><div class="tname">billing_operation_attempt</div><div class="tcard-badges"><span class="tbadge">21 cols</span><span class="tbadge">2 FK</span><span class="tbadge">2 UK</span></div></div>
+                  <div class="tdesc">Checkout、支払い方法登録、Customer Portal handoff の試行履歴と URL 再利用制御。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">attempt 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。app scoped unique indexes の一部。</div></div>
+                  <div class="frow"><div class="fname">billing_account_id<span class="ftag tag-fk">FK</span><span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">billing_account.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">purpose</div><div class="ftype">text</div><div class="fdesc">checkout / setup_payment_method / portal など。</div></div>
+                  <div class="frow"><div class="fname">reuse_key<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">同じ目的・対象の再利用単位。</div></div>
+                  <div class="frow"><div class="fname">attempt_number<span class="ftag tag-uk">UK</span></div><div class="ftype">integer</div><div class="fdesc">reuse_key 内の試行番号。</div></div>
+                  <div class="frow"><div class="fname">idempotency_key<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">app + idempotency_key で一意。</div></div>
+                  <div class="frow"><div class="fname">state</div><div class="ftype">text</div><div class="fdesc">processing / succeeded / failed。</div></div>
+                  <div class="frow"><div class="fname">handoff_url<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">provider へ遷移する URL。</div></div>
+                  <div class="frow"><div class="fname">handoff_expires_at<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">URL 再利用期限。</div></div>
+                  <div class="frow"><div class="fname">provider<span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">既定値 stripe。</div></div>
+                  <div class="frow"><div class="fname">provider_customer_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe customer ID。</div></div>
+                  <div class="frow"><div class="fname">provider_subscription_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe subscription ID。</div></div>
+                  <div class="frow"><div class="fname">provider_checkout_session_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe Checkout session ID。</div></div>
+                  <div class="frow"><div class="fname">provider_portal_session_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe Portal session ID。</div></div>
+                  <div class="frow"><div class="fname">failure_reason<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">失敗理由。</div></div>
+                  <div class="frow"><div class="fname">actor_type<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">操作主体種別。</div></div>
+                  <div class="frow"><div class="fname">actor_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">操作主体ID。</div></div>
+                  <div class="frow"><div class="fname">actor_email<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">操作主体メール。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_provider_event">
+                  <div class="tcard-header"><div class="tname">billing_provider_event</div><div class="tcard-badges"><span class="tbadge">16 cols</span><span class="tbadge">2 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">Stripe webhook 受領・処理状態。対象を解決できないイベントも warning として保存する。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">event receipt 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。削除時 set null。</div></div>
+                  <div class="frow"><div class="fname">provider<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">既定値 stripe。</div></div>
+                  <div class="frow"><div class="fname">provider_event_id<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">Stripe event ID。</div></div>
+                  <div class="frow"><div class="fname">event_type</div><div class="ftype">text</div><div class="fdesc">Stripe event type。</div></div>
+                  <div class="frow"><div class="fname">scope<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">provider + event_id + scope で一意。</div></div>
+                  <div class="frow"><div class="fname">payload_hash</div><div class="ftype">text</div><div class="fdesc">payload hash。</div></div>
+                  <div class="frow"><div class="fname">processing_status</div><div class="ftype">text</div><div class="fdesc">processed / warning / failed など。</div></div>
+                  <div class="frow"><div class="fname">receipt_status</div><div class="ftype">text</div><div class="fdesc">受領結果。</div></div>
+                  <div class="frow"><div class="fname">billing_account_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">billing_account.id。削除時 set null。</div></div>
+                  <div class="frow"><div class="fname">provider_customer_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe customer ID。</div></div>
+                  <div class="frow"><div class="fname">provider_subscription_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe subscription ID。</div></div>
+                  <div class="frow"><div class="fname">failure_reason<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">警告または失敗理由。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                  <div class="frow"><div class="fname">processed_at<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">処理完了日時。</div></div>
+                </article>
+
+                <article class="tcard" id="table-billing_invoice_event">
+                  <div class="tcard-header"><div class="tname">billing_invoice_event</div><div class="tcard-badges"><span class="tbadge">18 cols</span><span class="tbadge">3 FK</span><span class="tbadge">1 UK</span></div></div>
+                  <div class="tdesc">invoice / payment webhook から作る請求イベント履歴。owner-facing な状態と請求書URLを保持する。</div>
+                  <div class="col-header"><div>column</div><div>type</div><div>description</div></div>
+                  <div class="frow truth"><div class="fname">id<span class="ftag tag-pk">PK</span></div><div class="ftype">text</div><div class="fdesc">invoice event 行ID。</div></div>
+                  <div class="frow"><div class="fname">app_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_app.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">billing_account_id<span class="ftag tag-fk">FK</span></div><div class="ftype">text</div><div class="fdesc">billing_account.id。削除時 cascade。</div></div>
+                  <div class="frow"><div class="fname">billing_subscription_id<span class="ftag tag-fk">FK</span><span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">billing_subscription.id。削除時 set null。</div></div>
+                  <div class="frow"><div class="fname">provider<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">default</span></div><div class="ftype">text</div><div class="fdesc">既定値 stripe。</div></div>
+                  <div class="frow"><div class="fname">provider_event_id<span class="ftag tag-uk">UK</span><span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe event ID。</div></div>
+                  <div class="frow"><div class="fname">event_type<span class="ftag tag-uk">UK</span></div><div class="ftype">text</div><div class="fdesc">provider + provider_event_id + event_type で一意。</div></div>
+                  <div class="frow"><div class="fname">provider_customer_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe customer ID。</div></div>
+                  <div class="frow"><div class="fname">provider_subscription_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe subscription ID。</div></div>
+                  <div class="frow"><div class="fname">provider_invoice_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe invoice ID。</div></div>
+                  <div class="frow"><div class="fname">provider_payment_intent_id<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe PaymentIntent ID。</div></div>
+                  <div class="frow"><div class="fname">provider_status<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">provider 側 invoice/payment 状態。</div></div>
+                  <div class="frow"><div class="fname">owner_facing_status</div><div class="ftype">text</div><div class="fdesc">オーナー向け表示状態。</div></div>
+                  <div class="frow"><div class="fname">hosted_invoice_url<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe hosted invoice URL。</div></div>
+                  <div class="frow"><div class="fname">invoice_pdf_url<span class="ftag tag-meta">nullable</span></div><div class="ftype">text</div><div class="fdesc">Stripe invoice PDF URL。</div></div>
+                  <div class="frow"><div class="fname">occurred_at<span class="ftag tag-meta">nullable</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">イベント発生日時。</div></div>
+                  <div class="frow"><div class="fname">created_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">作成日時。</div></div>
+                  <div class="frow"><div class="fname">updated_at<span class="ftag tag-meta">default</span></div><div class="ftype">integer(timestamp_ms)</div><div class="fdesc">更新日時。</div></div>
+                </article>
+              </div>
+            </section>
+          </section>
+
+          <section class="pane" id="pane-relations">
+            <div class="sec-title">Relations</div>
+            <div class="source-note">実線は Drizzle schema / migration に存在する物理 FK、薄い黄色は実装が code または provider ID で解決する論理参照です。</div>
+            <div class="rel-grid">
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_app_credential</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_subject</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_party</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_subject</span><span class="rel-note">party_id / restrict</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_account</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_subject</span><span class="rel-conn">||--||</span><span class="rel-entity">billing_account</span><span class="rel-note">subject_row_id / unique</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_party</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_account</span><span class="rel-note">party_id / restrict</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_subscription</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_account</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_subscription</span><span class="rel-note">billing_account_id</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_entitlement</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_subject</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_entitlement</span><span class="rel-note">subject_row_id</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_account</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_entitlement</span><span class="rel-note">billing_account_id</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_product</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_plan</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_product</span><span class="rel-conn">||--o|</span><span class="rel-entity">billing_plan</span><span class="rel-note">product_id / set null</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_price</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_plan</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_price</span><span class="rel-note">plan_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_entitlement_rule</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row logical"><span class="rel-entity">billing_plan</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_entitlement_rule</span><span class="rel-note">plan_code logical</span></div>
+              <div class="rel-row logical"><span class="rel-entity">billing_price</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_subscription</span><span class="rel-note">provider_price_id logical</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_redirect_template</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_api_idempotency</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_operation_attempt</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_account</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_operation_attempt</span><span class="rel-note">billing_account_id</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_provider_event</span><span class="rel-note">app_id / set null</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_account</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_provider_event</span><span class="rel-note">billing_account_id / set null</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_app</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_invoice_event</span><span class="rel-note">app_id / cascade</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_account</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_invoice_event</span><span class="rel-note">billing_account_id</span></div>
+              <div class="rel-row"><span class="rel-entity">billing_subscription</span><span class="rel-conn">||--o{</span><span class="rel-entity">billing_invoice_event</span><span class="rel-note">billing_subscription_id / set null</span></div>
+            </div>
+          </section>
+
+          <section class="pane" id="pane-diagram">
+            <div class="sec-title">ER diagram</div>
+            <div class="diagram-help">横スクロール可能な静的SVGです。青線は課金対象の主要フロー、破線は物理 FK ではない論理参照を表します。</div>
+            <div id="diagram-scroll">
+              <svg class="er-svg" viewBox="0 0 1680 760" role="img" aria-labelledby="er-title er-desc">
+                <title id="er-title">Billing API ER diagram</title>
+                <desc id="er-desc">Billing API schema relation overview.</desc>
+                <defs>
+                  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#aaa69f" />
+                  </marker>
+                </defs>
+                <text class="group-label" x="40" y="28">App / auth</text>
+                <text class="group-label" x="360" y="28">Subject</text>
+                <text class="group-label" x="700" y="28">Lifecycle</text>
+                <text class="group-label" x="1040" y="28">Catalog</text>
+                <text class="group-label" x="1380" y="28">Operations / events</text>
+
+                <path class="edge edge-strong" marker-end="url(#arrow)" d="M 220 92 C 290 92, 290 92, 360 92" />
+                <path class="edge edge-strong" marker-end="url(#arrow)" d="M 560 132 C 630 132, 630 132, 700 132" />
+                <path class="edge edge-strong" marker-end="url(#arrow)" d="M 900 132 C 970 132, 970 132, 1040 132" />
+                <path class="edge edge-strong" marker-end="url(#arrow)" d="M 900 252 C 970 252, 970 252, 1040 252" />
+                <path class="edge" marker-end="url(#arrow)" d="M 220 132 C 420 188, 520 188, 700 188" />
+                <path class="edge" marker-end="url(#arrow)" d="M 220 92 C 650 30, 970 42, 1380 72" />
+                <path class="edge" marker-end="url(#arrow)" d="M 220 92 C 650 12, 970 16, 1380 194" />
+                <path class="edge" marker-end="url(#arrow)" d="M 220 92 C 650 348, 970 360, 1380 310" />
+                <path class="edge" marker-end="url(#arrow)" d="M 900 194 C 1030 340, 1250 340, 1380 310" />
+                <path class="edge" marker-end="url(#arrow)" d="M 900 194 C 1030 440, 1250 440, 1380 430" />
+                <path class="edge" marker-end="url(#arrow)" d="M 900 310 C 1030 510, 1250 510, 1380 548" />
+                <path class="edge" marker-end="url(#arrow)" d="M 220 92 C 520 610, 980 660, 1380 548" />
+                <path class="edge-logical" marker-end="url(#arrow)" d="M 1240 194 C 1280 194, 1280 310, 1240 310" />
+                <path class="edge-logical" marker-end="url(#arrow)" d="M 1240 252 C 1120 520, 1020 520, 900 252" />
+                <text class="edge-label" x="1266" y="260">logical</text>
+
+                <g transform="translate(40 54)">
+                  <rect class="node-box core" width="180" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_app</text><text class="node-meta" x="12" y="45">5 cols / PK id</text><text class="node-fk" x="12" y="62">0 FK / scope root</text>
+                </g>
+                <g transform="translate(40 174)">
+                  <rect class="node-box" width="180" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_app_credential</text><text class="node-meta" x="12" y="45">8 cols / hash UK</text><text class="node-fk" x="12" y="62">FK app_id</text>
+                </g>
+                <g transform="translate(360 54)">
+                  <rect class="node-box" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_subject</text><text class="node-meta" x="12" y="45">13 cols / app+subject UK</text><text class="node-fk" x="12" y="62">FK app, party</text>
+                </g>
+                <g transform="translate(360 174)">
+                  <rect class="node-box" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_party</text><text class="node-meta" x="12" y="45">5 cols / PK id</text><text class="node-fk" x="12" y="62">shared billing identity</text>
+                </g>
+                <g transform="translate(700 94)">
+                  <rect class="node-box core" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_account</text><text class="node-meta" x="12" y="45">10 cols / customer UK</text><text class="node-fk" x="12" y="62">FK app, subject, party</text>
+                </g>
+                <g transform="translate(700 214)">
+                  <rect class="node-box core" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_subscription</text><text class="node-meta" x="12" y="45">20 cols / provider sub UK</text><text class="node-fk" x="12" y="62">FK app, account</text>
+                </g>
+                <g transform="translate(700 334)">
+                  <rect class="node-box core" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_entitlement</text><text class="node-meta" x="12" y="45">15 cols / subject+key UK</text><text class="node-fk" x="12" y="62">FK app, subject, account</text>
+                </g>
+                <g transform="translate(1040 94)">
+                  <rect class="node-box" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_product</text><text class="node-meta" x="12" y="45">8 cols / app+code UK</text><text class="node-fk" x="12" y="62">FK app_id</text>
+                </g>
+                <g transform="translate(1040 214)">
+                  <rect class="node-box" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_plan</text><text class="node-meta" x="12" y="45">8 cols / app+code UK</text><text class="node-fk" x="12" y="62">FK app, product</text>
+                </g>
+                <g transform="translate(1040 334)">
+                  <rect class="node-box" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_price</text><text class="node-meta" x="12" y="45">12 cols / provider price UK</text><text class="node-fk" x="12" y="62">FK app, plan</text>
+                </g>
+                <g transform="translate(1040 454)">
+                  <rect class="node-box" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_entitlement_rule</text><text class="node-meta" x="12" y="45">9 cols / plan+key UK</text><text class="node-fk" x="12" y="62">FK app / logical plan_code</text>
+                </g>
+                <g transform="translate(1040 574)">
+                  <rect class="node-box" width="200" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_redirect_template</text><text class="node-meta" x="12" y="45">7 cols / app+key UK</text><text class="node-fk" x="12" y="62">FK app_id</text>
+                </g>
+                <g transform="translate(1380 54)">
+                  <rect class="node-box" width="220" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_api_idempotency</text><text class="node-meta" x="12" y="45">11 cols / app+key UK</text><text class="node-fk" x="12" y="62">FK app_id</text>
+                </g>
+                <g transform="translate(1380 174)">
+                  <rect class="node-box" width="220" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_operation_attempt</text><text class="node-meta" x="12" y="45">21 cols / reuse+attempt UK</text><text class="node-fk" x="12" y="62">FK app, account</text>
+                </g>
+                <g transform="translate(1380 294)">
+                  <rect class="node-box" width="220" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_provider_event</text><text class="node-meta" x="12" y="45">16 cols / provider event UK</text><text class="node-fk" x="12" y="62">FK app?, account?</text>
+                </g>
+                <g transform="translate(1380 414)">
+                  <rect class="node-box" width="220" height="78" rx="8" /><text class="node-title" x="12" y="24">billing_invoice_event</text><text class="node-meta" x="12" y="45">18 cols / provider invoice UK</text><text class="node-fk" x="12" y="62">FK app, account, sub?</text>
+                </g>
+              </svg>
+            </div>
+          </section>
+
+          <section class="pane" id="pane-source">
+            <div class="sec-title">Mermaid source</div>
+            <div class="copy-note">以下は静的SVGと同じ関係を表す Mermaid ER 定義です。論理参照はラベルで明示しています。</div>
+            <pre class="codebox" id="source-code">erDiagram
+    billing_app {
+        text id PK "app identifier"
+        text name "display name"
+        text status "default active"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_app_credential {
+        text id PK "credential id"
+        text app_id FK "billing_app.id"
+        text key_prefix "display prefix"
+        text key_hash UK "sha256 api key hash"
+        text scopes_json "json scopes"
+        integer revoked_at "nullable timestamp_ms"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_party {
+        text id PK "party id"
+        text display_name "billing party name"
+        text primary_email "nullable"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_subject {
+        text id PK "subject row id"
+        text app_id FK,UK "billing_app.id"
+        text subject_type UK "SaaS subject type"
+        text subject_id UK "SaaS subject id"
+        text party_id FK "billing_party.id"
+        text status "default active"
+        text display_name "display name"
+        text billing_email "nullable"
+        text billing_name "nullable"
+        text billing_contacts_json "json"
+        text metadata_json "json"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_account {
+        text id PK "billing account id"
+        text app_id FK,UK "billing_app.id"
+        text subject_row_id FK,UK "billing_subject.id"
+        text party_id FK "billing_party.id"
+        text provider UK "default stripe"
+        text provider_customer_id UK "nullable"
+        text billing_email "nullable"
+        text billing_name "nullable"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_subscription {
+        text id PK "subscription id"
+        text app_id FK "billing_app.id"
+        text billing_account_id FK "billing_account.id"
+        text provider UK "default stripe"
+        text provider_subscription_id UK "nullable"
+        text provider_schedule_id "nullable"
+        text plan_code "default free"
+        text price_code "nullable"
+        text provider_price_id "nullable logical billing_price.provider_price_id"
+        text price_resolution "known unknown not_applicable"
+        text interval "nullable"
+        text status "free trialing active etc"
+        integer current_period_start "nullable timestamp_ms"
+        integer current_period_end "nullable timestamp_ms"
+        integer trial_start "nullable timestamp_ms"
+        integer trial_end "nullable timestamp_ms"
+        integer cancel_at "nullable timestamp_ms"
+        integer cancel_at_period_end "boolean"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_entitlement {
+        text id PK "entitlement id"
+        text app_id FK,UK "billing_app.id"
+        text subject_row_id FK,UK "billing_subject.id"
+        text billing_account_id FK "billing_account.id"
+        text key UK "entitlement key"
+        integer active "boolean"
+        text value_type "default boolean"
+        text value_json "json"
+        text source "trial or paid"
+        text reason "generation reason"
+        integer valid_from "nullable timestamp_ms"
+        integer valid_until "nullable timestamp_ms"
+        integer generated_at "timestamp_ms"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_product {
+        text id PK "product id"
+        text app_id FK,UK "billing_app.id"
+        text code UK "product code"
+        text name "display name"
+        text provider_product_id "nullable"
+        integer active "boolean"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_plan {
+        text id PK "plan id"
+        text app_id FK,UK "billing_app.id"
+        text product_id FK "nullable billing_product.id"
+        text code UK "plan code"
+        text name "display name"
+        integer active "boolean"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_price {
+        text id PK "price id"
+        text app_id FK,UK "billing_app.id"
+        text plan_id FK "billing_plan.id"
+        text code UK "price code"
+        text interval "nullable"
+        text provider UK "default stripe"
+        text provider_price_id UK "nullable Stripe Price ID"
+        text currency "default jpy"
+        integer unit_amount "nullable"
+        integer active "boolean"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_entitlement_rule {
+        text id PK "rule id"
+        text app_id FK,UK "billing_app.id"
+        text plan_code UK "logical billing_plan.code"
+        text entitlement_key UK "generated entitlement key"
+        text value_type "default boolean"
+        text value_json "json"
+        integer active "boolean"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_redirect_template {
+        text id PK "redirect template id"
+        text app_id FK,UK "billing_app.id"
+        text key UK "returnUrlKey"
+        text success_url "success redirect"
+        text cancel_url "nullable cancel redirect"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_api_idempotency {
+        text id PK "idempotency row id"
+        text app_id FK,UK "billing_app.id"
+        text idempotency_key UK "request key"
+        text method "HTTP method"
+        text path "request path"
+        text request_hash "body hash"
+        integer status_code "nullable"
+        text response_json "nullable json"
+        integer expires_at "timestamp_ms"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_operation_attempt {
+        text id PK "attempt id"
+        text app_id FK,UK "billing_app.id"
+        text billing_account_id FK,UK "billing_account.id"
+        text purpose "handoff purpose"
+        text reuse_key UK "reuse scope"
+        integer attempt_number UK "attempt number"
+        text idempotency_key UK "idempotency key"
+        text state "processing succeeded failed"
+        text handoff_url "nullable"
+        integer handoff_expires_at "nullable timestamp_ms"
+        text provider "default stripe"
+        text provider_customer_id "nullable"
+        text provider_subscription_id "nullable"
+        text provider_checkout_session_id "nullable"
+        text provider_portal_session_id "nullable"
+        text failure_reason "nullable"
+        text actor_type "nullable"
+        text actor_id "nullable"
+        text actor_email "nullable"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+    billing_provider_event {
+        text id PK "provider event receipt id"
+        text app_id FK "nullable billing_app.id"
+        text provider UK "default stripe"
+        text provider_event_id UK "Stripe event id"
+        text event_type "Stripe event type"
+        text scope UK "default billing"
+        text payload_hash "payload hash"
+        text processing_status "processing result"
+        text receipt_status "receipt result"
+        text billing_account_id FK "nullable billing_account.id"
+        text provider_customer_id "nullable"
+        text provider_subscription_id "nullable"
+        text failure_reason "nullable"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+        integer processed_at "nullable timestamp_ms"
+    }
+    billing_invoice_event {
+        text id PK "invoice event id"
+        text app_id FK "billing_app.id"
+        text billing_account_id FK "billing_account.id"
+        text billing_subscription_id FK "nullable billing_subscription.id"
+        text provider UK "default stripe"
+        text provider_event_id UK "nullable"
+        text event_type UK "invoice/payment event type"
+        text provider_customer_id "nullable"
+        text provider_subscription_id "nullable"
+        text provider_invoice_id "nullable"
+        text provider_payment_intent_id "nullable"
+        text provider_status "nullable"
+        text owner_facing_status "owner-facing state"
+        text hosted_invoice_url "nullable"
+        text invoice_pdf_url "nullable"
+        integer occurred_at "nullable timestamp_ms"
+        integer created_at "timestamp_ms"
+        integer updated_at "timestamp_ms"
+    }
+
+    billing_app ||--o{ billing_app_credential : "app credentials"
+    billing_app ||--o{ billing_subject : "app subjects"
+    billing_party ||--o{ billing_subject : "billing party"
+    billing_app ||--o{ billing_account : "app accounts"
+    billing_subject ||--|| billing_account : "one account per subject"
+    billing_party ||--o{ billing_account : "billing party"
+    billing_app ||--o{ billing_subscription : "app subscriptions"
+    billing_account ||--o{ billing_subscription : "subscription lifecycle"
+    billing_app ||--o{ billing_entitlement : "app entitlements"
+    billing_subject ||--o{ billing_entitlement : "subject entitlements"
+    billing_account ||--o{ billing_entitlement : "account entitlements"
+    billing_app ||--o{ billing_product : "catalog products"
+    billing_app ||--o{ billing_plan : "catalog plans"
+    billing_product ||--o| billing_plan : "optional product"
+    billing_app ||--o{ billing_price : "catalog prices"
+    billing_plan ||--o{ billing_price : "plan prices"
+    billing_app ||--o{ billing_entitlement_rule : "catalog rules"
+    billing_plan ||--o{ billing_entitlement_rule : "logical plan_code"
+    billing_price ||--o{ billing_subscription : "logical provider_price_id"
+    billing_app ||--o{ billing_redirect_template : "redirect templates"
+    billing_app ||--o{ billing_api_idempotency : "write dedupe"
+    billing_app ||--o{ billing_operation_attempt : "handoff attempts"
+    billing_account ||--o{ billing_operation_attempt : "account handoffs"
+    billing_app ||--o{ billing_provider_event : "nullable event app"
+    billing_account ||--o{ billing_provider_event : "nullable event account"
+    billing_app ||--o{ billing_invoice_event : "invoice events"
+    billing_account ||--o{ billing_invoice_event : "account invoice events"
+    billing_subscription ||--o{ billing_invoice_event : "nullable subscription invoice events"</pre>
+          </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
