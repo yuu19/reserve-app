@@ -121,6 +121,71 @@ ON CONFLICT(app_id, code) DO UPDATE SET
   updated_at = ${timestampSql}`);
 };
 
+const upsertAddonSql = ({ catalog, addon }) => {
+  const addonId = buildId('addon', catalog.app.id, addon.code);
+  const productId = buildId('product', catalog.app.id, addon.productCode);
+  return statement(`INSERT INTO billing_addon (
+  id,
+  app_id,
+  product_id,
+  code,
+  name,
+  active
+)
+VALUES (
+  ${toSqlString(addonId)},
+  ${toSqlString(catalog.app.id)},
+  ${toSqlString(productId)},
+  ${toSqlString(addon.code)},
+  ${toSqlString(addon.name)},
+  true
+)
+ON CONFLICT(app_id, code) DO UPDATE SET
+  product_id = excluded.product_id,
+  name = excluded.name,
+  active = excluded.active,
+  updated_at = ${timestampSql}`);
+};
+
+const upsertAddonPriceSql = ({ catalog, price }) => {
+  const priceId = buildId('addon_price', catalog.app.id, price.code);
+  const addonId = buildId('addon', catalog.app.id, price.addonCode);
+  const providerPriceId = process.env[price.providerPriceEnvVar];
+  return statement(`INSERT INTO billing_addon_price (
+  id,
+  app_id,
+  addon_id,
+  code,
+  interval,
+  provider,
+  provider_price_id,
+  currency,
+  unit_amount,
+  active
+)
+VALUES (
+  ${toSqlString(priceId)},
+  ${toSqlString(catalog.app.id)},
+  ${toSqlString(addonId)},
+  ${toSqlString(price.code)},
+  ${toSqlString(price.interval)},
+  'stripe',
+  ${toSqlNullableString(providerPriceId)},
+  ${toSqlString(price.currency)},
+  ${Number(price.unitAmount)},
+  true
+)
+ON CONFLICT(app_id, code) DO UPDATE SET
+  addon_id = excluded.addon_id,
+  interval = excluded.interval,
+  provider = excluded.provider,
+  provider_price_id = excluded.provider_price_id,
+  currency = excluded.currency,
+  unit_amount = excluded.unit_amount,
+  active = excluded.active,
+  updated_at = ${timestampSql}`);
+};
+
 const upsertEntitlementRuleSql = ({ catalog, rule }) => {
   const ruleId = buildId('entitlement_rule', catalog.app.id, rule.planCode, rule.entitlementKey);
   return statement(`INSERT INTO billing_entitlement_rule (
@@ -144,6 +209,41 @@ VALUES (
 ON CONFLICT(app_id, plan_code, entitlement_key) DO UPDATE SET
   value_type = excluded.value_type,
   value_json = excluded.value_json,
+  active = excluded.active,
+  updated_at = ${timestampSql}`);
+};
+
+const upsertAddonEntitlementRuleSql = ({ catalog, rule }) => {
+  const ruleId = buildId(
+    'addon_entitlement_rule',
+    catalog.app.id,
+    rule.addonCode,
+    rule.entitlementKey,
+  );
+  return statement(`INSERT INTO billing_addon_entitlement_rule (
+  id,
+  app_id,
+  addon_code,
+  entitlement_key,
+  value_type,
+  value_json,
+  aggregation,
+  active
+)
+VALUES (
+  ${toSqlString(ruleId)},
+  ${toSqlString(catalog.app.id)},
+  ${toSqlString(rule.addonCode)},
+  ${toSqlString(rule.entitlementKey)},
+  ${toSqlString(rule.valueType)},
+  ${toSqlJson(rule.value)},
+  ${toSqlString(rule.aggregation)},
+  true
+)
+ON CONFLICT(app_id, addon_code, entitlement_key) DO UPDATE SET
+  value_type = excluded.value_type,
+  value_json = excluded.value_json,
+  aggregation = excluded.aggregation,
   active = excluded.active,
   updated_at = ${timestampSql}`);
 };
@@ -191,8 +291,17 @@ export const generateBillingCatalogSeedSql = ({ appId = null } = {}) => {
     statements.push(...catalog.products.map((product) => upsertProductSql({ catalog, product })));
     statements.push(...catalog.plans.map((plan) => upsertPlanSql({ catalog, plan })));
     statements.push(...catalog.prices.map((price) => upsertPriceSql({ catalog, price })));
+    statements.push(...(catalog.addons ?? []).map((addon) => upsertAddonSql({ catalog, addon })));
+    statements.push(
+      ...(catalog.addonPrices ?? []).map((price) => upsertAddonPriceSql({ catalog, price })),
+    );
     statements.push(
       ...catalog.entitlementRules.map((rule) => upsertEntitlementRuleSql({ catalog, rule })),
+    );
+    statements.push(
+      ...(catalog.addonEntitlementRules ?? []).map((rule) =>
+        upsertAddonEntitlementRuleSql({ catalog, rule }),
+      ),
     );
     statements.push(
       ...catalog.redirectTemplates.map((template) =>

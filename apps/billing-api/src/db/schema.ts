@@ -284,6 +284,49 @@ export const billingPrice = sqliteTable(
   ],
 );
 
+export const billingAddon = sqliteTable(
+  'billing_addon',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    productId: text('product_id').references(() => billingProduct.id, { onDelete: 'set null' }),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    active: integer('active', { mode: 'boolean' }).default(true).notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [uniqueIndex('billing_addon_app_code_uidx').on(table.appId, table.code)],
+);
+
+export const billingAddonPrice = sqliteTable(
+  'billing_addon_price',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    addonId: text('addon_id')
+      .notNull()
+      .references(() => billingAddon.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    interval: text('interval'),
+    provider: text('provider').default('stripe').notNull(),
+    providerPriceId: text('provider_price_id'),
+    currency: text('currency').default('jpy').notNull(),
+    unitAmount: integer('unit_amount'),
+    active: integer('active', { mode: 'boolean' }).default(true).notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_addon_price_app_code_uidx').on(table.appId, table.code),
+    uniqueIndex('billing_addon_price_provider_uidx').on(table.provider, table.providerPriceId),
+  ],
+);
+
 export const billingEntitlementRule = sqliteTable(
   'billing_entitlement_rule',
   {
@@ -303,6 +346,31 @@ export const billingEntitlementRule = sqliteTable(
     uniqueIndex('billing_entitlement_rule_plan_key_uidx').on(
       table.appId,
       table.planCode,
+      table.entitlementKey,
+    ),
+  ],
+);
+
+export const billingAddonEntitlementRule = sqliteTable(
+  'billing_addon_entitlement_rule',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    addonCode: text('addon_code').notNull(),
+    entitlementKey: text('entitlement_key').notNull(),
+    valueType: text('value_type').default('number').notNull(),
+    valueJson: text('value_json').default('1').notNull(),
+    aggregation: text('aggregation').default('increment').notNull(),
+    active: integer('active', { mode: 'boolean' }).default(true).notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_addon_entitlement_rule_addon_key_uidx').on(
+      table.appId,
+      table.addonCode,
       table.entitlementKey,
     ),
   ],

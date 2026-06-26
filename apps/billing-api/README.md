@@ -18,7 +18,7 @@ Billing API は契約状態と利用権限を返します。
 - Stripe Checkout、支払い方法登録、Customer Portal への handoff
 - Stripe billing webhook の署名確認、受領記録、契約・利用権限への反映
 - Stripe invoice/payment webhook の請求イベント履歴への反映と参照
-- product billing catalog からの plan、price、entitlement rule seed SQL 生成
+- product billing catalog からの plan、price、addon、entitlement rule seed SQL 生成
 
 Stripe webhook は、Checkout 完了、Subscription lifecycle、Invoice finalized/paid/payment succeeded/payment failed/payment action required を処理します。
 Price が catalog に存在しない場合は `priceResolution: "unknown"` として保存し、利用権限は空にします。
@@ -95,13 +95,15 @@ VALUES (
 
 有料プランの Checkout には、`billing_plan` と `billing_price` の登録も必要です。
 `billing_price.provider_price_id` には Stripe Price ID を保存します。
+スタッフ数や店舗数の追加購入に使う addon catalog は、`billing_addon`、`billing_addon_price`、`billing_addon_entitlement_rule` に保存します。
+subscription item の同期と addon entitlement の合成は後続実装です。
 catalog seed SQL は `packages/product-billing-config` から生成します。
 
 ```bash
 pnpm --filter @apps/billing-api run catalog:seed:sql -- --app reserve
 ```
 
-`STRIPE_PREMIUM_MONTHLY_PRICE_ID` と `STRIPE_PREMIUM_YEARLY_PRICE_ID` を設定して実行すると、Stripe Price ID も SQL に含まれます。
+`STRIPE_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_YEARLY_PRICE_ID`、`STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID`、`STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID` を設定して実行すると、Stripe Price ID も SQL に含まれます。
 API credential はこの seed では生成しません。
 
 ## API credential
@@ -210,7 +212,7 @@ pnpm --filter @apps/billing-api exec wrangler secret put STRIPE_WEBHOOK_SECRET
 
 - Worker: `apps/billing-api/src/worker.ts`
 - DB schema: `apps/billing-api/src/db/schema.ts`
-- Migrations: `apps/billing-api/drizzle/0001_billing_api_initial.sql`, `apps/billing-api/drizzle/0002_billing_operation_attempt.sql`, `apps/billing-api/drizzle/0003_subscription_price_resolution.sql`, `apps/billing-api/drizzle/0004_billing_invoice_event.sql`
+- Migrations: `apps/billing-api/drizzle/0001_billing_api_initial.sql`, `apps/billing-api/drizzle/0002_billing_operation_attempt.sql`, `apps/billing-api/drizzle/0003_subscription_price_resolution.sql`, `apps/billing-api/drizzle/0004_billing_invoice_event.sql`, `apps/billing-api/drizzle/0005_billing_addon_catalog.sql`
 - Client: `packages/billing-client`
 - Shared types: `packages/billing-types`
 - Product billing config: `packages/product-billing-config`

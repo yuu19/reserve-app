@@ -46,6 +46,54 @@ export const reserveBillingCatalog = {
       lookupKey: 'wakureserve_premium_yearly',
     },
   ],
+  addons: [
+    {
+      code: 'staff_seat',
+      name: 'Staff seat add-on',
+      productCode: 'reserve_premium',
+    },
+    {
+      code: 'shop_slot',
+      name: 'Shop slot add-on',
+      productCode: 'reserve_premium',
+    },
+  ],
+  addonPrices: [
+    {
+      code: 'staff_seat_monthly',
+      addonCode: 'staff_seat',
+      interval: 'month',
+      currency: 'jpy',
+      unitAmount: 500,
+      providerPriceEnvVar: 'STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID',
+      lookupKey: 'wakureserve_staff_seat_monthly',
+    },
+    {
+      code: 'shop_slot_monthly',
+      addonCode: 'shop_slot',
+      interval: 'month',
+      currency: 'jpy',
+      unitAmount: 1000,
+      providerPriceEnvVar: 'STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID',
+      lookupKey: 'wakureserve_shop_slot_monthly',
+    },
+  ],
+  addonEntitlementRules: [
+    {
+      addonCode: 'staff_seat',
+      entitlementKey: 'staffLimit',
+      valueType: 'number',
+      value: 1,
+      aggregation: 'increment',
+    },
+    {
+      addonCode: 'shop_slot',
+      entitlementKey: 'shopLimit',
+      valueType: 'number',
+      value: 1,
+      aggregation: 'increment',
+    },
+  ],
   entitlementRules: reservePremiumFeatures.map((feature) => ({
     planCode: 'premium',
     entitlementKey: feature.key,

@@ -1,4 +1,5 @@
 export type ProductBillingValueType = 'boolean' | 'number' | 'string' | 'json' | 'none';
+export type ProductBillingAddonAggregation = 'increment' | 'override';
 
 export type ProductBillingCatalog = {
   app: {
@@ -23,6 +24,27 @@ export type ProductBillingCatalog = {
     unitAmount: number;
     providerPriceEnvVar: string;
     lookupKey: string;
+  }>;
+  addons: Array<{
+    code: string;
+    name: string;
+    productCode: string;
+  }>;
+  addonPrices: Array<{
+    code: string;
+    addonCode: string;
+    interval: 'month' | 'year';
+    currency: string;
+    unitAmount: number;
+    providerPriceEnvVar: string;
+    lookupKey: string;
+  }>;
+  addonEntitlementRules: Array<{
+    addonCode: string;
+    entitlementKey: string;
+    valueType: ProductBillingValueType;
+    value: unknown;
+    aggregation: ProductBillingAddonAggregation;
   }>;
   entitlementRules: Array<{
     planCode: string;

@@ -219,6 +219,8 @@ Stripe に手続きを渡す操作では、API レベルの冪等性と別に、
 
 プラン、価格、addon、entitlement rule は、初期は code / seed 管理にします。
 実行時の参照元は Billing API の DB です。
+addon catalog は、スタッフ数や店舗数の追加購入を表現できるように、addon、addon price、addon entitlement rule を分けて持ちます。
+addon の subscription item 同期と entitlement 合成は、catalog の土台を作った後に接続します。
 
 これにより、デプロイ済み API は DB の catalog を見て契約状態を判定できます。
 一方で、管理画面から自由に価格を変えるような運用は初期対象外にします。
@@ -308,6 +310,8 @@ packages/billing-types
 - subscription
 - plan
 - addon
+- addon price
+- addon entitlement rule
 - Stripe billing webhook
 - entitlements
 - checkout session
