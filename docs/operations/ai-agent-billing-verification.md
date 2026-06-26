@@ -48,6 +48,11 @@ BILLING_E2E_ENABLED=true pnpm --filter @repo/e2e test:e2e:billing
 
 このレイヤーを、契約状態遷移の自動確認の正本にします。
 成功更新、支払い失敗、支払い方法の復旧、同じ Stripe event の再送は、この E2E の結果を優先します。
+Billing API の Test Clock scenario だけを確認する場合は、次の dedicated spec を使います。
+
+```bash
+BILLING_E2E_ENABLED=true pnpm --filter @repo/e2e test:e2e:billing-api-clock
+```
 
 ### UI agent / Webwright
 

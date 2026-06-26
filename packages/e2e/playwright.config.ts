@@ -7,6 +7,8 @@ import { defineConfig, devices } from '@playwright/test';
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const e2eRoot = fileURLToPath(new URL('.', import.meta.url));
 const backendEnvFile = path.join(os.tmpdir(), 'reserve-app-backend-e2e.vars');
+const billingApiEnvFile = path.join(os.tmpdir(), 'reserve-app-billing-api-e2e.vars');
+const wranglerE2eConfigHome = path.join(repoRoot, '.wrangler/e2e/config');
 const billingE2eRequested =
   process.env.BILLING_E2E_ENABLED === 'true' ||
   process.argv.some((argument) => argument.includes('tests/e2e/billing'));
@@ -86,6 +88,20 @@ export default defineConfig({
   },
   webServer: billingE2eRequested
     ? [
+        {
+          command:
+            'node packages/e2e/scripts/prepare-billing-api-e2e.mjs && pnpm --filter @apps/billing-api exec wrangler dev --local --port 3010 --persist-to ../../.wrangler/e2e --env-file ' +
+            billingApiEnvFile +
+            ' --show-interactive-dev-session=false',
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            XDG_CONFIG_HOME: wranglerE2eConfigHome,
+          },
+          url: 'http://localhost:3010/api/health',
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+        },
         {
           command: 'pnpm --filter @apps/backend run dev:e2e:stripe',
           cwd: repoRoot,

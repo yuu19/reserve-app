@@ -177,12 +177,18 @@ Stripe 課金 E2E は、実際の Stripe test mode と Test Clock を使って�
 
 実行には Stripe test mode のキーと Premium 価格 ID が必要。  
 支払い失敗対応では、成功更新、支払い失敗、支払い方法の復旧、同じ Stripe event の複数回再送をまとめて確認する。
+Billing API の Test Clock scenario だけを確認する場合は次を実行する。
+
+```bash
+pnpm --filter @repo/e2e test:e2e:billing-api-clock
+```
 
 実装メモ:
 
 - 秘密情報は GitHub Secrets の `STRIPE_E2E_SECRET_KEY`、`STRIPE_E2E_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_E2E_PREMIUM_YEARLY_PRICE_ID` に置く。
 - webhook 署名の検証値を明示したい場合は `STRIPE_E2E_WEBHOOK_SECRET` を置く。
 - CI では既存の `STRIPE_SECRET_KEY`、`STRIPE_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_YEARLY_PRICE_ID`、`E2E_STRIPE_WEBHOOK_SECRET` へ割り当てて実行する。
+- Billing API 用の local D1 migration、catalog seed、`billing:test_clock` scope 付き API key は `packages/e2e/scripts/prepare-billing-api-e2e.mjs` が準備する。
 - 実行時は `BILLING_E2E_ENABLED=true` を明示する。秘密情報がない環境ではこの E2E を必須 CI にしない。
 
 ### Mobile

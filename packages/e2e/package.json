@@ -1,18 +1,19 @@
 {
-	"name": "@repo/e2e",
-	"private": true,
-	"version": "0.0.0",
-	"type": "module",
-	"scripts": {
-		"test:e2e": "playwright test",
-		"test:e2e:billing": "playwright test --config=playwright.config.ts tests/e2e/billing",
-		"test:e2e:ui": "playwright test --ui",
-		"test:e2e:headed": "playwright test --headed",
-		"clean:e2e": "rm -rf test-results playwright-report ../../.wrangler/e2e"
-	},
-	"devDependencies": {
-		"@playwright/test": "^1.59.1",
-		"@types/node": "^24",
-		"playwright": "^1.59.1"
-	}
+  "name": "@repo/e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:billing": "playwright test --config=playwright.config.ts tests/e2e/billing",
+    "test:e2e:billing-api-clock": "playwright test --config=playwright.config.ts tests/e2e/billing/billing-api-test-clock-scenario.spec.ts",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "clean:e2e": "rm -rf test-results playwright-report ../../.wrangler/e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^24",
+    "playwright": "^1.59.1"
+  }
 }

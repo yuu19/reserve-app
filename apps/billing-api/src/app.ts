@@ -1202,6 +1202,7 @@ const replaceEntitlementsFromRules = async ({
   planCode,
   source,
   reason,
+  validFrom,
   validUntil,
 }: {
   db: BillingApiDatabase;
@@ -1211,6 +1212,7 @@ const replaceEntitlementsFromRules = async ({
   planCode: string;
   source: 'trial' | 'paid';
   reason: string;
+  validFrom?: Date | null;
   validUntil: Date | null;
 }) => {
   const timestamp = now();
@@ -1237,25 +1239,26 @@ const replaceEntitlementsFromRules = async ({
     return;
   }
 
-  await db.insert(dbSchema.billingEntitlement).values(
-    rules.map((rule) => ({
-      id: createId(),
-      appId,
-      subjectRowId,
-      billingAccountId: accountId,
-      key: rule.entitlementKey,
-      active: true,
-      valueType: rule.valueType,
-      valueJson: rule.valueJson,
-      source,
-      reason,
-      validFrom: timestamp,
-      validUntil,
-      generatedAt: timestamp,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })),
-  );
+  const entitlementRows = rules.map((rule) => ({
+    id: createId(),
+    appId,
+    subjectRowId,
+    billingAccountId: accountId,
+    key: rule.entitlementKey,
+    active: true,
+    valueType: rule.valueType,
+    valueJson: rule.valueJson,
+    source,
+    reason,
+    validFrom: validFrom ?? timestamp,
+    validUntil,
+    generatedAt: timestamp,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }));
+  for (let index = 0; index < entitlementRows.length; index += 5) {
+    await db.insert(dbSchema.billingEntitlement).values(entitlementRows.slice(index, index + 5));
+  }
 };
 
 const clearEntitlements = async ({
@@ -3385,6 +3388,7 @@ const syncEntitlementsForSubscription = async ({
       planCode,
       source: 'trial',
       reason: 'stripe_subscription_trialing',
+      validFrom: subscription.trialStart ?? subscription.currentPeriodStart,
       validUntil: subscription.trialEnd ?? subscription.currentPeriodEnd,
     });
     return;
@@ -3398,6 +3402,7 @@ const syncEntitlementsForSubscription = async ({
       planCode,
       source: 'paid',
       reason: 'stripe_subscription_active',
+      validFrom: subscription.currentPeriodStart,
       validUntil: subscription.currentPeriodEnd,
     });
     return;

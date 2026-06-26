@@ -9,6 +9,13 @@ import { expect } from '@playwright/test';
  * E2E 専用 helper として使う。
  */
 export const backendUrl = process.env.PUBLIC_BACKEND_URL?.trim() || 'http://localhost:3000';
+/** Billing API Test Clock scenario E2E が直接呼び出す Billing API base URL。 */
+export const billingApiUrl =
+  process.env.BILLING_API_E2E_BASE_URL?.trim() || 'http://localhost:3010';
+/** Billing API E2E seed が作る test-clock scope 付き raw API key。 */
+export const billingApiKey =
+  process.env.BILLING_API_E2E_KEY?.trim() ||
+  'rbk_test_e2e_billing_api_test_clock_secret_000000000000000000000000';
 /** Backend の Stripe webhook endpoint へ replay payload を送るための signing secret。 */
 export const webhookSecret =
   process.env.STRIPE_WEBHOOK_SECRET?.trim() ||
@@ -44,7 +51,7 @@ type StripeSubscription = {
   };
 };
 
-type StripeEvent = {
+export type StripeEvent = {
   id: string;
   type: string;
   created: number;
@@ -95,6 +102,72 @@ type BillingActionEnvelope = {
   status: 'succeeded' | 'processing' | 'conflict' | 'failed';
   message: string | null;
   billing: BillingPayload | null;
+};
+
+type BillingApiSubjectInput = {
+  subjectType: string;
+  subjectId: string;
+};
+
+export type BillingApiSummaryPayload = {
+  subject: {
+    subjectType: string;
+    subjectId: string;
+  };
+  account: {
+    providerCustomerId: string | null;
+  };
+  subscription: {
+    providerSubscriptionId: string | null;
+    planCode: string;
+    status: string;
+    trialEnd: string | null;
+  } | null;
+  entitlements: {
+    planCode: string;
+    status: string;
+    features: Record<string, unknown>;
+    entitlements: unknown[];
+    evaluatedAt: string;
+    timeSource: 'server' | 'stripe_test_clock';
+  };
+};
+
+export type BillingApiTestClockScenarioPayload = {
+  scenarioId: string;
+  scenarioType: 'trial_expired_without_payment_method';
+  status: 'ready' | 'advancing' | 'failed' | 'deleted' | 'unknown';
+  providerTestClockId: string;
+  providerCustomerId: string | null;
+  providerSubscriptionId: string | null;
+  frozenTime: string;
+  targetFrozenTime: string | null;
+  sourceSubject: BillingApiSubjectInput;
+  testSubject: BillingApiSubjectInput;
+  summary: BillingApiSummaryPayload;
+};
+
+const billingApiHeaders = (idempotencyKey?: string) => ({
+  authorization: `Bearer ${billingApiKey}`,
+  ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}),
+});
+
+const billingApiSubjectPath = ({ subjectType, subjectId }: BillingApiSubjectInput) =>
+  `${billingApiUrl}/api/v1/apps/reserve/subjects/${encodeURIComponent(
+    subjectType,
+  )}/${encodeURIComponent(subjectId)}`;
+
+const billingApiTestSubjectPath = ({ subjectType, subjectId }: BillingApiSubjectInput) =>
+  `${billingApiUrl}/api/v1/test/apps/reserve/subjects/${encodeURIComponent(
+    subjectType,
+  )}/${encodeURIComponent(subjectId)}`;
+
+const expectStatus = async (
+  response: { status: () => number; text: () => Promise<string> },
+  status: number,
+) => {
+  const responseText = response.status() === status ? '' : await response.text().catch(() => '');
+  expect(response.status(), responseText).toBe(status);
 };
 
 /**
@@ -542,6 +615,185 @@ export const replayStripeEventsRepeatedly = async ({
   for (let index = 0; index < repeatCount; index += 1) {
     await replayStripeEvents(request, events);
   }
+};
+
+/**
+ * Stripe events を Billing API webhook endpoint に replay する。
+ *
+ * @param request - Billing API webhook endpoint を呼び出す Playwright request context。
+ * @param events - replay 対象の Stripe events。
+ */
+export const replayStripeEventsToBillingApi = async (
+  request: APIRequestContext,
+  events: StripeEvent[],
+): Promise<void> => {
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (seen.has(event.id)) {
+      continue;
+    }
+    seen.add(event.id);
+    const payload = JSON.stringify(event);
+    const response = await request.post(`${billingApiUrl}/api/v1/webhooks/stripe/billing`, {
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': signStripeWebhookPayload(payload),
+      },
+      data: payload,
+    });
+    expect(response.status(), `${event.type} Billing API webhook should be accepted`).toBe(200);
+  }
+};
+
+export const replayStripeEventsToBillingApiRepeatedly = async ({
+  request,
+  events,
+  repeatCount = 5,
+}: {
+  request: APIRequestContext;
+  events: StripeEvent[];
+  repeatCount?: number;
+}) => {
+  for (let index = 0; index < repeatCount; index += 1) {
+    await replayStripeEventsToBillingApi(request, events);
+  }
+};
+
+/**
+ * Billing API E2E 用の source subject を同期する。
+ *
+ * @param input - source subject の識別子と表示名。
+ * @param input.request - Billing API を呼び出す Playwright request context。
+ * @param input.subjectId - source subject id。
+ * @param input.displayName - Billing API に同期する表示名。
+ */
+export const syncBillingApiSubject = async ({
+  request,
+  subjectId,
+  displayName,
+}: {
+  request: APIRequestContext;
+  subjectId: string;
+  displayName: string;
+}) => {
+  const response = await request.put(
+    billingApiSubjectPath({ subjectType: 'organization', subjectId }),
+    {
+      headers: {
+        ...billingApiHeaders(`billing-api-e2e-sync-${subjectId}`),
+        'content-type': 'application/json',
+      },
+      data: {
+        displayName,
+        billingEmail: `${subjectId}@example.com`,
+        billingName: displayName,
+        metadata: {
+          source: 'billing-api-test-clock-e2e',
+        },
+      },
+    },
+  );
+  await expectStatus(response, 200);
+  return (await response.json()) as BillingApiSummaryPayload;
+};
+
+export const createBillingApiTestClockScenario = async ({
+  request,
+  subjectId,
+  frozenTime,
+  trialDays = 1,
+}: {
+  request: APIRequestContext;
+  subjectId: string;
+  frozenTime: string;
+  trialDays?: number;
+}) => {
+  const response = await request.post(
+    `${billingApiTestSubjectPath({
+      subjectType: 'organization',
+      subjectId,
+    })}/clock-scenarios`,
+    {
+      headers: {
+        ...billingApiHeaders(`billing-api-e2e-create-scenario-${subjectId}`),
+        'content-type': 'application/json',
+      },
+      data: {
+        scenarioType: 'trial_expired_without_payment_method',
+        frozenTime,
+        planCode: 'premium',
+        interval: 'month',
+        trialDays,
+        actor: {
+          type: 'system',
+          id: 'billing-api-e2e',
+          email: 'billing-api-e2e@example.com',
+        },
+      },
+    },
+  );
+  await expectStatus(response, 200);
+  return (await response.json()) as BillingApiTestClockScenarioPayload;
+};
+
+export const advanceBillingApiTestClockScenario = async ({
+  request,
+  sourceSubject,
+  scenarioId,
+  frozenTime,
+}: {
+  request: APIRequestContext;
+  sourceSubject: BillingApiSubjectInput;
+  scenarioId: string;
+  frozenTime: string;
+}) => {
+  const response = await request.post(
+    `${billingApiTestSubjectPath(sourceSubject)}/clock-scenarios/${encodeURIComponent(
+      scenarioId,
+    )}/advance`,
+    {
+      headers: {
+        ...billingApiHeaders(`billing-api-e2e-advance-scenario-${scenarioId}`),
+        'content-type': 'application/json',
+      },
+      data: { frozenTime },
+    },
+  );
+  await expectStatus(response, 200);
+  return (await response.json()) as BillingApiTestClockScenarioPayload;
+};
+
+export const readBillingApiTestClockScenario = async ({
+  request,
+  sourceSubject,
+  scenarioId,
+}: {
+  request: APIRequestContext;
+  sourceSubject: BillingApiSubjectInput;
+  scenarioId: string;
+}) => {
+  const response = await request.get(
+    `${billingApiTestSubjectPath(sourceSubject)}/clock-scenarios/${encodeURIComponent(scenarioId)}`,
+    {
+      headers: billingApiHeaders(),
+    },
+  );
+  await expectStatus(response, 200);
+  return (await response.json()) as BillingApiTestClockScenarioPayload;
+};
+
+export const readBillingApiSummary = async ({
+  request,
+  subject,
+}: {
+  request: APIRequestContext;
+  subject: BillingApiSubjectInput;
+}) => {
+  const response = await request.get(`${billingApiSubjectPath(subject)}/summary`, {
+    headers: billingApiHeaders(),
+  });
+  await expectStatus(response, 200);
+  return (await response.json()) as BillingApiSummaryPayload;
 };
 
 /**
