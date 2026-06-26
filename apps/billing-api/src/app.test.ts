@@ -3,6 +3,7 @@ import {
   buildBillingApiFeatures,
   createBillingApiApp,
   isSupportedStripeBillingEventType,
+  readStripeInvoiceEventSnapshot,
   readStripeSubscriptionSnapshot,
 } from './app.js';
 
@@ -113,5 +114,30 @@ describe('createBillingApiApp', () => {
   test('supports invoice finalized webhook as a billing event', () => {
     expect(isSupportedStripeBillingEventType('invoice.finalized')).toBe(true);
     expect(isSupportedStripeBillingEventType('customer.subscription.trial_will_end')).toBe(false);
+  });
+
+  test('normalizes Stripe invoice payload for invoice event history', () => {
+    const snapshot = readStripeInvoiceEventSnapshot({
+      eventType: 'invoice.payment_failed',
+      eventCreatedAt: new Date('2026-06-26T00:00:00.000Z'),
+      invoice: {
+        id: 'in_123',
+        status: 'open',
+        payment_intent: 'pi_123',
+        hosted_invoice_url: 'https://pay.stripe.test/invoice',
+        invoice_pdf: 'https://pay.stripe.test/invoice.pdf',
+      },
+    });
+
+    expect(snapshot).toEqual({
+      eventType: 'payment_failed',
+      ownerFacingStatus: 'failed',
+      providerInvoiceId: 'in_123',
+      providerPaymentIntentId: 'pi_123',
+      providerStatus: 'open',
+      hostedInvoiceUrl: 'https://pay.stripe.test/invoice',
+      invoicePdfUrl: 'https://pay.stripe.test/invoice.pdf',
+      occurredAt: new Date('2026-06-26T00:00:00.000Z'),
+    });
   });
 });

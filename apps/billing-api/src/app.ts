@@ -2089,6 +2089,29 @@ type StripeSubscriptionSnapshot = {
   metadata: StripeBillingMetadata;
 };
 
+type BillingInvoiceEventType =
+  | 'invoice_available'
+  | 'payment_succeeded'
+  | 'payment_failed'
+  | 'payment_action_required';
+
+type BillingInvoiceEventOwnerFacingStatus =
+  | 'available'
+  | 'succeeded'
+  | 'failed'
+  | 'action_required';
+
+type StripeInvoiceEventSnapshot = {
+  eventType: BillingInvoiceEventType;
+  ownerFacingStatus: BillingInvoiceEventOwnerFacingStatus;
+  providerInvoiceId: string | null;
+  providerPaymentIntentId: string | null;
+  providerStatus: string | null;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+  occurredAt: Date | null;
+};
+
 const supportedStripeBillingEventTypes = new Set([
   'checkout.session.completed',
   'customer.subscription.created',
@@ -2103,6 +2126,39 @@ const supportedStripeBillingEventTypes = new Set([
 
 export const isSupportedStripeBillingEventType = (eventType: string): boolean =>
   supportedStripeBillingEventTypes.has(eventType);
+
+const resolveStripeInvoiceEventMapping = (
+  eventType: string,
+): {
+  eventType: BillingInvoiceEventType;
+  ownerFacingStatus: BillingInvoiceEventOwnerFacingStatus;
+} | null => {
+  switch (eventType) {
+    case 'invoice.finalized':
+    case 'invoice.paid':
+      return {
+        eventType: 'invoice_available',
+        ownerFacingStatus: 'available',
+      };
+    case 'invoice.payment_succeeded':
+      return {
+        eventType: 'payment_succeeded',
+        ownerFacingStatus: 'succeeded',
+      };
+    case 'invoice.payment_failed':
+      return {
+        eventType: 'payment_failed',
+        ownerFacingStatus: 'failed',
+      };
+    case 'invoice.payment_action_required':
+      return {
+        eventType: 'payment_action_required',
+        ownerFacingStatus: 'action_required',
+      };
+    default:
+      return null;
+  }
+};
 
 const readStripeMetadata = (value: unknown): Record<string, string> => {
   const metadata = readObject(value);
@@ -2211,6 +2267,36 @@ const readStripeInvoiceSubscriptionId = (invoice: Record<string, unknown>): stri
   const parent = readObject(invoice.parent);
   const subscriptionDetails = readObject(parent.subscription_details);
   return readStripeExpandableId(subscriptionDetails.subscription);
+};
+
+export const readStripeInvoiceEventSnapshot = ({
+  eventType,
+  invoice,
+  eventCreatedAt,
+}: {
+  eventType: string;
+  invoice: unknown;
+  eventCreatedAt?: Date | null;
+}): StripeInvoiceEventSnapshot | null => {
+  const mapping = resolveStripeInvoiceEventMapping(eventType);
+  if (!mapping) {
+    return null;
+  }
+  const payload = readObject(invoice);
+  const providerInvoiceId = readString(payload.id);
+  if (!providerInvoiceId) {
+    return null;
+  }
+  return {
+    eventType: mapping.eventType,
+    ownerFacingStatus: mapping.ownerFacingStatus,
+    providerInvoiceId,
+    providerPaymentIntentId: readStripeExpandableId(payload.payment_intent),
+    providerStatus: readString(payload.status),
+    hostedInvoiceUrl: readString(payload.hosted_invoice_url),
+    invoicePdfUrl: readString(payload.invoice_pdf),
+    occurredAt: toDateFromUnixSeconds(payload.created) ?? eventCreatedAt ?? null,
+  };
 };
 
 const readStripeCheckoutSubscriptionId = (session: Record<string, unknown>): string | null =>
@@ -2496,14 +2582,17 @@ const upsertSubscriptionFromStripe = async ({
     updatedAt: timestamp,
   };
 
+  let subscriptionRowId: string;
   if (bundle.subscription) {
     await db
       .update(dbSchema.billingSubscription)
       .set(values)
       .where(eq(dbSchema.billingSubscription.id, bundle.subscription.id));
+    subscriptionRowId = bundle.subscription.id;
   } else {
+    subscriptionRowId = createId();
     await db.insert(dbSchema.billingSubscription).values({
-      id: createId(),
+      id: subscriptionRowId,
       ...values,
       createdAt: timestamp,
     });
@@ -2516,7 +2605,83 @@ const upsertSubscriptionFromStripe = async ({
     planCode,
     priceResolution,
   });
-  return { priceResolution };
+  return { priceResolution, subscriptionRowId };
+};
+
+const upsertInvoiceEventFromStripe = async ({
+  db,
+  bundle,
+  eventId,
+  eventType,
+  eventCreatedAt,
+  object,
+  providerCustomerId,
+  providerSubscriptionId,
+  subscriptionRowId,
+}: {
+  db: BillingApiDatabase;
+  bundle: NonNullable<Awaited<ReturnType<typeof readSubjectBundle>>>;
+  eventId: string;
+  eventType: string;
+  eventCreatedAt: Date | null;
+  object: Record<string, unknown>;
+  providerCustomerId: string | null;
+  providerSubscriptionId: string | null;
+  subscriptionRowId: string | null;
+}) => {
+  const invoiceEvent = readStripeInvoiceEventSnapshot({
+    eventType,
+    invoice: object,
+    eventCreatedAt,
+  });
+  if (!invoiceEvent) {
+    return;
+  }
+  const timestamp = now();
+  await db
+    .insert(dbSchema.billingInvoiceEvent)
+    .values({
+      id: createId(),
+      appId: bundle.subject.appId,
+      billingAccountId: bundle.account.id,
+      billingSubscriptionId: subscriptionRowId,
+      provider: 'stripe',
+      providerEventId: eventId,
+      eventType: invoiceEvent.eventType,
+      providerCustomerId,
+      providerSubscriptionId,
+      providerInvoiceId: invoiceEvent.providerInvoiceId,
+      providerPaymentIntentId: invoiceEvent.providerPaymentIntentId,
+      providerStatus: invoiceEvent.providerStatus,
+      ownerFacingStatus: invoiceEvent.ownerFacingStatus,
+      hostedInvoiceUrl: invoiceEvent.hostedInvoiceUrl,
+      invoicePdfUrl: invoiceEvent.invoicePdfUrl,
+      occurredAt: invoiceEvent.occurredAt,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .onConflictDoUpdate({
+      target: [
+        dbSchema.billingInvoiceEvent.provider,
+        dbSchema.billingInvoiceEvent.providerEventId,
+        dbSchema.billingInvoiceEvent.eventType,
+      ],
+      set: {
+        appId: bundle.subject.appId,
+        billingAccountId: bundle.account.id,
+        billingSubscriptionId: subscriptionRowId,
+        providerCustomerId,
+        providerSubscriptionId,
+        providerInvoiceId: invoiceEvent.providerInvoiceId,
+        providerPaymentIntentId: invoiceEvent.providerPaymentIntentId,
+        providerStatus: invoiceEvent.providerStatus,
+        ownerFacingStatus: invoiceEvent.ownerFacingStatus,
+        hostedInvoiceUrl: invoiceEvent.hostedInvoiceUrl,
+        invoicePdfUrl: invoiceEvent.invoicePdfUrl,
+        occurredAt: invoiceEvent.occurredAt,
+        updatedAt: timestamp,
+      },
+    });
 };
 
 const markProviderEvent = async ({
@@ -2663,6 +2828,7 @@ const handleStripeBillingWebhookEvent = async ({
   const payload = readObject(safeJsonParse(rawBody, {}));
   const eventId = readString(payload.id) ?? `unknown_${createId()}`;
   const eventType = readString(payload.type) ?? 'unknown';
+  const eventCreatedAt = toDateFromUnixSeconds(payload.created);
   const payloadHash = await sha256Hex(rawBody);
   const claim = await claimProviderEvent({ db, eventId, eventType, payloadHash });
   if (claim === 'duplicate') {
@@ -2763,6 +2929,17 @@ const handleStripeBillingWebhookEvent = async ({
   }
 
   const syncResult = await upsertSubscriptionFromStripe({ db, bundle, subscription });
+  await upsertInvoiceEventFromStripe({
+    db,
+    bundle,
+    eventId,
+    eventType,
+    eventCreatedAt,
+    object,
+    providerCustomerId: subscription.customerId,
+    providerSubscriptionId: subscription.id,
+    subscriptionRowId: syncResult.subscriptionRowId,
+  });
   const warning =
     syncResult.priceResolution === 'unknown' ? 'stripe_price_id_not_in_catalog' : undefined;
   await markProviderEvent({

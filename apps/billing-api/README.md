@@ -17,9 +17,10 @@ Billing API は契約状態と利用権限を返します。
 - 書き込み API の `Idempotency-Key`
 - Stripe Checkout、支払い方法登録、Customer Portal への handoff
 - Stripe billing webhook の署名確認、受領記録、契約・利用権限への反映
+- Stripe invoice/payment webhook の請求イベント履歴への反映
 - product billing catalog からの plan、price、entitlement rule seed SQL 生成
 
-Stripe webhook は、Checkout 完了、Subscription lifecycle、Invoice paid/payment succeeded/payment failed/payment action required を処理します。
+Stripe webhook は、Checkout 完了、Subscription lifecycle、Invoice finalized/paid/payment succeeded/payment failed/payment action required を処理します。
 Price が catalog に存在しない場合は `priceResolution: "unknown"` として保存し、利用権限は空にします。
 課金対象を解決できない webhook は warning として保存し、Stripe には 200 を返します。
 

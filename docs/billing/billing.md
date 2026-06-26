@@ -287,6 +287,7 @@ Stripe と連携済みの契約全体も、日次で照合する。
 - 署名検証: [`apps/backend/src/infra/payment/stripe.ts`](../../apps/backend/src/infra/payment/stripe.ts)
 - Stripe 通知の同期: [`apps/billing-api/src/app.ts`](../../apps/billing-api/src/app.ts)
 - Stripe 通知の処理履歴: [`billing_provider_event`](../../apps/billing-api/src/db/schema.ts)
+- 請求書・支払いイベント履歴: [`billing_invoice_event`](../../apps/billing-api/src/db/schema.ts)
 - 対象限定照合: [`reconcileRiskyOrganizationBillingStates`](../../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
 - 全体照合: [`reconcileProviderLinkedOrganizationBillingStates`](../../apps/backend/src/domain/billing/organization-billing-maintenance.ts)
 - scheduled handler: [`apps/backend/src/worker.ts`](../../apps/backend/src/worker.ts)
@@ -327,7 +328,7 @@ owner は、Stripe が提供する請求書または領収書の参照を契約�
 
 実装メモ:
 
-- 請求書・支払いイベント履歴: [`billing_invoice_event`](../../apps/backend/src/infra/db/schema.ts)
+- 請求書・支払いイベント履歴の正本: [`billing_invoice_event`](../../apps/billing-api/src/db/schema.ts)
 - 請求書・領収書の参照: [`billing_document_reference`](../../apps/backend/src/infra/db/schema.ts)
 - 請求書・領収書の表示判定: [`apps/backend/src/domain/billing/reserve-app-billing-documents.ts`](../../apps/backend/src/domain/billing/reserve-app-billing-documents.ts)
 - 請求書・支払いイベント: [`apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts`](../../apps/backend/src/domain/billing/reserve-app-billing-invoice-events.ts)
@@ -418,7 +419,7 @@ Stripe Dashboard では、次の状態を確認する。
 
 - 組織の契約状態: [`billing_account`](../../apps/backend/src/infra/db/schema.ts)、[`billing_subscription`](../../apps/backend/src/infra/db/schema.ts)、[`billing_payment_issue`](../../apps/backend/src/infra/db/schema.ts)
 - owner 課金操作の再利用・失敗履歴: [`billing_operation_attempt`](../../apps/backend/src/infra/db/schema.ts)
-- 請求書・支払いイベント履歴: [`billing_invoice_event`](../../apps/backend/src/infra/db/schema.ts)
+- 請求書・支払いイベント履歴の正本: [`billing_invoice_event`](../../apps/billing-api/src/db/schema.ts)
 - 請求書・領収書の参照: [`billing_document_reference`](../../apps/backend/src/infra/db/schema.ts)
 - Stripe 通知の処理履歴: [`billing_provider_event`](../../apps/backend/src/infra/db/schema.ts)
 - owner 向け通知履歴: [`billing_notification`](../../apps/backend/src/infra/db/schema.ts)

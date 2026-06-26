@@ -182,6 +182,48 @@ export const billingEntitlement = sqliteTable(
   ],
 );
 
+export const billingInvoiceEvent = sqliteTable(
+  'billing_invoice_event',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    billingAccountId: text('billing_account_id')
+      .notNull()
+      .references(() => billingAccount.id, { onDelete: 'cascade' }),
+    billingSubscriptionId: text('billing_subscription_id').references(
+      () => billingSubscription.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
+    provider: text('provider').default('stripe').notNull(),
+    providerEventId: text('provider_event_id'),
+    eventType: text('event_type').notNull(),
+    providerCustomerId: text('provider_customer_id'),
+    providerSubscriptionId: text('provider_subscription_id'),
+    providerInvoiceId: text('provider_invoice_id'),
+    providerPaymentIntentId: text('provider_payment_intent_id'),
+    providerStatus: text('provider_status'),
+    ownerFacingStatus: text('owner_facing_status').notNull(),
+    hostedInvoiceUrl: text('hosted_invoice_url'),
+    invoicePdfUrl: text('invoice_pdf_url'),
+    occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    index('billing_invoice_event_account_created_idx').on(table.billingAccountId, table.createdAt),
+    uniqueIndex('billing_invoice_event_provider_uidx').on(
+      table.provider,
+      table.providerEventId,
+      table.eventType,
+    ),
+    index('billing_invoice_event_invoice_idx').on(table.provider, table.providerInvoiceId),
+  ],
+);
+
 export const billingProduct = sqliteTable(
   'billing_product',
   {
