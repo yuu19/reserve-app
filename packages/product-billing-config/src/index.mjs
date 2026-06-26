@@ -1,4 +1,5 @@
 const reservePremiumFeatures = [
+  { key: 'organization.premium', valueType: 'boolean', value: true },
   { key: 'staffLimit', valueType: 'number', value: 10 },
   { key: 'shopLimit', valueType: 'number', value: 3 },
   { key: 'monthlyReservationLimit', valueType: 'number', value: 3000 },

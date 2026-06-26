@@ -1,4 +1,3 @@
-import type { BillingApiSummaryResponse } from '@repo/billing-types';
 import type { OrganizationRole } from '../../domain/booking/authorization.js';
 import { buildBillingDocumentReadiness } from '../../domain/billing/reserve-app-billing-documents.js';
 import type { ReserveAppBillingInvoiceEvent } from '../../domain/billing/reserve-app-billing-invoice-events.js';
@@ -17,12 +16,10 @@ import {
   listOrganizationBillingCatalogIntervals,
 } from './billing.catalog.js';
 import {
-  buildBillingApiOrganizationSubjectSyncRequest,
-  sha256Hex,
-  toBillingApiOrganizationSubjectInput,
   type BillingApiSummaryClientResolution,
   type BillingApiOrganizationSubject,
 } from './billing-api-client.js';
+import { hasBillingApiPremiumEntitlement, readBillingApiSummary } from './billing-api-summary.js';
 import {
   readBillingApiShadowDiagnostic,
   type BillingApiShadowClientResolution,
@@ -36,7 +33,6 @@ import {
   resolveReserveAppBillingPaymentMethodStatus,
   type ReserveAppBillingSubscriptionStatus,
 } from './policies/reserve-app-billing-policy.js';
-import { RESERVE_APP_ENTITLEMENTS } from './policies/reserve-app-entitlements.js';
 import type { ReserveAppBillingStore, ReserveAppBillingSummaryRow } from './billing.store.js';
 
 export const toIsoDateString = (value: unknown): string | null => {
@@ -185,38 +181,6 @@ const toDateOrNull = (value: unknown): Date | null => {
   return null;
 };
 
-const hasBillingApiPremiumEntitlement = (summary: BillingApiSummaryResponse): boolean =>
-  summary.entitlements.features[RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM] === true;
-
-const readBillingApiSummary = async ({
-  clientResolution,
-  subject,
-}: {
-  clientResolution: BillingApiSummaryClientResolution;
-  subject: BillingApiOrganizationSubject;
-}): Promise<BillingApiSummaryResponse | null> => {
-  if (!clientResolution.enabled) {
-    return null;
-  }
-
-  const billingSubject = toBillingApiOrganizationSubjectInput(subject);
-  const syncBody = buildBillingApiOrganizationSubjectSyncRequest({
-    subject,
-    source: 'reserve-app-backend-summary',
-    contactRole: 'current_billing_viewer',
-  });
-  const syncBodyHash = await sha256Hex(JSON.stringify(syncBody));
-
-  try {
-    await clientResolution.client.syncSubject(billingSubject, syncBody, {
-      idempotencyKey: `reserve-summary-sync:${subject.organizationId}:${syncBodyHash.slice(0, 16)}`,
-    });
-    return await clientResolution.client.readSummary(billingSubject);
-  } catch {
-    return null;
-  }
-};
-
 export const readOrganizationBillingSummaryPayload = async ({
   store,
   env,
@@ -243,6 +207,8 @@ export const readOrganizationBillingSummaryPayload = async ({
     ? await readBillingApiSummary({
         clientResolution: billingApiSummary.clientResolution,
         subject: billingApiSummary.subject,
+        contactRole: 'current_billing_viewer',
+        idempotencyKeyPrefix: 'reserve-summary-sync',
       })
     : null;
   const planCode: 'free' | 'premium' =

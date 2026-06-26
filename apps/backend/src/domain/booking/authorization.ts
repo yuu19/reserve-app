@@ -205,6 +205,11 @@ export type OrganizationEntitlementGateInput = {
   organizationId: string;
   key: string;
   now?: Date;
+  readRemoteEntitlement?: (input: {
+    organizationId: string;
+    key: string;
+    now: Date;
+  }) => Promise<boolean | null>;
 };
 
 /** Organization entitlement gate の評価結果。 */
@@ -273,6 +278,7 @@ export const readOrganizationEntitlementGate = async ({
   organizationId,
   key,
   now = new Date(),
+  readRemoteEntitlement,
 }: OrganizationEntitlementGateInput): Promise<OrganizationEntitlementGate> => {
   const policy = await readReserveAppPremiumEntitlementPolicy({
     database,
@@ -280,6 +286,24 @@ export const readOrganizationEntitlementGate = async ({
     organizationId,
     now,
   });
+
+  const remoteEntitlement = readRemoteEntitlement
+    ? await readRemoteEntitlement({ organizationId, key, now })
+    : null;
+  if (remoteEntitlement === true) {
+    return {
+      allowed: true,
+      policy,
+    };
+  }
+  if (remoteEntitlement === false) {
+    return {
+      allowed: false,
+      policy,
+      status: 403,
+      body: buildOrganizationPremiumFeatureDeniedPayload(policy),
+    };
+  }
 
   if (await hasActiveBillingEntitlement({ database, organizationId, key, now })) {
     return {
@@ -302,11 +326,13 @@ export const readOrganizationPremiumFeatureGate = async ({
   env,
   organizationId,
   now,
+  readRemoteEntitlement,
 }: {
   database: AuthRuntimeDatabase;
   env: AuthRuntimeEnv;
   organizationId: string;
   now?: Date;
+  readRemoteEntitlement?: OrganizationEntitlementGateInput['readRemoteEntitlement'];
 }): Promise<OrganizationPremiumFeatureGate> => {
   return readOrganizationEntitlementGate({
     database,
@@ -314,6 +340,7 @@ export const readOrganizationPremiumFeatureGate = async ({
     organizationId,
     key: 'organization.premium',
     now,
+    readRemoteEntitlement,
   });
 };
 

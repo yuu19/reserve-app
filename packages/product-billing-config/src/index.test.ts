@@ -25,6 +25,7 @@ describe('product billing config', () => {
         reserveBillingCatalog.entitlementRules.map((rule) => [rule.entitlementKey, rule.value]),
       ),
     ).toEqual({
+      'organization.premium': true,
       staffLimit: 10,
       shopLimit: 3,
       monthlyReservationLimit: 3000,

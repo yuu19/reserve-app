@@ -14,6 +14,7 @@ import {
 import * as dbSchema from '../../infra/db/schema.js';
 import type { ServiceImageUploadService } from '../../infra/storage/service-image-upload-service.js';
 import type { ScopedStoreRouteParams } from '../../shared/scoped-store-route.js';
+import { readBillingApiOrganizationFeatureEntitlement } from '../billing/billing-api-summary.js';
 
 /**
  * Better Auth middleware が route context に保存する user/session 変数の型です。
@@ -310,6 +311,23 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
       });
     };
 
+  const readRemoteOrganizationEntitlement = async ({
+    organizationId,
+    key,
+  }: {
+    organizationId: string;
+    key: string;
+  }) => {
+    return readBillingApiOrganizationFeatureEntitlement({
+      database,
+      env,
+      organizationId,
+      key,
+      contactRole: 'premium_feature_guard',
+      idempotencyKeyPrefix: 'reserve-feature-guard-sync',
+    });
+  };
+
   return {
     ...deps,
     requireIdentity,
@@ -327,6 +345,7 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
         database,
         env,
         organizationId,
+        readRemoteEntitlement: readRemoteOrganizationEntitlement,
       }),
     requireOrganizationEntitlement: ({ organizationId, key }) =>
       readOrganizationEntitlementGate({
@@ -334,6 +353,7 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
         env,
         organizationId,
         key,
+        readRemoteEntitlement: readRemoteOrganizationEntitlement,
       }),
   };
 };

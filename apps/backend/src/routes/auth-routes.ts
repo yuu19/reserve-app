@@ -19,6 +19,7 @@ import {
 import { syncReserveAppBillingV2DerivedState } from '../infra/billing/reserve-app-billing-v2-source.js';
 import { RESERVE_APP_ENTITLEMENTS } from '../features/billing/policies/reserve-app-billing-policy.js';
 import { registerBillingRoutes } from '../features/billing/billing.routes.js';
+import { readBillingApiOrganizationFeatureEntitlement } from '../features/billing/billing-api-summary.js';
 import * as dbSchema from '../infra/db/schema.js';
 import {
   sendOrganizationInvitationEmail,
@@ -1367,6 +1368,26 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
   const organizationLogoService = options.organizationLogoService ?? null;
   const serviceImageUploadService = options.serviceImageUploadService ?? null;
   const authRoutes = new OpenAPIHono<AuthRouteBindings>();
+  const readRemoteOrganizationPremiumEntitlement = async ({
+    organizationId,
+    key,
+  }: {
+    organizationId: string;
+    key: string;
+  }) => {
+    if (key !== RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM) {
+      return null;
+    }
+
+    return readBillingApiOrganizationFeatureEntitlement({
+      database,
+      env,
+      organizationId,
+      key,
+      contactRole: 'premium_feature_guard',
+      idempotencyKeyPrefix: 'reserve-feature-guard-sync',
+    });
+  };
   const hasCookieDomain = Boolean(env.BETTER_AUTH_COOKIE_DOMAIN?.trim());
   const appendLegacyOAuthStateCleanupCookie = (headers: Headers) => {
     if (!hasCookieDomain) {
@@ -4744,6 +4765,7 @@ export const createAuthRoutes = (auth: AuthInstance, options: CreateAuthRoutesOp
         env,
         organizationId: storeContext.organizationId,
         key: RESERVE_APP_ENTITLEMENTS.ORGANIZATION_PREMIUM,
+        readRemoteEntitlement: readRemoteOrganizationPremiumEntitlement,
       });
       if (!premiumGate.allowed) {
         return c.json(premiumGate.body, premiumGate.status);
