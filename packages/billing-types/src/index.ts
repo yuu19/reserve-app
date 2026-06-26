@@ -4,6 +4,7 @@ export type BillingApiSubjectId = string;
 export type BillingApiProvider = 'stripe';
 export type BillingApiInterval = 'month' | 'year';
 export type BillingApiPriceResolution = 'not_applicable' | 'known' | 'unknown';
+export type BillingApiCredentialScope = 'subject:write' | 'billing:read' | 'billing:write';
 
 export type BillingApiSubscriptionStatus =
   | 'free'
@@ -172,6 +173,7 @@ export type BillingApiErrorCode =
   | 'bad_request'
   | 'unauthorized'
   | 'forbidden_app'
+  | 'forbidden_scope'
   | 'subject_not_found'
   | 'idempotency_key_required'
   | 'idempotency_conflict'

@@ -2,6 +2,7 @@ import type {
   BillingApiAccount,
   BillingApiActor,
   BillingApiBillingContact,
+  BillingApiCredentialScope,
   BillingApiEntitlement,
   BillingApiEntitlementsResponse,
   BillingApiErrorCode,
@@ -40,6 +41,7 @@ type BillingApiBindings = {
 type BillingApiVariables = {
   appId: string;
   db: BillingApiDatabase;
+  credentialScopes: BillingApiCredentialScope[];
 };
 
 type BillingApiContext = Context<{
@@ -440,6 +442,32 @@ const readBearerToken = (authorization: string | undefined): string | null => {
   return token.length > 0 ? token : null;
 };
 
+const billingApiCredentialScopes = new Set<BillingApiCredentialScope>([
+  'subject:write',
+  'billing:read',
+  'billing:write',
+]);
+
+export const parseBillingApiCredentialScopes = (value: string): BillingApiCredentialScope[] => {
+  const parsed = safeJsonParse(value, []);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.filter(
+    (scope): scope is BillingApiCredentialScope =>
+      typeof scope === 'string' &&
+      billingApiCredentialScopes.has(scope as BillingApiCredentialScope),
+  );
+};
+
+export const hasBillingApiCredentialScope = ({
+  scopes,
+  requiredScope,
+}: {
+  scopes: BillingApiCredentialScope[];
+  requiredScope: BillingApiCredentialScope;
+}): boolean => scopes.includes(requiredScope);
+
 const authenticateApp = async ({
   db,
   appId,
@@ -448,12 +476,13 @@ const authenticateApp = async ({
   db: BillingApiDatabase;
   appId: string;
   apiKey: string;
-}) => {
+}): Promise<{ scopes: BillingApiCredentialScope[] } | null> => {
   const keyHash = await sha256Hex(apiKey);
   const credentialRows = await db
     .select({
       id: dbSchema.billingAppCredential.id,
       appId: dbSchema.billingAppCredential.appId,
+      scopesJson: dbSchema.billingAppCredential.scopesJson,
     })
     .from(dbSchema.billingAppCredential)
     .where(
@@ -465,7 +494,7 @@ const authenticateApp = async ({
     )
     .limit(1);
   if (!credentialRows[0]) {
-    return false;
+    return null;
   }
 
   const appRows = await db
@@ -473,8 +502,22 @@ const authenticateApp = async ({
     .from(dbSchema.billingApp)
     .where(eq(dbSchema.billingApp.id, appId))
     .limit(1);
-  return appRows[0]?.status === 'active';
+  if (appRows[0]?.status !== 'active') {
+    return null;
+  }
+  return { scopes: parseBillingApiCredentialScopes(credentialRows[0].scopesJson) };
 };
+
+const requireBillingApiScope = (
+  c: BillingApiContext,
+  requiredScope: BillingApiCredentialScope,
+): Response | null =>
+  hasBillingApiCredentialScope({
+    scopes: c.get('credentialScopes'),
+    requiredScope,
+  })
+    ? null
+    : errorResponse(c, 403, 'forbidden_scope', `Billing API key requires ${requiredScope} scope.`);
 
 const toSubjectResponse = (
   row: typeof dbSchema.billingSubject.$inferSelect,
@@ -3068,15 +3111,21 @@ export const createBillingApiApp = () => {
     if (!token) {
       return errorResponse(c, 401, 'unauthorized', 'Billing API key is required.');
     }
-    if (!(await authenticateApp({ db, appId, apiKey: token }))) {
+    const credential = await authenticateApp({ db, appId, apiKey: token });
+    if (!credential) {
       return errorResponse(c, 403, 'forbidden_app', 'Billing API key cannot access this app.');
     }
     c.set('db', db);
     c.set('appId', appId);
+    c.set('credentialScopes', credential.scopes);
     await next();
   });
 
   app.put('/api/v1/apps/:appId/subjects/:subjectType/:subjectId', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'subject:write');
+    if (scopeError) {
+      return scopeError;
+    }
     const rawBody = await c.req.text();
     return runIdempotent({
       c,
@@ -3112,6 +3161,10 @@ export const createBillingApiApp = () => {
   });
 
   app.get('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/summary', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'billing:read');
+    if (scopeError) {
+      return scopeError;
+    }
     const bundle = await readSubjectBundle({
       db: c.get('db'),
       appId: c.get('appId'),
@@ -3134,6 +3187,10 @@ export const createBillingApiApp = () => {
   });
 
   app.get('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/entitlements', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'billing:read');
+    if (scopeError) {
+      return scopeError;
+    }
     const bundle = await readSubjectBundle({
       db: c.get('db'),
       appId: c.get('appId'),
@@ -3157,6 +3214,10 @@ export const createBillingApiApp = () => {
   });
 
   app.get('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/invoice-events', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'billing:read');
+    if (scopeError) {
+      return scopeError;
+    }
     const bundle = await readSubjectBundle({
       db: c.get('db'),
       appId: c.get('appId'),
@@ -3188,6 +3249,10 @@ export const createBillingApiApp = () => {
   });
 
   app.post('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/trial', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'billing:write');
+    if (scopeError) {
+      return scopeError;
+    }
     const rawBody = await c.req.text();
     return runIdempotent({
       c,
@@ -3205,6 +3270,10 @@ export const createBillingApiApp = () => {
   });
 
   app.post('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/trial/complete', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'billing:write');
+    if (scopeError) {
+      return scopeError;
+    }
     const rawBody = await c.req.text();
     return runIdempotent({
       c,
@@ -3221,6 +3290,10 @@ export const createBillingApiApp = () => {
   });
 
   app.post('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/checkout-sessions', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'billing:write');
+    if (scopeError) {
+      return scopeError;
+    }
     const rawBody = await c.req.text();
     return runIdempotent({
       c,
@@ -3241,6 +3314,10 @@ export const createBillingApiApp = () => {
   app.post(
     '/api/v1/apps/:appId/subjects/:subjectType/:subjectId/payment-method-setup-sessions',
     async (c) => {
+      const scopeError = requireBillingApiScope(c, 'billing:write');
+      if (scopeError) {
+        return scopeError;
+      }
       const rawBody = await c.req.text();
       return runIdempotent({
         c,
@@ -3262,6 +3339,10 @@ export const createBillingApiApp = () => {
   app.post(
     '/api/v1/apps/:appId/subjects/:subjectType/:subjectId/billing-portal-sessions',
     async (c) => {
+      const scopeError = requireBillingApiScope(c, 'billing:write');
+      if (scopeError) {
+        return scopeError;
+      }
       const rawBody = await c.req.text();
       return runIdempotent({
         c,

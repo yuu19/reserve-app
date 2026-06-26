@@ -34,6 +34,13 @@ API path には必ず `appId` を含めます。
 
 API key は `billing_app_credential` に保存した hash で検証します。
 平文の key は保存しません。
+`scopes_json` に保存した scope で、API key ごとの操作範囲も検証します。
+
+| Scope           | 許可する操作                                     |
+| --------------- | ------------------------------------------------ |
+| `subject:write` | 課金対象の同期                                   |
+| `billing:read`  | summary、entitlements、invoice events の読み取り |
+| `billing:write` | trial、Checkout、支払い方法登録、Portal の開始   |
 
 書き込み API では `Idempotency-Key` header が必須です。
 同じ key で異なる request body を送ると conflict として拒否します。

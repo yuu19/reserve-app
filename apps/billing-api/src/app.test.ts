@@ -2,7 +2,9 @@ import { describe, expect, test } from 'vitest';
 import {
   buildBillingApiFeatures,
   createBillingApiApp,
+  hasBillingApiCredentialScope,
   isSupportedStripeBillingEventType,
+  parseBillingApiCredentialScopes,
   readStripeInvoiceEventSnapshot,
   readStripeSubscriptionSnapshot,
   toInvoiceEventResponse,
@@ -65,6 +67,30 @@ describe('createBillingApiApp', () => {
       staffLimit: 10,
       onlinePayment: true,
     });
+  });
+
+  test('parses supported credential scopes and ignores unknown values', () => {
+    expect(
+      parseBillingApiCredentialScopes(
+        JSON.stringify(['subject:write', 'billing:read', 'billing:write', 'admin:all']),
+      ),
+    ).toEqual(['subject:write', 'billing:read', 'billing:write']);
+    expect(parseBillingApiCredentialScopes('{"not":"an array"}')).toEqual([]);
+  });
+
+  test('checks required credential scope', () => {
+    expect(
+      hasBillingApiCredentialScope({
+        scopes: ['billing:read'],
+        requiredScope: 'billing:read',
+      }),
+    ).toBe(true);
+    expect(
+      hasBillingApiCredentialScope({
+        scopes: ['billing:read'],
+        requiredScope: 'billing:write',
+      }),
+    ).toBe(false);
   });
 
   test('normalizes Stripe subscription payload for billing sync', () => {

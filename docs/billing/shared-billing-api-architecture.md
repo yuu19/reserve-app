@@ -205,6 +205,8 @@ Billing API は、登録されていない subject に対する課金操作を�
 
 初期の API 認証は、静的 API key で始めます。
 API key は hash、prefix、scope、失効時刻を保存します。
+API key の scope は、読み取り、課金対象同期、課金操作開始を分けて強制します。
+読み取り専用 key で Checkout や Customer Portal を開始できないようにします。
 
 状態を変える API は `Idempotency-Key` を要求します。
 同じ key と同じ request body では、保存済みの応答を再利用します。
