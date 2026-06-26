@@ -5,6 +5,7 @@ import {
   isSupportedStripeBillingEventType,
   readStripeInvoiceEventSnapshot,
   readStripeSubscriptionSnapshot,
+  toInvoiceEventResponse,
 } from './app.js';
 
 describe('createBillingApiApp', () => {
@@ -138,6 +139,49 @@ describe('createBillingApiApp', () => {
       hostedInvoiceUrl: 'https://pay.stripe.test/invoice',
       invoicePdfUrl: 'https://pay.stripe.test/invoice.pdf',
       occurredAt: new Date('2026-06-26T00:00:00.000Z'),
+    });
+  });
+
+  test('serializes billing invoice event rows for API responses', () => {
+    const timestamp = new Date('2026-06-26T00:00:00.000Z');
+
+    expect(
+      toInvoiceEventResponse({
+        id: 'event_1',
+        appId: 'reserve',
+        billingAccountId: 'account_1',
+        billingSubscriptionId: 'subscription_1',
+        provider: 'stripe',
+        providerEventId: 'evt_1',
+        eventType: 'payment_action_required',
+        providerCustomerId: 'cus_1',
+        providerSubscriptionId: 'sub_1',
+        providerInvoiceId: 'in_1',
+        providerPaymentIntentId: 'pi_1',
+        providerStatus: 'open',
+        ownerFacingStatus: 'action_required',
+        hostedInvoiceUrl: 'https://pay.stripe.test/invoice',
+        invoicePdfUrl: 'https://pay.stripe.test/invoice.pdf',
+        occurredAt: timestamp,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      } as never),
+    ).toEqual({
+      id: 'event_1',
+      provider: 'stripe',
+      providerEventId: 'evt_1',
+      eventType: 'payment_action_required',
+      providerCustomerId: 'cus_1',
+      providerSubscriptionId: 'sub_1',
+      providerInvoiceId: 'in_1',
+      providerPaymentIntentId: 'pi_1',
+      providerStatus: 'open',
+      ownerFacingStatus: 'action_required',
+      hostedInvoiceUrl: 'https://pay.stripe.test/invoice',
+      invoicePdfUrl: 'https://pay.stripe.test/invoice.pdf',
+      occurredAt: '2026-06-26T00:00:00.000Z',
+      createdAt: '2026-06-26T00:00:00.000Z',
+      updatedAt: '2026-06-26T00:00:00.000Z',
     });
   });
 });

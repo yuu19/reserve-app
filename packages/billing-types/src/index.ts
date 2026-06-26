@@ -105,6 +105,46 @@ export type BillingApiEntitlementsResponse = {
   maxStaleSeconds: number;
 };
 
+export type BillingApiInvoiceEventType =
+  | 'invoice_available'
+  | 'payment_succeeded'
+  | 'payment_failed'
+  | 'payment_action_required';
+
+export type BillingApiInvoiceEventOwnerFacingStatus =
+  | 'available'
+  | 'succeeded'
+  | 'failed'
+  | 'action_required';
+
+export type BillingApiInvoiceEvent = {
+  id: string;
+  provider: BillingApiProvider;
+  providerEventId: string | null;
+  eventType: BillingApiInvoiceEventType;
+  providerCustomerId: string | null;
+  providerSubscriptionId: string | null;
+  providerInvoiceId: string | null;
+  providerPaymentIntentId: string | null;
+  providerStatus: string | null;
+  ownerFacingStatus: BillingApiInvoiceEventOwnerFacingStatus;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+  occurredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BillingApiInvoiceEventsResponse = {
+  appId: BillingApiAppId;
+  subjectType: BillingApiSubjectType;
+  subjectId: BillingApiSubjectId;
+  events: BillingApiInvoiceEvent[];
+  limit: number;
+  hasMore: boolean;
+  syncedAt: string;
+};
+
 export type BillingApiSummaryResponse = {
   subject: BillingApiSubject;
   account: BillingApiAccount;

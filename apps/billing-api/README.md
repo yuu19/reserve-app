@@ -17,7 +17,7 @@ Billing API は契約状態と利用権限を返します。
 - 書き込み API の `Idempotency-Key`
 - Stripe Checkout、支払い方法登録、Customer Portal への handoff
 - Stripe billing webhook の署名確認、受領記録、契約・利用権限への反映
-- Stripe invoice/payment webhook の請求イベント履歴への反映
+- Stripe invoice/payment webhook の請求イベント履歴への反映と参照
 - product billing catalog からの plan、price、entitlement rule seed SQL 生成
 
 Stripe webhook は、Checkout 完了、Subscription lifecycle、Invoice finalized/paid/payment succeeded/payment failed/payment action required を処理します。
@@ -152,6 +152,41 @@ pnpm --filter @apps/billing-api exec wrangler d1 execute reserve-billing-api --r
 `features` は現在有効な entitlement だけから生成します。
 Stripe subscription が `trialing` または `active` の場合だけ entitlement を付与し、`past_due`、`unpaid`、`incomplete`、`canceled` では空にします。
 
+## Invoice events
+
+`GET /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/invoice-events` は、Billing API が保存した Stripe invoice/payment webhook の履歴を返します。
+既定では最新 50 件を返し、`limit` query で最大 100 件まで指定できます。
+
+```json
+{
+  "appId": "reserve",
+  "subjectType": "organization",
+  "subjectId": "org_123",
+  "events": [
+    {
+      "id": "event_123",
+      "provider": "stripe",
+      "providerEventId": "evt_123",
+      "eventType": "payment_failed",
+      "providerCustomerId": "cus_123",
+      "providerSubscriptionId": "sub_123",
+      "providerInvoiceId": "in_123",
+      "providerPaymentIntentId": "pi_123",
+      "providerStatus": "open",
+      "ownerFacingStatus": "failed",
+      "hostedInvoiceUrl": "https://pay.stripe.com/invoice/...",
+      "invoicePdfUrl": "https://pay.stripe.com/invoice/...",
+      "occurredAt": "2026-06-26T00:00:00.000Z",
+      "createdAt": "2026-06-26T00:00:00.000Z",
+      "updatedAt": "2026-06-26T00:00:00.000Z"
+    }
+  ],
+  "limit": 50,
+  "hasMore": false,
+  "syncedAt": "2026-06-26T00:00:00.000Z"
+}
+```
+
 ## Secrets
 
 Stripe 連携には、次の secret が必要です。
@@ -168,7 +203,7 @@ pnpm --filter @apps/billing-api exec wrangler secret put STRIPE_WEBHOOK_SECRET
 
 - Worker: `apps/billing-api/src/worker.ts`
 - DB schema: `apps/billing-api/src/db/schema.ts`
-- Migrations: `apps/billing-api/drizzle/0001_billing_api_initial.sql`, `apps/billing-api/drizzle/0002_billing_operation_attempt.sql`, `apps/billing-api/drizzle/0003_subscription_price_resolution.sql`
+- Migrations: `apps/billing-api/drizzle/0001_billing_api_initial.sql`, `apps/billing-api/drizzle/0002_billing_operation_attempt.sql`, `apps/billing-api/drizzle/0003_subscription_price_resolution.sql`, `apps/billing-api/drizzle/0004_billing_invoice_event.sql`
 - Client: `packages/billing-client`
 - Shared types: `packages/billing-types`
 - Product billing config: `packages/product-billing-config`

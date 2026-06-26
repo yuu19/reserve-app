@@ -95,4 +95,38 @@ describe('createBillingClient', () => {
       message: 'Billing subject is not synced.',
     } satisfies Partial<BillingClientError>);
   });
+
+  test('reads invoice events with subject scoped path and limit', async () => {
+    const requests: Request[] = [];
+    const client = createBillingClient({
+      baseUrl: 'https://billing.example.com',
+      appId: 'reserve',
+      apiKey: 'billing_test_key',
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requests.push(request);
+        return createJsonResponse({
+          appId: 'reserve',
+          subjectType: 'organization',
+          subjectId: 'org_1',
+          events: [],
+          limit: 25,
+          hasMore: false,
+          syncedAt: '2026-06-26T00:00:00.000Z',
+        });
+      },
+    });
+
+    await client.readInvoiceEvents(
+      { subjectType: 'organization', subjectId: 'org_1' },
+      { limit: 25 },
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.method).toBe('GET');
+    expect(requests[0]?.url).toBe(
+      'https://billing.example.com/api/v1/apps/reserve/subjects/organization/org_1/invoice-events?limit=25',
+    );
+    expect(requests[0]?.headers.get('authorization')).toBe('Bearer billing_test_key');
+  });
 });

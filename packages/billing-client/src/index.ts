@@ -3,6 +3,7 @@ import type {
   BillingApiErrorResponse,
   BillingApiHandoffRequest,
   BillingApiHandoffResponse,
+  BillingApiInvoiceEventsResponse,
   BillingApiSubjectSyncRequest,
   BillingApiSummaryResponse,
 } from '@repo/billing-types';
@@ -21,6 +22,10 @@ export type BillingClientSubjectInput = {
 
 export type BillingClientRequestOptions = {
   idempotencyKey?: string;
+};
+
+export type BillingClientReadInvoiceEventsOptions = {
+  limit?: number;
 };
 
 export class BillingClientError extends Error {
@@ -116,6 +121,22 @@ export const createBillingClient = ({
       return request<BillingApiEntitlementsResponse>({
         method: 'GET',
         path: `${subjectPath(subject)}/entitlements`,
+      });
+    },
+
+    readInvoiceEvents(
+      subject: BillingClientSubjectInput,
+      options: BillingClientReadInvoiceEventsOptions = {},
+    ) {
+      const searchParams = new URLSearchParams();
+      if (options.limit !== undefined) {
+        searchParams.set('limit', String(options.limit));
+      }
+      return request<BillingApiInvoiceEventsResponse>({
+        method: 'GET',
+        path: `${subjectPath(subject)}/invoice-events${
+          searchParams.size > 0 ? `?${searchParams.toString()}` : ''
+        }`,
       });
     },
 

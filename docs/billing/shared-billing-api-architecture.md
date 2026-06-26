@@ -189,6 +189,7 @@ API key も、その app id へのアクセス権を持つ必要があります�
 PUT  /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}
 GET  /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/summary
 GET  /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/entitlements
+GET  /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/invoice-events
 POST /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/trial
 POST /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/trial/complete
 POST /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/checkout-sessions

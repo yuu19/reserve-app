@@ -8,6 +8,10 @@ import type {
   BillingApiErrorResponse,
   BillingApiHandoffRequest,
   BillingApiHandoffResponse,
+  BillingApiInvoiceEvent,
+  BillingApiInvoiceEventOwnerFacingStatus,
+  BillingApiInvoiceEventsResponse,
+  BillingApiInvoiceEventType,
   BillingApiPriceResolution,
   BillingApiSubject,
   BillingApiSubjectSyncRequest,
@@ -58,6 +62,8 @@ const DEFAULT_HANDOFF_REUSE_SECONDS = 30 * 60;
 const DEFAULT_OPERATION_PENDING_STALE_MS = 2 * 60 * 1000;
 const DEFAULT_RETURN_URL_KEY = 'default';
 const DEFAULT_STRIPE_API_VERSION = '2026-04-22.dahlia';
+const DEFAULT_INVOICE_EVENTS_LIMIT = 50;
+const MAX_INVOICE_EVENTS_LIMIT = 100;
 
 const toIso = (value: Date | null | undefined): string | null =>
   value instanceof Date ? value.toISOString() : null;
@@ -80,6 +86,16 @@ const parsePositiveInteger = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
+
+const parseBoundedPositiveInteger = ({
+  value,
+  fallback,
+  max,
+}: {
+  value: string | undefined;
+  fallback: number;
+  max: number;
+}) => Math.min(parsePositiveInteger(value, fallback), max);
 
 const sha256Hex = async (value: string): Promise<string> => {
   const digest = await crypto.subtle.digest('SHA-256', textEncoder.encode(value));
@@ -518,6 +534,44 @@ const toSubscriptionResponse = (
       }
     : null;
 
+const normalizeInvoiceEventType = (value: string): BillingApiInvoiceEventType =>
+  value === 'payment_succeeded' ||
+  value === 'payment_failed' ||
+  value === 'payment_action_required' ||
+  value === 'invoice_available'
+    ? value
+    : 'invoice_available';
+
+const normalizeInvoiceEventOwnerFacingStatus = (
+  value: string,
+): BillingApiInvoiceEventOwnerFacingStatus =>
+  value === 'succeeded' ||
+  value === 'failed' ||
+  value === 'action_required' ||
+  value === 'available'
+    ? value
+    : 'available';
+
+export const toInvoiceEventResponse = (
+  row: typeof dbSchema.billingInvoiceEvent.$inferSelect,
+): BillingApiInvoiceEvent => ({
+  id: row.id,
+  provider: 'stripe',
+  providerEventId: row.providerEventId ?? null,
+  eventType: normalizeInvoiceEventType(row.eventType),
+  providerCustomerId: row.providerCustomerId ?? null,
+  providerSubscriptionId: row.providerSubscriptionId ?? null,
+  providerInvoiceId: row.providerInvoiceId ?? null,
+  providerPaymentIntentId: row.providerPaymentIntentId ?? null,
+  providerStatus: row.providerStatus ?? null,
+  ownerFacingStatus: normalizeInvoiceEventOwnerFacingStatus(row.ownerFacingStatus),
+  hostedInvoiceUrl: row.hostedInvoiceUrl ?? null,
+  invoicePdfUrl: row.invoicePdfUrl ?? null,
+  occurredAt: toIso(row.occurredAt),
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString(),
+});
+
 const readEntitlementValue = (row: typeof dbSchema.billingEntitlement.$inferSelect): unknown =>
   row.valueType === 'none' ? null : safeJsonParse(row.valueJson, null);
 
@@ -690,6 +744,50 @@ const buildSummaryResponse = ({
     subscription,
     entitlements,
   }),
+});
+
+const readInvoiceEvents = async ({
+  db,
+  billingAccountId,
+  limit,
+}: {
+  db: BillingApiDatabase;
+  billingAccountId: string;
+  limit: number;
+}) => {
+  const rows = await db
+    .select()
+    .from(dbSchema.billingInvoiceEvent)
+    .where(eq(dbSchema.billingInvoiceEvent.billingAccountId, billingAccountId))
+    .orderBy(
+      desc(dbSchema.billingInvoiceEvent.occurredAt),
+      desc(dbSchema.billingInvoiceEvent.createdAt),
+    )
+    .limit(limit + 1);
+  return {
+    rows: rows.slice(0, limit),
+    hasMore: rows.length > limit,
+  };
+};
+
+const buildInvoiceEventsResponse = ({
+  subject,
+  events,
+  limit,
+  hasMore,
+}: {
+  subject: typeof dbSchema.billingSubject.$inferSelect;
+  events: (typeof dbSchema.billingInvoiceEvent.$inferSelect)[];
+  limit: number;
+  hasMore: boolean;
+}): BillingApiInvoiceEventsResponse => ({
+  appId: subject.appId,
+  subjectType: subject.subjectType,
+  subjectId: subject.subjectId,
+  events: events.map(toInvoiceEventResponse),
+  limit,
+  hasMore,
+  syncedAt: now().toISOString(),
 });
 
 const validateSubjectSyncBody = (body: unknown): BillingApiSubjectSyncRequest | null => {
@@ -3054,6 +3152,37 @@ export const createBillingApiApp = () => {
         subjectId: c.req.param('subjectId'),
         subscription: bundle.subscription,
         entitlements: bundle.entitlements,
+      }),
+    );
+  });
+
+  app.get('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/invoice-events', async (c) => {
+    const bundle = await readSubjectBundle({
+      db: c.get('db'),
+      appId: c.get('appId'),
+      subjectType: c.req.param('subjectType'),
+      subjectId: c.req.param('subjectId'),
+    });
+    if (!bundle) {
+      return errorResponse(c, 404, 'subject_not_found', 'Billing subject is not synced.');
+    }
+    const limit = parseBoundedPositiveInteger({
+      value: c.req.query('limit'),
+      fallback: DEFAULT_INVOICE_EVENTS_LIMIT,
+      max: MAX_INVOICE_EVENTS_LIMIT,
+    });
+    const { rows, hasMore } = await readInvoiceEvents({
+      db: c.get('db'),
+      billingAccountId: bundle.account.id,
+      limit,
+    });
+    return jsonResponse(
+      c,
+      buildInvoiceEventsResponse({
+        subject: bundle.subject,
+        events: rows,
+        limit,
+        hasMore,
       }),
     );
   });
