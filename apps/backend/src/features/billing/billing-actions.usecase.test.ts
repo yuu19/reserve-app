@@ -155,6 +155,8 @@ const buildBillingApiSummary = ({
         : {},
     entitlements: [],
     syncedAt: '2026-05-21T00:00:00.000Z',
+    evaluatedAt: '2026-05-21T00:00:00.000Z',
+    timeSource: 'server',
     maxStaleSeconds: 300,
   },
   provider: {

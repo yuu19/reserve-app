@@ -38,6 +38,8 @@ const createClient = (overrides: Partial<BillingApiShadowClient> = {}): BillingA
     },
     entitlements: [],
     syncedAt: '2026-06-23T00:00:00.000Z',
+    evaluatedAt: '2026-06-23T00:00:00.000Z',
+    timeSource: 'server',
     maxStaleSeconds: 3600,
   })),
   ...overrides,
@@ -101,6 +103,8 @@ describe('Billing API shadow read', () => {
         features: {},
         entitlements: [],
         syncedAt: '2026-06-23T00:00:00.000Z',
+        evaluatedAt: '2026-06-23T00:00:00.000Z',
+        timeSource: 'server',
         maxStaleSeconds: 3600,
       })),
     });

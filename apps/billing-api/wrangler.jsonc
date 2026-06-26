@@ -22,6 +22,8 @@
     "BILLING_DEFAULT_RETURN_URL_KEY": "default",
     "BILLING_RETURN_URL_OVERRIDE_ALLOWED": "false",
     "BILLING_DEFAULT_CURRENCY": "jpy",
+    "BILLING_TEST_CLOCKS_ENABLED": "false",
+    "BILLING_API_ENV": "production",
   },
   "d1_databases": [
     {

@@ -1,5 +1,6 @@
 import type {
   BillingApiAccount,
+  BillingApiAdvanceTestClockScenarioRequest,
   BillingApiActor,
   BillingApiBillingContact,
   BillingApiCredentialScope,
@@ -19,6 +20,9 @@ import type {
   BillingApiSummaryResponse,
   BillingApiSubscription,
   BillingApiSubscriptionStatus,
+  BillingApiTestClockScenario,
+  BillingApiTestClockScenarioStatus,
+  BillingApiTestClockScenarioType,
 } from '@repo/billing-types';
 import { and, desc, eq, gt, isNull, lt, max } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
@@ -33,6 +37,8 @@ type BillingApiBindings = {
   BILLING_DEFAULT_RETURN_URL_KEY?: string;
   BILLING_RETURN_URL_OVERRIDE_ALLOWED?: string;
   BILLING_DEFAULT_CURRENCY?: string;
+  BILLING_TEST_CLOCKS_ENABLED?: string;
+  BILLING_API_ENV?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_API_VERSION?: string;
   STRIPE_WEBHOOK_SECRET?: string;
@@ -83,6 +89,16 @@ const toDateFromUnixSeconds = (value: unknown): Date | null => {
   const date = new Date(seconds * 1000);
   return Number.isNaN(date.getTime()) ? null : date;
 };
+
+const toDateFromIsoString = (value: unknown): Date | null => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+  const date = new Date(value.trim());
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const toUnixSeconds = (value: Date): number => Math.floor(value.getTime() / 1000);
 
 const parsePositiveInteger = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10);
@@ -280,17 +296,22 @@ const createStripeCustomer = async ({
   email,
   metadata,
   idempotencyKey,
+  testClockId,
 }: {
   env: BillingApiBindings;
   name: string;
   email: string | null;
   metadata: Record<string, string>;
   idempotencyKey: string;
+  testClockId?: string | null;
 }) => {
   const params = new URLSearchParams();
   params.set('name', name);
   if (email) {
     params.set('email', email);
+  }
+  if (testClockId?.trim()) {
+    params.set('test_clock', testClockId.trim());
   }
   appendMetadata(params, metadata);
 
@@ -305,6 +326,145 @@ const createStripeCustomer = async ({
     throw new Error('Invalid Stripe customer response.');
   }
   return { id };
+};
+
+type StripeTestClockSnapshot = {
+  id: string;
+  status: BillingApiTestClockScenarioStatus;
+  frozenTime: Date;
+};
+
+const normalizeStripeTestClockStatus = (
+  value: string | null,
+): BillingApiTestClockScenarioStatus => {
+  if (value === 'ready' || value === 'advancing' || value === 'deleted') {
+    return value;
+  }
+  return value === 'internal_failure' ? 'failed' : 'unknown';
+};
+
+export const readStripeTestClockSnapshot = (value: unknown): StripeTestClockSnapshot | null => {
+  const object = readObject(value);
+  const id = readString(object.id);
+  const frozenTime = toDateFromUnixSeconds(object.frozen_time);
+  if (!id || !frozenTime) {
+    return null;
+  }
+  return {
+    id,
+    status: normalizeStripeTestClockStatus(readString(object.status)),
+    frozenTime,
+  };
+};
+
+const createStripeTestClock = async ({
+  env,
+  name,
+  frozenTime,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  name: string;
+  frozenTime: Date;
+  idempotencyKey: string;
+}): Promise<StripeTestClockSnapshot> => {
+  const params = new URLSearchParams();
+  params.set('name', name);
+  params.set('frozen_time', String(toUnixSeconds(frozenTime)));
+  const snapshot = readStripeTestClockSnapshot(
+    await postStripeForm({
+      env,
+      path: 'test_helpers/test_clocks',
+      params,
+      idempotencyKey,
+    }),
+  );
+  if (!snapshot) {
+    throw new Error('Invalid Stripe test clock response.');
+  }
+  return snapshot;
+};
+
+const retrieveStripeTestClock = async ({
+  env,
+  testClockId,
+}: {
+  env: BillingApiBindings;
+  testClockId: string;
+}): Promise<StripeTestClockSnapshot> => {
+  const snapshot = readStripeTestClockSnapshot(
+    await getStripeJson({
+      env,
+      path: `test_helpers/test_clocks/${encodeURIComponent(testClockId)}`,
+    }),
+  );
+  if (!snapshot) {
+    throw new Error('Invalid Stripe test clock response.');
+  }
+  return snapshot;
+};
+
+const advanceStripeTestClock = async ({
+  env,
+  testClockId,
+  frozenTime,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  testClockId: string;
+  frozenTime: Date;
+  idempotencyKey: string;
+}): Promise<StripeTestClockSnapshot> => {
+  const params = new URLSearchParams();
+  params.set('frozen_time', String(toUnixSeconds(frozenTime)));
+  const snapshot = readStripeTestClockSnapshot(
+    await postStripeForm({
+      env,
+      path: `test_helpers/test_clocks/${encodeURIComponent(testClockId)}/advance`,
+      params,
+      idempotencyKey,
+    }),
+  );
+  if (!snapshot) {
+    throw new Error('Invalid Stripe test clock response.');
+  }
+  return snapshot;
+};
+
+const createStripeTrialSubscription = async ({
+  env,
+  customerId,
+  priceId,
+  trialDays,
+  metadata,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  customerId: string;
+  priceId: string;
+  trialDays: number;
+  metadata: Record<string, string>;
+  idempotencyKey: string;
+}): Promise<StripeSubscriptionSnapshot> => {
+  const params = new URLSearchParams();
+  params.set('customer', customerId);
+  params.set('items[0][price]', priceId);
+  params.set('trial_period_days', String(trialDays));
+  params.set('trial_settings[end_behavior][missing_payment_method]', 'cancel');
+  appendMetadata(params, metadata);
+
+  const snapshot = readStripeSubscriptionSnapshot(
+    await postStripeForm({
+      env,
+      path: 'subscriptions',
+      params,
+      idempotencyKey,
+    }),
+  );
+  if (!snapshot) {
+    throw new Error('Invalid Stripe trial subscription response.');
+  }
+  return snapshot;
 };
 
 const createStripeSubscriptionCheckoutSession = async ({
@@ -446,6 +606,7 @@ const billingApiCredentialScopes = new Set<BillingApiCredentialScope>([
   'subject:write',
   'billing:read',
   'billing:write',
+  'billing:test_clock',
 ]);
 
 export const parseBillingApiCredentialScopes = (value: string): BillingApiCredentialScope[] => {
@@ -736,6 +897,60 @@ const readSubjectBundle = async ({
   };
 };
 
+type BillingApiEvaluationContext = {
+  evaluatedAt: Date;
+  timeSource: BillingApiEntitlementsResponse['timeSource'];
+};
+
+const serverEvaluationContext = (): BillingApiEvaluationContext => ({
+  evaluatedAt: now(),
+  timeSource: 'server',
+});
+
+const readTestClockScenarioByTestSubjectRowId = async ({
+  db,
+  appId,
+  testSubjectRowId,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  testSubjectRowId: string;
+}) => {
+  const rows = await db
+    .select()
+    .from(dbSchema.billingTestClockScenario)
+    .where(
+      and(
+        eq(dbSchema.billingTestClockScenario.appId, appId),
+        eq(dbSchema.billingTestClockScenario.testSubjectRowId, testSubjectRowId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+};
+
+const resolveEvaluationContext = async ({
+  db,
+  appId,
+  subjectRowId,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  subjectRowId: string;
+}): Promise<BillingApiEvaluationContext> => {
+  const scenario = await readTestClockScenarioByTestSubjectRowId({
+    db,
+    appId,
+    testSubjectRowId: subjectRowId,
+  });
+  return scenario
+    ? {
+        evaluatedAt: scenario.frozenTime,
+        timeSource: 'stripe_test_clock',
+      }
+    : serverEvaluationContext();
+};
+
 const buildEntitlementsResponse = ({
   env,
   appId,
@@ -743,6 +958,7 @@ const buildEntitlementsResponse = ({
   subjectId,
   subscription,
   entitlements,
+  evaluationContext = serverEvaluationContext(),
 }: {
   env: BillingApiBindings;
   appId: string;
@@ -750,6 +966,7 @@ const buildEntitlementsResponse = ({
   subjectId: string;
   subscription: typeof dbSchema.billingSubscription.$inferSelect | null;
   entitlements: (typeof dbSchema.billingEntitlement.$inferSelect)[];
+  evaluationContext?: BillingApiEvaluationContext;
 }): BillingApiEntitlementsResponse => ({
   appId,
   subjectType,
@@ -757,9 +974,11 @@ const buildEntitlementsResponse = ({
   planCode: subscription?.planCode ?? 'free',
   status: toSubscriptionResponse(subscription)?.status ?? 'free',
   priceResolution: normalizePriceResolution(subscription?.priceResolution),
-  features: buildBillingApiFeatures({ entitlements }),
+  features: buildBillingApiFeatures({ entitlements, timestamp: evaluationContext.evaluatedAt }),
   entitlements: entitlements.map(toEntitlementResponse),
   syncedAt: now().toISOString(),
+  evaluatedAt: evaluationContext.evaluatedAt.toISOString(),
+  timeSource: evaluationContext.timeSource,
   maxStaleSeconds: parsePositiveInteger(env.BILLING_ENTITLEMENT_MAX_STALE_SECONDS, 3600),
 });
 
@@ -769,12 +988,14 @@ const buildSummaryResponse = ({
   account,
   subscription,
   entitlements,
+  evaluationContext,
 }: {
   env: BillingApiBindings;
   subject: typeof dbSchema.billingSubject.$inferSelect;
   account: typeof dbSchema.billingAccount.$inferSelect;
   subscription: typeof dbSchema.billingSubscription.$inferSelect | null;
   entitlements: (typeof dbSchema.billingEntitlement.$inferSelect)[];
+  evaluationContext?: BillingApiEvaluationContext;
 }): BillingApiSummaryResponse => ({
   subject: toSubjectResponse(subject),
   account: toAccountResponse(account),
@@ -786,6 +1007,7 @@ const buildSummaryResponse = ({
     subjectId: subject.subjectId,
     subscription,
     entitlements,
+    evaluationContext,
   }),
   provider: {
     stripeConfigured: Boolean(env.STRIPE_SECRET_KEY?.trim()),
@@ -1697,6 +1919,522 @@ const toHandoffError = (error: unknown): JsonResult<BillingApiErrorResponse> =>
           error instanceof Error ? error.message : 'Stripe handoff failed.',
         ),
       };
+
+export const isBillingTestClockEnvironmentEnabled = (env: BillingApiBindings): boolean =>
+  env.BILLING_TEST_CLOCKS_ENABLED === 'true' &&
+  env.BILLING_API_ENV === 'sandbox' &&
+  Boolean(env.STRIPE_SECRET_KEY?.trim().startsWith('sk_test_'));
+
+const requireBillingTestClockAccess = (c: BillingApiContext): Response | null => {
+  const scopeError = requireBillingApiScope(c, 'billing:test_clock');
+  if (scopeError) {
+    return scopeError;
+  }
+  return isBillingTestClockEnvironmentEnabled(c.env)
+    ? null
+    : errorResponse(
+        c,
+        403,
+        'test_clock_disabled',
+        'Billing Test Clock API is disabled for this environment.',
+      );
+};
+
+type TestClockScenarioRequest = {
+  scenarioType: BillingApiTestClockScenarioType;
+  frozenTime: Date;
+  planCode: string;
+  interval: 'month' | 'year';
+  trialDays: number;
+  actor: BillingApiActor | null;
+};
+
+const validateCreateTestClockScenarioRequest = (body: unknown): TestClockScenarioRequest | null => {
+  const record = readObject(body);
+  if (record.scenarioType !== 'trial_expired_without_payment_method') {
+    return null;
+  }
+  const trialDays = Number(record.trialDays ?? 7);
+  if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 365) {
+    return null;
+  }
+  const frozenTime = toDateFromIsoString(record.frozenTime) ?? now();
+  return {
+    scenarioType: record.scenarioType,
+    frozenTime,
+    planCode: readString(record.planCode) ?? 'premium',
+    interval: record.interval === 'year' ? 'year' : 'month',
+    trialDays,
+    actor: record.actor === undefined ? null : readActor(record.actor),
+  };
+};
+
+const validateAdvanceTestClockScenarioRequest = (
+  body: unknown,
+): BillingApiAdvanceTestClockScenarioRequest | null => {
+  const frozenTime = toDateFromIsoString(readObject(body).frozenTime);
+  return frozenTime ? { frozenTime: frozenTime.toISOString() } : null;
+};
+
+const buildTestSubjectId = ({
+  sourceSubjectId,
+  scenarioType,
+  scenarioId,
+}: {
+  sourceSubjectId: string;
+  scenarioType: BillingApiTestClockScenarioType;
+  scenarioId: string;
+}) =>
+  `${sourceSubjectId}__tc_${scenarioType.replace(/[^a-z0-9]+/gi, '_')}_${scenarioId.slice(0, 8)}`;
+
+const toTestClockScenarioResponse = ({
+  scenario,
+  sourceSubject,
+  testSubject,
+  summary,
+}: {
+  scenario: typeof dbSchema.billingTestClockScenario.$inferSelect;
+  sourceSubject: typeof dbSchema.billingSubject.$inferSelect;
+  testSubject: typeof dbSchema.billingSubject.$inferSelect;
+  summary: BillingApiSummaryResponse;
+}): BillingApiTestClockScenario => ({
+  scenarioId: scenario.id,
+  appId: scenario.appId,
+  scenarioType:
+    scenario.scenarioType === 'trial_expired_without_payment_method'
+      ? scenario.scenarioType
+      : 'trial_expired_without_payment_method',
+  status: normalizeStripeTestClockStatus(scenario.status),
+  provider: 'stripe',
+  providerTestClockId: scenario.providerTestClockId,
+  providerCustomerId: scenario.providerCustomerId,
+  providerSubscriptionId: scenario.providerSubscriptionId,
+  frozenTime: scenario.frozenTime.toISOString(),
+  targetFrozenTime: toIso(scenario.targetFrozenTime),
+  lastAdvancedAt: toIso(scenario.lastAdvancedAt),
+  sourceSubject: {
+    subjectType: sourceSubject.subjectType,
+    subjectId: sourceSubject.subjectId,
+  },
+  testSubject: {
+    subjectType: testSubject.subjectType,
+    subjectId: testSubject.subjectId,
+  },
+  summary,
+  createdAt: scenario.createdAt.toISOString(),
+  updatedAt: scenario.updatedAt.toISOString(),
+});
+
+const readTestClockScenarioForSource = async ({
+  db,
+  appId,
+  sourceSubjectRowId,
+  scenarioId,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  sourceSubjectRowId: string;
+  scenarioId: string;
+}) => {
+  const rows = await db
+    .select()
+    .from(dbSchema.billingTestClockScenario)
+    .where(
+      and(
+        eq(dbSchema.billingTestClockScenario.appId, appId),
+        eq(dbSchema.billingTestClockScenario.sourceSubjectRowId, sourceSubjectRowId),
+        eq(dbSchema.billingTestClockScenario.id, scenarioId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+};
+
+const buildTestClockScenarioResponse = async ({
+  db,
+  env,
+  sourceBundle,
+  scenario,
+}: {
+  db: BillingApiDatabase;
+  env: BillingApiBindings;
+  sourceBundle: NonNullable<Awaited<ReturnType<typeof readSubjectBundle>>>;
+  scenario: typeof dbSchema.billingTestClockScenario.$inferSelect;
+}): Promise<JsonResult<BillingApiTestClockScenario | BillingApiErrorResponse>> => {
+  const testSubjectRows = await db
+    .select()
+    .from(dbSchema.billingSubject)
+    .where(eq(dbSchema.billingSubject.id, scenario.testSubjectRowId))
+    .limit(1);
+  const testSubject = testSubjectRows[0] ?? null;
+  if (!testSubject) {
+    return { status: 500, body: errorBody('internal_error', 'Test subject is missing.') };
+  }
+  const testBundle = await readSubjectBundle({
+    db,
+    appId: scenario.appId,
+    subjectType: testSubject.subjectType,
+    subjectId: testSubject.subjectId,
+  });
+  if (!testBundle) {
+    return { status: 500, body: errorBody('internal_error', 'Test subject is not readable.') };
+  }
+  const evaluationContext: BillingApiEvaluationContext = {
+    evaluatedAt: scenario.frozenTime,
+    timeSource: 'stripe_test_clock',
+  };
+  return {
+    status: 200,
+    body: toTestClockScenarioResponse({
+      scenario,
+      sourceSubject: sourceBundle.subject,
+      testSubject,
+      summary: buildSummaryResponse({
+        env,
+        subject: testBundle.subject,
+        account: testBundle.account,
+        subscription: testBundle.subscription,
+        entitlements: testBundle.entitlements,
+        evaluationContext,
+      }),
+    }),
+  };
+};
+
+const createTestClockScenario = async ({
+  db,
+  env,
+  appId,
+  subjectType,
+  subjectId,
+  body,
+  idempotencyKey,
+}: {
+  db: BillingApiDatabase;
+  env: BillingApiBindings;
+  appId: string;
+  subjectType: string;
+  subjectId: string;
+  body: unknown;
+  idempotencyKey: string;
+}): Promise<JsonResult<BillingApiTestClockScenario | BillingApiErrorResponse>> => {
+  const request = validateCreateTestClockScenarioRequest(body);
+  if (!request) {
+    return {
+      status: 400,
+      body: errorBody('bad_request', 'Valid test clock scenario request is required.'),
+    };
+  }
+  const sourceBundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
+  if (!sourceBundle) {
+    return { status: 404, body: errorBody('subject_not_found', 'Billing subject is not synced.') };
+  }
+  const priceResult = await readActivePrice({
+    db,
+    appId,
+    planCode: request.planCode,
+    interval: request.interval,
+  });
+  if ('status' in priceResult) {
+    return priceResult;
+  }
+
+  try {
+    const scenarioId = createId();
+    const testSubjectId = buildTestSubjectId({
+      sourceSubjectId: subjectId,
+      scenarioType: request.scenarioType,
+      scenarioId,
+    });
+    const testBundle = await ensureSubject({
+      db,
+      appId,
+      subjectType,
+      subjectId: testSubjectId,
+      body: {
+        displayName: `${sourceBundle.subject.displayName} Test Clock`,
+        billingEmail: sourceBundle.subject.billingEmail,
+        billingName: sourceBundle.subject.billingName ?? sourceBundle.subject.displayName,
+        billingContacts: normalizeContacts(
+          safeJsonParse(sourceBundle.subject.billingContactsJson, []),
+        ),
+        metadata: {
+          source: 'billing-api-test-clock',
+          sourceSubjectType: subjectType,
+          sourceSubjectId: subjectId,
+          scenarioId,
+          scenarioType: request.scenarioType,
+          ...(request.actor ? { actor: request.actor } : {}),
+        },
+      },
+    });
+    const clock = await createStripeTestClock({
+      env,
+      name: `${appId}:${subjectType}:${subjectId}:${scenarioId.slice(0, 8)}`,
+      frozenTime: request.frozenTime,
+      idempotencyKey: `${idempotencyKey}:clock`,
+    });
+    const metadata = buildBillingMetadata({
+      appId,
+      subjectType,
+      subjectId: testSubjectId,
+      billingAccountId: testBundle.account.id,
+      purpose: 'test_clock_scenario',
+      planCode: request.planCode,
+      interval: request.interval,
+    });
+    const customer = await createStripeCustomer({
+      env,
+      name: testBundle.subject.billingName ?? testBundle.subject.displayName,
+      email: testBundle.subject.billingEmail ?? testBundle.account.billingEmail ?? null,
+      metadata: {
+        ...metadata,
+        sourceSubjectType: subjectType,
+        sourceSubjectId: subjectId,
+        scenarioId,
+        scenarioType: request.scenarioType,
+      },
+      testClockId: clock.id,
+      idempotencyKey: `${idempotencyKey}:customer`,
+    });
+    await db
+      .update(dbSchema.billingAccount)
+      .set({
+        providerCustomerId: customer.id,
+        updatedAt: now(),
+      })
+      .where(eq(dbSchema.billingAccount.id, testBundle.account.id));
+    const subscription = await createStripeTrialSubscription({
+      env,
+      customerId: customer.id,
+      priceId: priceResult.providerPriceId,
+      trialDays: request.trialDays,
+      metadata: {
+        ...metadata,
+        sourceSubjectType: subjectType,
+        sourceSubjectId: subjectId,
+        scenarioId,
+        scenarioType: request.scenarioType,
+      },
+      idempotencyKey: `${idempotencyKey}:subscription`,
+    });
+    const refreshedTestBundle = await readSubjectBundle({
+      db,
+      appId,
+      subjectType,
+      subjectId: testSubjectId,
+    });
+    if (!refreshedTestBundle) {
+      return { status: 500, body: errorBody('internal_error', 'Test subject sync failed.') };
+    }
+    await upsertSubscriptionFromStripe({
+      db,
+      bundle: refreshedTestBundle,
+      subscription,
+    });
+
+    const timestamp = now();
+    await db.insert(dbSchema.billingTestClockScenario).values({
+      id: scenarioId,
+      appId,
+      sourceSubjectRowId: sourceBundle.subject.id,
+      testSubjectRowId: refreshedTestBundle.subject.id,
+      billingAccountId: refreshedTestBundle.account.id,
+      provider: 'stripe',
+      providerTestClockId: clock.id,
+      providerCustomerId: customer.id,
+      providerSubscriptionId: subscription.id,
+      scenarioType: request.scenarioType,
+      frozenTime: clock.frozenTime,
+      targetFrozenTime: null,
+      status: clock.status,
+      lastAdvancedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    const scenario = await readTestClockScenarioForSource({
+      db,
+      appId,
+      sourceSubjectRowId: sourceBundle.subject.id,
+      scenarioId,
+    });
+    if (!scenario) {
+      return { status: 500, body: errorBody('internal_error', 'Scenario could not be read.') };
+    }
+    return buildTestClockScenarioResponse({ db, env, sourceBundle, scenario });
+  } catch (error) {
+    return toHandoffError(error);
+  }
+};
+
+const syncScenarioClockSnapshot = async ({
+  db,
+  scenario,
+  clock,
+  targetFrozenTime = scenario.targetFrozenTime,
+  lastAdvancedAt = scenario.lastAdvancedAt,
+}: {
+  db: BillingApiDatabase;
+  scenario: typeof dbSchema.billingTestClockScenario.$inferSelect;
+  clock: StripeTestClockSnapshot;
+  targetFrozenTime?: Date | null;
+  lastAdvancedAt?: Date | null;
+}) => {
+  const timestamp = now();
+  await db
+    .update(dbSchema.billingTestClockScenario)
+    .set({
+      frozenTime: clock.frozenTime,
+      status: clock.status,
+      targetFrozenTime,
+      lastAdvancedAt,
+      updatedAt: timestamp,
+    })
+    .where(eq(dbSchema.billingTestClockScenario.id, scenario.id));
+  return {
+    ...scenario,
+    frozenTime: clock.frozenTime,
+    status: clock.status,
+    targetFrozenTime,
+    lastAdvancedAt,
+    updatedAt: timestamp,
+  };
+};
+
+const readSourceBundleForScenarioRoute = async ({
+  db,
+  appId,
+  subjectType,
+  subjectId,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  subjectType: string;
+  subjectId: string;
+}) => {
+  const sourceBundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
+  return sourceBundle;
+};
+
+const readTestClockScenario = async ({
+  db,
+  env,
+  appId,
+  subjectType,
+  subjectId,
+  scenarioId,
+}: {
+  db: BillingApiDatabase;
+  env: BillingApiBindings;
+  appId: string;
+  subjectType: string;
+  subjectId: string;
+  scenarioId: string;
+}): Promise<JsonResult<BillingApiTestClockScenario | BillingApiErrorResponse>> => {
+  const sourceBundle = await readSourceBundleForScenarioRoute({
+    db,
+    appId,
+    subjectType,
+    subjectId,
+  });
+  if (!sourceBundle) {
+    return { status: 404, body: errorBody('subject_not_found', 'Billing subject is not synced.') };
+  }
+  const scenario = await readTestClockScenarioForSource({
+    db,
+    appId,
+    sourceSubjectRowId: sourceBundle.subject.id,
+    scenarioId,
+  });
+  if (!scenario) {
+    return {
+      status: 404,
+      body: errorBody('subject_not_found', 'Test clock scenario is not found.'),
+    };
+  }
+  try {
+    const clock = await retrieveStripeTestClock({ env, testClockId: scenario.providerTestClockId });
+    const syncedScenario = await syncScenarioClockSnapshot({ db, scenario, clock });
+    return buildTestClockScenarioResponse({ db, env, sourceBundle, scenario: syncedScenario });
+  } catch (error) {
+    return toHandoffError(error);
+  }
+};
+
+const advanceTestClockScenario = async ({
+  db,
+  env,
+  appId,
+  subjectType,
+  subjectId,
+  scenarioId,
+  body,
+  idempotencyKey,
+}: {
+  db: BillingApiDatabase;
+  env: BillingApiBindings;
+  appId: string;
+  subjectType: string;
+  subjectId: string;
+  scenarioId: string;
+  body: unknown;
+  idempotencyKey: string;
+}): Promise<JsonResult<BillingApiTestClockScenario | BillingApiErrorResponse>> => {
+  const request = validateAdvanceTestClockScenarioRequest(body);
+  if (!request) {
+    return { status: 400, body: errorBody('bad_request', 'Valid frozenTime is required.') };
+  }
+  const targetFrozenTime = toDateFromIsoString(request.frozenTime);
+  if (!targetFrozenTime) {
+    return { status: 400, body: errorBody('bad_request', 'Valid frozenTime is required.') };
+  }
+  const sourceBundle = await readSourceBundleForScenarioRoute({
+    db,
+    appId,
+    subjectType,
+    subjectId,
+  });
+  if (!sourceBundle) {
+    return { status: 404, body: errorBody('subject_not_found', 'Billing subject is not synced.') };
+  }
+  const scenario = await readTestClockScenarioForSource({
+    db,
+    appId,
+    sourceSubjectRowId: sourceBundle.subject.id,
+    scenarioId,
+  });
+  if (!scenario) {
+    return {
+      status: 404,
+      body: errorBody('subject_not_found', 'Test clock scenario is not found.'),
+    };
+  }
+  if (targetFrozenTime.getTime() <= scenario.frozenTime.getTime()) {
+    return {
+      status: 400,
+      body: errorBody('bad_request', 'frozenTime must be later than the current frozen time.'),
+    };
+  }
+
+  try {
+    const clock = await advanceStripeTestClock({
+      env,
+      testClockId: scenario.providerTestClockId,
+      frozenTime: targetFrozenTime,
+      idempotencyKey: `${idempotencyKey}:advance`,
+    });
+    const syncedScenario = await syncScenarioClockSnapshot({
+      db,
+      scenario,
+      clock,
+      targetFrozenTime,
+      lastAdvancedAt: now(),
+    });
+    return buildTestClockScenarioResponse({ db, env, sourceBundle, scenario: syncedScenario });
+  } catch (error) {
+    return toHandoffError(error);
+  }
+};
 
 const createCheckoutSessionHandoff = async ({
   db,
@@ -3125,6 +3863,23 @@ export const createBillingApiApp = () => {
     await next();
   });
 
+  app.use('/api/v1/test/apps/:appId/*', async (c, next) => {
+    const db = createBillingApiDatabase(c.env.DB);
+    const appId = c.req.param('appId');
+    const token = readBearerToken(c.req.header('authorization'));
+    if (!token) {
+      return errorResponse(c, 401, 'unauthorized', 'Billing API key is required.');
+    }
+    const credential = await authenticateApp({ db, appId, apiKey: token });
+    if (!credential) {
+      return errorResponse(c, 403, 'forbidden_app', 'Billing API key cannot access this app.');
+    }
+    c.set('db', db);
+    c.set('appId', appId);
+    c.set('credentialScopes', credential.scopes);
+    await next();
+  });
+
   app.put('/api/v1/apps/:appId/subjects/:subjectType/:subjectId', async (c) => {
     const scopeError = requireBillingApiScope(c, 'subject:write');
     if (scopeError) {
@@ -3150,6 +3905,11 @@ export const createBillingApiApp = () => {
           subjectId: c.req.param('subjectId'),
           body,
         });
+        const evaluationContext = await resolveEvaluationContext({
+          db: c.get('db'),
+          appId: c.get('appId'),
+          subjectRowId: bundle.subject.id,
+        });
         return {
           status: 200,
           body: buildSummaryResponse({
@@ -3158,6 +3918,7 @@ export const createBillingApiApp = () => {
             account: bundle.account,
             subscription: bundle.subscription,
             entitlements: bundle.entitlements,
+            evaluationContext,
           }),
         };
       },
@@ -3178,6 +3939,11 @@ export const createBillingApiApp = () => {
     if (!bundle) {
       return errorResponse(c, 404, 'subject_not_found', 'Billing subject is not synced.');
     }
+    const evaluationContext = await resolveEvaluationContext({
+      db: c.get('db'),
+      appId: c.get('appId'),
+      subjectRowId: bundle.subject.id,
+    });
     return jsonResponse(
       c,
       buildSummaryResponse({
@@ -3186,6 +3952,7 @@ export const createBillingApiApp = () => {
         account: bundle.account,
         subscription: bundle.subscription,
         entitlements: bundle.entitlements,
+        evaluationContext,
       }),
     );
   });
@@ -3204,6 +3971,11 @@ export const createBillingApiApp = () => {
     if (!bundle) {
       return errorResponse(c, 404, 'subject_not_found', 'Billing subject is not synced.');
     }
+    const evaluationContext = await resolveEvaluationContext({
+      db: c.get('db'),
+      appId: c.get('appId'),
+      subjectRowId: bundle.subject.id,
+    });
     return jsonResponse(
       c,
       buildEntitlementsResponse({
@@ -3213,6 +3985,7 @@ export const createBillingApiApp = () => {
         subjectId: c.req.param('subjectId'),
         subscription: bundle.subscription,
         entitlements: bundle.entitlements,
+        evaluationContext,
       }),
     );
   });
@@ -3292,6 +4065,78 @@ export const createBillingApiApp = () => {
         }),
     });
   });
+
+  app.post(
+    '/api/v1/test/apps/:appId/subjects/:subjectType/:subjectId/clock-scenarios',
+    async (c) => {
+      const accessError = requireBillingTestClockAccess(c);
+      if (accessError) {
+        return accessError;
+      }
+      const rawBody = await c.req.text();
+      return runIdempotent({
+        c,
+        appId: c.get('appId'),
+        rawBody,
+        action: async (parsedBody) =>
+          createTestClockScenario({
+            db: c.get('db'),
+            env: c.env,
+            appId: c.get('appId'),
+            subjectType: c.req.param('subjectType'),
+            subjectId: c.req.param('subjectId'),
+            body: parsedBody,
+            idempotencyKey: c.req.header('idempotency-key')?.trim() ?? '',
+          }),
+      });
+    },
+  );
+
+  app.post(
+    '/api/v1/test/apps/:appId/subjects/:subjectType/:subjectId/clock-scenarios/:scenarioId/advance',
+    async (c) => {
+      const accessError = requireBillingTestClockAccess(c);
+      if (accessError) {
+        return accessError;
+      }
+      const rawBody = await c.req.text();
+      return runIdempotent({
+        c,
+        appId: c.get('appId'),
+        rawBody,
+        action: async (parsedBody) =>
+          advanceTestClockScenario({
+            db: c.get('db'),
+            env: c.env,
+            appId: c.get('appId'),
+            subjectType: c.req.param('subjectType'),
+            subjectId: c.req.param('subjectId'),
+            scenarioId: c.req.param('scenarioId'),
+            body: parsedBody,
+            idempotencyKey: c.req.header('idempotency-key')?.trim() ?? '',
+          }),
+      });
+    },
+  );
+
+  app.get(
+    '/api/v1/test/apps/:appId/subjects/:subjectType/:subjectId/clock-scenarios/:scenarioId',
+    async (c) => {
+      const accessError = requireBillingTestClockAccess(c);
+      if (accessError) {
+        return accessError;
+      }
+      const result = await readTestClockScenario({
+        db: c.get('db'),
+        env: c.env,
+        appId: c.get('appId'),
+        subjectType: c.req.param('subjectType'),
+        subjectId: c.req.param('subjectId'),
+        scenarioId: c.req.param('scenarioId'),
+      });
+      return jsonResponse(c, result.body, result.status);
+    },
+  );
 
   app.post('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/checkout-sessions', async (c) => {
     const scopeError = requireBillingApiScope(c, 'billing:write');

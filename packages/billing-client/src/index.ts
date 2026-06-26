@@ -1,11 +1,14 @@
 import type {
   BillingApiEntitlementsResponse,
   BillingApiErrorResponse,
+  BillingApiAdvanceTestClockScenarioRequest,
+  BillingApiCreateTestClockScenarioRequest,
   BillingApiHandoffRequest,
   BillingApiHandoffResponse,
   BillingApiInvoiceEventsResponse,
   BillingApiSubjectSyncRequest,
   BillingApiSummaryResponse,
+  BillingApiTestClockScenario,
 } from '@repo/billing-types';
 
 export type BillingClientOptions = {
@@ -54,6 +57,10 @@ export const createBillingClient = ({
     `/api/v1/apps/${encodeSegment(appId)}/subjects/${encodeSegment(subjectType)}/${encodeSegment(
       subjectId,
     )}`;
+  const testSubjectPath = ({ subjectType, subjectId }: BillingClientSubjectInput) =>
+    `/api/v1/test/apps/${encodeSegment(appId)}/subjects/${encodeSegment(
+      subjectType,
+    )}/${encodeSegment(subjectId)}`;
 
   const request = async <TResponse>({
     method,
@@ -202,6 +209,40 @@ export const createBillingClient = ({
         path: `${subjectPath(subject)}/trial/complete`,
         body,
         idempotencyKey: options.idempotencyKey,
+      });
+    },
+
+    createTestClockScenario(
+      subject: BillingClientSubjectInput,
+      body: BillingApiCreateTestClockScenarioRequest,
+      options: BillingClientRequestOptions,
+    ) {
+      return request<BillingApiTestClockScenario>({
+        method: 'POST',
+        path: `${testSubjectPath(subject)}/clock-scenarios`,
+        body,
+        idempotencyKey: options.idempotencyKey,
+      });
+    },
+
+    advanceTestClockScenario(
+      subject: BillingClientSubjectInput,
+      scenarioId: string,
+      body: BillingApiAdvanceTestClockScenarioRequest,
+      options: BillingClientRequestOptions,
+    ) {
+      return request<BillingApiTestClockScenario>({
+        method: 'POST',
+        path: `${testSubjectPath(subject)}/clock-scenarios/${encodeSegment(scenarioId)}/advance`,
+        body,
+        idempotencyKey: options.idempotencyKey,
+      });
+    },
+
+    readTestClockScenario(subject: BillingClientSubjectInput, scenarioId: string) {
+      return request<BillingApiTestClockScenario>({
+        method: 'GET',
+        path: `${testSubjectPath(subject)}/clock-scenarios/${encodeSegment(scenarioId)}`,
       });
     },
   };

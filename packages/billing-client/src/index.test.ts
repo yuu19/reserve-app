@@ -49,6 +49,8 @@ describe('createBillingClient', () => {
             features: {},
             entitlements: [],
             syncedAt: '2026-06-22T00:00:00.000Z',
+            evaluatedAt: '2026-06-22T00:00:00.000Z',
+            timeSource: 'server',
             maxStaleSeconds: 3600,
           },
         });
@@ -128,5 +130,66 @@ describe('createBillingClient', () => {
       'https://billing.example.com/api/v1/apps/reserve/subjects/organization/org_1/invoice-events?limit=25',
     );
     expect(requests[0]?.headers.get('authorization')).toBe('Bearer billing_test_key');
+  });
+
+  test('creates and advances Test Clock scenarios on test scoped paths', async () => {
+    const requests: Request[] = [];
+    const client = createBillingClient({
+      baseUrl: 'https://billing.example.com',
+      appId: 'reserve',
+      apiKey: 'billing_test_key',
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requests.push(request);
+        return createJsonResponse({
+          scenarioId: 'scenario_1',
+          appId: 'reserve',
+          scenarioType: 'trial_expired_without_payment_method',
+          status: 'ready',
+          provider: 'stripe',
+          providerTestClockId: 'clock_123',
+          providerCustomerId: 'cus_123',
+          providerSubscriptionId: 'sub_123',
+          frozenTime: '2026-06-27T00:00:00.000Z',
+          targetFrozenTime: null,
+          lastAdvancedAt: null,
+          sourceSubject: { subjectType: 'organization', subjectId: 'org_1' },
+          testSubject: {
+            subjectType: 'organization',
+            subjectId: 'org_1__tc_trial_expired_without_payment_method_scenario',
+          },
+          summary: {},
+          createdAt: '2026-06-27T00:00:00.000Z',
+          updatedAt: '2026-06-27T00:00:00.000Z',
+        });
+      },
+    });
+
+    await client.createTestClockScenario(
+      { subjectType: 'organization', subjectId: 'org_1' },
+      {
+        scenarioType: 'trial_expired_without_payment_method',
+        frozenTime: '2026-06-27T00:00:00.000Z',
+      },
+      { idempotencyKey: 'create-scenario' },
+    );
+    await client.advanceTestClockScenario(
+      { subjectType: 'organization', subjectId: 'org_1' },
+      'scenario_1',
+      { frozenTime: '2026-07-05T00:00:00.000Z' },
+      { idempotencyKey: 'advance-scenario' },
+    );
+    await client.readTestClockScenario(
+      { subjectType: 'organization', subjectId: 'org_1' },
+      'scenario_1',
+    );
+
+    expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+      'POST https://billing.example.com/api/v1/test/apps/reserve/subjects/organization/org_1/clock-scenarios',
+      'POST https://billing.example.com/api/v1/test/apps/reserve/subjects/organization/org_1/clock-scenarios/scenario_1/advance',
+      'GET https://billing.example.com/api/v1/test/apps/reserve/subjects/organization/org_1/clock-scenarios/scenario_1',
+    ]);
+    expect(requests[0]?.headers.get('idempotency-key')).toBe('create-scenario');
+    expect(requests[1]?.headers.get('idempotency-key')).toBe('advance-scenario');
   });
 });

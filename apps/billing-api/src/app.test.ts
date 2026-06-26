@@ -3,9 +3,11 @@ import {
   buildBillingApiFeatures,
   createBillingApiApp,
   hasBillingApiCredentialScope,
+  isBillingTestClockEnvironmentEnabled,
   isSupportedStripeBillingEventType,
   parseBillingApiCredentialScopes,
   readStripeInvoiceEventSnapshot,
+  readStripeTestClockSnapshot,
   readStripeSubscriptionSnapshot,
   toInvoiceEventResponse,
 } from './app.js';
@@ -72,9 +74,15 @@ describe('createBillingApiApp', () => {
   test('parses supported credential scopes and ignores unknown values', () => {
     expect(
       parseBillingApiCredentialScopes(
-        JSON.stringify(['subject:write', 'billing:read', 'billing:write', 'admin:all']),
+        JSON.stringify([
+          'subject:write',
+          'billing:read',
+          'billing:write',
+          'billing:test_clock',
+          'admin:all',
+        ]),
       ),
-    ).toEqual(['subject:write', 'billing:read', 'billing:write']);
+    ).toEqual(['subject:write', 'billing:read', 'billing:write', 'billing:test_clock']);
     expect(parseBillingApiCredentialScopes('{"not":"an array"}')).toEqual([]);
   });
 
@@ -91,6 +99,44 @@ describe('createBillingApiApp', () => {
         requiredScope: 'billing:write',
       }),
     ).toBe(false);
+  });
+
+  test('enables Test Clock API only for sandbox test-mode Stripe keys', () => {
+    expect(
+      isBillingTestClockEnvironmentEnabled({
+        BILLING_TEST_CLOCKS_ENABLED: 'true',
+        BILLING_API_ENV: 'sandbox',
+        STRIPE_SECRET_KEY: 'sk_test_123',
+      } as never),
+    ).toBe(true);
+    expect(
+      isBillingTestClockEnvironmentEnabled({
+        BILLING_TEST_CLOCKS_ENABLED: 'true',
+        BILLING_API_ENV: 'production',
+        STRIPE_SECRET_KEY: 'sk_test_123',
+      } as never),
+    ).toBe(false);
+    expect(
+      isBillingTestClockEnvironmentEnabled({
+        BILLING_TEST_CLOCKS_ENABLED: 'true',
+        BILLING_API_ENV: 'sandbox',
+        STRIPE_SECRET_KEY: 'sk_live_123',
+      } as never),
+    ).toBe(false);
+  });
+
+  test('normalizes Stripe Test Clock payloads', () => {
+    expect(
+      readStripeTestClockSnapshot({
+        id: 'clock_123',
+        status: 'internal_failure',
+        frozen_time: 1_783_000_000,
+      }),
+    ).toEqual({
+      id: 'clock_123',
+      status: 'failed',
+      frozenTime: new Date('2026-07-02T13:46:40.000Z'),
+    });
   });
 
   test('normalizes Stripe subscription payload for billing sync', () => {

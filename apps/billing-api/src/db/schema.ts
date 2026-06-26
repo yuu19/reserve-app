@@ -493,3 +493,45 @@ export const billingProviderEvent = sqliteTable(
     index('billing_provider_event_status_idx').on(table.processingStatus, table.createdAt),
   ],
 );
+
+export const billingTestClockScenario = sqliteTable(
+  'billing_test_clock_scenario',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    sourceSubjectRowId: text('source_subject_row_id')
+      .notNull()
+      .references(() => billingSubject.id, { onDelete: 'cascade' }),
+    testSubjectRowId: text('test_subject_row_id')
+      .notNull()
+      .references(() => billingSubject.id, { onDelete: 'cascade' }),
+    billingAccountId: text('billing_account_id')
+      .notNull()
+      .references(() => billingAccount.id, { onDelete: 'cascade' }),
+    provider: text('provider').default('stripe').notNull(),
+    providerTestClockId: text('provider_test_clock_id').notNull(),
+    providerCustomerId: text('provider_customer_id'),
+    providerSubscriptionId: text('provider_subscription_id'),
+    scenarioType: text('scenario_type').notNull(),
+    frozenTime: integer('frozen_time', { mode: 'timestamp_ms' }).notNull(),
+    targetFrozenTime: integer('target_frozen_time', { mode: 'timestamp_ms' }),
+    status: text('status').notNull(),
+    lastAdvancedAt: integer('last_advanced_at', { mode: 'timestamp_ms' }),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_test_clock_scenario_clock_uidx').on(
+      table.provider,
+      table.providerTestClockId,
+    ),
+    uniqueIndex('billing_test_clock_scenario_test_subject_uidx').on(
+      table.appId,
+      table.testSubjectRowId,
+    ),
+    index('billing_test_clock_scenario_source_idx').on(table.appId, table.sourceSubjectRowId),
+    index('billing_test_clock_scenario_status_idx').on(table.status, table.updatedAt),
+  ],
+);

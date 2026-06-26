@@ -4,7 +4,11 @@ export type BillingApiSubjectId = string;
 export type BillingApiProvider = 'stripe';
 export type BillingApiInterval = 'month' | 'year';
 export type BillingApiPriceResolution = 'not_applicable' | 'known' | 'unknown';
-export type BillingApiCredentialScope = 'subject:write' | 'billing:read' | 'billing:write';
+export type BillingApiCredentialScope =
+  | 'subject:write'
+  | 'billing:read'
+  | 'billing:write'
+  | 'billing:test_clock';
 
 export type BillingApiSubscriptionStatus =
   | 'free'
@@ -103,6 +107,8 @@ export type BillingApiEntitlementsResponse = {
   features: Record<string, unknown>;
   entitlements: BillingApiEntitlement[];
   syncedAt: string;
+  evaluatedAt: string;
+  timeSource: 'server' | 'stripe_test_clock';
   maxStaleSeconds: number;
 };
 
@@ -173,6 +179,53 @@ export type BillingApiHandoffResponse = {
   reused: boolean;
 };
 
+export type BillingApiTestClockScenarioType = 'trial_expired_without_payment_method';
+
+export type BillingApiTestClockScenarioStatus =
+  | 'ready'
+  | 'advancing'
+  | 'failed'
+  | 'deleted'
+  | 'unknown';
+
+export type BillingApiTestClockScenario = {
+  scenarioId: string;
+  appId: BillingApiAppId;
+  scenarioType: BillingApiTestClockScenarioType;
+  status: BillingApiTestClockScenarioStatus;
+  provider: BillingApiProvider;
+  providerTestClockId: string;
+  providerCustomerId: string | null;
+  providerSubscriptionId: string | null;
+  frozenTime: string;
+  targetFrozenTime: string | null;
+  lastAdvancedAt: string | null;
+  sourceSubject: {
+    subjectType: BillingApiSubjectType;
+    subjectId: BillingApiSubjectId;
+  };
+  testSubject: {
+    subjectType: BillingApiSubjectType;
+    subjectId: BillingApiSubjectId;
+  };
+  summary: BillingApiSummaryResponse;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BillingApiCreateTestClockScenarioRequest = {
+  scenarioType: BillingApiTestClockScenarioType;
+  frozenTime?: string | null;
+  planCode?: string;
+  interval?: BillingApiInterval;
+  trialDays?: number;
+  actor?: BillingApiActor;
+};
+
+export type BillingApiAdvanceTestClockScenarioRequest = {
+  frozenTime: string;
+};
+
 export type BillingApiErrorCode =
   | 'bad_request'
   | 'unauthorized'
@@ -182,6 +235,7 @@ export type BillingApiErrorCode =
   | 'idempotency_key_required'
   | 'idempotency_conflict'
   | 'provider_not_configured'
+  | 'test_clock_disabled'
   | 'not_implemented'
   | 'internal_error';
 

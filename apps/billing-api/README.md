@@ -36,11 +36,12 @@ API key は `billing_app_credential` に保存した hash で検証します。
 平文の key は保存しません。
 `scopes_json` に保存した scope で、API key ごとの操作範囲も検証します。
 
-| Scope           | 許可する操作                                     |
-| --------------- | ------------------------------------------------ |
-| `subject:write` | 課金対象の同期                                   |
-| `billing:read`  | summary、entitlements、invoice events の読み取り |
-| `billing:write` | trial、Checkout、支払い方法登録、Portal の開始   |
+| Scope                | 許可する操作                                           |
+| -------------------- | ------------------------------------------------------ |
+| `subject:write`      | 課金対象の同期                                         |
+| `billing:read`       | summary、entitlements、invoice events の読み取り       |
+| `billing:write`      | trial、Checkout、支払い方法登録、Portal の開始         |
+| `billing:test_clock` | sandbox 専用 Test Clock scenario の作成・advance・参照 |
 
 書き込み API では `Idempotency-Key` header が必須です。
 同じ key で異なる request body を送ると conflict として拒否します。
@@ -160,6 +161,25 @@ pnpm --filter @apps/billing-api exec wrangler d1 execute reserve-billing-api --r
 
 `features` は現在有効な entitlement だけから生成します。
 Stripe subscription が `trialing` または `active` の場合だけ entitlement を付与し、`past_due`、`unpaid`、`incomplete`、`canceled` では空にします。
+通常時の `timeSource` は `server` です。Test Clock scenario で作られた test subject では `timeSource` が `stripe_test_clock` になり、`evaluatedAt` は Stripe Test Clock の `frozen_time` になります。
+
+## Test Clock scenarios
+
+Test Clock API は sandbox 専用です。次の条件をすべて満たす場合だけ有効です。
+
+- `BILLING_TEST_CLOCKS_ENABLED=true`
+- `BILLING_API_ENV=sandbox`
+- `STRIPE_SECRET_KEY` が `sk_test_` で始まる
+- API key が `billing:test_clock` scope を持つ
+
+Phase 1 では `trial_expired_without_payment_method` のみ対応します。
+Billing API は元 subject を直接変更せず、test 専用 subject を作って Stripe Test Clock customer と trial subscription を紐づけます。
+
+```txt
+POST /api/v1/test/apps/{appId}/subjects/{subjectType}/{subjectId}/clock-scenarios
+POST /api/v1/test/apps/{appId}/subjects/{subjectType}/{subjectId}/clock-scenarios/{scenarioId}/advance
+GET  /api/v1/test/apps/{appId}/subjects/{subjectType}/{subjectId}/clock-scenarios/{scenarioId}
+```
 
 ## Invoice events
 
