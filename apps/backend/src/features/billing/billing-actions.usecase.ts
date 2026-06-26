@@ -1,4 +1,5 @@
 import { BillingClientError } from '@repo/billing-client';
+import type { BillingClientSubjectInput } from '@repo/billing-client';
 import type {
   BillingApiHandoffRequest,
   BillingApiHandoffResponse,
@@ -270,7 +271,26 @@ const syncBillingApiActionSubject = async ({
       idempotencyKey: `reserve-action-sync:${organizationId}:${idempotencyKeySuffix}`,
     },
   );
-  return billingSubject;
+  return {
+    organizationSubject: subject,
+    billingSubject,
+  };
+};
+
+type SyncedBillingApiActionSubject = Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+
+const readOptionalBillingApiActionSummary = async ({
+  client,
+  subject,
+}: {
+  client: Pick<BillingApiActionClient, 'readSummary'>;
+  subject: BillingClientSubjectInput | SyncedBillingApiActionSubject;
+}): Promise<BillingApiSummaryResponse | null> => {
+  try {
+    return await client.readSummary('billingSubject' in subject ? subject.billingSubject : subject);
+  } catch {
+    return null;
+  }
 };
 
 const readRequiredBillingApiActionSummary = async ({
@@ -290,7 +310,7 @@ const readRequiredBillingApiActionSummary = async ({
 }): Promise<
   | {
       ok: true;
-      subject: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+      subject: SyncedBillingApiActionSubject;
       summary: BillingApiSummaryResponse;
     }
   | {
@@ -306,7 +326,7 @@ const readRequiredBillingApiActionSummary = async ({
       organizationId,
       idempotencyKeySuffix,
     });
-    const summary = await client.readSummary(subject);
+    const summary = await client.readSummary(subject.billingSubject);
     return {
       ok: true,
       subject,
@@ -356,11 +376,12 @@ const createBillingApiHandoffResult = async ({
   now: Date;
   failureMessage: string;
   callHandoff(input: {
-    subject: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+    subject: BillingClientSubjectInput;
     request: BillingApiHandoffRequest;
   }): Promise<BillingApiHandoffResponse>;
-  syncedSubject?: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+  syncedSubject?: SyncedBillingApiActionSubject;
 }): Promise<JsonRouteResult> => {
+  let subjectForSummary: SyncedBillingApiActionSubject | null = null;
   try {
     const subject =
       syncedSubject ??
@@ -371,7 +392,12 @@ const createBillingApiHandoffResult = async ({
         organizationId,
         idempotencyKeySuffix: attempt.id,
       }));
-    const handoff = await callHandoff({ subject, request });
+    subjectForSummary = subject;
+    const handoff = await callHandoff({ subject: subject.billingSubject, request });
+    const billingApiSummaryResponse = await readOptionalBillingApiActionSummary({
+      client,
+      subject,
+    });
     if (handoff.status === 'conflict') {
       const failedAttempt = await ctx.operationStore.markFailed({
         attemptId: attempt.id,
@@ -387,6 +413,7 @@ const createBillingApiHandoffResult = async ({
           handoffAttempt: failedAttempt,
           handoffPurpose: purpose,
           handoffReused: handoff.reused,
+          billingApiSummaryResponse,
         }),
         409,
       );
@@ -406,6 +433,7 @@ const createBillingApiHandoffResult = async ({
           handoffAttempt: failedAttempt,
           handoffPurpose: purpose,
           handoffReused: handoff.reused,
+          billingApiSummaryResponse,
         }),
         500,
       );
@@ -428,10 +456,14 @@ const createBillingApiHandoffResult = async ({
         handoffAttempt: succeededAttempt,
         handoffPurpose: purpose,
         handoffReused: handoff.reused,
+        billingApiSummaryResponse,
       }),
       200,
     );
   } catch (error) {
+    const billingApiSummaryResponse = subjectForSummary
+      ? await readOptionalBillingApiActionSummary({ client, subject: subjectForSummary })
+      : null;
     const failure = toBillingApiActionFailure(error, failureMessage);
     await ctx.operationStore.markFailed({
       attemptId: attempt.id,
@@ -444,6 +476,7 @@ const createBillingApiHandoffResult = async ({
         role,
         status: failure.actionStatus,
         message: failure.message,
+        billingApiSummaryResponse,
       }),
       failure.statusCode,
     );
@@ -473,11 +506,12 @@ const createBillingApiLifecycleActionResult = async ({
   successStatus?: 200;
   failureMessage: string;
   callAction(input: {
-    subject: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+    subject: BillingClientSubjectInput;
     request: BillingApiHandoffRequest;
   }): Promise<BillingApiHandoffResponse>;
-  syncedSubject?: Awaited<ReturnType<typeof syncBillingApiActionSubject>>;
+  syncedSubject?: SyncedBillingApiActionSubject;
 }): Promise<JsonRouteResult> => {
+  let subjectForSummary: SyncedBillingApiActionSubject | null = null;
   try {
     const subject =
       syncedSubject ??
@@ -488,7 +522,12 @@ const createBillingApiLifecycleActionResult = async ({
         organizationId,
         idempotencyKeySuffix: attempt?.id ?? `manual:${organizationId}:${identity.userId}`,
       }));
-    const action = await callAction({ subject, request });
+    subjectForSummary = subject;
+    const action = await callAction({ subject: subject.billingSubject, request });
+    const billingApiSummaryResponse = await readOptionalBillingApiActionSummary({
+      client,
+      subject,
+    });
     if (action.status === 'conflict') {
       const failedAttempt = attempt
         ? await ctx.operationStore.markFailed({
@@ -506,6 +545,7 @@ const createBillingApiLifecycleActionResult = async ({
           handoffAttempt: failedAttempt,
           handoffPurpose: attempt?.purpose,
           handoffReused: action.reused,
+          billingApiSummaryResponse,
         }),
         409,
       );
@@ -527,6 +567,7 @@ const createBillingApiLifecycleActionResult = async ({
           handoffAttempt: failedAttempt,
           handoffPurpose: attempt?.purpose,
           handoffReused: action.reused,
+          billingApiSummaryResponse,
         }),
         500,
       );
@@ -546,10 +587,14 @@ const createBillingApiLifecycleActionResult = async ({
         handoffAttempt: succeededAttempt,
         handoffPurpose: attempt?.purpose,
         handoffReused: action.reused,
+        billingApiSummaryResponse,
       }),
       successStatus,
     );
   } catch (error) {
+    const billingApiSummaryResponse = subjectForSummary
+      ? await readOptionalBillingApiActionSummary({ client, subject: subjectForSummary })
+      : null;
     const failure = toBillingApiActionFailure(error, failureMessage);
     if (attempt) {
       await ctx.operationStore.markFailed({
@@ -564,6 +609,7 @@ const createBillingApiLifecycleActionResult = async ({
         role,
         status: failure.actionStatus,
         message: failure.message,
+        billingApiSummaryResponse,
       }),
       failure.statusCode,
     );
@@ -616,6 +662,7 @@ export const createSubscriptionCheckoutHandoff = async ({
         role,
         status: 'conflict',
         message: 'Organization already has an active premium subscription.',
+        billingApiSummaryResponse: billingApiSummary.summary,
       }),
       409,
     );
@@ -716,6 +763,7 @@ export const startTrialSubscription = async ({
         role,
         status: 'conflict',
         message: RESERVE_APP_PREMIUM_LIFECYCLE_CONFLICT_MESSAGE,
+        billingApiSummaryResponse: billingApiSummary.summary,
       }),
       409,
     );
@@ -802,6 +850,7 @@ export const createSetupCheckoutHandoff = async ({
         role,
         status: 'conflict',
         message: 'Organization does not have an active premium trial.',
+        billingApiSummaryResponse: billingApiSummary.summary,
       }),
       409,
     );
@@ -902,6 +951,7 @@ export const completeTrialLifecycle = async ({
         role,
         status: 'conflict',
         message: 'Organization does not have an active premium trial.',
+        billingApiSummaryResponse: billingApiSummary.summary,
       }),
       409,
     );
@@ -984,6 +1034,7 @@ export const createSubscriptionUpdatePortalHandoff = async ({
         status: 'conflict',
         message:
           'Billing portal is unavailable for free, canceled, or no-provider-subscription state.',
+        billingApiSummaryResponse: billingApiSummary.summary,
       }),
       409,
     );

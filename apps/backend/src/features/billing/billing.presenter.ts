@@ -187,6 +187,7 @@ export const readOrganizationBillingSummaryPayload = async ({
   organizationId,
   role,
   billingApiSummary,
+  billingApiSummaryResponse: providedBillingApiSummaryResponse,
   billingApiShadow,
 }: {
   store: ReserveAppBillingStore;
@@ -197,20 +198,23 @@ export const readOrganizationBillingSummaryPayload = async ({
     clientResolution: BillingApiSummaryClientResolution;
     subject: BillingApiOrganizationSubject;
   };
+  billingApiSummaryResponse?: Awaited<ReturnType<typeof readBillingApiSummary>> | null;
   billingApiShadow?: {
     clientResolution: BillingApiShadowClientResolution;
     subject: BillingApiShadowSubject;
   };
 }) => {
   const billing = await store.selectSummary(organizationId);
-  const billingApiSummaryResponse = billingApiSummary
-    ? await readBillingApiSummary({
-        clientResolution: billingApiSummary.clientResolution,
-        subject: billingApiSummary.subject,
-        contactRole: 'current_billing_viewer',
-        idempotencyKeyPrefix: 'reserve-summary-sync',
-      })
-    : null;
+  const billingApiSummaryResponse =
+    providedBillingApiSummaryResponse ??
+    (billingApiSummary
+      ? await readBillingApiSummary({
+          clientResolution: billingApiSummary.clientResolution,
+          subject: billingApiSummary.subject,
+          contactRole: 'current_billing_viewer',
+          idempotencyKeyPrefix: 'reserve-summary-sync',
+        })
+      : null);
   const planCode: 'free' | 'premium' =
     billingApiSummaryResponse?.subscription?.planCode === 'premium' ||
     billingApiSummaryResponse?.entitlements.planCode === 'premium'
@@ -390,6 +394,7 @@ export const buildBillingActionEnvelope = async ({
   handoffAttempt = null,
   handoffPurpose,
   handoffReused = false,
+  billingApiSummaryResponse = null,
 }: {
   store: ReserveAppBillingStore;
   env: AuthRuntimeEnv;
@@ -400,6 +405,7 @@ export const buildBillingActionEnvelope = async ({
   handoffAttempt?: OrganizationBillingOperationAttempt | null;
   handoffPurpose?: OrganizationBillingOperationPurpose;
   handoffReused?: boolean;
+  billingApiSummaryResponse?: Awaited<ReturnType<typeof readBillingApiSummary>> | null;
 }) => {
   const handoff = handoffPurpose
     ? buildBillingHandoff({
@@ -416,6 +422,7 @@ export const buildBillingActionEnvelope = async ({
       env,
       organizationId,
       role,
+      billingApiSummaryResponse,
     }),
     handoff,
     url: handoff?.url ?? null,

@@ -253,18 +253,26 @@ const createBillingApiFetch = ({
   handoffStatus = 200,
   handoffBody,
   summary,
+  summaries,
 }: {
   handoffUrl: string;
   handoffStatus?: number;
   handoffBody?: unknown;
   summary?: BillingApiSummaryResponse;
-}) =>
-  vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  summaries?: BillingApiSummaryResponse[];
+}) => {
+  const summaryQueue = [...(summaries ?? [])];
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'PUT') {
       return new Response(JSON.stringify({ synced: true }), { status: 200 });
     }
     if (init?.method === 'GET' && String(input).endsWith('/summary')) {
-      return new Response(JSON.stringify(summary ?? buildBillingApiSummary()), { status: 200 });
+      return new Response(
+        JSON.stringify(summaryQueue.shift() ?? summary ?? buildBillingApiSummary()),
+        {
+          status: 200,
+        },
+      );
     }
 
     return new Response(
@@ -280,6 +288,7 @@ const createBillingApiFetch = ({
       { status: handoffStatus },
     );
   });
+};
 
 const createContext = ({
   billing = freeBilling,
@@ -419,7 +428,7 @@ describe('課金アクションユースケース', () => {
         handoffUrl: 'https://billing.test/checkout',
       }),
     );
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1',
     );
@@ -454,6 +463,9 @@ describe('課金アクションユースケース', () => {
       interval: 'month',
       returnUrlKey: 'default',
     });
+    expect(String(fetchMock.mock.calls[3]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/summary',
+    );
   });
 
   it('Billing API checkout 失敗時は legacy Stripe に fallback せず local attempt を失敗にする', async () => {
@@ -535,6 +547,16 @@ describe('課金アクションユースケース', () => {
   it('Billing API action flag が有効なら trial start は Billing API 経由で実行する', async () => {
     const fetchMock = createBillingApiFetch({
       handoffUrl: '',
+      summaries: [
+        buildBillingApiSummary(),
+        buildBillingApiSummary({
+          billing: {
+            ...trialBilling,
+            stripeCustomerId: null,
+            stripeSubscriptionId: null,
+          },
+        }),
+      ],
       handoffBody: {
         status: 'succeeded',
         message: 'Started trial.',
@@ -555,6 +577,12 @@ describe('課金アクションユースケース', () => {
 
     expect(result.status).toBe(200);
     expect(result.body.status).toBe('succeeded');
+    expect(result.body.billing).toMatchObject({
+      planCode: 'premium',
+      planState: 'premium_trial',
+      subscriptionStatus: 'trialing',
+      premiumEligible: true,
+    });
     expect(ctx.createProvider).not.toHaveBeenCalled();
     expect(provider.createTrialSubscription).not.toHaveBeenCalled();
     expect(store.startPremiumTrial).not.toHaveBeenCalled();
