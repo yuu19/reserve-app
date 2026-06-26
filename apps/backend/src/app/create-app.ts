@@ -11,6 +11,7 @@ import { handleLegacyTicketCheckoutWebhook } from '../features/tickets/legacy-ti
 import type { OrganizationLogoService } from '../infra/storage/organization-logo-service.js';
 import {
   parseStripeWebhookEvent,
+  type StripeWebhookEvent,
   verifyStripeWebhookSignatureDetailed,
 } from '../infra/payment/stripe.js';
 import { createAuthRoutes } from '../routes/auth-routes.js';
@@ -28,6 +29,54 @@ type CreateAppOptions = {
 };
 
 const trimBaseUrl = (value: string) => value.replace(/\/+$/, '');
+
+const billingApiForwardableStripeEvents = new Set([
+  'customer.subscription.created',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
+  'invoice.paid',
+  'invoice.payment_succeeded',
+  'invoice.payment_failed',
+  'invoice.payment_action_required',
+]);
+
+const readRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+
+const readStripeMetadata = (value: unknown): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(readRecord(value))
+      .map(([key, entry]) => [key, typeof entry === 'string' ? entry.trim() : ''])
+      .filter(([, entry]) => entry.length > 0),
+  );
+
+const readCheckoutBillingMetadata = (event: StripeWebhookEvent): Record<string, string> => {
+  const object = readRecord(event.data?.object);
+  const subscriptionDetails = readRecord(object.subscription_details);
+  return {
+    ...readStripeMetadata(subscriptionDetails.metadata),
+    ...readStripeMetadata(object.metadata),
+  };
+};
+
+const hasBillingApiCheckoutMetadata = (event: StripeWebhookEvent): boolean => {
+  const metadata = readCheckoutBillingMetadata(event);
+  return Boolean(
+    metadata.billingAccountId ||
+    (metadata.appId && metadata.subjectType && metadata.subjectId) ||
+    metadata.billingPurpose === 'subscription_checkout' ||
+    metadata.billingPurpose === 'payment_method_setup',
+  );
+};
+
+export const shouldForwardStripeBillingWebhookToBillingApi = (
+  event: StripeWebhookEvent,
+): boolean => {
+  if (event.type === 'checkout.session.completed') {
+    return hasBillingApiCheckoutMetadata(event);
+  }
+  return billingApiForwardableStripeEvents.has(event.type);
+};
 
 const forwardStripeBillingWebhookToBillingApi = async ({
   env,
@@ -213,7 +262,10 @@ export const createApp = ({
       return c.json({ message: 'Invalid Stripe payload.' }, 400);
     }
 
-    if (env.BILLING_API_WEBHOOK_FORWARD_ENABLED === 'true') {
+    if (
+      env.BILLING_API_WEBHOOK_FORWARD_ENABLED === 'true' &&
+      shouldForwardStripeBillingWebhookToBillingApi(event)
+    ) {
       const forwardResult = await forwardStripeBillingWebhookToBillingApi({
         env,
         rawBody,

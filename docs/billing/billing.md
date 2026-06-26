@@ -249,6 +249,8 @@ Stripe からの通知は、正当な送信元であることを確認してか�
 
 Stripe からの通知は [`POST /api/webhooks/stripe`](../../apps/backend/src/app/create-app.ts) で受け取り、Billing API へ転送する。
 Billing API 側の受け口は [`POST /api/v1/webhooks/stripe/billing`](../../apps/billing-api/src/app.ts) とする。
+ただし、同じ Stripe endpoint に届く旧 ticket checkout や、Billing API 側でまだ正本処理していない通知は reserve-app backend の既存処理に残す。
+`checkout.session.completed` は Billing API の metadata を持つ session だけを Billing API へ転送する。
 署名がない、署名が一致しない、期限切れである場合は契約状態を変更しない。
 
 その場合も、支払い情報や raw payload は保存しない。  

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthInstance, AuthRuntimeDatabase } from '../auth-runtime.js';
-import { createApp } from './create-app.js';
+import { createApp, shouldForwardStripeBillingWebhookToBillingApi } from './create-app.js';
 
 const hmacSha256Hex = async (secret: string, payload: string): Promise<string> => {
   const key = await crypto.subtle.importKey(
@@ -43,6 +43,67 @@ const createTestApp = ({
   });
 
 describe('createApp Stripe webhook Billing API forwarding', () => {
+  it('Billing API metadata を持つ Checkout webhook だけを Billing API 転送対象にする', () => {
+    expect(
+      shouldForwardStripeBillingWebhookToBillingApi({
+        id: 'evt_billing_checkout',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_billing_checkout',
+            metadata: {
+              appId: 'reserve',
+              subjectType: 'organization',
+              subjectId: 'organization-1',
+              billingPurpose: 'subscription_checkout',
+            },
+          },
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldForwardStripeBillingWebhookToBillingApi({
+        id: 'evt_ticket_checkout',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_ticket_checkout',
+            metadata: {
+              purchaseId: 'ticket-purchase-1',
+            },
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('Billing API 未対応の legacy notification webhook は backend 側に残す', () => {
+    expect(
+      shouldForwardStripeBillingWebhookToBillingApi({
+        id: 'evt_trial_will_end',
+        type: 'customer.subscription.trial_will_end',
+        data: {
+          object: {
+            id: 'sub_trial',
+          },
+        },
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldForwardStripeBillingWebhookToBillingApi({
+        id: 'evt_invoice_payment_failed',
+        type: 'invoice.payment_failed',
+        data: {
+          object: {
+            id: 'in_failed',
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
   it('署名検証後に raw Stripe webhook body を Billing API へ転送する', async () => {
     const stripeWebhookSecret = 'whsec_test_forward';
     const billingApiBaseUrl = 'https://billing-api.test/';
