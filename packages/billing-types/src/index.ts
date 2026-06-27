@@ -179,7 +179,10 @@ export type BillingApiHandoffResponse = {
   reused: boolean;
 };
 
-export type BillingApiTestClockScenarioType = 'trial_expired_without_payment_method';
+export type BillingApiTestClockScenarioType =
+  | 'trial_expired_without_payment_method'
+  | 'monthly_renewal_success'
+  | 'payment_failed';
 
 export type BillingApiTestClockScenarioStatus =
   | 'ready'
@@ -223,7 +226,11 @@ export type BillingApiCreateTestClockScenarioRequest = {
 };
 
 export type BillingApiAdvanceTestClockScenarioRequest = {
-  frozenTime: string;
+  frozenTime?: string | null;
+  advanceBy?: {
+    amount: number;
+    unit: 'day' | 'month';
+  } | null;
 };
 
 export type BillingApiErrorCode =

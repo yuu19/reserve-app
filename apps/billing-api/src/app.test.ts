@@ -9,6 +9,7 @@ import {
   readStripeInvoiceEventSnapshot,
   readStripeTestClockSnapshot,
   readStripeSubscriptionSnapshot,
+  resolveTestClockAdvanceTarget,
   toInvoiceEventResponse,
 } from './app.js';
 
@@ -137,6 +138,27 @@ describe('createBillingApiApp', () => {
       status: 'failed',
       frozenTime: new Date('2026-07-02T13:46:40.000Z'),
     });
+  });
+
+  test('resolves Test Clock advanceBy requests from the current frozen time', () => {
+    expect(
+      resolveTestClockAdvanceTarget({
+        currentFrozenTime: new Date('2026-06-27T00:00:00.000Z'),
+        request: { advanceBy: { amount: 7, unit: 'day' } },
+      })?.toISOString(),
+    ).toBe('2026-07-04T00:00:00.000Z');
+    expect(
+      resolveTestClockAdvanceTarget({
+        currentFrozenTime: new Date('2026-06-27T00:00:00.000Z'),
+        request: { advanceBy: { amount: 1, unit: 'month' } },
+      })?.toISOString(),
+    ).toBe('2026-07-27T00:00:00.000Z');
+    expect(
+      resolveTestClockAdvanceTarget({
+        currentFrozenTime: new Date('2026-06-27T00:00:00.000Z'),
+        request: { frozenTime: '2026-07-05T00:00:00.000Z' },
+      })?.toISOString(),
+    ).toBe('2026-07-05T00:00:00.000Z');
   });
 
   test('normalizes Stripe subscription payload for billing sync', () => {

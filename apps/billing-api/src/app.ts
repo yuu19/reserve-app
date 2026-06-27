@@ -72,6 +72,8 @@ const DEFAULT_RETURN_URL_KEY = 'default';
 const DEFAULT_STRIPE_API_VERSION = '2026-04-22.dahlia';
 const DEFAULT_INVOICE_EVENTS_LIMIT = 50;
 const MAX_INVOICE_EVENTS_LIMIT = 100;
+const TEST_CLOCK_SUCCESS_PAYMENT_METHOD_ID = 'pm_card_visa';
+const TEST_CLOCK_FAILED_PAYMENT_METHOD_ID = 'pm_card_chargeCustomerFail';
 
 const toIso = (value: Date | null | undefined): string | null =>
   value instanceof Date ? value.toISOString() : null;
@@ -463,6 +465,146 @@ const createStripeTrialSubscription = async ({
   );
   if (!snapshot) {
     throw new Error('Invalid Stripe trial subscription response.');
+  }
+  return snapshot;
+};
+
+const attachStripePaymentMethod = async ({
+  env,
+  customerId,
+  paymentMethodId,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  customerId: string;
+  paymentMethodId: string;
+  idempotencyKey: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('customer', customerId);
+  const payload = await postStripeForm({
+    env,
+    path: `payment_methods/${encodeURIComponent(paymentMethodId)}/attach`,
+    params,
+    idempotencyKey,
+  });
+  const attachedPaymentMethodId = readString(readObject(payload).id);
+  if (!attachedPaymentMethodId) {
+    throw new Error('Invalid Stripe payment method attach response.');
+  }
+  return { id: attachedPaymentMethodId };
+};
+
+const updateStripeCustomerDefaultPaymentMethod = async ({
+  env,
+  customerId,
+  paymentMethodId,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  customerId: string;
+  paymentMethodId: string;
+  idempotencyKey: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('invoice_settings[default_payment_method]', paymentMethodId);
+  await postStripeForm({
+    env,
+    path: `customers/${encodeURIComponent(customerId)}`,
+    params,
+    idempotencyKey,
+  });
+};
+
+const updateStripeSubscriptionDefaultPaymentMethod = async ({
+  env,
+  subscriptionId,
+  paymentMethodId,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  subscriptionId: string;
+  paymentMethodId: string | null;
+  idempotencyKey: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('default_payment_method', paymentMethodId ?? '');
+  await postStripeForm({
+    env,
+    path: `subscriptions/${encodeURIComponent(subscriptionId)}`,
+    params,
+    idempotencyKey,
+  });
+};
+
+const attachAndSetStripeDefaultPaymentMethod = async ({
+  env,
+  customerId,
+  subscriptionId,
+  paymentMethodId,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  customerId: string;
+  subscriptionId?: string | null;
+  paymentMethodId: string;
+  idempotencyKey: string;
+}) => {
+  const paymentMethod = await attachStripePaymentMethod({
+    env,
+    customerId,
+    paymentMethodId,
+    idempotencyKey: `${idempotencyKey}:attach`,
+  });
+  await updateStripeCustomerDefaultPaymentMethod({
+    env,
+    customerId,
+    paymentMethodId: paymentMethod.id,
+    idempotencyKey: `${idempotencyKey}:customer_default`,
+  });
+  if (subscriptionId) {
+    await updateStripeSubscriptionDefaultPaymentMethod({
+      env,
+      subscriptionId,
+      paymentMethodId: paymentMethod.id,
+      idempotencyKey: `${idempotencyKey}:subscription_default`,
+    });
+  }
+  return paymentMethod;
+};
+
+const createStripeActiveSubscription = async ({
+  env,
+  customerId,
+  priceId,
+  paymentMethodId,
+  metadata,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  customerId: string;
+  priceId: string;
+  paymentMethodId: string;
+  metadata: Record<string, string>;
+  idempotencyKey: string;
+}): Promise<StripeSubscriptionSnapshot> => {
+  const params = new URLSearchParams();
+  params.set('customer', customerId);
+  params.set('items[0][price]', priceId);
+  params.set('default_payment_method', paymentMethodId);
+  params.set('payment_behavior', 'error_if_incomplete');
+  appendMetadata(params, metadata);
+
+  const snapshot = readStripeSubscriptionSnapshot(
+    await postStripeForm({
+      env,
+      path: 'subscriptions',
+      params,
+      idempotencyKey,
+    }),
+  );
+  if (!snapshot) {
+    throw new Error('Invalid Stripe active subscription response.');
   }
   return snapshot;
 };
@@ -1952,21 +2094,38 @@ type TestClockScenarioRequest = {
   actor: BillingApiActor | null;
 };
 
+const billingApiTestClockScenarioTypes = new Set<BillingApiTestClockScenarioType>([
+  'trial_expired_without_payment_method',
+  'monthly_renewal_success',
+  'payment_failed',
+]);
+
+const readTestClockScenarioType = (value: unknown): BillingApiTestClockScenarioType | null =>
+  typeof value === 'string' &&
+  billingApiTestClockScenarioTypes.has(value as BillingApiTestClockScenarioType)
+    ? (value as BillingApiTestClockScenarioType)
+    : null;
+
 const validateCreateTestClockScenarioRequest = (body: unknown): TestClockScenarioRequest | null => {
   const record = readObject(body);
-  if (record.scenarioType !== 'trial_expired_without_payment_method') {
+  const scenarioType = readTestClockScenarioType(record.scenarioType);
+  if (!scenarioType) {
     return null;
   }
   const trialDays = Number(record.trialDays ?? 7);
   if (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 365) {
     return null;
   }
+  const interval = record.interval === 'year' ? 'year' : 'month';
+  if (scenarioType !== 'trial_expired_without_payment_method' && interval !== 'month') {
+    return null;
+  }
   const frozenTime = toDateFromIsoString(record.frozenTime) ?? now();
   return {
-    scenarioType: record.scenarioType,
+    scenarioType,
     frozenTime,
     planCode: readString(record.planCode) ?? 'premium',
-    interval: record.interval === 'year' ? 'year' : 'month',
+    interval,
     trialDays,
     actor: record.actor === undefined ? null : readActor(record.actor),
   };
@@ -1975,8 +2134,49 @@ const validateCreateTestClockScenarioRequest = (body: unknown): TestClockScenari
 const validateAdvanceTestClockScenarioRequest = (
   body: unknown,
 ): BillingApiAdvanceTestClockScenarioRequest | null => {
-  const frozenTime = toDateFromIsoString(readObject(body).frozenTime);
-  return frozenTime ? { frozenTime: frozenTime.toISOString() } : null;
+  const record = readObject(body);
+  const frozenTime = toDateFromIsoString(record.frozenTime);
+  const advanceByRecord = readObject(record.advanceBy);
+  const advanceByAmount = Number(advanceByRecord.amount);
+  const rawAdvanceByUnit = readString(advanceByRecord.unit);
+  const advanceByUnit: 'day' | 'month' | null =
+    rawAdvanceByUnit === 'day' || rawAdvanceByUnit === 'month' ? rawAdvanceByUnit : null;
+  const advanceBy =
+    Number.isInteger(advanceByAmount) &&
+    advanceByAmount > 0 &&
+    ((advanceByUnit === 'day' && advanceByAmount <= 365) ||
+      (advanceByUnit === 'month' && advanceByAmount <= 24))
+      ? {
+          amount: advanceByAmount,
+          unit: advanceByUnit,
+        }
+      : null;
+  if ((frozenTime && advanceBy) || (!frozenTime && !advanceBy)) {
+    return null;
+  }
+  return frozenTime ? { frozenTime: frozenTime.toISOString() } : { advanceBy };
+};
+
+export const resolveTestClockAdvanceTarget = ({
+  currentFrozenTime,
+  request,
+}: {
+  currentFrozenTime: Date;
+  request: BillingApiAdvanceTestClockScenarioRequest;
+}): Date | null => {
+  if (request.frozenTime) {
+    return toDateFromIsoString(request.frozenTime);
+  }
+  if (!request.advanceBy) {
+    return null;
+  }
+  const target = new Date(currentFrozenTime);
+  if (request.advanceBy.unit === 'day') {
+    target.setUTCDate(target.getUTCDate() + request.advanceBy.amount);
+    return target;
+  }
+  target.setUTCMonth(target.getUTCMonth() + request.advanceBy.amount);
+  return target;
 };
 
 const buildTestSubjectId = ({
@@ -2004,9 +2204,7 @@ const toTestClockScenarioResponse = ({
   scenarioId: scenario.id,
   appId: scenario.appId,
   scenarioType:
-    scenario.scenarioType === 'trial_expired_without_payment_method'
-      ? scenario.scenarioType
-      : 'trial_expired_without_payment_method',
+    readTestClockScenarioType(scenario.scenarioType) ?? 'trial_expired_without_payment_method',
   status: normalizeStripeTestClockStatus(scenario.status),
   provider: 'stripe',
   providerTestClockId: scenario.providerTestClockId,
@@ -2207,20 +2405,40 @@ const createTestClockScenario = async ({
         updatedAt: now(),
       })
       .where(eq(dbSchema.billingAccount.id, testBundle.account.id));
-    const subscription = await createStripeTrialSubscription({
-      env,
-      customerId: customer.id,
-      priceId: priceResult.providerPriceId,
-      trialDays: request.trialDays,
-      metadata: {
-        ...metadata,
-        sourceSubjectType: subjectType,
-        sourceSubjectId: subjectId,
-        scenarioId,
-        scenarioType: request.scenarioType,
-      },
-      idempotencyKey: `${idempotencyKey}:subscription`,
-    });
+    const subscriptionMetadata = {
+      ...metadata,
+      sourceSubjectType: subjectType,
+      sourceSubjectId: subjectId,
+      scenarioId,
+      scenarioType: request.scenarioType,
+    };
+    const subscription =
+      request.scenarioType === 'trial_expired_without_payment_method'
+        ? await createStripeTrialSubscription({
+            env,
+            customerId: customer.id,
+            priceId: priceResult.providerPriceId,
+            trialDays: request.trialDays,
+            metadata: subscriptionMetadata,
+            idempotencyKey: `${idempotencyKey}:subscription`,
+          })
+        : await (async () => {
+            const successfulPaymentMethod = await attachAndSetStripeDefaultPaymentMethod({
+              env,
+              customerId: customer.id,
+              paymentMethodId: TEST_CLOCK_SUCCESS_PAYMENT_METHOD_ID,
+              idempotencyKey: `${idempotencyKey}:initial_payment`,
+            });
+            const activeSubscription = await createStripeActiveSubscription({
+              env,
+              customerId: customer.id,
+              priceId: priceResult.providerPriceId,
+              paymentMethodId: successfulPaymentMethod.id,
+              metadata: subscriptionMetadata,
+              idempotencyKey: `${idempotencyKey}:subscription`,
+            });
+            return activeSubscription;
+          })();
     const refreshedTestBundle = await readSubjectBundle({
       db,
       appId,
@@ -2385,11 +2603,10 @@ const advanceTestClockScenario = async ({
 }): Promise<JsonResult<BillingApiTestClockScenario | BillingApiErrorResponse>> => {
   const request = validateAdvanceTestClockScenarioRequest(body);
   if (!request) {
-    return { status: 400, body: errorBody('bad_request', 'Valid frozenTime is required.') };
-  }
-  const targetFrozenTime = toDateFromIsoString(request.frozenTime);
-  if (!targetFrozenTime) {
-    return { status: 400, body: errorBody('bad_request', 'Valid frozenTime is required.') };
+    return {
+      status: 400,
+      body: errorBody('bad_request', 'Valid frozenTime or advanceBy is required.'),
+    };
   }
   const sourceBundle = await readSourceBundleForScenarioRoute({
     db,
@@ -2412,6 +2629,16 @@ const advanceTestClockScenario = async ({
       body: errorBody('subject_not_found', 'Test clock scenario is not found.'),
     };
   }
+  const targetFrozenTime = resolveTestClockAdvanceTarget({
+    currentFrozenTime: scenario.frozenTime,
+    request,
+  });
+  if (!targetFrozenTime) {
+    return {
+      status: 400,
+      body: errorBody('bad_request', 'Valid frozenTime or advanceBy is required.'),
+    };
+  }
   if (targetFrozenTime.getTime() <= scenario.frozenTime.getTime()) {
     return {
       status: 400,
@@ -2420,6 +2647,26 @@ const advanceTestClockScenario = async ({
   }
 
   try {
+    if (readTestClockScenarioType(scenario.scenarioType) === 'payment_failed') {
+      if (!scenario.providerCustomerId || !scenario.providerSubscriptionId) {
+        return {
+          status: 500,
+          body: errorBody('internal_error', 'Test clock scenario Stripe ids are missing.'),
+        };
+      }
+      await updateStripeSubscriptionDefaultPaymentMethod({
+        env,
+        subscriptionId: scenario.providerSubscriptionId,
+        paymentMethodId: null,
+        idempotencyKey: `${idempotencyKey}:clear_subscription_payment_method`,
+      });
+      await attachAndSetStripeDefaultPaymentMethod({
+        env,
+        customerId: scenario.providerCustomerId,
+        paymentMethodId: TEST_CLOCK_FAILED_PAYMENT_METHOD_ID,
+        idempotencyKey: `${idempotencyKey}:renewal_failure_payment`,
+      });
+    }
     const clock = await advanceStripeTestClock({
       env,
       testClockId: scenario.providerTestClockId,

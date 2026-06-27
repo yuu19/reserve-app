@@ -172,8 +172,16 @@ Test Clock API は sandbox 専用です。次の条件をすべて満たす場�
 - `STRIPE_SECRET_KEY` が `sk_test_` で始まる
 - API key が `billing:test_clock` scope を持つ
 
-Phase 1 では `trial_expired_without_payment_method` のみ対応します。
-Billing API は元 subject を直接変更せず、test 専用 subject を作って Stripe Test Clock customer と trial subscription を紐づけます。
+Billing API は元 subject を直接変更せず、test 専用 subject を作って Stripe Test Clock customer/subscription を紐づけます。
+
+対応 scenario:
+
+- `trial_expired_without_payment_method`: 支払い方法なしの trial subscription を作り、trial 終了後の canceled/free 収束を確認します。
+- `monthly_renewal_success`: 有効な支払い方法で active monthly subscription を作り、月次更新後も premium entitlement が維持されることを確認します。
+- `payment_failed`: 初回 invoice を有効な支払い方法で成功させた後、次回請求用の支払い方法を失敗用 PaymentMethod に差し替え、月次更新失敗後の past_due / gate close を確認します。
+
+`advance` は絶対時刻の `frozenTime`、または相対指定の `advanceBy` を受け付けます。
+両方を同時に指定した場合、またはどちらも指定しない場合は `400 bad_request` を返します。
 
 ```txt
 POST /api/v1/test/apps/{appId}/subjects/{subjectType}/{subjectId}/clock-scenarios

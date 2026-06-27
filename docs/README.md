@@ -24,6 +24,7 @@
 - [cloudflare-access-development-sites.md](./operations/cloudflare-access-development-sites.md): 開発中の Web アプリとドキュメントを Cloudflare Access で制限する運用。
 - [billing-verification-checklist.md](./operations/billing-verification-checklist.md): 課金確認のチェックリスト。
 - [ai-agent-billing-verification.md](./operations/ai-agent-billing-verification.md): AI agent で課金確認を補助する場合の運用ガイド。
+- [billing-test-clock-scenarios.md](./operations/billing-test-clock-scenarios.md): Billing API の Test Clock scenario を internal operator が使うための Phase 1 仕様。
 
 ### AI
 

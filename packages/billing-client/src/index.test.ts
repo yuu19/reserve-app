@@ -168,7 +168,7 @@ describe('createBillingClient', () => {
     await client.createTestClockScenario(
       { subjectType: 'organization', subjectId: 'org_1' },
       {
-        scenarioType: 'trial_expired_without_payment_method',
+        scenarioType: 'monthly_renewal_success',
         frozenTime: '2026-06-27T00:00:00.000Z',
       },
       { idempotencyKey: 'create-scenario' },
@@ -176,7 +176,7 @@ describe('createBillingClient', () => {
     await client.advanceTestClockScenario(
       { subjectType: 'organization', subjectId: 'org_1' },
       'scenario_1',
-      { frozenTime: '2026-07-05T00:00:00.000Z' },
+      { advanceBy: { amount: 1, unit: 'month' } },
       { idempotencyKey: 'advance-scenario' },
     );
     await client.readTestClockScenario(
@@ -191,5 +191,12 @@ describe('createBillingClient', () => {
     ]);
     expect(requests[0]?.headers.get('idempotency-key')).toBe('create-scenario');
     expect(requests[1]?.headers.get('idempotency-key')).toBe('advance-scenario');
+    await expect(requests[0]?.json()).resolves.toMatchObject({
+      scenarioType: 'monthly_renewal_success',
+      frozenTime: '2026-06-27T00:00:00.000Z',
+    });
+    await expect(requests[1]?.json()).resolves.toEqual({
+      advanceBy: { amount: 1, unit: 'month' },
+    });
   });
 });

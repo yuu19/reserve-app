@@ -4,6 +4,7 @@
 
 確認項目の正本は [決済関連動作確認チェックリスト](./billing-verification-checklist.md) です。
 テストと CI の位置づけは [テスト戦略](./test-strategy.md) を参照します。
+Billing API の Test Clock scenario を internal operator で扱う場合は、[Billing API テストクロック scenario Phase 1 仕様](./billing-test-clock-scenarios.md) を参照します。
 
 AI agent は最終判定者ではありません。
 検証手順を実行し、観測した結果と証跡を整理する担当として扱います。

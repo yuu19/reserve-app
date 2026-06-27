@@ -121,6 +121,7 @@ export type BillingApiSummaryPayload = {
     providerSubscriptionId: string | null;
     planCode: string;
     status: string;
+    currentPeriodEnd: string | null;
     trialEnd: string | null;
   } | null;
   entitlements: {
@@ -135,7 +136,10 @@ export type BillingApiSummaryPayload = {
 
 export type BillingApiTestClockScenarioPayload = {
   scenarioId: string;
-  scenarioType: 'trial_expired_without_payment_method';
+  scenarioType:
+    | 'trial_expired_without_payment_method'
+    | 'monthly_renewal_success'
+    | 'payment_failed';
   status: 'ready' | 'advancing' | 'failed' | 'deleted' | 'unknown';
   providerTestClockId: string;
   providerCustomerId: string | null;
@@ -701,11 +705,13 @@ export const createBillingApiTestClockScenario = async ({
   request,
   subjectId,
   frozenTime,
+  scenarioType = 'trial_expired_without_payment_method',
   trialDays = 1,
 }: {
   request: APIRequestContext;
   subjectId: string;
   frozenTime: string;
+  scenarioType?: BillingApiTestClockScenarioPayload['scenarioType'];
   trialDays?: number;
 }) => {
   const response = await request.post(
@@ -719,7 +725,7 @@ export const createBillingApiTestClockScenario = async ({
         'content-type': 'application/json',
       },
       data: {
-        scenarioType: 'trial_expired_without_payment_method',
+        scenarioType,
         frozenTime,
         planCode: 'premium',
         interval: 'month',
@@ -741,11 +747,13 @@ export const advanceBillingApiTestClockScenario = async ({
   sourceSubject,
   scenarioId,
   frozenTime,
+  advanceBy,
 }: {
   request: APIRequestContext;
   sourceSubject: BillingApiSubjectInput;
   scenarioId: string;
-  frozenTime: string;
+  frozenTime?: string;
+  advanceBy?: { amount: number; unit: 'day' | 'month' };
 }) => {
   const response = await request.post(
     `${billingApiTestSubjectPath(sourceSubject)}/clock-scenarios/${encodeURIComponent(
@@ -756,7 +764,7 @@ export const advanceBillingApiTestClockScenario = async ({
         ...billingApiHeaders(`billing-api-e2e-advance-scenario-${scenarioId}`),
         'content-type': 'application/json',
       },
-      data: { frozenTime },
+      data: frozenTime ? { frozenTime } : { advanceBy },
     },
   );
   await expectStatus(response, 200);
