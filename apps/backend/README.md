@@ -46,6 +46,17 @@ pnpm --filter @apps/backend run dev
 - `STRIPE_BILLING_MONTHLY_LOOKUP_KEY` (default: `wakureserve_premium_monthly`)
 - `STRIPE_BILLING_YEARLY_LOOKUP_KEY` (default: `wakureserve_premium_yearly`)
 
+任意 (共有 Billing API 連携):
+
+- `BILLING_API_ACTIONS_ENABLED`
+- `BILLING_API_SUMMARY_ENABLED`
+- `BILLING_API_SHADOW_ENABLED`
+- `BILLING_API_TEST_CLOCKS_ENABLED` (`true` の場合でも `BILLING_API_TEST_CLOCKS_ENV=sandbox` が必要)
+- `BILLING_API_TEST_CLOCKS_ENV` (`sandbox` の場合のみ internal Test Clock proxy を許可)
+- `BILLING_API_WEBHOOK_FORWARD_ENABLED`
+- `BILLING_API_BASE_URL`
+- `BILLING_API_KEY`
+
 任意 (organization ロゴアップロード):
 
 - `ORG_LOGO_MAX_UPLOAD_BYTES` (デフォルト: `5242880` = 5MB)
@@ -173,6 +184,8 @@ pnpm --filter @apps/backend exec wrangler secret put SENTRY_DSN_BACKEND
 - `STRIPE_PREMIUM_MONTHLY_PRICE_ID`
 - `STRIPE_PREMIUM_YEARLY_PRICE_ID`
 - `STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED`
+- `BILLING_API_TEST_CLOCKS_ENABLED` (本番では通常 `false`)
+- `BILLING_API_TEST_CLOCKS_ENV` (Test Clock 検証環境だけ `sandbox`)
 - `ORG_LOGO_MAX_UPLOAD_BYTES`
 - `ORG_LOGO_PUBLIC_BASE_URL`
 - `SERVICE_IMAGE_MAX_UPLOAD_BYTES`

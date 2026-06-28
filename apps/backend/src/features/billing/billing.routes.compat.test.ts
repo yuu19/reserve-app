@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  advanceInternalBillingTestClockScenarioRoute,
+  createInternalBillingTestClockScenarioRoute,
   createOrganizationBillingCheckoutRoute,
   createOrganizationBillingPaymentMethodRoute,
   createOrganizationBillingPortalRoute,
   createOrganizationBillingTrialCompletionRoute,
   createOrganizationBillingTrialRoute,
+  getInternalBillingTestClockScenarioRoute,
   getInternalBillingInspectionRoute,
   getOrganizationBillingRoute,
+  internalBillingTestClockScenarioAdvanceBodySchema,
+  internalBillingTestClockScenarioCreateBodySchema,
   organizationBillingActionResponseSchema,
   organizationBillingCheckoutBodySchema,
 } from './billing.schemas.js';
@@ -25,6 +30,9 @@ describe('課金ルート互換性', () => {
         createOrganizationBillingPortalRoute,
         createOrganizationBillingTrialCompletionRoute,
         getInternalBillingInspectionRoute,
+        createInternalBillingTestClockScenarioRoute,
+        getInternalBillingTestClockScenarioRoute,
+        advanceInternalBillingTestClockScenarioRoute,
       ].map((route) => ({
         method: route.method,
         path: route.path,
@@ -66,6 +74,21 @@ describe('課金ルート互換性', () => {
         path: '/internal/organizations/{organizationId}/billing-inspection',
         responses: ['200', '401', '403', '404'],
       },
+      {
+        method: 'post',
+        path: '/internal/organizations/{organizationId}/billing-test-clock-scenarios',
+        responses: ['200', '400', '401', '403', '404', '409', '422', '503'],
+      },
+      {
+        method: 'get',
+        path: '/internal/organizations/{organizationId}/billing-test-clock-scenarios/{scenarioId}',
+        responses: ['200', '401', '403', '404', '422', '503'],
+      },
+      {
+        method: 'post',
+        path: '/internal/organizations/{organizationId}/billing-test-clock-scenarios/{scenarioId}/advance',
+        responses: ['200', '400', '401', '403', '404', '409', '422', '503'],
+      },
     ]);
   });
 
@@ -106,6 +129,38 @@ describe('課金ルート互換性', () => {
         reused: false,
       },
       url: 'https://stripe.test/checkout',
+    });
+  });
+
+  it('Billing API Test Clock リクエストのワイヤー形状を維持する', () => {
+    expect(
+      internalBillingTestClockScenarioCreateBodySchema.parse({
+        scenarioType: 'trial_expired_without_payment_method',
+        frozenTime: '2026-06-28T00:00:00.000Z',
+        planCode: 'premium',
+        interval: 'month',
+        trialDays: 7,
+      }),
+    ).toEqual({
+      scenarioType: 'trial_expired_without_payment_method',
+      frozenTime: '2026-06-28T00:00:00.000Z',
+      planCode: 'premium',
+      interval: 'month',
+      trialDays: 7,
+    });
+
+    expect(
+      internalBillingTestClockScenarioAdvanceBodySchema.parse({
+        advanceBy: {
+          amount: 7,
+          unit: 'day',
+        },
+      }),
+    ).toEqual({
+      advanceBy: {
+        amount: 7,
+        unit: 'day',
+      },
     });
   });
 });

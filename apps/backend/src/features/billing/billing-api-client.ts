@@ -44,6 +44,14 @@ export type BillingApiSummaryClient = Pick<BillingApiClient, 'syncSubject' | 're
 
 export type BillingApiSummaryClientResolution = BillingApiClientResolution<BillingApiSummaryClient>;
 
+export type BillingApiTestClockClient = Pick<
+  BillingApiClient,
+  'syncSubject' | 'createTestClockScenario' | 'advanceTestClockScenario' | 'readTestClockScenario'
+>;
+
+export type BillingApiTestClockClientResolution =
+  BillingApiClientResolution<BillingApiTestClockClient>;
+
 export const sha256Hex = async (value: string): Promise<string> => {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest))
@@ -67,7 +75,8 @@ export const buildBillingApiOrganizationSubjectSyncRequest = ({
   source:
     | 'reserve-app-backend-shadow'
     | 'reserve-app-backend-action'
-    | 'reserve-app-backend-summary';
+    | 'reserve-app-backend-summary'
+    | 'reserve-app-backend-test-clock';
   contactRole: string;
 }): BillingApiSubjectSyncRequest => ({
   displayName: subject.organizationName,
@@ -148,6 +157,24 @@ export const resolveBillingApiSummaryClient = ({
   const resolution = resolveBillingApiClient({
     env,
     enabled: env.BILLING_API_SUMMARY_ENABLED === 'true',
+    fetch: fetchImpl,
+  });
+
+  return resolution;
+};
+
+export const resolveBillingApiTestClockClient = ({
+  env,
+  fetch: fetchImpl,
+}: {
+  env: AuthRuntimeEnv;
+  fetch?: typeof fetch;
+}): BillingApiTestClockClientResolution => {
+  const resolution = resolveBillingApiClient({
+    env,
+    enabled:
+      env.BILLING_API_TEST_CLOCKS_ENABLED === 'true' &&
+      env.BILLING_API_TEST_CLOCKS_ENV === 'sandbox',
     fetch: fetchImpl,
   });
 

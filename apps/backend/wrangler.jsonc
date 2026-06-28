@@ -52,6 +52,8 @@
     "BILLING_API_ACTIONS_ENABLED": "true",
     "BILLING_API_SUMMARY_ENABLED": "true",
     "BILLING_API_SHADOW_ENABLED": "true",
+    "BILLING_API_TEST_CLOCKS_ENABLED": "false",
+    "BILLING_API_TEST_CLOCKS_ENV": "production",
     "BILLING_API_WEBHOOK_FORWARD_ENABLED": "true",
     "BILLING_API_BASE_URL": "https://reserve-billing-api.yusuke-kusi1028.workers.dev",
     "ORG_LOGO_MAX_UPLOAD_BYTES": "5242880",

@@ -23,9 +23,17 @@ import {
   createOrganizationBillingPortalRoute,
   createOrganizationBillingTrialCompletionRoute,
   createOrganizationBillingTrialRoute,
+  advanceInternalBillingTestClockScenarioRoute,
+  createInternalBillingTestClockScenarioRoute,
+  getInternalBillingTestClockScenarioRoute,
   getInternalBillingInspectionRoute,
   getOrganizationBillingRoute,
 } from './billing.schemas.js';
+import {
+  advanceInternalBillingTestClockScenario,
+  createInternalBillingTestClockScenario,
+  readInternalBillingTestClockScenario,
+} from './billing-test-clock.usecase.js';
 import { getOrganizationBillingSummary } from './billing-summary.usecase.js';
 
 export { resolveE2eStripeTestClockId };
@@ -124,6 +132,41 @@ export const registerBillingRoutes = (
       await getInternalBillingInspection({
         ctx,
         params: c.req.valid('param'),
+        headers: c.req.raw.headers,
+      }),
+    ),
+  );
+
+  authRoutes.openapi(createInternalBillingTestClockScenarioRoute, async (c) =>
+    jsonBillingRouteResult(
+      c,
+      await createInternalBillingTestClockScenario({
+        ctx,
+        params: c.req.valid('param'),
+        body: c.req.valid('json'),
+        headers: c.req.raw.headers,
+      }),
+    ),
+  );
+
+  authRoutes.openapi(getInternalBillingTestClockScenarioRoute, async (c) =>
+    jsonBillingRouteResult(
+      c,
+      await readInternalBillingTestClockScenario({
+        ctx,
+        params: c.req.valid('param'),
+        headers: c.req.raw.headers,
+      }),
+    ),
+  );
+
+  authRoutes.openapi(advanceInternalBillingTestClockScenarioRoute, async (c) =>
+    jsonBillingRouteResult(
+      c,
+      await advanceInternalBillingTestClockScenario({
+        ctx,
+        params: c.req.valid('param'),
+        body: c.req.valid('json'),
         headers: c.req.raw.headers,
       }),
     ),

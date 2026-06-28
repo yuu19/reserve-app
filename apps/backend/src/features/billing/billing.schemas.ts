@@ -36,6 +36,49 @@ export const internalBillingInspectionParamsSchema = z.object({
   organizationId: z.string().min(1),
 });
 
+/** Billing API Test Clock scenario の対象 organization を path parameter から検証する schema。 */
+export const internalBillingTestClockScenarioParamsSchema = z.object({
+  organizationId: z.string().min(1),
+});
+
+/** Billing API Test Clock scenario ID 付き path parameter を検証する schema。 */
+export const internalBillingTestClockScenarioWithIdParamsSchema = z.object({
+  organizationId: z.string().min(1),
+  scenarioId: z.string().min(1),
+});
+
+/** reserve-app backend が Phase 2 で proxy する Test Clock scenario 種別。 */
+export const internalBillingTestClockScenarioTypeSchema = z.enum([
+  'trial_expired_without_payment_method',
+  'monthly_renewal_success',
+  'payment_failed',
+]);
+
+/** Billing API Test Clock scenario 作成 request body schema。 */
+export const internalBillingTestClockScenarioCreateBodySchema = z.object({
+  scenarioType: internalBillingTestClockScenarioTypeSchema,
+  frozenTime: z.string().datetime().nullable().optional(),
+  planCode: z.string().min(1).optional(),
+  interval: z.enum(['month', 'year']).optional(),
+  trialDays: z.number().int().positive().max(365).optional(),
+});
+
+/** Billing API Test Clock scenario advance request body schema。 */
+export const internalBillingTestClockScenarioAdvanceBodySchema = z
+  .object({
+    frozenTime: z.string().datetime().nullable().optional(),
+    advanceBy: z
+      .object({
+        amount: z.number().int().positive(),
+        unit: z.enum(['day', 'month']),
+      })
+      .nullable()
+      .optional(),
+  })
+  .refine((body) => Boolean(body.frozenTime) !== Boolean(body.advanceBy), {
+    message: 'Specify exactly one of frozenTime or advanceBy.',
+  });
+
 /** Stripe price と既知 tier catalog から解決した有料 tier の API schema。 */
 export const organizationBillingPaidTierSchema = z.object({
   code: z.enum(['premium_default', 'premium_growth', 'premium_scale', 'premium_unknown']),
@@ -573,6 +616,36 @@ export const internalBillingInspectionResponseSchema = z.object({
   timeline: internalBillingInspectionTimelineSchema,
 });
 
+/** Billing API Test Clock scenario を backend が加工せず返す response schema。 */
+export const internalBillingTestClockScenarioResponseSchema = z
+  .object({
+    scenarioId: z.string().min(1),
+    appId: z.string().min(1),
+    scenarioType: internalBillingTestClockScenarioTypeSchema,
+    status: z.enum(['ready', 'advancing', 'failed', 'deleted', 'unknown']),
+    provider: z.literal('stripe'),
+    providerTestClockId: z.string().min(1),
+    providerCustomerId: z.string().nullable(),
+    providerSubscriptionId: z.string().nullable(),
+    frozenTime: z.string().min(1),
+    targetFrozenTime: z.string().nullable(),
+    lastAdvancedAt: z.string().nullable(),
+    sourceSubject: z.object({
+      subjectType: z.string().min(1),
+      subjectId: z.string().min(1),
+    }),
+    testSubject: z.object({
+      subjectType: z.string().min(1),
+      subjectId: z.string().min(1),
+    }),
+    summary: z.unknown(),
+    createdAt: z.string().min(1),
+    updatedAt: z.string().min(1),
+  })
+  .passthrough();
+
+const messageResponseSchema = z.object({ message: z.string().min(1) });
+
 /** Owner が organization billing summary を取得する OpenAPI route 定義。 */
 export const getOrganizationBillingRoute = createRoute({
   method: 'get',
@@ -879,6 +952,149 @@ export const getInternalBillingInspectionRoute = createRoute({
   },
 });
 
+/** Internal operator が Billing API Test Clock scenario を作成する OpenAPI route 定義。 */
+export const createInternalBillingTestClockScenarioRoute = createRoute({
+  method: 'post',
+  path: '/internal/organizations/{organizationId}/billing-test-clock-scenarios',
+  tags: ['Internal Billing'],
+  summary: 'Create Billing API Test Clock scenario for an organization',
+  request: {
+    params: internalBillingTestClockScenarioParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: internalBillingTestClockScenarioCreateBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Billing API Test Clock scenario',
+      content: { 'application/json': { schema: internalBillingTestClockScenarioResponseSchema } },
+    },
+    400: {
+      description: 'Billing API rejected the scenario request',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    403: {
+      description: 'Internal billing inspection access denied.',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    404: {
+      description: 'Organization or Billing API subject not found',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    409: {
+      description: 'Billing API idempotency or scenario conflict',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    422: {
+      description: 'Billing API Test Clock proxy is disabled or request is invalid',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    503: {
+      description: 'Billing API Test Clock scenario creation unavailable',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+  },
+});
+
+/** Internal operator が Billing API Test Clock scenario を取得する OpenAPI route 定義。 */
+export const getInternalBillingTestClockScenarioRoute = createRoute({
+  method: 'get',
+  path: '/internal/organizations/{organizationId}/billing-test-clock-scenarios/{scenarioId}',
+  tags: ['Internal Billing'],
+  summary: 'Get Billing API Test Clock scenario for an organization',
+  request: {
+    params: internalBillingTestClockScenarioWithIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Billing API Test Clock scenario',
+      content: { 'application/json': { schema: internalBillingTestClockScenarioResponseSchema } },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    403: {
+      description: 'Internal billing inspection access denied.',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    404: {
+      description: 'Organization or Billing API scenario not found',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    422: {
+      description: 'Billing API Test Clock proxy is disabled',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    503: {
+      description: 'Billing API Test Clock scenario read unavailable',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+  },
+});
+
+/** Internal operator が Billing API Test Clock scenario の clock を進める OpenAPI route 定義。 */
+export const advanceInternalBillingTestClockScenarioRoute = createRoute({
+  method: 'post',
+  path: '/internal/organizations/{organizationId}/billing-test-clock-scenarios/{scenarioId}/advance',
+  tags: ['Internal Billing'],
+  summary: 'Advance Billing API Test Clock scenario for an organization',
+  request: {
+    params: internalBillingTestClockScenarioWithIdParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: internalBillingTestClockScenarioAdvanceBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Billing API Test Clock scenario',
+      content: { 'application/json': { schema: internalBillingTestClockScenarioResponseSchema } },
+    },
+    400: {
+      description: 'Billing API rejected the advance request',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    403: {
+      description: 'Internal billing inspection access denied.',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    404: {
+      description: 'Organization or Billing API scenario not found',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    409: {
+      description: 'Billing API idempotency or scenario conflict',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    422: {
+      description: 'Billing API Test Clock proxy is disabled or request is invalid',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+    503: {
+      description: 'Billing API Test Clock scenario advance unavailable',
+      content: { 'application/json': { schema: messageResponseSchema } },
+    },
+  },
+});
+
 /** Organization billing summary 取得 query の型。 */
 export type OrganizationBillingQuery = z.infer<typeof organizationBillingQuerySchema>;
 
@@ -903,3 +1119,23 @@ export type OrganizationBillingTrialCompletionBody = z.infer<
 
 /** Internal billing inspection path params の型。 */
 export type InternalBillingInspectionParams = z.infer<typeof internalBillingInspectionParamsSchema>;
+
+/** Internal Billing API Test Clock scenario path params の型。 */
+export type InternalBillingTestClockScenarioParams = z.infer<
+  typeof internalBillingTestClockScenarioParamsSchema
+>;
+
+/** Internal Billing API Test Clock scenario ID 付き path params の型。 */
+export type InternalBillingTestClockScenarioWithIdParams = z.infer<
+  typeof internalBillingTestClockScenarioWithIdParamsSchema
+>;
+
+/** Internal Billing API Test Clock scenario 作成 body の型。 */
+export type InternalBillingTestClockScenarioCreateBody = z.infer<
+  typeof internalBillingTestClockScenarioCreateBodySchema
+>;
+
+/** Internal Billing API Test Clock scenario advance body の型。 */
+export type InternalBillingTestClockScenarioAdvanceBody = z.infer<
+  typeof internalBillingTestClockScenarioAdvanceBodySchema
+>;
