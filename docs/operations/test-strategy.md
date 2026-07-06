@@ -176,11 +176,17 @@ Stripe 課金 E2E は、実際の Stripe test mode と Test Clock を使って�
 通常の PR ごとの web E2E には含めない。
 
 実行には Stripe test mode のキーと Premium 価格 ID が必要。  
-支払い失敗対応では、成功更新、支払い失敗、支払い方法の復旧、同じ Stripe event の複数回再送をまとめて確認する。
-Billing API の Test Clock scenario だけを確認する場合は次を実行する。
+現在の `test:e2e:billing` は Billing API Test Clock scenario を実行し、成功更新、支払い失敗、支払い方法なしの trial 終了、同じ Stripe event の複数回再送をまとめて確認する。
+Billing API の Test Clock scenario を明示して確認する場合も次を実行できる。
 
 ```bash
 pnpm --filter @repo/e2e test:e2e:billing-api-clock
+```
+
+旧 direct Stripe action path の Test Clock spec は、必要な場合だけ次で実行する。
+
+```bash
+pnpm --filter @repo/e2e test:e2e:billing-legacy-stripe-clock
 ```
 
 実装メモ:

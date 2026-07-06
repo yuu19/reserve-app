@@ -108,6 +108,9 @@ pnpm --filter @repo/e2e test:e2e:billing
 For release evidence, use the GitHub Actions `Stripe Billing E2E` workflow as the source of truth for real Stripe
 Test Clock execution. Local E2E runs are useful for configuration checks, but completion requires a successful
 workflow run on the pushed commit.
+`pnpm --filter @repo/e2e test:e2e:billing` runs the current Billing API Test Clock scenario. The older
+`stripe-test-clock.spec.ts` remains available through `pnpm --filter @repo/e2e test:e2e:billing-legacy-stripe-clock`
+for the legacy direct Stripe action path and is not part of the current workflow source of truth.
 
 Broader checks before completion:
 
@@ -138,7 +141,8 @@ Final repository verification:
 
 Stripe Billing E2E:
 
-- Source of truth: GitHub Actions workflow `Stripe Billing E2E`.
+- Source of truth: GitHub Actions workflow `Stripe Billing E2E`, running
+  `packages/e2e/tests/e2e/billing/billing-api-test-clock-scenario.spec.ts`.
 - Local configuration fix: `packages/e2e/playwright.config.ts` now starts backend billing E2E with Billing API base URL/key and Billing API test-clock flags.
 - Workflow artifact uploads are best-effort with 7-day retention to avoid artifact quota noise from masking E2E status.
 - The successful GitHub Actions run URL and run id should be appended after the workflow is dispatched on the pushed commit.

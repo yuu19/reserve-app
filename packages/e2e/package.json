@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "test:e2e": "playwright test",
-    "test:e2e:billing": "playwright test --config=playwright.config.ts tests/e2e/billing",
+    "test:e2e:billing": "playwright test --config=playwright.config.ts tests/e2e/billing/billing-api-test-clock-scenario.spec.ts",
     "test:e2e:billing-api-clock": "playwright test --config=playwright.config.ts tests/e2e/billing/billing-api-test-clock-scenario.spec.ts",
+    "test:e2e:billing-legacy-stripe-clock": "playwright test --config=playwright.config.ts tests/e2e/billing/stripe-test-clock.spec.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "clean:e2e": "rm -rf test-results playwright-report ../../.wrangler/e2e"

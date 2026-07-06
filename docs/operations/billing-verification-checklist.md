@@ -117,7 +117,7 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
   - 記録:
 - [ ] Stripe 課金 E2E が検証環境または GitHub Actions で成功している。
   - 実行例: `BILLING_E2E_ENABLED=true pnpm --filter @repo/e2e test:e2e:billing`
-  - 期待結果: Test Clock を使ったトライアル、有料化、支払い失敗、復旧、トライアル終了の主要遷移が通る。
+  - 期待結果: Billing API Test Clock scenario で、Test Clock を使った有料更新成功、支払い失敗、支払い方法なしの trial 終了の主要遷移が通る。
   - 記録:
 - [ ] Billing API Test Clock scenario E2E が検証環境で成功している。
   - 実行例: `BILLING_E2E_ENABLED=true pnpm --filter @repo/e2e test:e2e:billing-api-clock`
@@ -131,8 +131,8 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
 
 - CI Tests workflow: [`.github/workflows/ci-tests.yml`](../../.github/workflows/ci-tests.yml)
 - Playwright E2E 設定: [`packages/e2e/playwright.config.ts`](../../packages/e2e/playwright.config.ts)
-- Stripe Billing E2E spec: [`packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`](../../packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts)
 - Billing API Test Clock scenario spec: [`packages/e2e/tests/e2e/billing/billing-api-test-clock-scenario.spec.ts`](../../packages/e2e/tests/e2e/billing/billing-api-test-clock-scenario.spec.ts)
+- Legacy direct Stripe action Test Clock spec: [`packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`](../../packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts)
 - E2E scripts: [`packages/e2e/package.json`](../../packages/e2e/package.json)
 - backend scripts: [`apps/backend/package.json`](../../apps/backend/package.json)
 
