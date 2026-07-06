@@ -145,7 +145,7 @@ Stripe Billing E2E:
   `packages/e2e/tests/e2e/billing/billing-api-test-clock-scenario.spec.ts`.
 - Local configuration fix: `packages/e2e/playwright.config.ts` now starts backend billing E2E with Billing API base URL/key and Billing API test-clock flags.
 - Workflow artifact uploads are best-effort with 7-day retention to avoid artifact quota noise from masking E2E status.
-- The successful GitHub Actions run URL and run id should be appended after the workflow is dispatched on the pushed commit.
+- GitHub Actions run `28796013826` passed on commit `5c50857`: `https://github.com/yuu19/reserve-app/actions/runs/28796013826`.
 
 ## Required Backend Test Coverage
 
