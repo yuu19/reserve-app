@@ -16,10 +16,7 @@ import {
   enqueueBookingRemindersForBooking,
   processDueNotificationOutbox,
 } from './features/booking/booking.notifications.js';
-import {
-  syncReserveAppBillingV2DerivedState,
-  upsertReserveAppBillingV2SubscriptionState,
-} from './infra/billing/reserve-app-billing-v2-source.js';
+import { upsertReserveAppBillingV2SubscriptionState } from './infra/billing/reserve-app-billing-v2-source.js';
 
 type D1DatabaseBinding = Awaited<ReturnType<Miniflare['getD1Database']>>;
 
@@ -950,6 +947,14 @@ const createBillingFixtureOwner = async ({
     organizationId,
     userId: (await selectUserIdByEmail(email)) as string,
   };
+};
+
+const expectBillingApiActionsDisabled = async (response: Response) => {
+  expect(response.status).toBe(422);
+  expect(await toJson(response)).toMatchObject({
+    status: 'failed',
+    message: 'Billing API actions are disabled.',
+  });
 };
 
 const createPremiumGatedApprovalService = async ({
@@ -3666,7 +3671,6 @@ describe('バックエンドアプリ', () => {
         ],
       },
     };
-    let lastPortalSessionBody = '';
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -3694,7 +3698,6 @@ describe('バックエンドアプリ', () => {
       }
 
       if (url === 'https://api.stripe.com/v1/billing_portal/sessions') {
-        lastPortalSessionBody = typeof init?.body === 'string' ? init.body : '';
         return new Response(
           JSON.stringify({
             url: 'https://billing.stripe.com/p/session/test_portal',
@@ -3839,11 +3842,7 @@ describe('バックエンドアプリ', () => {
           }),
         },
       );
-      expect(ownerCheckoutResponse.status).toBe(200);
-      const ownerCheckoutPayload = (await toJson(ownerCheckoutResponse)) as Record<string, unknown>;
-      expect(ownerCheckoutPayload.url).toBe(
-        'https://checkout.stripe.com/c/pay/cs_test_org_subscription',
-      );
+      await expectBillingApiActionsDisabled(ownerCheckoutResponse);
 
       const checkoutCompletedPayload = JSON.stringify({
         id: 'evt_org_checkout_completed',
@@ -3977,18 +3976,7 @@ describe('バックエンドアプリ', () => {
           organizationId,
         }),
       });
-      expect(ownerPortalResponse.status).toBe(200);
-      const ownerPortalPayload = (await toJson(ownerPortalResponse)) as Record<string, unknown>;
-      expect(ownerPortalPayload.url).toBe('https://billing.stripe.com/p/session/test_portal');
-      const portalParams = new URLSearchParams(lastPortalSessionBody);
-      expect(portalParams.get('customer')).toBe('cus_test_org');
-      expect(portalParams.get('return_url')).toBe('http://localhost:5173/admin/contracts');
-      expect(portalParams.get('flow_data[type]')).toBe('subscription_update');
-      expect(portalParams.get('flow_data[subscription_update][subscription]')).toBe('sub_test_org');
-      expect(portalParams.get('flow_data[after_completion][type]')).toBe('redirect');
-      expect(portalParams.get('flow_data[after_completion][redirect][return_url]')).toBe(
-        'http://localhost:5173/admin/contracts?subscription=success',
-      );
+      await expectBillingApiActionsDisabled(ownerPortalResponse);
 
       latestOrganizationSubscriptionPayload = {
         id: 'sub_test_org',
@@ -4134,7 +4122,7 @@ describe('バックエンドアプリ', () => {
           organizationId,
         }),
       });
-      expect(freePortalResponse.status).toBe(409);
+      await expectBillingApiActionsDisabled(freePortalResponse);
 
       await setOrganizationBillingState({
         organizationId,
@@ -4153,7 +4141,7 @@ describe('バックエンドアプリ', () => {
           }),
         },
       );
-      expect(missingSubscriptionPortalResponse.status).toBe(409);
+      await expectBillingApiActionsDisabled(missingSubscriptionPortalResponse);
       const billingAfterMissingSubscriptionPortal =
         await selectOrganizationBillingRow(organizationId);
       expect(billingAfterMissingSubscriptionPortal?.stripeSubscriptionId).toBeNull();
@@ -4602,7 +4590,7 @@ describe('バックエンドアプリ', () => {
     });
   });
 
-  it('共通の課金アクション応答を返し 30 分以内のオーナーハンドオフを再利用する', async () => {
+  it('共通の課金アクション応答で Billing API action 無効時のオーナー操作をブロックする', async () => {
     const stripeMonthlyPriceId = 'price_handoff_monthly';
     const stripeYearlyPriceId = 'price_handoff_yearly';
     const authRuntimeWithStripe = createAuthRuntime({
@@ -4619,365 +4607,71 @@ describe('バックエンドアプリ', () => {
       },
     });
     const appWithStripe = createApp(authRuntimeWithStripe);
-    const originalFetch = globalThis.fetch;
-    let checkoutCounter = 0;
-    let setupCounter = 0;
-    let portalCounter = 0;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url =
-        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-      const body = typeof init?.body === 'string' ? init.body : '';
-      const params = new URLSearchParams(body);
 
-      if (url === 'https://api.stripe.com/v1/customers') {
-        const organizationSuffix =
-          params.get('metadata[organizationId]')?.replace(/[^a-zA-Z0-9_]/g, '_') ?? 'handoff_trial';
-        return new Response(JSON.stringify({ id: `cus_${organizationSuffix}` }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-
-      if (url === 'https://api.stripe.com/v1/subscriptions') {
-        return new Response(
-          JSON.stringify({
-            id: 'sub_handoff_trial',
-            customer: 'cus_handoff_trial',
-            status: 'trialing',
-            trial_start: 1775000000,
-            trial_end: 1775604800,
-            items: {
-              data: [
-                {
-                  price: { id: stripeMonthlyPriceId },
-                },
-              ],
-            },
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        );
-      }
-
-      if (url === 'https://api.stripe.com/v1/checkout/sessions') {
-        const mode = params.get('mode');
-        if (mode === 'setup') {
-          setupCounter += 1;
-          return new Response(
-            JSON.stringify({
-              id: `cs_setup_${setupCounter}`,
-              url: `https://checkout.stripe.com/c/setup-${setupCounter}`,
-              status: 'open',
-            }),
-            {
-              status: 200,
-              headers: { 'content-type': 'application/json' },
-            },
-          );
-        }
-
-        checkoutCounter += 1;
-        return new Response(
-          JSON.stringify({
-            id: `cs_checkout_${checkoutCounter}`,
-            url: `https://checkout.stripe.com/c/checkout-${checkoutCounter}`,
-            status: 'open',
-            payment_status: 'unpaid',
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        );
-      }
-
-      if (url === 'https://api.stripe.com/v1/billing_portal/sessions') {
-        portalCounter += 1;
-        return new Response(
-          JSON.stringify({
-            id: `bps_${portalCounter}`,
-            url: `https://billing.stripe.com/p/session-${portalCounter}`,
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        );
-      }
-
-      if (url.startsWith('https://api.stripe.com/v1/customers/')) {
-        return new Response(
-          JSON.stringify({
-            id: 'cus_handoff_trial',
-            invoice_settings: { default_payment_method: null },
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        );
-      }
-
-      return originalFetch(input, init);
+    const { agent: owner, organizationId } = await createBillingFixtureOwner({
+      application: appWithStripe,
+      name: 'Billing Handoff Owner',
+      email: 'billing-handoff-owner@example.com',
+      organizationName: 'Billing Handoff Org',
+      slug: `billing-handoff-${crypto.randomUUID().slice(0, 8)}`,
     });
 
-    try {
-      const { agent: owner, organizationId } = await createBillingFixtureOwner({
-        application: appWithStripe,
-        name: 'Billing Handoff Owner',
-        email: 'billing-handoff-owner@example.com',
-        organizationName: 'Billing Handoff Org',
-        slug: `billing-handoff-${crypto.randomUUID().slice(0, 8)}`,
-      });
+    const initialSummaryResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(initialSummaryResponse.status).toBe(200);
+    const initialSummary = (await toJson(initialSummaryResponse)) as Record<string, unknown>;
+    expect(initialSummary).toMatchObject({
+      actionAvailability: {
+        canStartTrial: true,
+        canStartPaidCheckout: true,
+        availableIntervals: ['month', 'year'],
+        nextOwnerAction: 'start_trial',
+      },
+    });
 
-      const initialSummaryResponse = await owner.request(
-        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
-      );
-      expect(initialSummaryResponse.status).toBe(200);
-      const initialSummary = (await toJson(initialSummaryResponse)) as Record<string, unknown>;
-      expect(initialSummary).toMatchObject({
-        actionAvailability: {
-          canStartTrial: true,
-          canStartPaidCheckout: true,
-          availableIntervals: ['month', 'year'],
-          nextOwnerAction: 'start_trial',
-        },
-      });
+    const trialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    await expectBillingApiActionsDisabled(trialResponse);
 
-      const trialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      });
-      expect(trialResponse.status).toBe(200);
-      const trialPayload = (await toJson(trialResponse)) as Record<string, unknown>;
-      expect(trialPayload).toMatchObject({
-        status: 'succeeded',
-        handoff: null,
-        billing: {
-          planState: 'premium_trial',
-          subscriptionStatus: 'trialing',
-          actionAvailability: {
-            canStartTrial: false,
-            canRegisterPaymentMethod: true,
-          },
-        },
-      });
-      expect(
-        (await selectOrganizationBillingOperationAttemptRows(organizationId)).filter(
-          (row) => row.purpose === 'trial_start',
-        ),
-      ).toHaveLength(1);
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'trialing',
+      billingInterval: 'month',
+      stripePriceId: stripeMonthlyPriceId,
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
 
-      const firstSetupResponse = await owner.request(
-        '/api/v1/auth/organizations/billing/payment-method',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId }),
-        },
-      );
-      expect(firstSetupResponse.status).toBe(200);
-      const firstSetupPayload = (await toJson(firstSetupResponse)) as Record<string, unknown>;
-      expect(firstSetupPayload).toMatchObject({
-        status: 'processing',
-        url: 'https://checkout.stripe.com/c/setup-1',
-        handoff: {
-          purpose: 'payment_method_setup',
-          reused: false,
-        },
-      });
+    const setupResponse = await owner.request('/api/v1/auth/organizations/billing/payment-method', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    await expectBillingApiActionsDisabled(setupResponse);
 
-      const reusedSetupResponse = await owner.request(
-        '/api/v1/auth/organizations/billing/payment-method',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId }),
-        },
-      );
-      expect(reusedSetupResponse.status).toBe(200);
-      expect(await toJson(reusedSetupResponse)).toMatchObject({
-        url: 'https://checkout.stripe.com/c/setup-1',
-        handoff: {
-          purpose: 'payment_method_setup',
-          reused: true,
-        },
-      });
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'past_due',
+      billingInterval: 'month',
+      stripeCustomerId: 'cus_portal_handoff',
+      stripeSubscriptionId: 'sub_portal_handoff',
+      stripePriceId: stripeMonthlyPriceId,
+      paymentIssueStartedAt: new Date(Date.now() - 60_000),
+      pastDueGraceEndsAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+    });
 
-      await d1
-        .prepare(
-          "UPDATE billing_operation_attempt SET handoff_expires_at = ?, idempotency_key = idempotency_key || ':expired' WHERE billing_account_id IN (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ?) AND purpose = 'create_setup_checkout'",
-        )
-        .bind(Date.now() - 1_000, organizationId)
-        .run();
-      const recreatedSetupResponse = await owner.request(
-        '/api/v1/auth/organizations/billing/payment-method',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId }),
-        },
-      );
-      expect(recreatedSetupResponse.status).toBe(200);
-      expect(await toJson(recreatedSetupResponse)).toMatchObject({
-        url: 'https://checkout.stripe.com/c/setup-2',
-        handoff: {
-          purpose: 'payment_method_setup',
-          reused: false,
-        },
-      });
-
-      const { agent: checkoutOwner, organizationId: checkoutOrganizationId } =
-        await createBillingFixtureOwner({
-          application: appWithStripe,
-          name: 'Billing Checkout Handoff Owner',
-          email: 'billing-checkout-handoff-owner@example.com',
-          organizationName: 'Billing Checkout Handoff Org',
-          slug: `billing-checkout-handoff-${crypto.randomUUID().slice(0, 8)}`,
-        });
-      await d1
-        .prepare(
-          "UPDATE billing_subscription SET trial_start = ?, updated_at = ? WHERE billing_account_id = (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ? LIMIT 1)",
-        )
-        .bind(Date.now() - 7 * 24 * 60 * 60 * 1000, Date.now(), checkoutOrganizationId)
-        .run();
-      await syncOrganizationBillingV2FixtureFromLegacyRow(checkoutOrganizationId);
-
-      const trialUsedSummaryResponse = await checkoutOwner.request(
-        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(checkoutOrganizationId)}`,
-      );
-      expect(trialUsedSummaryResponse.status).toBe(200);
-      expect(await toJson(trialUsedSummaryResponse)).toMatchObject({
-        actionAvailability: {
-          canStartTrial: false,
-          canStartPaidCheckout: true,
-          trialUsed: true,
-          availableIntervals: ['month', 'year'],
-        },
-      });
-
-      const firstCheckoutResponse = await checkoutOwner.request(
-        '/api/v1/auth/organizations/billing/checkout',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            organizationId: checkoutOrganizationId,
-            billingInterval: 'month',
-          }),
-        },
-      );
-      expect(firstCheckoutResponse.status).toBe(200);
-      expect(await toJson(firstCheckoutResponse)).toMatchObject({
-        url: 'https://checkout.stripe.com/c/checkout-1',
-        handoff: {
-          purpose: 'paid_checkout',
-          reused: false,
-        },
-      });
-
-      const reusedCheckoutResponse = await checkoutOwner.request(
-        '/api/v1/auth/organizations/billing/checkout',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            organizationId: checkoutOrganizationId,
-            billingInterval: 'month',
-          }),
-        },
-      );
-      expect(reusedCheckoutResponse.status).toBe(200);
-      expect(await toJson(reusedCheckoutResponse)).toMatchObject({
-        url: 'https://checkout.stripe.com/c/checkout-1',
-        handoff: {
-          purpose: 'paid_checkout',
-          reused: true,
-        },
-      });
-
-      const { agent: portalOwner, organizationId: portalOrganizationId } =
-        await createBillingFixtureOwner({
-          application: appWithStripe,
-          name: 'Billing Portal Handoff Owner',
-          email: 'billing-portal-handoff-owner@example.com',
-          organizationName: 'Billing Portal Handoff Org',
-          slug: `billing-portal-handoff-${crypto.randomUUID().slice(0, 8)}`,
-        });
-      await setOrganizationBillingState({
-        organizationId: portalOrganizationId,
-        planCode: 'premium',
-        subscriptionStatus: 'past_due',
-        billingInterval: 'month',
-        stripeCustomerId: 'cus_portal_handoff',
-        stripeSubscriptionId: 'sub_portal_handoff',
-        stripePriceId: stripeMonthlyPriceId,
-        paymentIssueStartedAt: new Date(Date.now() - 60_000),
-        pastDueGraceEndsAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
-      });
-
-      const firstPortalResponse = await portalOwner.request(
-        '/api/v1/auth/organizations/billing/portal',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId: portalOrganizationId }),
-        },
-      );
-      expect(firstPortalResponse.status).toBe(200);
-      expect(await toJson(firstPortalResponse)).toMatchObject({
-        url: 'https://billing.stripe.com/p/session-1',
-        handoff: {
-          purpose: 'billing_portal',
-          reused: false,
-        },
-      });
-
-      const reusedPortalResponse = await portalOwner.request(
-        '/api/v1/auth/organizations/billing/portal',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId: portalOrganizationId }),
-        },
-      );
-      expect(reusedPortalResponse.status).toBe(200);
-      expect(await toJson(reusedPortalResponse)).toMatchObject({
-        url: 'https://billing.stripe.com/p/session-1',
-        handoff: {
-          purpose: 'billing_portal',
-          reused: true,
-        },
-      });
-
-      await d1
-        .prepare(
-          "UPDATE billing_operation_attempt SET handoff_expires_at = ?, idempotency_key = idempotency_key || ':expired' WHERE billing_account_id IN (SELECT id FROM billing_account WHERE subject_type = 'organization' AND subject_id = ?) AND purpose = 'create_portal_session'",
-        )
-        .bind(Date.now() - 1_000, portalOrganizationId)
-        .run();
-      const recreatedPortalResponse = await portalOwner.request(
-        '/api/v1/auth/organizations/billing/portal',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId: portalOrganizationId }),
-        },
-      );
-      expect(recreatedPortalResponse.status).toBe(200);
-      expect(await toJson(recreatedPortalResponse)).toMatchObject({
-        url: 'https://billing.stripe.com/p/session-2',
-        handoff: {
-          purpose: 'billing_portal',
-          reused: false,
-        },
-      });
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    const portalResponse = await owner.request('/api/v1/auth/organizations/billing/portal', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+    await expectBillingApiActionsDisabled(portalResponse);
+    expect(await selectOrganizationBillingOperationAttemptRows(organizationId)).toEqual([]);
   });
 
   it('Stripe 価格がない場合も課金情報は読み取り可能にしつつオーナーハンドオフをブロックする', async () => {
@@ -5019,22 +4713,14 @@ describe('バックエンドアプリ', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ organizationId, billingInterval: 'month' }),
     });
-    expect(checkoutResponse.status).toBe(422);
-    expect(await toJson(checkoutResponse)).toMatchObject({
-      status: 'failed',
-      message: 'Stripe premium month price id is not configured.',
-    });
+    await expectBillingApiActionsDisabled(checkoutResponse);
 
     const trialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ organizationId }),
     });
-    expect(trialResponse.status).toBe(422);
-    expect(await toJson(trialResponse)).toMatchObject({
-      status: 'failed',
-      message: 'Stripe premium trial price id is not configured.',
-    });
+    await expectBillingApiActionsDisabled(trialResponse);
   });
 
   it('トライアル設定失敗とポータル課金操作試行を即座に失敗として記録する', async () => {
@@ -5126,34 +4812,15 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ organizationId: trialOrganizationId }),
       });
-      expect(trialResponse.status).toBe(500);
-      expect(await toJson(trialResponse)).toMatchObject({
-        status: 'failed',
-        message: 'Stripe trial subscription failed.',
-      });
+      await expectBillingApiActionsDisabled(trialResponse);
 
       const retryTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ organizationId: trialOrganizationId }),
       });
-      expect(retryTrialResponse.status).toBe(500);
-      const trialAttempts =
-        await selectOrganizationBillingOperationAttemptRows(trialOrganizationId);
-      expect(trialAttempts).toHaveLength(2);
-      expect(new Set(trialAttempts.map((attempt) => attempt.idempotencyKey)).size).toBe(2);
-      expect(trialAttempts).toEqual([
-        expect.objectContaining({
-          purpose: 'trial_start',
-          state: 'failed',
-          failureReason: 'Stripe trial subscription failed.',
-        }),
-        expect.objectContaining({
-          purpose: 'trial_start',
-          state: 'failed',
-          failureReason: 'Stripe trial subscription failed.',
-        }),
-      ]);
+      await expectBillingApiActionsDisabled(retryTrialResponse);
+      expect(await selectOrganizationBillingOperationAttemptRows(trialOrganizationId)).toEqual([]);
 
       const setupOrganizationId = await createOrganization({
         agent: owner,
@@ -5175,18 +4842,8 @@ describe('バックエンドアプリ', () => {
           body: JSON.stringify({ organizationId: setupOrganizationId }),
         },
       );
-      expect(setupResponse.status).toBe(500);
-      expect(await toJson(setupResponse)).toMatchObject({
-        status: 'failed',
-        message: 'Stripe setup checkout failed.',
-      });
-      expect(await selectOrganizationBillingOperationAttemptRows(setupOrganizationId)).toEqual([
-        expect.objectContaining({
-          purpose: 'payment_method_setup',
-          state: 'failed',
-          failureReason: 'Stripe setup checkout failed.',
-        }),
-      ]);
+      await expectBillingApiActionsDisabled(setupResponse);
+      expect(await selectOrganizationBillingOperationAttemptRows(setupOrganizationId)).toEqual([]);
 
       const portalOrganizationId = await createOrganization({
         agent: owner,
@@ -5209,18 +4866,8 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ organizationId: portalOrganizationId }),
       });
-      expect(portalResponse.status).toBe(500);
-      expect(await toJson(portalResponse)).toMatchObject({
-        status: 'failed',
-        message: 'Stripe billing portal failed.',
-      });
-      expect(await selectOrganizationBillingOperationAttemptRows(portalOrganizationId)).toEqual([
-        expect.objectContaining({
-          purpose: 'billing_portal',
-          state: 'failed',
-          failureReason: 'Stripe billing portal failed.',
-        }),
-      ]);
+      await expectBillingApiActionsDisabled(portalResponse);
+      expect(await selectOrganizationBillingOperationAttemptRows(portalOrganizationId)).toEqual([]);
     } finally {
       fetchSpy.mockRestore();
     }
@@ -6689,13 +6336,6 @@ describe('バックエンドアプリ', () => {
         slug: 'trial-webhook-pending-org',
       });
 
-      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      });
-      expect(ownerTrialResponse.status).toBe(200);
-
       await setOrganizationBillingState({
         organizationId,
         planCode: 'premium',
@@ -7141,13 +6781,6 @@ describe('バックエンドアプリ', () => {
         role: 'admin',
       });
 
-      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      });
-      expect(ownerTrialResponse.status).toBe(200);
-
       await setOrganizationBillingState({
         organizationId,
         planCode: 'premium',
@@ -7351,13 +6984,6 @@ describe('バックエンドアプリ', () => {
         slug: 'trial-reminder-registered-org',
       });
 
-      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      });
-      expect(ownerTrialResponse.status).toBe(200);
-
       await setOrganizationBillingState({
         organizationId,
         planCode: 'premium',
@@ -7509,13 +7135,6 @@ describe('バックエンドアプリ', () => {
         slug: 'trial-reminder-duplicate-org',
       });
 
-      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      });
-      expect(ownerTrialResponse.status).toBe(200);
-
       await setOrganizationBillingState({
         organizationId,
         planCode: 'premium',
@@ -7660,13 +7279,6 @@ describe('バックエンドアプリ', () => {
         name: 'Trial Reminder Retry Org',
         slug: 'trial-reminder-retry-org',
       });
-
-      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      });
-      expect(ownerTrialResponse.status).toBe(200);
 
       await setOrganizationBillingState({
         organizationId,
@@ -7906,88 +7518,12 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ organizationId }),
       });
-      expect(ownerTrialResponse.status).toBe(200);
-      const ownerTrialPayload = (await toJson(ownerTrialResponse)) as Record<string, unknown>;
-      expect(ownerTrialPayload.message).toBe('Started a 7-day premium trial.');
-
-      const billingAfterTrial = await selectOrganizationBillingRow(organizationId);
-      expect(billingAfterTrial?.planCode).toBe('premium');
-      expect(billingAfterTrial?.subscriptionStatus).toBe('trialing');
-      expect(billingAfterTrial?.billingInterval).toBe('month');
-      expect(Boolean(billingAfterTrial?.cancelAtPeriodEnd)).toBe(false);
-      expect(billingAfterTrial?.currentPeriodStart).not.toBeNull();
-      expect(billingAfterTrial?.currentPeriodEnd).not.toBeNull();
-      expect(
-        Number(billingAfterTrial?.currentPeriodEnd ?? 0) -
-          Number(billingAfterTrial?.currentPeriodStart ?? 0),
-      ).toBe(7 * 24 * 60 * 60 * 1000);
-
-      const trialBillingResponse = await owner.request(
-        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
-      );
-      expect(trialBillingResponse.status).toBe(200);
-      const trialBillingPayload = (await toJson(trialBillingResponse)) as Record<string, unknown>;
-      expect(trialBillingPayload.planCode).toBe('premium');
-      expect(trialBillingPayload.subscriptionStatus).toBe('trialing');
-      expect(trialBillingPayload.planState).toBe('premium_trial');
-      expect(trialBillingPayload.trialEndsAt).toBe(
-        new Date(Number(billingAfterTrial?.currentPeriodEnd)).toISOString(),
-      );
-      expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([
-        expect.objectContaining({
-          sequenceNumber: 1,
-          sourceKind: 'trial_start',
-          previousPlanState: 'free',
-          nextPlanState: 'premium_trial',
-          previousSubscriptionStatus: 'free',
-          nextSubscriptionStatus: 'trialing',
-          previousEntitlementState: 'free_only',
-          nextEntitlementState: 'premium_enabled',
-        }),
-      ]);
+      await expectBillingApiActionsDisabled(ownerTrialResponse);
+      const billingAfterTrialAction = await selectOrganizationBillingRow(organizationId);
+      expect(billingAfterTrialAction?.planCode).toBe('free');
+      expect(billingAfterTrialAction?.subscriptionStatus).toBe('free');
+      expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([]);
       expect(await selectOrganizationBillingSignalRows(organizationId)).toEqual([]);
-
-      const duplicateTrialResponse = await owner.request(
-        '/api/v1/auth/organizations/billing/trial',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId }),
-        },
-      );
-      expect(duplicateTrialResponse.status).toBe(409);
-      const duplicateTrialPayload = (await toJson(duplicateTrialResponse)) as Record<
-        string,
-        unknown
-      >;
-      expect(duplicateTrialPayload.message).toBe(
-        'Organization already has an active premium trial or paid subscription.',
-      );
-
-      await setOrganizationBillingState({
-        organizationId,
-        planCode: 'premium',
-        subscriptionStatus: 'active',
-        billingInterval: 'month',
-        currentPeriodEnd: new Date(1779000000000),
-      });
-
-      const activeConflictResponse = await owner.request(
-        '/api/v1/auth/organizations/billing/trial',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId }),
-        },
-      );
-      expect(activeConflictResponse.status).toBe(409);
-      const activeConflictPayload = (await toJson(activeConflictResponse)) as Record<
-        string,
-        unknown
-      >;
-      expect(activeConflictPayload.message).toBe(
-        'Organization already has an active premium trial or paid subscription.',
-      );
     } finally {
       fetchSpy.mockRestore();
     }
@@ -8015,7 +7551,6 @@ describe('バックエンドアプリ', () => {
     const appWithStripe = createApp(authRuntimeWithStripe);
 
     const originalFetch = globalThis.fetch;
-    let lastSubscriptionBody = '';
     const currentPeriodStartSeconds = Math.floor(Date.now() / 1000);
     const currentPeriodEndSeconds = currentPeriodStartSeconds + 7 * 24 * 60 * 60;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -8036,7 +7571,6 @@ describe('バックエンドアプリ', () => {
       }
 
       if (url === 'https://api.stripe.com/v1/subscriptions' && method === 'POST') {
-        lastSubscriptionBody = typeof init?.body === 'string' ? init.body : '';
         return new Response(
           JSON.stringify({
             id: 'sub_trial_subscription',
@@ -8098,39 +7632,21 @@ describe('バックエンドアプリ', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ organizationId }),
       });
-      expect(trialResponse.status).toBe(200);
-
-      const subscriptionParams = new URLSearchParams(lastSubscriptionBody);
-      expect(subscriptionParams.get('customer')).toBe('cus_trial_subscription');
-      expect(subscriptionParams.get('items[0][price]')).toBe(stripeMonthlyPriceId);
-      expect(subscriptionParams.get('trial_period_days')).toBe('7');
-      expect(subscriptionParams.get('trial_settings[end_behavior][missing_payment_method]')).toBe(
-        'cancel',
-      );
-      expect(subscriptionParams.get('metadata[billingPurpose]')).toBe('organization_plan');
-      expect(subscriptionParams.get('metadata[organizationId]')).toBe(organizationId);
-      expect(subscriptionParams.get('metadata[billingInterval]')).toBe('month');
+      await expectBillingApiActionsDisabled(trialResponse);
 
       const billingAfterTrial = await selectOrganizationBillingRow(organizationId);
-      expect(billingAfterTrial?.planCode).toBe('premium');
-      expect(billingAfterTrial?.subscriptionStatus).toBe('trialing');
-      expect(billingAfterTrial?.billingInterval).toBe('month');
-      expect(billingAfterTrial?.stripeCustomerId).toBe('cus_trial_subscription');
-      expect(billingAfterTrial?.stripeSubscriptionId).toBe('sub_trial_subscription');
-      expect(billingAfterTrial?.stripePriceId).toBe(stripeMonthlyPriceId);
-      expect(billingAfterTrial?.trialStartedAt).toBe(currentPeriodStartSeconds * 1000);
-      expect(billingAfterTrial?.currentPeriodEnd).toBe(currentPeriodEndSeconds * 1000);
+      expect(billingAfterTrial?.planCode).toBe('free');
+      expect(billingAfterTrial?.subscriptionStatus).toBe('free');
+      expect(billingAfterTrial?.stripeCustomerId).toBeNull();
+      expect(billingAfterTrial?.stripeSubscriptionId).toBeNull();
 
       const summaryResponse = await owner.request(
         `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
       );
       expect(summaryResponse.status).toBe(200);
       const summaryPayload = (await toJson(summaryResponse)) as Record<string, unknown>;
-      expect(summaryPayload.trialStartedAt).toBe(
-        new Date(currentPeriodStartSeconds * 1000).toISOString(),
-      );
-      expect(summaryPayload.premiumEligible).toBe(true);
-      expect(summaryPayload.capabilities).toContain('organization_premium_features');
+      expect(summaryPayload.planState).toBe('free');
+      expect(summaryPayload.premiumEligible).toBe(false);
     } finally {
       fetchSpy.mockRestore();
     }
@@ -8154,184 +7670,74 @@ describe('バックエンドアプリ', () => {
     });
     const appWithStripe = createApp(authRuntimeWithStripe);
 
-    let createdCustomerCalls = 0;
-    let createdSetupSessionCalls = 0;
-    let lastSetupSessionBody = '';
-    let defaultPaymentMethodId: string | null = null;
-
-    const originalFetch = globalThis.fetch;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url =
-        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-
-      if (url === 'https://api.stripe.com/v1/customers') {
-        createdCustomerCalls += 1;
-        return new Response(
-          JSON.stringify({
-            id: 'cus_test_payment_method',
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        );
-      }
-
-      if (url === 'https://api.stripe.com/v1/checkout/sessions') {
-        createdSetupSessionCalls += 1;
-        lastSetupSessionBody = typeof init?.body === 'string' ? init.body : '';
-        return new Response(
-          JSON.stringify({
-            id: 'cs_test_payment_method_setup',
-            url: 'https://checkout.stripe.com/c/pay/cs_test_payment_method_setup',
-            status: 'open',
-            payment_status: 'no_payment_required',
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        );
-      }
-
-      if (url.startsWith('https://api.stripe.com/v1/customers/cus_test_payment_method')) {
-        return new Response(
-          JSON.stringify({
-            id: 'cus_test_payment_method',
-            invoice_settings: {
-              default_payment_method: defaultPaymentMethodId
-                ? { id: defaultPaymentMethodId }
-                : null,
-            },
-          }),
-          {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          },
-        );
-      }
-
-      return originalFetch(input, init);
+    const owner = createAuthAgent(appWithStripe);
+    await signUpUser({
+      agent: owner,
+      name: 'Setup Owner',
+      email: 'setup-owner@example.com',
     });
 
-    try {
-      const owner = createAuthAgent(appWithStripe);
-      await signUpUser({
-        agent: owner,
-        name: 'Setup Owner',
-        email: 'setup-owner@example.com',
-      });
+    const organizationId = await createOrganization({
+      agent: owner,
+      name: 'Setup Org',
+      slug: 'setup-org',
+    });
 
-      const organizationId = await createOrganization({
-        agent: owner,
-        name: 'Setup Org',
-        slug: 'setup-org',
-      });
+    const admin = createAuthAgent(appWithStripe);
+    await signUpUser({
+      agent: admin,
+      name: 'Setup Admin',
+      email: 'setup-admin@example.com',
+    });
+    await insertOrganizationMember({
+      organizationId,
+      userId: (await selectUserIdByEmail('setup-admin@example.com')) as string,
+      role: 'admin',
+    });
 
-      const admin = createAuthAgent(appWithStripe);
-      await signUpUser({
-        agent: admin,
-        name: 'Setup Admin',
-        email: 'setup-admin@example.com',
-      });
-      await insertOrganizationMember({
-        organizationId,
-        userId: (await selectUserIdByEmail('setup-admin@example.com')) as string,
-        role: 'admin',
-      });
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'trialing',
+      billingInterval: 'month',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
 
-      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
+    const initialSummaryResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(initialSummaryResponse.status).toBe(200);
+    const initialSummaryPayload = (await toJson(initialSummaryResponse)) as Record<string, unknown>;
+    expect(initialSummaryPayload.planState).toBe('premium_trial');
+    expect(initialSummaryPayload.paymentMethodStatus).toBe('not_started');
+
+    const adminHandoffResponse = await admin.request(
+      '/api/v1/auth/organizations/billing/payment-method',
+      {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ organizationId }),
-      });
-      expect(ownerTrialResponse.status).toBe(200);
+      },
+    );
+    expect(adminHandoffResponse.status).toBe(403);
 
-      const initialSummaryResponse = await owner.request(
-        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
-      );
-      expect(initialSummaryResponse.status).toBe(200);
-      const initialSummaryPayload = (await toJson(initialSummaryResponse)) as Record<
-        string,
-        unknown
-      >;
-      expect(initialSummaryPayload.planState).toBe('premium_trial');
-      expect(initialSummaryPayload.paymentMethodStatus).toBe('not_started');
+    const ownerHandoffResponse = await owner.request(
+      '/api/v1/auth/organizations/billing/payment-method',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      },
+    );
+    await expectBillingApiActionsDisabled(ownerHandoffResponse);
+    expect(await selectOrganizationBillingOperationAttemptRows(organizationId)).toEqual([]);
 
-      const adminHandoffResponse = await admin.request(
-        '/api/v1/auth/organizations/billing/payment-method',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId }),
-        },
-      );
-      expect(adminHandoffResponse.status).toBe(403);
-      expect(createdCustomerCalls).toBe(0);
-      expect(createdSetupSessionCalls).toBe(0);
-
-      const ownerHandoffResponse = await owner.request(
-        '/api/v1/auth/organizations/billing/payment-method',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId }),
-        },
-      );
-      expect(ownerHandoffResponse.status).toBe(200);
-      const ownerHandoffPayload = (await toJson(ownerHandoffResponse)) as Record<string, unknown>;
-      expect(ownerHandoffPayload.url).toBe(
-        'https://checkout.stripe.com/c/pay/cs_test_payment_method_setup',
-      );
-      expect(createdCustomerCalls).toBe(1);
-      expect(createdSetupSessionCalls).toBe(1);
-      expect(lastSetupSessionBody).toContain('mode=setup');
-      expect(lastSetupSessionBody).toContain('currency=jpy');
-      expect(lastSetupSessionBody).toContain('customer=cus_test_payment_method');
-
-      const billingAfterHandoff = await selectOrganizationBillingRow(organizationId);
-      expect(billingAfterHandoff?.stripeCustomerId).toBe('cus_test_payment_method');
-      expect(billingAfterHandoff?.planCode).toBe('premium');
-      expect(billingAfterHandoff?.subscriptionStatus).toBe('trialing');
-      expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([
-        expect.objectContaining({
-          sequenceNumber: 1,
-          sourceKind: 'trial_start',
-          nextPlanState: 'premium_trial',
-        }),
-        expect.objectContaining({
-          sequenceNumber: 2,
-          sourceKind: 'payment_method_customer_linked',
-          previousPaymentMethodStatus: 'not_started',
-          nextPaymentMethodStatus: 'pending',
-          nextEntitlementState: 'premium_enabled',
-        }),
-      ]);
-
-      const pendingSummaryResponse = await owner.request(
-        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
-      );
-      expect(pendingSummaryResponse.status).toBe(200);
-      const pendingSummaryPayload = (await toJson(pendingSummaryResponse)) as Record<
-        string,
-        unknown
-      >;
-      expect(pendingSummaryPayload.paymentMethodStatus).toBe('pending');
-
-      defaultPaymentMethodId = 'pm_test_card';
-
-      const completedSummaryResponse = await owner.request(
-        `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
-      );
-      expect(completedSummaryResponse.status).toBe(200);
-      const completedSummaryPayload = (await toJson(completedSummaryResponse)) as Record<
-        string,
-        unknown
-      >;
-      expect(completedSummaryPayload.paymentMethodStatus).toBe('registered');
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    const pendingSummaryResponse = await owner.request(
+      `/api/v1/auth/organizations/billing?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    expect(pendingSummaryResponse.status).toBe(200);
+    const pendingSummaryPayload = (await toJson(pendingSummaryResponse)) as Record<string, unknown>;
+    expect(pendingSummaryPayload.paymentMethodStatus).toBe('not_started');
   });
 
   it('セットアップ Checkout 完了を Stripe の既定支払い方法へ同期する', async () => {
@@ -8503,22 +7909,16 @@ describe('バックエンドアプリ', () => {
         slug: 'setup-webhook-org',
       });
 
-      const trialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
+      await setOrganizationBillingState({
+        organizationId,
+        planCode: 'premium',
+        subscriptionStatus: 'trialing',
+        billingInterval: 'month',
+        stripeCustomerId: 'cus_setup_webhook',
+        stripeSubscriptionId: 'sub_setup_webhook',
+        stripePriceId: stripeMonthlyPriceId,
+        currentPeriodEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
-      expect(trialResponse.status).toBe(200);
-
-      const handoffResponse = await owner.request(
-        '/api/v1/auth/organizations/billing/payment-method',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ organizationId }),
-        },
-      );
-      expect(handoffResponse.status).toBe(200);
 
       const payload = JSON.stringify({
         id: 'evt_setup_webhook_completed',
@@ -8566,10 +7966,6 @@ describe('バックエンドアプリ', () => {
       expect(auditRows).toEqual([
         expect.objectContaining({
           sequenceNumber: 1,
-          sourceKind: 'trial_start',
-        }),
-        expect.objectContaining({
-          sequenceNumber: 2,
           sourceKind: 'payment_method_registered',
           stripeEventId: 'evt_setup_webhook_completed',
           previousPaymentMethodStatus: 'pending',
@@ -8637,16 +8033,6 @@ describe('バックエンドアプリ', () => {
         name: 'Trial Completion Org',
         slug: 'trial-completion-org',
       });
-
-      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      });
-      expect(ownerTrialResponse.status).toBe(200);
-
-      const billingBeforeCompletion = await selectOrganizationBillingRow(organizationId);
-      expect(billingBeforeCompletion?.subscriptionStatus).toBe('trialing');
 
       await setOrganizationBillingState({
         organizationId,
@@ -8745,17 +8131,12 @@ describe('バックエンドアプリ', () => {
           body: JSON.stringify({ organizationId }),
         },
       );
-      expect(completionResponse.status).toBe(200);
-      const completionPayload = (await toJson(completionResponse)) as Record<string, unknown>;
-      expect(completionPayload.message).toBe(
-        'Organization premium trial converted to premium paid.',
-      );
+      await expectBillingApiActionsDisabled(completionResponse);
 
       const billingAfterCompletion = await selectOrganizationBillingRow(organizationId);
       expect(billingAfterCompletion?.planCode).toBe('premium');
-      expect(billingAfterCompletion?.subscriptionStatus).toBe('active');
-      expect(billingAfterCompletion?.currentPeriodStart).not.toBeNull();
-      expect(billingAfterCompletion?.currentPeriodEnd).toBeNull();
+      expect(billingAfterCompletion?.subscriptionStatus).toBe('trialing');
+      expect(billingAfterCompletion?.currentPeriodEnd).not.toBeNull();
       expect(billingAfterCompletion?.stripeCustomerId).toBe('cus_trial_completion_paid');
 
       const summaryResponse = await owner.request(
@@ -8763,37 +8144,9 @@ describe('バックエンドアプリ', () => {
       );
       expect(summaryResponse.status).toBe(200);
       const summaryPayload = (await toJson(summaryResponse)) as Record<string, unknown>;
-      expect(summaryPayload.planState).toBe('premium_paid');
-      expect(summaryPayload.subscriptionStatus).toBe('active');
-      expect(summaryPayload.trialEndsAt).toBeNull();
+      expect(summaryPayload.planState).toBe('premium_trial');
+      expect(summaryPayload.subscriptionStatus).toBe('trialing');
       expect(summaryPayload.paymentMethodStatus).toBe('registered');
-
-      const auditRows = await selectOrganizationBillingAuditEventRows(organizationId);
-      expect(auditRows).toEqual([
-        expect.objectContaining({
-          sequenceNumber: 1,
-          sourceKind: 'trial_start',
-          previousPlanState: 'free',
-          nextPlanState: 'premium_trial',
-          previousSubscriptionStatus: 'free',
-          nextSubscriptionStatus: 'trialing',
-          previousEntitlementState: 'free_only',
-          nextEntitlementState: 'premium_enabled',
-        }),
-        expect.objectContaining({
-          sequenceNumber: 2,
-          sourceKind: 'trial_completion',
-          sourceContext: 'Organization premium trial converted to premium paid.',
-          previousPlanState: 'premium_trial',
-          nextPlanState: 'premium_paid',
-          previousSubscriptionStatus: 'trialing',
-          nextSubscriptionStatus: 'active',
-          previousPaymentMethodStatus: 'registered',
-          nextPaymentMethodStatus: 'registered',
-          previousEntitlementState: 'free_only',
-          nextEntitlementState: 'premium_enabled',
-        }),
-      ]);
 
       const countsAfterCompletion = await selectOrganizationOperationalRowCounts(organizationId);
       expect(countsAfterCompletion).toEqual(countsBeforeCompletion);
@@ -8806,14 +8159,7 @@ describe('バックエンドアプリ', () => {
           body: JSON.stringify({ organizationId }),
         },
       );
-      expect(duplicateCompletionResponse.status).toBe(409);
-      const duplicateCompletionPayload = (await toJson(duplicateCompletionResponse)) as Record<
-        string,
-        unknown
-      >;
-      expect(duplicateCompletionPayload.message).toBe(
-        'Organization does not have an active premium trial.',
-      );
+      await expectBillingApiActionsDisabled(duplicateCompletionResponse);
     } finally {
       fetchSpy.mockRestore();
     }
@@ -8833,13 +8179,6 @@ describe('バックエンドアプリ', () => {
       slug: 'trial-fallback-org',
     });
 
-    const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId }),
-    });
-    expect(ownerTrialResponse.status).toBe(200);
-
     await setOrganizationBillingState({
       organizationId,
       planCode: 'premium',
@@ -8847,19 +8186,16 @@ describe('バックエンドアプリ', () => {
       currentPeriodEnd: new Date(Date.now() - 60_000),
     });
 
-    const completionResponse = await owner.request(
-      '/api/v1/auth/organizations/billing/trial/complete',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      },
-    );
-    expect(completionResponse.status).toBe(200);
-    const completionPayload = (await toJson(completionResponse)) as Record<string, unknown>;
-    expect(completionPayload.message).toBe(
-      'Organization premium trial ended and returned to free because billing requirements were not met.',
-    );
+    const completionResult = await completeExpiredOrganizationPremiumTrials({
+      database: drizzle(d1),
+      env: {},
+      now: new Date(),
+    });
+    expect(completionResult).toEqual({
+      scanned: 1,
+      completed: 1,
+      failed: 0,
+    });
 
     const billingAfterCompletion = await selectOrganizationBillingRow(organizationId);
     expect(billingAfterCompletion?.planCode).toBe('free');
@@ -8885,14 +8221,6 @@ describe('バックエンドアプリ', () => {
     expect(auditRows).toEqual([
       expect.objectContaining({
         sequenceNumber: 1,
-        sourceKind: 'trial_start',
-        previousPlanState: 'free',
-        nextPlanState: 'premium_trial',
-        previousSubscriptionStatus: 'free',
-        nextSubscriptionStatus: 'trialing',
-      }),
-      expect.objectContaining({
-        sequenceNumber: 2,
         sourceKind: 'trial_completion',
         sourceContext:
           'Organization premium trial ended and returned to free because billing requirements were not met.',
@@ -8912,11 +8240,7 @@ describe('バックエンドアプリ', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ organizationId }),
     });
-    expect(repeatedTrialResponse.status).toBe(409);
-    const repeatedTrialPayload = (await toJson(repeatedTrialResponse)) as Record<string, unknown>;
-    expect(repeatedTrialPayload.message).toBe(
-      'Organization already has an active premium trial or paid subscription.',
-    );
+    await expectBillingApiActionsDisabled(repeatedTrialResponse);
   });
 
   it('スケジュールされた課金メンテナンスで期限切れローカルプレミアムトライアルを完了する', async () => {
@@ -8932,13 +8256,6 @@ describe('バックエンドアプリ', () => {
       name: 'Scheduled Trial Org',
       slug: 'scheduled-trial-org',
     });
-
-    const trialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId }),
-    });
-    expect(trialResponse.status).toBe(200);
 
     const maintenanceNow = new Date(Date.now() + 60_000);
     await setOrganizationBillingState({
@@ -8973,10 +8290,6 @@ describe('バックエンドアプリ', () => {
     expect(await selectOrganizationBillingAuditEventRows(organizationId)).toEqual([
       expect.objectContaining({
         sequenceNumber: 1,
-        sourceKind: 'trial_start',
-      }),
-      expect.objectContaining({
-        sequenceNumber: 2,
         sourceKind: 'trial_completion',
         sourceContext:
           'Organization premium trial ended and returned to free because billing requirements were not met.',
@@ -9008,22 +8321,18 @@ describe('バックエンドアプリ', () => {
         body: JSON.stringify({ organizationId }),
       },
     );
-    expect(freeCompletionResponse.status).toBe(409);
-    const freeCompletionPayload = (await toJson(freeCompletionResponse)) as Record<string, unknown>;
-    expect(freeCompletionPayload.message).toBe(
-      'Organization does not have an active premium trial.',
-    );
+    await expectBillingApiActionsDisabled(freeCompletionResponse);
 
     const initialBilling = await selectOrganizationBillingRow(organizationId);
     expect(initialBilling?.planCode).toBe('free');
     expect(initialBilling?.subscriptionStatus).toBe('free');
 
-    const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ organizationId }),
+    await setOrganizationBillingState({
+      organizationId,
+      planCode: 'premium',
+      subscriptionStatus: 'trialing',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
-    expect(ownerTrialResponse.status).toBe(200);
 
     const trialBillingBeforeCompletion = await selectOrganizationBillingRow(organizationId);
     expect(trialBillingBeforeCompletion?.subscriptionStatus).toBe('trialing');
@@ -9036,14 +8345,7 @@ describe('バックエンドアプリ', () => {
         body: JSON.stringify({ organizationId }),
       },
     );
-    expect(prematureCompletionResponse.status).toBe(409);
-    const prematureCompletionPayload = (await toJson(prematureCompletionResponse)) as Record<
-      string,
-      unknown
-    >;
-    expect(prematureCompletionPayload.message).toBe(
-      'Organization premium trial has not reached its completion time yet.',
-    );
+    await expectBillingApiActionsDisabled(prematureCompletionResponse);
 
     const trialBillingAfterConflict = await selectOrganizationBillingRow(organizationId);
     expect(trialBillingAfterConflict?.planCode).toBe('premium');
@@ -9109,13 +8411,6 @@ describe('バックエンドアプリ', () => {
       });
       paymentMethodPendingTrialOrganizationId = organizationId;
 
-      const ownerTrialResponse = await owner.request('/api/v1/auth/organizations/billing/trial', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId }),
-      });
-      expect(ownerTrialResponse.status).toBe(200);
-
       await setOrganizationBillingState({
         organizationId,
         planCode: 'premium',
@@ -9132,11 +8427,7 @@ describe('バックエンドアプリ', () => {
           body: JSON.stringify({ organizationId }),
         },
       );
-      expect(completionResponse.status).toBe(503);
-      const completionPayload = (await toJson(completionResponse)) as Record<string, unknown>;
-      expect(completionPayload.message).toBe(
-        'Payment method status is still syncing with Stripe. Retry after billing synchronization completes.',
-      );
+      await expectBillingApiActionsDisabled(completionResponse);
 
       const billingAfterAttempt = await selectOrganizationBillingRow(organizationId);
       expect(billingAfterAttempt?.planCode).toBe('premium');

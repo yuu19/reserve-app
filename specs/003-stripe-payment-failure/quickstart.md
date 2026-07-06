@@ -86,9 +86,10 @@ Stripe Billing E2E:
 Targeted backend checks:
 
 ```bash
-pnpm --filter @apps/backend exec vitest run src/billing/organization-billing-policy.test.ts
-pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "payment failure|payment issue|past_due|stale|notification"
-pnpm --filter @apps/backend test
+pnpm --filter @apps/backend exec vitest run src/domain/billing/reserve-app-billing-entitlement-policy.test.ts src/domain/billing/reserve-app-billing-notifications.test.ts src/domain/billing/organization-billing-maintenance.test.ts
+pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "支払い問題|支払い失敗|payment issue|past_due|stale"
+pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "トライアルリマインド|内部支払い問題調査|請求書支払い Webhook|プロバイダー復旧後|支払い詳細や生プロバイダーペイロード"
+pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "無料課金行|共通の課金アクション|Stripe 価格がない|トライアル設定失敗|オーナー限定のプレミアムトライアル|プレミアム価格設定|支払い方法登録ハンドオフ|セットアップ Checkout|終了したプレミアムトライアル|課金条件を満たさない|スケジュールされた課金メンテナンス|不正なトライアル完了|支払い方法の反映"
 ```
 
 Targeted web checks:
@@ -104,14 +105,43 @@ Stripe Billing E2E when secrets are available:
 pnpm --filter @repo/e2e test:e2e:billing
 ```
 
+For release evidence, use the GitHub Actions `Stripe Billing E2E` workflow as the source of truth for real Stripe
+Test Clock execution. Local E2E runs are useful for configuration checks, but completion requires a successful
+workflow run on the pushed commit.
+
 Broader checks before completion:
 
 ```bash
-pnpm test
 pnpm typecheck
+pnpm test
 pnpm lint
 pnpm format:check
 ```
+
+## Verification Evidence: 2026-07-06
+
+Targeted billing verification completed:
+
+- `pnpm --filter @apps/billing-api test` passed: 3 files / 15 tests.
+- `pnpm --filter @apps/backend exec vitest run src/features/billing src/domain/billing src/infra/payment/stripe.test.ts` passed: 12 files / 64 tests.
+- `pnpm --filter @repo/billing-client test` passed: 1 file / 4 tests.
+- `pnpm --filter @repo/saas-billing-drizzle test` passed: 1 file / 12 tests.
+- `pnpm --filter @apps/web exec vitest run --project client src/routes/contracts/page.svelte.spec.ts` passed: 1 file / 30 tests.
+- Targeted backend billing/payment-failure `src/app.test.ts` subsets passed, including payment issue summary, owner notifications, internal inspection, invoice/payment webhook, stale recovery, Billing API action disabled route contracts, setup checkout webhook sync, trial completion gate, and scheduled local trial completion coverage.
+
+Final repository verification:
+
+- `pnpm typecheck` passed: 12 tasks successful.
+- `pnpm test` was executed. Billing API, billing client, billing Drizzle, web server tests, docs tests, and backend billing/app integration coverage passed. The command failed only on non-billing booking unit tests where mocked databases do not provide `database.transaction`: `apps/backend/src/features/booking/booking.usecases.test.ts` and `apps/backend/src/features/booking/reschedule-booking.usecase.test.ts`.
+- `pnpm lint` was executed. It failed on unrelated `apps/web` Prettier findings in `src/lib/components/PublicSiteDescriptionEditor.svelte`, `src/lib/components/SafeRichText.svelte`, `src/lib/pages/notification-outbox-page.svelte`, and `src/lib/pages/public-site-create-page.svelte`.
+- `pnpm format:check` was executed. It failed on unrelated pre-existing generated/worktree formatting targets, including `.wrangler/tmp`, `dist-test`, existing backend snapshots/source files, and the unrelated web files above. The touched backend files were checked directly with ESLint/Prettier and passed.
+
+Stripe Billing E2E:
+
+- Source of truth: GitHub Actions workflow `Stripe Billing E2E`.
+- Local configuration fix: `packages/e2e/playwright.config.ts` now starts backend billing E2E with Billing API base URL/key and Billing API test-clock flags.
+- Workflow artifact uploads are best-effort with 7-day retention to avoid artifact quota noise from masking E2E status.
+- The successful GitHub Actions run URL and run id should be appended after the workflow is dispatched on the pushed commit.
 
 ## Required Backend Test Coverage
 

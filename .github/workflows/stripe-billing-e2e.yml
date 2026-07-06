@@ -51,19 +51,21 @@ jobs:
 
       - name: Upload Stripe Billing Playwright report
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-stripe-billing
           path: packages/e2e/playwright-report/
           if-no-files-found: ignore
-          retention-days: 30
+          retention-days: 7
 
       - name: Upload Stripe Billing Playwright artifacts
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: playwright-artifacts-stripe-billing
           path: |
             packages/e2e/test-results/
           if-no-files-found: ignore
-          retention-days: 30
+          retention-days: 7

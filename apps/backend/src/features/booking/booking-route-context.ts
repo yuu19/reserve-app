@@ -120,6 +120,7 @@ export type ScopedStoreContext = NonNullable<
  */
 export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteContext => {
   const { auth, database, env } = deps;
+  const requireRemoteBillingEntitlement = env.BILLING_API_SUMMARY_ENABLED === 'true';
 
   const requireIdentity = async (headers: Headers) => {
     return getSessionIdentity(auth, headers);
@@ -346,7 +347,7 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
         env,
         organizationId,
         readRemoteEntitlement: readRemoteOrganizationEntitlement,
-        requireRemoteEntitlement: true,
+        requireRemoteEntitlement: requireRemoteBillingEntitlement,
       }),
     requireOrganizationEntitlement: ({ organizationId, key }) =>
       readOrganizationEntitlementGate({
@@ -355,7 +356,7 @@ export const createBookingRouteContext = (deps: BookingRouteDeps): BookingRouteC
         organizationId,
         key,
         readRemoteEntitlement: readRemoteOrganizationEntitlement,
-        requireRemoteEntitlement: true,
+        requireRemoteEntitlement: requireRemoteBillingEntitlement,
       }),
   };
 };

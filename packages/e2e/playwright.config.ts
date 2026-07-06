@@ -9,6 +9,10 @@ const e2eRoot = fileURLToPath(new URL('.', import.meta.url));
 const backendEnvFile = path.join(os.tmpdir(), 'reserve-app-backend-e2e.vars');
 const billingApiEnvFile = path.join(os.tmpdir(), 'reserve-app-billing-api-e2e.vars');
 const wranglerE2eConfigHome = path.join(repoRoot, '.wrangler/e2e/config');
+const billingApiE2eBaseUrl = 'http://localhost:3010';
+const billingApiE2eKey =
+  process.env.BILLING_API_E2E_KEY?.trim() ||
+  'rbk_test_e2e_billing_api_test_clock_secret_000000000000000000000000';
 const billingE2eRequested =
   process.env.BILLING_E2E_ENABLED === 'true' ||
   process.argv.some((argument) => argument.includes('tests/e2e/billing'));
@@ -58,6 +62,13 @@ const writeBackendEnvFile = () => {
       STRIPE_PREMIUM_MONTHLY_PRICE_ID: requiredEnv('STRIPE_PREMIUM_MONTHLY_PRICE_ID'),
       STRIPE_PREMIUM_YEARLY_PRICE_ID: requiredEnv('STRIPE_PREMIUM_YEARLY_PRICE_ID'),
       STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED: 'true',
+      BILLING_API_ACTIONS_ENABLED: 'true',
+      BILLING_API_SUMMARY_ENABLED: 'true',
+      BILLING_API_TEST_CLOCKS_ENABLED: 'true',
+      BILLING_API_TEST_CLOCKS_ENV: 'sandbox',
+      BILLING_API_WEBHOOK_FORWARD_ENABLED: 'true',
+      BILLING_API_BASE_URL: billingApiE2eBaseUrl,
+      BILLING_API_KEY: billingApiE2eKey,
     });
   }
 

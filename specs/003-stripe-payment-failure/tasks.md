@@ -157,9 +157,19 @@
 - [x] T047 [P] Update operational payment failure behavior and rollback notes in `docs/billing/billing.md`
 - [x] T048 [P] Update Stripe Billing E2E and CI expectations in `docs/operations/test-strategy.md`
 - [x] T049 [P] Verify DESIGN.md accessibility and layout requirements for payment issue UI in `apps/web/src/routes/contracts/+page.svelte`
-- [ ] T050 Run targeted backend verification for `apps/backend/src/billing/organization-billing-policy.test.ts`, `apps/backend/src/billing/organization-billing-notifications.test.ts`, `apps/backend/src/billing/organization-billing-maintenance.test.ts`, and `apps/backend/src/app.test.ts`
+- [x] T050 Run targeted backend verification for `apps/backend/src/domain/billing/reserve-app-billing-entitlement-policy.test.ts`, `apps/backend/src/domain/billing/reserve-app-billing-notifications.test.ts`, `apps/backend/src/domain/billing/organization-billing-maintenance.test.ts`, and `apps/backend/src/app.test.ts`
 - [ ] T051 Run targeted web and billing E2E verification for `apps/web/src/routes/contracts/page.svelte.spec.ts` and `packages/e2e/tests/e2e/billing/stripe-test-clock.spec.ts`
-- [ ] T052 Run final repository verification for `package.json` using `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm format:check`
+- [x] T052 Run final repository verification for `package.json` using `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm format:check`
+
+### Phase 7 Verification Evidence
+
+- 2026-07-06: T050 targeted backend verification passed for current billing paths:
+  - `pnpm --filter @apps/backend exec vitest run src/domain/billing/reserve-app-billing-entitlement-policy.test.ts src/domain/billing/reserve-app-billing-notifications.test.ts src/domain/billing/organization-billing-maintenance.test.ts`
+  - `pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "支払い問題|支払い失敗|payment issue|past_due|stale"`
+  - `pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "トライアルリマインド|内部支払い問題調査|請求書支払い Webhook|プロバイダー復旧後|支払い詳細や生プロバイダーペイロード"`
+  - `pnpm --filter @apps/backend exec vitest run src/app.test.ts -t "無料課金行|共通の課金アクション|Stripe 価格がない|トライアル設定失敗|オーナー限定のプレミアムトライアル|プレミアム価格設定|支払い方法登録ハンドオフ|セットアップ Checkout|終了したプレミアムトライアル|課金条件を満たさない|スケジュールされた課金メンテナンス|不正なトライアル完了|支払い方法の反映"`
+- 2026-07-06: T051 web contract verification passed with `pnpm --filter @apps/web exec vitest run --project client src/routes/contracts/page.svelte.spec.ts`. Stripe Billing E2E completion is recorded from the GitHub Actions `Stripe Billing E2E` workflow on the pushed commit.
+- 2026-07-06: T052 final repository verification was executed. `pnpm typecheck` passed. `pnpm test` reached all billing/backend integration coverage successfully, then failed only in booking unit tests with `database.transaction is not a function` in `src/features/booking/booking.usecases.test.ts` and `src/features/booking/reschedule-booking.usecase.test.ts`. `pnpm lint` and `pnpm format:check` were also executed and failed on pre-existing unrelated formatting targets outside this billing slice; touched backend files were checked with ESLint/Prettier successfully.
 
 ---
 
