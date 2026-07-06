@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  buildAddonPriceLookupIntervals,
   buildBillingApiFeatures,
   createBillingApiApp,
   hasBillingApiCredentialScope,
@@ -178,8 +179,20 @@ describe('createBillingApiApp', () => {
       items: {
         data: [
           {
+            id: 'si_base',
+            quantity: 1,
             price: {
               id: 'price_monthly',
+              recurring: {
+                interval: 'month',
+              },
+            },
+          },
+          {
+            id: 'si_staff',
+            quantity: 2,
+            price: {
+              id: 'price_staff_seat_monthly',
               recurring: {
                 interval: 'month',
               },
@@ -201,6 +214,20 @@ describe('createBillingApiApp', () => {
         subjectId: 'org_123',
         planCode: 'premium',
       },
+      items: [
+        {
+          id: 'si_base',
+          providerPriceId: 'price_monthly',
+          quantity: 1,
+          interval: 'month',
+        },
+        {
+          id: 'si_staff',
+          providerPriceId: 'price_staff_seat_monthly',
+          quantity: 2,
+          interval: 'month',
+        },
+      ],
     });
     expect(snapshot?.currentPeriodStart?.toISOString()).toBe('2026-05-28T20:26:40.000Z');
     expect(snapshot?.currentPeriodEnd?.toISOString()).toBe('2026-06-27T20:26:40.000Z');
@@ -209,6 +236,12 @@ describe('createBillingApiApp', () => {
   test('supports invoice finalized webhook as a billing event', () => {
     expect(isSupportedStripeBillingEventType('invoice.finalized')).toBe(true);
     expect(isSupportedStripeBillingEventType('customer.subscription.trial_will_end')).toBe(false);
+  });
+
+  test('prefers yearly addon prices but falls back to monthly addon prices', () => {
+    expect(buildAddonPriceLookupIntervals('year')).toEqual(['year', 'month']);
+    expect(buildAddonPriceLookupIntervals('month')).toEqual(['month']);
+    expect(buildAddonPriceLookupIntervals(null)).toEqual(['month']);
   });
 
   test('normalizes Stripe invoice payload for invoice event history', () => {

@@ -28,6 +28,7 @@ import {
 import { buildBillingActionEnvelope } from './billing.presenter.js';
 import type { BillingIdentity, BillingRouteContext } from './billing.route-context.js';
 import type {
+  OrganizationBillingAddonQuantityBody,
   OrganizationBillingCheckoutBody,
   OrganizationBillingPaymentMethodBody,
   OrganizationBillingPortalBody,
@@ -131,6 +132,13 @@ const isBillingApiActivePremiumLifecycle = (summary: BillingApiSummaryResponse) 
   isBillingApiPremiumPlan(summary) &&
   isActivePremiumSubscriptionStatus(readBillingApiActionSubscriptionStatus(summary));
 
+const isBillingApiPaidActivePremiumSubscription = (summary: BillingApiSummaryResponse) =>
+  isBillingApiPremiumPlan(summary) &&
+  summary.subscription?.status === 'active' &&
+  summary.subscription.priceResolution === 'known' &&
+  Boolean(summary.subscription.providerSubscriptionId) &&
+  Boolean(summary.account.providerCustomerId);
+
 const operationConflictResult = async ({
   ctx,
   organizationId,
@@ -192,6 +200,26 @@ const toBillingApiActionFailure = (
     statusCode,
     actionStatus: statusCode === 409 ? 'conflict' : 'failed',
     attemptState: statusCode === 409 ? 'conflict' : 'failed',
+    message: toBillingOperationFailureMessage(error, fallbackMessage),
+  };
+};
+
+const toBillingApiAddonActionFailure = (
+  error: unknown,
+  fallbackMessage: string,
+): {
+  statusCode: 400 | 409 | 500 | 503;
+  actionStatus: 'conflict' | 'failed';
+  message: string;
+} => {
+  const statusCode =
+    error instanceof BillingClientError &&
+    (error.status === 400 || error.status === 409 || error.status === 503)
+      ? error.status
+      : 500;
+  return {
+    statusCode,
+    actionStatus: statusCode === 400 || statusCode === 409 ? 'conflict' : 'failed',
     message: toBillingOperationFailureMessage(error, fallbackMessage),
   };
 };
@@ -1087,4 +1115,98 @@ export const createSubscriptionUpdatePortalHandoff = async ({
       }),
     syncedSubject: billingApiSummary.subject,
   });
+};
+
+export const updateOrganizationBillingAddonQuantity = async ({
+  ctx,
+  body,
+  headers,
+}: {
+  ctx: BillingRouteContext;
+  body: OrganizationBillingAddonQuantityBody;
+  headers: Headers;
+}): Promise<JsonRouteResult> => {
+  const ownerContext = await resolveOwnerActionContext({
+    ctx,
+    headers,
+    requestedOrganizationId: body.organizationId,
+  });
+  if (!ownerContext.ok) {
+    return ownerContext.result;
+  }
+  const { identity, organizationId, role } = ownerContext;
+  const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
+
+  if (!billingApiActionClient.enabled) {
+    return billingApiActionUnavailableResult({
+      ctx,
+      organizationId,
+      role,
+      disabledReason: billingApiActionClient.disabledReason,
+    });
+  }
+
+  const billingApiSummary = await readRequiredBillingApiActionSummary({
+    ctx,
+    identity,
+    organizationId,
+    role,
+    client: billingApiActionClient.client,
+    idempotencyKeySuffix: `addon-quantity-precondition:${body.addonCode}`,
+  });
+  if (!billingApiSummary.ok) {
+    return billingApiSummary.result;
+  }
+  if (!isBillingApiPaidActivePremiumSubscription(billingApiSummary.summary)) {
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: 'conflict',
+        message: 'Addon updates require an active paid premium subscription.',
+        billingApiSummaryResponse: billingApiSummary.summary,
+      }),
+      409,
+    );
+  }
+
+  try {
+    const summary = await billingApiActionClient.client.updateAddonQuantity(
+      billingApiSummary.subject.billingSubject,
+      body.addonCode,
+      {
+        quantity: body.quantity,
+        actor: {
+          type: 'user',
+          id: identity.userId,
+          email: identity.email,
+        },
+      },
+      {
+        idempotencyKey: `reserve-addon-quantity:${organizationId}:${body.addonCode}:${body.quantity}:${identity.userId}`,
+      },
+    );
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: 'succeeded',
+        message: 'Addon quantity updated.',
+        billingApiSummaryResponse: summary,
+      }),
+      200,
+    );
+  } catch (error) {
+    const failure = toBillingApiAddonActionFailure(error, 'Billing API addon update failed.');
+    return jsonResult(
+      await buildActionEnvelope(ctx, {
+        organizationId,
+        role,
+        status: failure.actionStatus,
+        message: failure.message,
+        billingApiSummaryResponse: billingApiSummary.summary,
+      }),
+      failure.statusCode,
+    );
+  }
 };

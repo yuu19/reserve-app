@@ -10,6 +10,7 @@ import {
   createSubscriptionCheckoutHandoff,
   createSubscriptionUpdatePortalHandoff,
   startTrialSubscription,
+  updateOrganizationBillingAddonQuantity,
 } from './billing-actions.usecase.js';
 import {
   createBillingRouteContext,
@@ -23,6 +24,7 @@ import {
   createOrganizationBillingPortalRoute,
   createOrganizationBillingTrialCompletionRoute,
   createOrganizationBillingTrialRoute,
+  updateOrganizationBillingAddonQuantityRoute,
   advanceInternalBillingTestClockScenarioRoute,
   createInternalBillingTestClockScenarioRoute,
   getInternalBillingTestClockScenarioRoute,
@@ -108,6 +110,17 @@ export const registerBillingRoutes = (
     jsonBillingRouteResult(
       c,
       await createSubscriptionUpdatePortalHandoff({
+        ctx,
+        body: c.req.valid('json'),
+        headers: c.req.raw.headers,
+      }),
+    ),
+  );
+
+  authRoutes.openapi(updateOrganizationBillingAddonQuantityRoute, async (c) =>
+    jsonBillingRouteResult(
+      c,
+      await updateOrganizationBillingAddonQuantity({
         ctx,
         body: c.req.valid('json'),
         headers: c.req.raw.headers,

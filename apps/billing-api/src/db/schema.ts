@@ -182,6 +182,42 @@ export const billingEntitlement = sqliteTable(
   ],
 );
 
+export const billingSubscriptionAddonItem = sqliteTable(
+  'billing_subscription_addon_item',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    billingSubscriptionId: text('billing_subscription_id')
+      .notNull()
+      .references(() => billingSubscription.id, { onDelete: 'cascade' }),
+    addonCode: text('addon_code').notNull(),
+    addonPriceCode: text('addon_price_code'),
+    provider: text('provider').default('stripe').notNull(),
+    providerSubscriptionItemId: text('provider_subscription_item_id'),
+    providerPriceId: text('provider_price_id'),
+    quantity: integer('quantity').default(0).notNull(),
+    status: text('status').default('active').notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_subscription_addon_item_subscription_addon_uidx').on(
+      table.billingSubscriptionId,
+      table.addonCode,
+    ),
+    uniqueIndex('billing_subscription_addon_item_provider_item_uidx').on(
+      table.provider,
+      table.providerSubscriptionItemId,
+    ),
+    index('billing_subscription_addon_item_app_subscription_idx').on(
+      table.appId,
+      table.billingSubscriptionId,
+    ),
+  ],
+);
+
 export const billingInvoiceEvent = sqliteTable(
   'billing_invoice_event',
   {

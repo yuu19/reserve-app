@@ -171,6 +171,11 @@ export type BillingApiHandoffRequest = {
   returnUrlOverride?: string;
 };
 
+export type BillingApiAddonQuantityUpdateRequest = {
+  actor: BillingApiActor;
+  quantity: number;
+};
+
 export type BillingApiHandoffResponse = {
   status: 'processing' | 'succeeded' | 'failed' | 'conflict';
   message: string;

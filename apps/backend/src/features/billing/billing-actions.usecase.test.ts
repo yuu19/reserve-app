@@ -10,6 +10,7 @@ import {
   createSubscriptionCheckoutHandoff,
   createSubscriptionUpdatePortalHandoff,
   startTrialSubscription,
+  updateOrganizationBillingAddonQuantity,
 } from './billing-actions.usecase.js';
 import type { ReserveAppBillingStore } from './billing.store.js';
 import type { BillingOperationStore } from './billing-operation.store.js';
@@ -265,7 +266,7 @@ const createBillingApiFetch = ({
 }) => {
   const summaryQueue = [...(summaries ?? [])];
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (init?.method === 'PUT') {
+    if (init?.method === 'PUT' && !String(input).includes('/addon-items/')) {
       return new Response(JSON.stringify({ synced: true }), { status: 200 });
     }
     if (init?.method === 'GET' && String(input).endsWith('/summary')) {
@@ -273,6 +274,14 @@ const createBillingApiFetch = ({
         JSON.stringify(summaryQueue.shift() ?? summary ?? buildBillingApiSummary()),
         {
           status: 200,
+        },
+      );
+    }
+    if (init?.method === 'PUT' && String(input).includes('/addon-items/')) {
+      return new Response(
+        JSON.stringify(handoffBody ?? summary ?? buildBillingApiSummary({ billing: paidBilling })),
+        {
+          status: handoffStatus,
         },
       );
     }
@@ -768,6 +777,96 @@ describe('課金アクションユースケース', () => {
     );
   });
 
+  it('Billing API action flag が有効なら addon 数量更新を Billing API 経由で実行する', async () => {
+    const updatedSummary = buildBillingApiSummary({ billing: paidBilling });
+    updatedSummary.entitlements.features = {
+      ...updatedSummary.entitlements.features,
+      staffLimit: 12,
+    };
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: '',
+      summary: updatedSummary,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = createProvider();
+    const { ctx, operationStore } = createContext({ billing: paidBilling, provider });
+
+    const result = await updateOrganizationBillingAddonQuantity({
+      ctx,
+      body: { organizationId: 'organization-1', addonCode: 'staff_seat', quantity: 2 },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body.status).toBe('succeeded');
+    expect(result.body.billing?.premiumEligible).toBe(true);
+    expect(ctx.createProvider).not.toHaveBeenCalled();
+    expect(operationStore.createAttempt).not.toHaveBeenCalled();
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/addon-items/staff_seat',
+    );
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: 'PUT' });
+    expect((fetchMock.mock.calls[2]?.[1]?.headers as Headers).get('idempotency-key')).toBe(
+      'reserve-addon-quantity:organization-1:staff_seat:2:user-1',
+    );
+    expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string)).toMatchObject({
+      quantity: 2,
+      actor: {
+        type: 'user',
+        id: 'user-1',
+        email: 'owner@example.com',
+      },
+    });
+  });
+
+  it('active paid premium 以外では addon 数量更新を拒否する', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: '',
+      summary: buildBillingApiSummary({ billing: trialBilling }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { ctx, operationStore } = createContext({ billing: trialBilling });
+
+    const result = await updateOrganizationBillingAddonQuantity({
+      ctx,
+      body: { organizationId: 'organization-1', addonCode: 'staff_seat', quantity: 2 },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(409);
+    expect(result.body.status).toBe('conflict');
+    expect(operationStore.createAttempt).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).not.toContain(
+      'https://billing.test/api/v1/apps/reserve/subjects/organization/organization-1/addon-items/staff_seat',
+    );
+  });
+
+  it('Billing API addon 数量更新の 400 は backend で 500 に潰さない', async () => {
+    const fetchMock = createBillingApiFetch({
+      handoffUrl: '',
+      summary: buildBillingApiSummary({ billing: paidBilling }),
+      handoffStatus: 400,
+      handoffBody: {
+        error: {
+          code: 'not_implemented',
+          message: 'Addon quantity decrease is not implemented.',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { ctx } = createContext({ billing: paidBilling });
+
+    const result = await updateOrganizationBillingAddonQuantity({
+      ctx,
+      body: { organizationId: 'organization-1', addonCode: 'staff_seat', quantity: 1 },
+      headers: new Headers(),
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.status).toBe('conflict');
+    expect(result.body.message).toBe('Addon quantity decrease is not implemented.');
+  });
+
   it('Billing API action flag が有効なら trial complete は Billing API 経由で実行する', async () => {
     const fetchMock = createBillingApiFetch({
       handoffUrl: '',
@@ -825,6 +924,12 @@ describe('課金アクションユースケース', () => {
         createSubscriptionUpdatePortalHandoff({
           ctx,
           body: { organizationId: 'organization-1' },
+          headers: new Headers(),
+        }),
+      () =>
+        updateOrganizationBillingAddonQuantity({
+          ctx,
+          body: { organizationId: 'organization-1', addonCode: 'staff_seat', quantity: 2 },
           headers: new Headers(),
         }),
       () =>

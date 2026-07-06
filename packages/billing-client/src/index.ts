@@ -1,6 +1,7 @@
 import type {
   BillingApiEntitlementsResponse,
   BillingApiErrorResponse,
+  BillingApiAddonQuantityUpdateRequest,
   BillingApiAdvanceTestClockScenarioRequest,
   BillingApiCreateTestClockScenarioRequest,
   BillingApiHandoffRequest,
@@ -194,6 +195,20 @@ export const createBillingClient = ({
       return request<BillingApiHandoffResponse>({
         method: 'POST',
         path: `${subjectPath(subject)}/billing-portal-sessions`,
+        body,
+        idempotencyKey: options.idempotencyKey,
+      });
+    },
+
+    updateAddonQuantity(
+      subject: BillingClientSubjectInput,
+      addonCode: string,
+      body: BillingApiAddonQuantityUpdateRequest,
+      options: BillingClientRequestOptions,
+    ) {
+      return request<BillingApiSummaryResponse>({
+        method: 'PUT',
+        path: `${subjectPath(subject)}/addon-items/${encodeSegment(addonCode)}`,
         body,
         idempotencyKey: options.idempotencyKey,
       });

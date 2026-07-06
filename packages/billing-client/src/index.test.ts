@@ -132,6 +132,48 @@ describe('createBillingClient', () => {
     expect(requests[0]?.headers.get('authorization')).toBe('Bearer billing_test_key');
   });
 
+  test('updates addon quantity with subject scoped path and idempotency key', async () => {
+    const requests: Request[] = [];
+    const client = createBillingClient({
+      baseUrl: 'https://billing.example.com',
+      appId: 'reserve',
+      apiKey: 'billing_test_key',
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requests.push(request);
+        return createJsonResponse({
+          subject: {},
+          account: {},
+          subscription: null,
+          entitlements: {},
+          provider: {},
+        });
+      },
+    });
+
+    await client.updateAddonQuantity(
+      { subjectType: 'organization', subjectId: 'org_1' },
+      'staff_seat',
+      {
+        quantity: 2,
+        actor: { type: 'user', id: 'user_1', email: 'owner@example.com' },
+      },
+      { idempotencyKey: 'addon-staff-seat-2' },
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.method).toBe('PUT');
+    expect(requests[0]?.url).toBe(
+      'https://billing.example.com/api/v1/apps/reserve/subjects/organization/org_1/addon-items/staff_seat',
+    );
+    expect(requests[0]?.headers.get('authorization')).toBe('Bearer billing_test_key');
+    expect(requests[0]?.headers.get('idempotency-key')).toBe('addon-staff-seat-2');
+    await expect(requests[0]?.json()).resolves.toEqual({
+      quantity: 2,
+      actor: { type: 'user', id: 'user_1', email: 'owner@example.com' },
+    });
+  });
+
   test('creates and advances Test Clock scenarios on test scoped paths', async () => {
     const requests: Request[] = [];
     const client = createBillingClient({

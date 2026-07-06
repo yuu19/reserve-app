@@ -35,6 +35,7 @@ export type BillingApiActionClient = Pick<
   | 'createCheckoutSession'
   | 'createPaymentMethodSetupSession'
   | 'createBillingPortalSession'
+  | 'updateAddonQuantity'
   | 'completeTrial'
 >;
 

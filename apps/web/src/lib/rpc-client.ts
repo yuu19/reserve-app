@@ -890,6 +890,12 @@ type CreateOrganizationBillingPortalInput = {
 	organizationId?: string;
 };
 
+type UpdateOrganizationBillingAddonQuantityInput = {
+	organizationId?: string;
+	addonCode: 'staff_seat' | 'shop_slot';
+	quantity: number;
+};
+
 type CreateOrganizationBillingTrialInput = {
 	organizationId?: string;
 };
@@ -1769,6 +1775,8 @@ export const authRpc = {
 		authFetch('/api/v1/auth/organizations/billing/checkout', { json }),
 	createOrganizationBillingPortal: (json: CreateOrganizationBillingPortalInput) =>
 		authFetch('/api/v1/auth/organizations/billing/portal', { json }),
+	updateOrganizationBillingAddonQuantity: (json: UpdateOrganizationBillingAddonQuantityInput) =>
+		authFetch('/api/v1/auth/organizations/billing/addons/quantity', { json }),
 	createOrganizationBillingTrial: (json: CreateOrganizationBillingTrialInput) =>
 		authFetch('/api/v1/auth/organizations/billing/trial', { json }),
 	createOrganizationBillingPaymentMethod: (json: CreateOrganizationBillingPortalInput) =>

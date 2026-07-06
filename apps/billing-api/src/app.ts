@@ -1,5 +1,6 @@
 import type {
   BillingApiAccount,
+  BillingApiAddonQuantityUpdateRequest,
   BillingApiAdvanceTestClockScenarioRequest,
   BillingApiActor,
   BillingApiBillingContact,
@@ -191,6 +192,12 @@ const normalizeContacts = (value: unknown): BillingApiBillingContact[] =>
 
 const readString = (value: unknown): string | null =>
   typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+
+const readPositiveInteger = (value: unknown): number | null => {
+  const parsed =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
 
 const readStripeExpandableId = (value: unknown): string | null => {
   const direct = readString(value);
@@ -535,6 +542,66 @@ const updateStripeSubscriptionDefaultPaymentMethod = async ({
     params,
     idempotencyKey,
   });
+};
+
+const createStripeSubscriptionItem = async ({
+  env,
+  subscriptionId,
+  priceId,
+  quantity,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  subscriptionId: string;
+  priceId: string;
+  quantity: number;
+  idempotencyKey: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('subscription', subscriptionId);
+  params.set('price', priceId);
+  params.set('quantity', String(quantity));
+  params.set('payment_behavior', 'error_if_incomplete');
+  params.set('proration_behavior', 'create_prorations');
+  const payload = await postStripeForm({
+    env,
+    path: 'subscription_items',
+    params,
+    idempotencyKey,
+  });
+  const id = readString(readObject(payload).id);
+  if (!id) {
+    throw new Error('Invalid Stripe subscription item response.');
+  }
+  return { id };
+};
+
+const updateStripeSubscriptionItemQuantity = async ({
+  env,
+  subscriptionItemId,
+  quantity,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  subscriptionItemId: string;
+  quantity: number;
+  idempotencyKey: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('quantity', String(quantity));
+  params.set('payment_behavior', 'error_if_incomplete');
+  params.set('proration_behavior', 'create_prorations');
+  const payload = await postStripeForm({
+    env,
+    path: `subscription_items/${encodeURIComponent(subscriptionItemId)}`,
+    params,
+    idempotencyKey,
+  });
+  const id = readString(readObject(payload).id);
+  if (!id) {
+    throw new Error('Invalid Stripe subscription item response.');
+  }
+  return { id };
 };
 
 const attachAndSetStripeDefaultPaymentMethod = async ({
@@ -1336,12 +1403,106 @@ const ensureSubject = async ({
   return bundle;
 };
 
+type EntitlementRuleRow = {
+  entitlementKey: string;
+  valueType: string;
+  valueJson: string;
+};
+
+const readActiveSubscriptionAddonItems = async ({
+  db,
+  subscriptionId,
+}: {
+  db: BillingApiDatabase;
+  subscriptionId: string | null;
+}) => {
+  if (!subscriptionId) {
+    return [];
+  }
+  return db
+    .select()
+    .from(dbSchema.billingSubscriptionAddonItem)
+    .where(
+      and(
+        eq(dbSchema.billingSubscriptionAddonItem.billingSubscriptionId, subscriptionId),
+        eq(dbSchema.billingSubscriptionAddonItem.status, 'active'),
+        gt(dbSchema.billingSubscriptionAddonItem.quantity, 0),
+      ),
+    );
+};
+
+const buildComposedEntitlementRules = async ({
+  db,
+  appId,
+  planCode,
+  subscriptionId,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  planCode: string;
+  subscriptionId: string | null;
+}): Promise<EntitlementRuleRow[]> => {
+  const planRules = await db
+    .select()
+    .from(dbSchema.billingEntitlementRule)
+    .where(
+      and(
+        eq(dbSchema.billingEntitlementRule.appId, appId),
+        eq(dbSchema.billingEntitlementRule.planCode, planCode),
+        eq(dbSchema.billingEntitlementRule.active, true),
+      ),
+    );
+  const composed = new Map<string, EntitlementRuleRow>();
+  for (const rule of planRules) {
+    composed.set(rule.entitlementKey, {
+      entitlementKey: rule.entitlementKey,
+      valueType: rule.valueType,
+      valueJson: rule.valueJson,
+    });
+  }
+
+  const addonItems = await readActiveSubscriptionAddonItems({ db, subscriptionId });
+  if (addonItems.length === 0) {
+    return [...composed.values()];
+  }
+  const addonRules = await db
+    .select()
+    .from(dbSchema.billingAddonEntitlementRule)
+    .where(
+      and(
+        eq(dbSchema.billingAddonEntitlementRule.appId, appId),
+        eq(dbSchema.billingAddonEntitlementRule.active, true),
+      ),
+    );
+  for (const item of addonItems) {
+    for (const rule of addonRules.filter((entry) => entry.addonCode === item.addonCode)) {
+      if (rule.aggregation !== 'increment') {
+        continue;
+      }
+      const increment = Number(safeJsonParse(rule.valueJson, 0));
+      if (!Number.isFinite(increment)) {
+        continue;
+      }
+      const existing = composed.get(rule.entitlementKey);
+      const parsedCurrentValue = Number(existing ? safeJsonParse(existing.valueJson, 0) : 0);
+      const currentValue = Number.isFinite(parsedCurrentValue) ? parsedCurrentValue : 0;
+      composed.set(rule.entitlementKey, {
+        entitlementKey: rule.entitlementKey,
+        valueType: 'number',
+        valueJson: JSON.stringify(currentValue + increment * item.quantity),
+      });
+    }
+  }
+  return [...composed.values()];
+};
+
 const replaceEntitlementsFromRules = async ({
   db,
   appId,
   subjectRowId,
   accountId,
   planCode,
+  subscriptionId,
   source,
   reason,
   validFrom,
@@ -1352,6 +1513,7 @@ const replaceEntitlementsFromRules = async ({
   subjectRowId: string;
   accountId: string;
   planCode: string;
+  subscriptionId?: string | null;
   source: 'trial' | 'paid';
   reason: string;
   validFrom?: Date | null;
@@ -1367,16 +1529,12 @@ const replaceEntitlementsFromRules = async ({
       ),
     );
 
-  const rules = await db
-    .select()
-    .from(dbSchema.billingEntitlementRule)
-    .where(
-      and(
-        eq(dbSchema.billingEntitlementRule.appId, appId),
-        eq(dbSchema.billingEntitlementRule.planCode, planCode),
-        eq(dbSchema.billingEntitlementRule.active, true),
-      ),
-    );
+  const rules = await buildComposedEntitlementRules({
+    db,
+    appId,
+    planCode,
+    subscriptionId: subscriptionId ?? null,
+  });
   if (rules.length === 0) {
     return;
   }
@@ -1477,6 +1635,7 @@ const startLocalTrial = async ({
     subjectRowId: bundle.subject.id,
     accountId: bundle.account.id,
     planCode: 'premium',
+    subscriptionId: null,
     source: 'trial',
     reason: 'trial_started_by_billing_api',
     validUntil: trialEnd,
@@ -1625,6 +1784,25 @@ const validateHandoffRequest = ({
     returnUrlOverride: readString(record.returnUrlOverride),
   };
 };
+
+type AddonQuantityUpdateRequest = BillingApiAddonQuantityUpdateRequest & {
+  actor: BillingApiActor;
+  quantity: number;
+};
+
+const validateAddonQuantityUpdateRequest = (body: unknown): AddonQuantityUpdateRequest | null => {
+  const record = readObject(body);
+  const actor = readActor(record.actor);
+  const quantity = readPositiveInteger(record.quantity);
+  if (!actor || !quantity || quantity > 999) {
+    return null;
+  }
+  return { actor, quantity };
+};
+
+export const buildAddonPriceLookupIntervals = (
+  subscriptionInterval: 'month' | 'year' | null,
+): ('month' | 'year')[] => (subscriptionInterval === 'year' ? ['year', 'month'] : ['month']);
 
 const validateUrl = (value: string): string | null => {
   try {
@@ -2064,6 +2242,156 @@ const toHandoffError = (error: unknown): JsonResult<BillingApiErrorResponse> =>
           error instanceof Error ? error.message : 'Stripe handoff failed.',
         ),
       };
+
+const toStripeMutationError = (error: unknown): JsonResult<BillingApiErrorResponse> =>
+  error instanceof Error && error.message === 'STRIPE_NOT_CONFIGURED'
+    ? {
+        status: 503,
+        body: errorBody('provider_not_configured', 'Stripe secret key is not configured.'),
+      }
+    : {
+        status: 502,
+        body: errorBody(
+          'internal_error',
+          error instanceof Error ? error.message : 'Stripe billing mutation failed.',
+        ),
+      };
+
+const updateAddonQuantity = async ({
+  db,
+  env,
+  appId,
+  subjectType,
+  subjectId,
+  addonCode,
+  body,
+  idempotencyKey,
+}: {
+  db: BillingApiDatabase;
+  env: BillingApiBindings;
+  appId: string;
+  subjectType: string;
+  subjectId: string;
+  addonCode: string;
+  body: unknown;
+  idempotencyKey: string;
+}): Promise<JsonResult<BillingApiSummaryResponse | BillingApiErrorResponse>> => {
+  const request = validateAddonQuantityUpdateRequest(body);
+  if (!request) {
+    return {
+      status: 400,
+      body: errorBody('bad_request', 'Valid actor and quantity are required.'),
+    };
+  }
+  const bundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
+  if (!bundle) {
+    return { status: 404, body: errorBody('subject_not_found', 'Billing subject is not synced.') };
+  }
+  const subscription = bundle.subscription;
+  if (
+    !subscription ||
+    subscription.planCode !== 'premium' ||
+    subscription.status !== 'active' ||
+    subscription.priceResolution !== 'known' ||
+    !subscription.providerSubscriptionId ||
+    !bundle.account.providerCustomerId
+  ) {
+    return {
+      status: 409,
+      body: errorBody(
+        'bad_request',
+        'Addon quantity updates require an active paid premium subscription.',
+      ),
+    };
+  }
+  let addonPrice: Awaited<ReturnType<typeof readActiveAddonPriceByCode>> | null = null;
+  for (const interval of buildAddonPriceLookupIntervals(
+    subscription.interval === 'year' ? 'year' : 'month',
+  )) {
+    addonPrice = await readActiveAddonPriceByCode({
+      db,
+      appId,
+      addonCode,
+      interval,
+    });
+    if (addonPrice) {
+      break;
+    }
+  }
+  if (!addonPrice) {
+    return { status: 400, body: errorBody('bad_request', 'Active addon price was not found.') };
+  }
+  if (!addonPrice.providerPriceId) {
+    return {
+      status: 503,
+      body: errorBody('provider_not_configured', 'Stripe addon price id is not configured.'),
+    };
+  }
+  const addonItemRows = await db
+    .select()
+    .from(dbSchema.billingSubscriptionAddonItem)
+    .where(
+      and(
+        eq(dbSchema.billingSubscriptionAddonItem.billingSubscriptionId, subscription.id),
+        eq(dbSchema.billingSubscriptionAddonItem.addonCode, addonCode),
+      ),
+    )
+    .limit(1);
+  const currentAddonItem = addonItemRows[0] ?? null;
+  const currentQuantity =
+    currentAddonItem && currentAddonItem.status === 'active' ? currentAddonItem.quantity : 0;
+  if (request.quantity < currentQuantity) {
+    return {
+      status: 400,
+      body: errorBody('not_implemented', 'Addon quantity decrease is not implemented.'),
+    };
+  }
+  if (request.quantity > currentQuantity) {
+    try {
+      if (currentAddonItem?.status === 'active' && currentAddonItem.providerSubscriptionItemId) {
+        await updateStripeSubscriptionItemQuantity({
+          env,
+          subscriptionItemId: currentAddonItem.providerSubscriptionItemId,
+          quantity: request.quantity,
+          idempotencyKey: `${idempotencyKey}:addon_item_update:${addonCode}:${request.quantity}`,
+        });
+      } else {
+        await createStripeSubscriptionItem({
+          env,
+          subscriptionId: subscription.providerSubscriptionId,
+          priceId: addonPrice.providerPriceId,
+          quantity: request.quantity,
+          idempotencyKey: `${idempotencyKey}:addon_item_create:${addonCode}:${request.quantity}`,
+        });
+      }
+      const stripeSubscription = await retrieveStripeSubscriptionSnapshot({
+        env,
+        subscriptionId: subscription.providerSubscriptionId,
+      });
+      await upsertSubscriptionFromStripe({ db, bundle, subscription: stripeSubscription });
+    } catch (error) {
+      return toStripeMutationError(error);
+    }
+  }
+
+  const updatedBundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
+  if (!updatedBundle) {
+    return {
+      status: 500,
+      body: errorBody('internal_error', 'Failed to read updated billing state.'),
+    };
+  }
+  return {
+    status: 200,
+    body: buildSummaryResponse({
+      env,
+      subject: updatedBundle.subject,
+      account: updatedBundle.account,
+      subscription: updatedBundle.subscription,
+      entitlements: updatedBundle.entitlements,
+    }),
+  };
+};
 
 export const isBillingTestClockEnvironmentEnabled = (env: BillingApiBindings): boolean =>
   env.BILLING_TEST_CLOCKS_ENABLED === 'true' &&
@@ -3213,6 +3541,7 @@ type StripeSubscriptionSnapshot = {
   status: BillingApiSubscriptionStatus;
   providerPriceId: string | null;
   interval: 'month' | 'year' | null;
+  items: StripeSubscriptionItemSnapshot[];
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
   trialStart: Date | null;
@@ -3220,6 +3549,15 @@ type StripeSubscriptionSnapshot = {
   cancelAt: Date | null;
   cancelAtPeriodEnd: boolean;
   metadata: StripeBillingMetadata;
+};
+
+type StripeSubscriptionItemSnapshot = {
+  id: string;
+  providerPriceId: string | null;
+  quantity: number;
+  interval: 'month' | 'year' | null;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
 };
 
 type BillingInvoiceEventType =
@@ -3349,6 +3687,33 @@ const normalizeStripeSubscriptionStatus = (value: string | null): BillingApiSubs
   return value === 'incomplete_expired' ? 'canceled' : 'incomplete';
 };
 
+const readStripeSubscriptionItems = (
+  subscription: Record<string, unknown>,
+): StripeSubscriptionItemSnapshot[] => {
+  const items = readObject(subscription.items);
+  const data = Array.isArray(items.data) ? items.data : [];
+  return data
+    .map((entry): StripeSubscriptionItemSnapshot | null => {
+      const item = readObject(entry);
+      const id = readString(item.id);
+      if (!id) {
+        return null;
+      }
+      const price = readObject(item.price);
+      const recurring = readObject(price.recurring);
+      return {
+        id,
+        providerPriceId: readString(price.id),
+        quantity: readPositiveInteger(item.quantity) ?? 1,
+        interval:
+          recurring.interval === 'year' ? 'year' : recurring.interval === 'month' ? 'month' : null,
+        currentPeriodStart: toDateFromUnixSeconds(item.current_period_start),
+        currentPeriodEnd: toDateFromUnixSeconds(item.current_period_end),
+      };
+    })
+    .filter((entry): entry is StripeSubscriptionItemSnapshot => entry !== null);
+};
+
 const readFirstStripeSubscriptionItem = (subscription: Record<string, unknown>) => {
   const items = readObject(subscription.items);
   const data = Array.isArray(items.data) ? items.data : [];
@@ -3363,6 +3728,7 @@ export const readStripeSubscriptionSnapshot = (
   if (!id) {
     return null;
   }
+  const itemSnapshots = readStripeSubscriptionItems(subscription);
   const item = readFirstStripeSubscriptionItem(subscription);
   const price = readObject(item.price);
   const recurring = readObject(price.recurring);
@@ -3378,6 +3744,7 @@ export const readStripeSubscriptionSnapshot = (
     status: normalizeStripeSubscriptionStatus(readString(subscription.status)),
     providerPriceId: readString(price.id),
     interval,
+    items: itemSnapshots,
     currentPeriodStart:
       toDateFromUnixSeconds(subscription.current_period_start) ??
       toDateFromUnixSeconds(item.current_period_start),
@@ -3609,18 +3976,165 @@ const readPriceByProviderPriceId = async ({
   return rows[0] ?? null;
 };
 
+const readAddonPriceByProviderPriceId = async ({
+  db,
+  appId,
+  providerPriceId,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  providerPriceId: string;
+}) => {
+  const rows = await db
+    .select({
+      addonCode: dbSchema.billingAddon.code,
+      addonPriceCode: dbSchema.billingAddonPrice.code,
+      interval: dbSchema.billingAddonPrice.interval,
+      providerPriceId: dbSchema.billingAddonPrice.providerPriceId,
+    })
+    .from(dbSchema.billingAddonPrice)
+    .innerJoin(
+      dbSchema.billingAddon,
+      eq(dbSchema.billingAddonPrice.addonId, dbSchema.billingAddon.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.billingAddonPrice.provider, 'stripe'),
+        eq(dbSchema.billingAddonPrice.appId, appId),
+        eq(dbSchema.billingAddonPrice.providerPriceId, providerPriceId),
+        eq(dbSchema.billingAddonPrice.active, true),
+        eq(dbSchema.billingAddon.active, true),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+};
+
+const readActiveAddonPriceByCode = async ({
+  db,
+  appId,
+  addonCode,
+  interval,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  addonCode: string;
+  interval: 'month' | 'year' | null;
+}) => {
+  const rows = await db
+    .select({
+      addonCode: dbSchema.billingAddon.code,
+      addonPriceCode: dbSchema.billingAddonPrice.code,
+      interval: dbSchema.billingAddonPrice.interval,
+      providerPriceId: dbSchema.billingAddonPrice.providerPriceId,
+    })
+    .from(dbSchema.billingAddonPrice)
+    .innerJoin(
+      dbSchema.billingAddon,
+      eq(dbSchema.billingAddonPrice.addonId, dbSchema.billingAddon.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.billingAddonPrice.provider, 'stripe'),
+        eq(dbSchema.billingAddonPrice.appId, appId),
+        eq(dbSchema.billingAddon.code, addonCode),
+        eq(dbSchema.billingAddonPrice.active, true),
+        eq(dbSchema.billingAddon.active, true),
+        interval
+          ? eq(dbSchema.billingAddonPrice.interval, interval)
+          : isNull(dbSchema.billingAddonPrice.interval),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+};
+
+const syncSubscriptionAddonItemsFromStripe = async ({
+  db,
+  appId,
+  subscriptionRowId,
+  subscription,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  subscriptionRowId: string;
+  subscription: StripeSubscriptionSnapshot;
+}) => {
+  const timestamp = now();
+  const seenAddonCodes = new Set<string>();
+  for (const item of subscription.items) {
+    if (!item.providerPriceId) {
+      continue;
+    }
+    const addonPrice = await readAddonPriceByProviderPriceId({
+      db,
+      appId,
+      providerPriceId: item.providerPriceId,
+    });
+    if (!addonPrice) {
+      continue;
+    }
+    seenAddonCodes.add(addonPrice.addonCode);
+    await db
+      .insert(dbSchema.billingSubscriptionAddonItem)
+      .values({
+        id: createId(),
+        appId,
+        billingSubscriptionId: subscriptionRowId,
+        addonCode: addonPrice.addonCode,
+        addonPriceCode: addonPrice.addonPriceCode,
+        provider: 'stripe',
+        providerSubscriptionItemId: item.id,
+        providerPriceId: item.providerPriceId,
+        quantity: item.quantity,
+        status: item.quantity > 0 ? 'active' : 'inactive',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .onConflictDoUpdate({
+        target: [
+          dbSchema.billingSubscriptionAddonItem.billingSubscriptionId,
+          dbSchema.billingSubscriptionAddonItem.addonCode,
+        ],
+        set: {
+          addonPriceCode: addonPrice.addonPriceCode,
+          providerSubscriptionItemId: item.id,
+          providerPriceId: item.providerPriceId,
+          quantity: item.quantity,
+          status: item.quantity > 0 ? 'active' : 'inactive',
+          updatedAt: timestamp,
+        },
+      });
+  }
+
+  const existingItems = await db
+    .select()
+    .from(dbSchema.billingSubscriptionAddonItem)
+    .where(eq(dbSchema.billingSubscriptionAddonItem.billingSubscriptionId, subscriptionRowId));
+  for (const existing of existingItems) {
+    if (!seenAddonCodes.has(existing.addonCode) && existing.status === 'active') {
+      await db
+        .update(dbSchema.billingSubscriptionAddonItem)
+        .set({ quantity: 0, status: 'inactive', updatedAt: timestamp })
+        .where(eq(dbSchema.billingSubscriptionAddonItem.id, existing.id));
+    }
+  }
+};
+
 const syncEntitlementsForSubscription = async ({
   db,
   bundle,
   subscription,
   planCode,
   priceResolution,
+  subscriptionRowId,
 }: {
   db: BillingApiDatabase;
   bundle: NonNullable<Awaited<ReturnType<typeof readSubjectBundle>>>;
   subscription: StripeSubscriptionSnapshot;
   planCode: string;
   priceResolution: BillingApiPriceResolution;
+  subscriptionRowId: string | null;
 }) => {
   if (priceResolution === 'unknown' || planCode === 'free') {
     await clearEntitlements({ db, appId: bundle.subject.appId, subjectRowId: bundle.subject.id });
@@ -3633,6 +4147,7 @@ const syncEntitlementsForSubscription = async ({
       subjectRowId: bundle.subject.id,
       accountId: bundle.account.id,
       planCode,
+      subscriptionId: null,
       source: 'trial',
       reason: 'stripe_subscription_trialing',
       validFrom: subscription.trialStart ?? subscription.currentPeriodStart,
@@ -3647,6 +4162,7 @@ const syncEntitlementsForSubscription = async ({
       subjectRowId: bundle.subject.id,
       accountId: bundle.account.id,
       planCode,
+      subscriptionId: subscriptionRowId,
       source: 'paid',
       reason: 'stripe_subscription_active',
       validFrom: subscription.currentPeriodStart,
@@ -3667,25 +4183,46 @@ const upsertSubscriptionFromStripe = async ({
   subscription: StripeSubscriptionSnapshot;
 }) => {
   const timestamp = now();
-  const knownPrice = subscription.providerPriceId
-    ? await readPriceByProviderPriceId({
-        db,
-        appId: bundle.subject.appId,
-        providerPriceId: subscription.providerPriceId,
-      })
-    : null;
+  let knownPrice: Awaited<ReturnType<typeof readPriceByProviderPriceId>> | null = null;
+  let baseSubscriptionItem: StripeSubscriptionItemSnapshot | null = null;
+  for (const item of subscription.items) {
+    if (!item.providerPriceId) {
+      continue;
+    }
+    const price = await readPriceByProviderPriceId({
+      db,
+      appId: bundle.subject.appId,
+      providerPriceId: item.providerPriceId,
+    });
+    if (price) {
+      knownPrice = price;
+      baseSubscriptionItem = item;
+      break;
+    }
+  }
+  if (!knownPrice && subscription.providerPriceId) {
+    knownPrice = await readPriceByProviderPriceId({
+      db,
+      appId: bundle.subject.appId,
+      providerPriceId: subscription.providerPriceId,
+    });
+  }
+  const providerPriceId = baseSubscriptionItem?.providerPriceId ?? subscription.providerPriceId;
   const isCanceled = subscription.status === 'canceled';
   const planCode = isCanceled
     ? 'free'
     : (knownPrice?.planCode ?? subscription.metadata.planCode ?? 'premium');
   const priceResolution: BillingApiPriceResolution = isCanceled
     ? 'not_applicable'
-    : subscription.providerPriceId
+    : providerPriceId
       ? knownPrice
         ? 'known'
         : 'unknown'
       : 'not_applicable';
-  const interval = knownPrice?.interval ?? subscription.interval;
+  const interval = knownPrice?.interval ?? baseSubscriptionItem?.interval ?? subscription.interval;
+  const currentPeriodStart =
+    baseSubscriptionItem?.currentPeriodStart ?? subscription.currentPeriodStart;
+  const currentPeriodEnd = baseSubscriptionItem?.currentPeriodEnd ?? subscription.currentPeriodEnd;
 
   if (subscription.customerId && subscription.customerId !== bundle.account.providerCustomerId) {
     await db
@@ -3704,12 +4241,12 @@ const upsertSubscriptionFromStripe = async ({
     providerSubscriptionId: subscription.id,
     planCode,
     priceCode: knownPrice?.priceCode ?? null,
-    providerPriceId: subscription.providerPriceId,
+    providerPriceId,
     priceResolution,
     interval,
     status: isCanceled ? 'canceled' : subscription.status,
-    currentPeriodStart: isCanceled ? null : subscription.currentPeriodStart,
-    currentPeriodEnd: isCanceled ? null : subscription.currentPeriodEnd,
+    currentPeriodStart: isCanceled ? null : currentPeriodStart,
+    currentPeriodEnd: isCanceled ? null : currentPeriodEnd,
     trialStart: isCanceled ? null : subscription.trialStart,
     trialEnd: isCanceled ? null : subscription.trialEnd,
     cancelAt: subscription.cancelAt,
@@ -3733,12 +4270,20 @@ const upsertSubscriptionFromStripe = async ({
     });
   }
 
+  await syncSubscriptionAddonItemsFromStripe({
+    db,
+    appId: bundle.subject.appId,
+    subscriptionRowId,
+    subscription,
+  });
+
   await syncEntitlementsForSubscription({
     db,
     bundle,
     subscription,
     planCode,
     priceResolution,
+    subscriptionRowId,
   });
   return { priceResolution, subscriptionRowId };
 };
@@ -4276,6 +4821,33 @@ export const createBillingApiApp = () => {
       }),
     );
   });
+
+  app.put(
+    '/api/v1/apps/:appId/subjects/:subjectType/:subjectId/addon-items/:addonCode',
+    async (c) => {
+      const scopeError = requireBillingApiScope(c, 'billing:write');
+      if (scopeError) {
+        return scopeError;
+      }
+      const rawBody = await c.req.text();
+      return runIdempotent({
+        c,
+        appId: c.get('appId'),
+        rawBody,
+        action: async (parsedBody) =>
+          updateAddonQuantity({
+            db: c.get('db'),
+            env: c.env,
+            appId: c.get('appId'),
+            subjectType: c.req.param('subjectType'),
+            subjectId: c.req.param('subjectId'),
+            addonCode: c.req.param('addonCode'),
+            body: parsedBody,
+            idempotencyKey: c.req.header('idempotency-key')?.trim() ?? '',
+          }),
+      });
+    },
+  );
 
   app.post('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/trial', async (c) => {
     const scopeError = requireBillingApiScope(c, 'billing:write');

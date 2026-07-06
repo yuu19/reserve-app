@@ -26,6 +26,15 @@ export const organizationBillingPaymentMethodBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
 });
 
+export const organizationBillingAddonCodeSchema = z.enum(['staff_seat', 'shop_slot']);
+
+/** Premium addon の目標数量を更新する organization と addon を受け取る body schema。 */
+export const organizationBillingAddonQuantityBodySchema = z.object({
+  organizationId: z.string().min(1).optional(),
+  addonCode: organizationBillingAddonCodeSchema,
+  quantity: z.number().int().positive().max(999),
+});
+
 /** Trial 終了時の Premium lifecycle 判定を実行する organization を受け取る body schema。 */
 export const organizationBillingTrialCompletionBodySchema = z.object({
   organizationId: z.string().min(1).optional(),
@@ -775,6 +784,54 @@ export const createOrganizationBillingPortalRoute = createRoute({
   },
 });
 
+/** Owner が Premium addon の目標数量を Billing API 経由で更新する OpenAPI route 定義。 */
+export const updateOrganizationBillingAddonQuantityRoute = createRoute({
+  method: 'post',
+  path: '/organizations/billing/addons/quantity',
+  tags: ['Organization Billing'],
+  summary: 'Update premium addon quantity through Billing API',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: organizationBillingAddonQuantityBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated addon quantity and billing summary',
+      content: {
+        'application/json': {
+          schema: organizationBillingActionResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Forbidden',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    409: {
+      description: 'Addon update is unavailable for the current subscription state',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
+    422: {
+      description: 'Billing API action is not configured',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
+    500: {
+      description: 'Billing API addon update failed',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
+  },
+});
+
 /** Owner が Premium trial を開始する OpenAPI route 定義。 */
 export const createOrganizationBillingTrialRoute = createRoute({
   method: 'post',
@@ -1103,6 +1160,11 @@ export type OrganizationBillingCheckoutBody = z.infer<typeof organizationBilling
 
 /** Customer Portal 作成 body の型。 */
 export type OrganizationBillingPortalBody = z.infer<typeof organizationBillingPortalBodySchema>;
+
+/** Premium addon 数量更新 body の型。 */
+export type OrganizationBillingAddonQuantityBody = z.infer<
+  typeof organizationBillingAddonQuantityBodySchema
+>;
 
 /** Premium trial 開始 body の型。 */
 export type OrganizationBillingTrialBody = z.infer<typeof organizationBillingTrialBodySchema>;
