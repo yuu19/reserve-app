@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 
 const STRIPE_API_BASE_URL = 'https://api.stripe.com/v1';
-const STRIPE_API_VERSION = '2026-01-28.clover';
+const STRIPE_API_VERSION = '2026-04-22.dahlia';
 const ORGANIZATION_PREMIUM_CATALOG_KEY = 'organization_premium';
 
 const DEFAULT_PRODUCT_NAME = 'WakureServe Premium';

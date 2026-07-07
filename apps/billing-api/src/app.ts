@@ -604,6 +604,162 @@ const updateStripeSubscriptionItemQuantity = async ({
   return { id };
 };
 
+type StripeSubscriptionSchedulePhaseItemInput = {
+  providerPriceId: string;
+  quantity: number;
+};
+
+type StripeAddonDecreaseScheduleTarget = {
+  providerPriceId: string;
+  quantity: number;
+};
+
+export const appendStripeSubscriptionSchedulePhase = ({
+  params,
+  phaseIndex,
+  startDate,
+  endDate,
+  durationInterval,
+  durationIntervalCount = 1,
+  items,
+}: {
+  params: URLSearchParams;
+  phaseIndex: number;
+  startDate: Date;
+  endDate?: Date | null;
+  durationInterval?: 'month' | 'year' | null;
+  durationIntervalCount?: number;
+  items: StripeSubscriptionSchedulePhaseItemInput[];
+}) => {
+  params.set(`phases[${phaseIndex}][start_date]`, String(toUnixSeconds(startDate)));
+  if (endDate) {
+    params.set(`phases[${phaseIndex}][end_date]`, String(toUnixSeconds(endDate)));
+  } else if (durationInterval) {
+    params.set(`phases[${phaseIndex}][duration][interval]`, durationInterval);
+    params.set(
+      `phases[${phaseIndex}][duration][interval_count]`,
+      String(durationIntervalCount),
+    );
+  }
+  params.set(`phases[${phaseIndex}][proration_behavior]`, 'none');
+  for (const [itemIndex, item] of items.entries()) {
+    params.set(`phases[${phaseIndex}][items][${itemIndex}][price]`, item.providerPriceId);
+    params.set(`phases[${phaseIndex}][items][${itemIndex}][quantity]`, String(item.quantity));
+  }
+};
+
+export const buildStripeAddonDecreaseScheduleItems = ({
+  currentItems,
+  targets,
+}: {
+  currentItems: StripeSubscriptionSchedulePhaseItemInput[];
+  targets: StripeAddonDecreaseScheduleTarget[];
+}): StripeSubscriptionSchedulePhaseItemInput[] => {
+  const targetByPriceId = new Map(targets.map((target) => [target.providerPriceId, target]));
+  return currentItems
+    .map((item) => {
+      const target = targetByPriceId.get(item.providerPriceId);
+      return {
+        providerPriceId: item.providerPriceId,
+        quantity: target ? target.quantity : item.quantity,
+      };
+    })
+    .filter((item) => item.quantity > 0);
+};
+
+const readStripeSubscriptionScheduleId = (payload: unknown): string => {
+  const id = readString(readObject(payload).id);
+  if (!id) {
+    throw new Error('Invalid Stripe subscription schedule response.');
+  }
+  return id;
+};
+
+const createStripeSubscriptionScheduleFromSubscription = async ({
+  env,
+  subscriptionId,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  subscriptionId: string;
+  idempotencyKey: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('from_subscription', subscriptionId);
+  return readStripeSubscriptionScheduleId(
+    await postStripeForm({
+      env,
+      path: 'subscription_schedules',
+      params,
+      idempotencyKey,
+    }),
+  );
+};
+
+const updateStripeSubscriptionSchedulePhases = async ({
+  env,
+  scheduleId,
+  currentPeriodStart,
+  currentPeriodEnd,
+  interval,
+  currentItems,
+  futureItems,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  scheduleId: string;
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;
+  interval: 'month' | 'year';
+  currentItems: StripeSubscriptionSchedulePhaseItemInput[];
+  futureItems: StripeSubscriptionSchedulePhaseItemInput[];
+  idempotencyKey: string;
+}) => {
+  const params = new URLSearchParams();
+  params.set('end_behavior', 'release');
+  params.set('proration_behavior', 'none');
+  appendStripeSubscriptionSchedulePhase({
+    params,
+    phaseIndex: 0,
+    startDate: currentPeriodStart,
+    endDate: currentPeriodEnd,
+    items: currentItems,
+  });
+  appendStripeSubscriptionSchedulePhase({
+    params,
+    phaseIndex: 1,
+    startDate: currentPeriodEnd,
+    durationInterval: interval,
+    durationIntervalCount: 1,
+    items: futureItems,
+  });
+  return readStripeSubscriptionScheduleId(
+    await postStripeForm({
+      env,
+      path: `subscription_schedules/${encodeURIComponent(scheduleId)}`,
+      params,
+      idempotencyKey,
+    }),
+  );
+};
+
+const releaseStripeSubscriptionSchedule = async ({
+  env,
+  scheduleId,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  scheduleId: string;
+  idempotencyKey: string;
+}) => {
+  await postStripeForm({
+    env,
+    path: `subscription_schedules/${encodeURIComponent(scheduleId)}/release`,
+    params: new URLSearchParams(),
+    idempotencyKey,
+  });
+};
+
 const attachAndSetStripeDefaultPaymentMethod = async ({
   env,
   customerId,
@@ -2257,6 +2413,97 @@ const toStripeMutationError = (error: unknown): JsonResult<BillingApiErrorRespon
         ),
       };
 
+const readSubscriptionAddonItemRows = async ({
+  db,
+  subscriptionId,
+}: {
+  db: BillingApiDatabase;
+  subscriptionId: string;
+}) =>
+  db
+    .select()
+    .from(dbSchema.billingSubscriptionAddonItem)
+    .where(eq(dbSchema.billingSubscriptionAddonItem.billingSubscriptionId, subscriptionId));
+
+const toStripeSubscriptionScheduleItems = (
+  subscription: StripeSubscriptionSnapshot,
+): StripeSubscriptionSchedulePhaseItemInput[] =>
+  subscription.items
+    .filter(
+      (item): item is StripeSubscriptionItemSnapshot & { providerPriceId: string } =>
+        Boolean(item.providerPriceId) && item.quantity > 0,
+    )
+    .map((item) => ({
+      providerPriceId: item.providerPriceId,
+      quantity: item.quantity,
+    }));
+
+const readPendingAddonScheduleId = (
+  addonItems: (typeof dbSchema.billingSubscriptionAddonItem.$inferSelect)[],
+) => addonItems.find((item) => item.pendingProviderScheduleId)?.pendingProviderScheduleId ?? null;
+
+const reconcileStripeAddonDecreaseSchedule = async ({
+  env,
+  providerSubscriptionId,
+  stripeSubscription,
+  addonItems,
+  pendingTargets,
+  idempotencyKey,
+}: {
+  env: BillingApiBindings;
+  providerSubscriptionId: string;
+  stripeSubscription: StripeSubscriptionSnapshot;
+  addonItems: (typeof dbSchema.billingSubscriptionAddonItem.$inferSelect)[];
+  pendingTargets: StripeAddonDecreaseScheduleTarget[];
+  idempotencyKey: string;
+}): Promise<string | null> => {
+  const existingScheduleId = readPendingAddonScheduleId(addonItems);
+  if (pendingTargets.length === 0) {
+    if (existingScheduleId) {
+      await releaseStripeSubscriptionSchedule({
+        env,
+        scheduleId: existingScheduleId,
+        idempotencyKey: `${idempotencyKey}:schedule_release:${existingScheduleId}`,
+      });
+    }
+    return null;
+  }
+
+  const currentPeriodStart = stripeSubscription.currentPeriodStart;
+  const currentPeriodEnd = stripeSubscription.currentPeriodEnd;
+  const interval = stripeSubscription.interval === 'year' ? 'year' : 'month';
+  if (!currentPeriodStart || !currentPeriodEnd) {
+    throw new Error('Stripe subscription period is not available for addon decrease scheduling.');
+  }
+  const currentItems = toStripeSubscriptionScheduleItems(stripeSubscription);
+  const futureItems = buildStripeAddonDecreaseScheduleItems({
+    currentItems,
+    targets: pendingTargets,
+  });
+  if (currentItems.length === 0 || futureItems.length === 0) {
+    throw new Error('Stripe subscription items are not available for addon decrease scheduling.');
+  }
+
+  const scheduleId =
+    existingScheduleId ??
+    (await createStripeSubscriptionScheduleFromSubscription({
+      env,
+      subscriptionId: providerSubscriptionId,
+      idempotencyKey: `${idempotencyKey}:schedule_create`,
+    }));
+  await updateStripeSubscriptionSchedulePhases({
+    env,
+    scheduleId,
+    currentPeriodStart,
+    currentPeriodEnd,
+    interval,
+    currentItems,
+    futureItems,
+    idempotencyKey: `${idempotencyKey}:schedule_update:${scheduleId}`,
+  });
+  return scheduleId;
+};
+
 const updateAddonQuantity = async ({
   db,
   env,
@@ -2327,27 +2574,16 @@ const updateAddonQuantity = async ({
       body: errorBody('provider_not_configured', 'Stripe addon price id is not configured.'),
     };
   }
-  const addonItemRows = await db
-    .select()
-    .from(dbSchema.billingSubscriptionAddonItem)
-    .where(
-      and(
-        eq(dbSchema.billingSubscriptionAddonItem.billingSubscriptionId, subscription.id),
-        eq(dbSchema.billingSubscriptionAddonItem.addonCode, addonCode),
-      ),
-    )
-    .limit(1);
-  const currentAddonItem = addonItemRows[0] ?? null;
+  const addonProviderPriceId = addonPrice.providerPriceId;
+  let addonItems = await readSubscriptionAddonItemRows({ db, subscriptionId: subscription.id });
+  let currentAddonItem = addonItems.find((item) => item.addonCode === addonCode) ?? null;
   const currentQuantity =
     currentAddonItem && currentAddonItem.status === 'active' ? currentAddonItem.quantity : 0;
-  if (request.quantity < currentQuantity) {
-    return {
-      status: 400,
-      body: errorBody('not_implemented', 'Addon quantity decrease is not implemented.'),
-    };
-  }
-  if (request.quantity > currentQuantity) {
-    try {
+  const hadPendingAddonDecrease = addonItems.some((item) => item.pendingQuantity !== null);
+
+  try {
+    let stripeSubscription: StripeSubscriptionSnapshot | null = null;
+    if (request.quantity > currentQuantity) {
       if (currentAddonItem?.status === 'active' && currentAddonItem.providerSubscriptionItemId) {
         await updateStripeSubscriptionItemQuantity({
           env,
@@ -2364,14 +2600,98 @@ const updateAddonQuantity = async ({
           idempotencyKey: `${idempotencyKey}:addon_item_create:${addonCode}:${request.quantity}`,
         });
       }
-      const stripeSubscription = await retrieveStripeSubscriptionSnapshot({
+      stripeSubscription = await retrieveStripeSubscriptionSnapshot({
         env,
         subscriptionId: subscription.providerSubscriptionId,
       });
       await upsertSubscriptionFromStripe({ db, bundle, subscription: stripeSubscription });
-    } catch (error) {
-      return toStripeMutationError(error);
     }
+
+    if (
+      request.quantity < currentQuantity ||
+      currentAddonItem?.pendingQuantity !== null ||
+      (request.quantity > currentQuantity && hadPendingAddonDecrease)
+    ) {
+      stripeSubscription ??= await retrieveStripeSubscriptionSnapshot({
+        env,
+        subscriptionId: subscription.providerSubscriptionId,
+      });
+      const effectiveAt = stripeSubscription.currentPeriodEnd;
+      if (request.quantity < currentQuantity && !effectiveAt) {
+        return {
+          status: 409,
+          body: errorBody(
+            'bad_request',
+            'Addon quantity decrease requires a known subscription period end.',
+          ),
+        };
+      }
+
+      addonItems = await readSubscriptionAddonItemRows({ db, subscriptionId: subscription.id });
+      currentAddonItem = addonItems.find((item) => item.addonCode === addonCode) ?? currentAddonItem;
+      const pendingTargets = addonItems
+        .map((item): StripeAddonDecreaseScheduleTarget | null => {
+          if (item.addonCode === addonCode) {
+            return request.quantity < currentQuantity
+              ? {
+                  providerPriceId: addonProviderPriceId,
+                  quantity: request.quantity,
+                }
+              : null;
+          }
+          return item.pendingQuantity !== null && item.providerPriceId
+            ? {
+                providerPriceId: item.providerPriceId,
+                quantity: item.pendingQuantity,
+              }
+            : null;
+        })
+        .filter((item): item is StripeAddonDecreaseScheduleTarget => item !== null);
+
+      const scheduleId = await reconcileStripeAddonDecreaseSchedule({
+        env,
+        providerSubscriptionId: subscription.providerSubscriptionId,
+        stripeSubscription,
+        addonItems,
+        pendingTargets,
+        idempotencyKey: `${idempotencyKey}:addon_decrease`,
+      });
+      const timestamp = now();
+      if (currentAddonItem) {
+        await db
+          .update(dbSchema.billingSubscriptionAddonItem)
+          .set(
+            request.quantity < currentQuantity
+              ? {
+                  pendingQuantity: request.quantity,
+                  pendingEffectiveAt: effectiveAt,
+                  pendingProviderScheduleId: scheduleId,
+                  pendingRequestedAt: timestamp,
+                  updatedAt: timestamp,
+                }
+              : {
+                  pendingQuantity: null,
+                  pendingEffectiveAt: null,
+                  pendingProviderScheduleId: null,
+                  pendingRequestedAt: null,
+                  updatedAt: timestamp,
+                },
+          )
+          .where(eq(dbSchema.billingSubscriptionAddonItem.id, currentAddonItem.id));
+      }
+      if (scheduleId) {
+        for (const item of addonItems) {
+          if (item.addonCode !== addonCode && item.pendingQuantity !== null) {
+            await db
+              .update(dbSchema.billingSubscriptionAddonItem)
+              .set({ pendingProviderScheduleId: scheduleId, updatedAt: timestamp })
+              .where(eq(dbSchema.billingSubscriptionAddonItem.id, item.id));
+          }
+        }
+      }
+    }
+  } catch (error) {
+    return toStripeMutationError(error);
   }
 
   const updatedBundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
@@ -4062,6 +4382,11 @@ const syncSubscriptionAddonItemsFromStripe = async ({
 }) => {
   const timestamp = now();
   const seenAddonCodes = new Set<string>();
+  const existingItems = await db
+    .select()
+    .from(dbSchema.billingSubscriptionAddonItem)
+    .where(eq(dbSchema.billingSubscriptionAddonItem.billingSubscriptionId, subscriptionRowId));
+  const existingByAddonCode = new Map(existingItems.map((item) => [item.addonCode, item]));
   for (const item of subscription.items) {
     if (!item.providerPriceId) {
       continue;
@@ -4075,6 +4400,13 @@ const syncSubscriptionAddonItemsFromStripe = async ({
       continue;
     }
     seenAddonCodes.add(addonPrice.addonCode);
+    const existing = existingByAddonCode.get(addonPrice.addonCode);
+    const pendingEffectiveAt = existing?.pendingEffectiveAt ?? null;
+    const pendingApplied =
+      existing?.pendingQuantity === item.quantity &&
+      pendingEffectiveAt !== null &&
+      (item.currentPeriodStart ?? subscription.currentPeriodStart ?? timestamp).getTime() >=
+        pendingEffectiveAt.getTime();
     await db
       .insert(dbSchema.billingSubscriptionAddonItem)
       .values({
@@ -4088,6 +4420,10 @@ const syncSubscriptionAddonItemsFromStripe = async ({
         providerPriceId: item.providerPriceId,
         quantity: item.quantity,
         status: item.quantity > 0 ? 'active' : 'inactive',
+        pendingQuantity: null,
+        pendingEffectiveAt: null,
+        pendingProviderScheduleId: null,
+        pendingRequestedAt: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       })
@@ -4102,20 +4438,30 @@ const syncSubscriptionAddonItemsFromStripe = async ({
           providerPriceId: item.providerPriceId,
           quantity: item.quantity,
           status: item.quantity > 0 ? 'active' : 'inactive',
+          pendingQuantity: pendingApplied ? null : existing?.pendingQuantity ?? null,
+          pendingEffectiveAt: pendingApplied ? null : existing?.pendingEffectiveAt ?? null,
+          pendingProviderScheduleId: pendingApplied
+            ? null
+            : existing?.pendingProviderScheduleId ?? null,
+          pendingRequestedAt: pendingApplied ? null : existing?.pendingRequestedAt ?? null,
           updatedAt: timestamp,
         },
       });
   }
 
-  const existingItems = await db
-    .select()
-    .from(dbSchema.billingSubscriptionAddonItem)
-    .where(eq(dbSchema.billingSubscriptionAddonItem.billingSubscriptionId, subscriptionRowId));
   for (const existing of existingItems) {
     if (!seenAddonCodes.has(existing.addonCode) && existing.status === 'active') {
       await db
         .update(dbSchema.billingSubscriptionAddonItem)
-        .set({ quantity: 0, status: 'inactive', updatedAt: timestamp })
+        .set({
+          quantity: 0,
+          status: 'inactive',
+          pendingQuantity: null,
+          pendingEffectiveAt: null,
+          pendingProviderScheduleId: null,
+          pendingRequestedAt: null,
+          updatedAt: timestamp,
+        })
         .where(eq(dbSchema.billingSubscriptionAddonItem.id, existing.id));
     }
   }

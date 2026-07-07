@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import {
+  appendStripeSubscriptionSchedulePhase,
   buildAddonPriceLookupIntervals,
   buildBillingApiFeatures,
+  buildStripeAddonDecreaseScheduleItems,
   createBillingApiApp,
   hasBillingApiCredentialScope,
   isBillingTestClockEnvironmentEnabled,
@@ -242,6 +244,40 @@ describe('createBillingApiApp', () => {
     expect(buildAddonPriceLookupIntervals('year')).toEqual(['year', 'month']);
     expect(buildAddonPriceLookupIntervals('month')).toEqual(['month']);
     expect(buildAddonPriceLookupIntervals(null)).toEqual(['month']);
+  });
+
+  test('builds future schedule items by applying pending addon decrease targets only', () => {
+    expect(
+      buildStripeAddonDecreaseScheduleItems({
+        currentItems: [
+          { providerPriceId: 'price_base_yearly', quantity: 1 },
+          { providerPriceId: 'price_staff_seat_monthly', quantity: 4 },
+          { providerPriceId: 'price_shop_slot_monthly', quantity: 3 },
+        ],
+        targets: [{ providerPriceId: 'price_staff_seat_monthly', quantity: 2 }],
+      }),
+    ).toEqual([
+      { providerPriceId: 'price_base_yearly', quantity: 1 },
+      { providerPriceId: 'price_staff_seat_monthly', quantity: 2 },
+      { providerPriceId: 'price_shop_slot_monthly', quantity: 3 },
+    ]);
+  });
+
+  test('uses duration instead of removed iterations for future subscription schedule phases', () => {
+    const params = new URLSearchParams();
+
+    appendStripeSubscriptionSchedulePhase({
+      params,
+      phaseIndex: 1,
+      startDate: new Date('2026-07-23T00:00:00.000Z'),
+      durationInterval: 'month',
+      durationIntervalCount: 1,
+      items: [{ providerPriceId: 'price_staff_seat_monthly', quantity: 2 }],
+    });
+
+    expect(params.has('phases[1][iterations]')).toBe(false);
+    expect(params.get('phases[1][duration][interval]')).toBe('month');
+    expect(params.get('phases[1][duration][interval_count]')).toBe('1');
   });
 
   test('normalizes Stripe invoice payload for invoice event history', () => {

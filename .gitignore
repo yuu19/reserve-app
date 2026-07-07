@@ -24,10 +24,5 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
-.agents/*
-!.agents/skills/
-!.agents/skills/docs-japanese-writing/
-!.agents/skills/docs-japanese-writing/**
-!.agents/skills/japanese-conventional-commit/
-!.agents/skills/japanese-conventional-commit/**
+.agents/
 _bmad-output/

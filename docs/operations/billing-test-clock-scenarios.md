@@ -32,7 +32,7 @@ Phase 1 では、次の確認は扱いません。
 | scenario                       | Phase 1 で扱わない理由                                                                                 |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | `cancel_at_period_end`         | 期間末解約の予約、期間終了後の解約反映、owner 向け表示をまとめて確認する必要があるため                 |
-| `addon_decrease_at_period_end` | addon の subscription item 同期、数量変更予約、期間終了後の entitlement 合成がまだ別機能として残るため |
+| `addon_decrease_at_period_end` | Stripe Schedule による期間末減少は backend 実装対象だが、Test Clock E2E での期間終了後検証は別フェーズで扱うため |
 
 通常の管理画面を test subject の契約状態で動かすことも Phase 1 の対象外です。
 この確認が必要になった場合は、別の Phase で test organization または test billing context の設計を行います。
