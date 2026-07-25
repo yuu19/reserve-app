@@ -42,6 +42,12 @@ jobs:
       - name: Check backend Drizzle metadata
         run: pnpm --filter @apps/backend exec drizzle-kit check --config ./drizzle.config.ts
 
+      - name: Run Billing API tests
+        run: pnpm --filter @apps/billing-api test
+
+      - name: Typecheck Billing API
+        run: pnpm --filter @apps/billing-api typecheck
+
       - name: Run backend tests
         run: pnpm --filter @apps/backend test
 
@@ -62,6 +68,9 @@ jobs:
 
       - name: Build backend worker
         run: pnpm --filter @apps/backend build
+
+      - name: Build Billing API worker
+        run: pnpm --filter @apps/billing-api build
 
       - name: Build web worker
         run: pnpm --filter @apps/web build
@@ -166,7 +175,18 @@ jobs:
             printf '%s' "${SERVICE_IMAGE_UPLOAD_SIGNING_SECRET}" | pnpm --filter @apps/backend exec wrangler secret put SERVICE_IMAGE_UPLOAD_SIGNING_SECRET
           fi
 
-      - name: Run D1 migrations (remote)
+      - name: Sync Billing API secrets
+        run: |
+          printf '%s' "${STRIPE_SECRET_KEY}" | pnpm --filter @apps/billing-api exec wrangler secret put STRIPE_SECRET_KEY
+          printf '%s' "${STRIPE_WEBHOOK_SECRET}" | pnpm --filter @apps/billing-api exec wrangler secret put STRIPE_WEBHOOK_SECRET
+
+      - name: Run Billing API D1 migrations (remote)
+        run: pnpm --filter @apps/billing-api run d1:migrate:remote
+
+      - name: Deploy Billing API worker
+        run: pnpm --filter @apps/billing-api exec wrangler deploy
+
+      - name: Run backend D1 migrations (remote)
         run: pnpm --filter @apps/backend run d1:migrate:remote
 
       - name: Deploy backend worker
