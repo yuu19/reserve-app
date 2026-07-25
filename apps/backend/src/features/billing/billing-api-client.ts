@@ -35,13 +35,16 @@ export type BillingApiActionClient = Pick<
   | 'createCheckoutSession'
   | 'createPaymentMethodSetupSession'
   | 'createBillingPortalSession'
-  | 'updateAddonQuantity'
+  | 'updateAddonItems'
   | 'completeTrial'
 >;
 
 export type BillingApiActionClientResolution = BillingApiClientResolution<BillingApiActionClient>;
 
-export type BillingApiSummaryClient = Pick<BillingApiClient, 'syncSubject' | 'readSummary'>;
+export type BillingApiSummaryClient = Pick<
+  BillingApiClient,
+  'syncSubject' | 'readSummary' | 'readAddonItems'
+>;
 
 export type BillingApiSummaryClientResolution = BillingApiClientResolution<BillingApiSummaryClient>;
 

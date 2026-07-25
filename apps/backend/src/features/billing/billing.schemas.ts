@@ -28,11 +28,60 @@ export const organizationBillingPaymentMethodBodySchema = z.object({
 
 export const organizationBillingAddonCodeSchema = z.enum(['staff_seat', 'shop_slot']);
 
-/** Premium addon の目標数量を更新する organization と addon を受け取る body schema。 */
-export const organizationBillingAddonQuantityBodySchema = z.object({
-  organizationId: z.string().min(1).optional(),
+/** 同一addon更新の再試行で再利用し、別操作では新しく発行する冪等キーheader。 */
+export const organizationBillingAddonItemsIdempotencyHeadersSchema = z.object({
+  'idempotency-key': z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(
+      /^[A-Za-z0-9._:-]+$/,
+      'Idempotency-Key may contain only letters, numbers, dot, underscore, colon, and hyphen.',
+    ),
+});
+
+/** Premium addon の目標数量を一括更新する organization と addon 一覧を受け取る body schema。 */
+export const organizationBillingAddonItemsUpdateBodySchema = z
+  .object({
+    organizationId: z.string().min(1).optional(),
+    items: z
+      .array(
+        z.object({
+          addonCode: organizationBillingAddonCodeSchema,
+          quantity: z.number().int().min(0).max(999),
+        }),
+      )
+      .min(1)
+      .max(2),
+  })
+  .superRefine(({ items }, ctx) => {
+    const codes = new Set<string>();
+    for (const [index, item] of items.entries()) {
+      if (codes.has(item.addonCode)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Each addonCode may appear only once.',
+          path: ['items', index, 'addonCode'],
+        });
+      }
+      codes.add(item.addonCode);
+    }
+  });
+
+/** Owner backend が公開する addon の現在値と次回更新予定。 */
+export const organizationBillingAddonItemSchema = z.object({
   addonCode: organizationBillingAddonCodeSchema,
-  quantity: z.number().int().positive().max(999),
+  quantity: z.number().int().min(0),
+  status: z.enum(['active', 'inactive']),
+  pendingQuantity: z.number().int().min(0).nullable(),
+  pendingEffectiveAt: z.string().datetime().nullable(),
+});
+
+/** Owner backend が公開する addon 一覧。 */
+export const organizationBillingAddonItemsResponseSchema = z.object({
+  organizationId: z.string().min(1),
+  items: z.array(organizationBillingAddonItemSchema),
+  syncedAt: z.string().datetime(),
 });
 
 /** Trial 終了時の Premium lifecycle 判定を実行する organization を受け取る body schema。 */
@@ -784,25 +833,63 @@ export const createOrganizationBillingPortalRoute = createRoute({
   },
 });
 
-/** Owner が Premium addon の目標数量を Billing API 経由で更新する OpenAPI route 定義。 */
-export const updateOrganizationBillingAddonQuantityRoute = createRoute({
-  method: 'post',
-  path: '/organizations/billing/addons/quantity',
+/** Owner が現在の Premium addon と次回更新予定を取得する OpenAPI route 定義。 */
+export const getOrganizationBillingAddonItemsRoute = createRoute({
+  method: 'get',
+  path: '/organizations/billing/addons',
   tags: ['Organization Billing'],
-  summary: 'Update premium addon quantity through Billing API',
+  summary: 'Read premium addon quantities and pending changes through Billing API',
   request: {
+    query: organizationBillingQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Current addon quantities and pending changes',
+      content: {
+        'application/json': {
+          schema: organizationBillingAddonItemsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    403: {
+      description: 'Forbidden',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    422: {
+      description: 'Billing API summary is not configured',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+    503: {
+      description: 'Billing API addon read failed',
+      content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
+    },
+  },
+});
+
+/** Owner が Premium addon の目標数量を Billing API 経由で一括更新する OpenAPI route 定義。 */
+export const updateOrganizationBillingAddonItemsRoute = createRoute({
+  method: 'patch',
+  path: '/organizations/billing/addons',
+  tags: ['Organization Billing'],
+  summary: 'Update premium addon quantities through Billing API',
+  request: {
+    headers: organizationBillingAddonItemsIdempotencyHeadersSchema,
     body: {
       required: true,
       content: {
         'application/json': {
-          schema: organizationBillingAddonQuantityBodySchema,
+          schema: organizationBillingAddonItemsUpdateBodySchema,
         },
       },
     },
   },
   responses: {
     200: {
-      description: 'Updated addon quantity and billing summary',
+      description: 'Updated addon quantities and billing summary',
       content: {
         'application/json': {
           schema: organizationBillingActionResponseSchema,
@@ -817,6 +904,11 @@ export const updateOrganizationBillingAddonQuantityRoute = createRoute({
       description: 'Forbidden',
       content: { 'application/json': { schema: z.object({ message: z.string().min(1) }) } },
     },
+    400: {
+      description:
+        'Idempotency-Key or addon catalog price is invalid or unavailable for the requested quantity',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
     409: {
       description: 'Addon update is unavailable for the current subscription state',
       content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
@@ -827,6 +919,10 @@ export const updateOrganizationBillingAddonQuantityRoute = createRoute({
     },
     500: {
       description: 'Billing API addon update failed',
+      content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
+    },
+    503: {
+      description: 'Billing API addon provider is unavailable',
       content: { 'application/json': { schema: organizationBillingActionOrMessageResponseSchema } },
     },
   },
@@ -1161,9 +1257,9 @@ export type OrganizationBillingCheckoutBody = z.infer<typeof organizationBilling
 /** Customer Portal 作成 body の型。 */
 export type OrganizationBillingPortalBody = z.infer<typeof organizationBillingPortalBodySchema>;
 
-/** Premium addon 数量更新 body の型。 */
-export type OrganizationBillingAddonQuantityBody = z.infer<
-  typeof organizationBillingAddonQuantityBodySchema
+/** Premium addon 一括更新 body の型。 */
+export type OrganizationBillingAddonItemsUpdateBody = z.infer<
+  typeof organizationBillingAddonItemsUpdateBodySchema
 >;
 
 /** Premium trial 開始 body の型。 */

@@ -163,6 +163,24 @@ export type BillingApiSummaryResponse = {
   };
 };
 
+/** 現在の契約に紐づくアドオン数量と、期間末に反映される予定数量です。 */
+export type BillingApiAddonItem = {
+  addonCode: string;
+  quantity: number;
+  status: 'active' | 'inactive';
+  pendingQuantity: number | null;
+  pendingEffectiveAt: string | null;
+};
+
+/** subject 単位のアドオン明細です。Stripe の内部 ID は公開しません。 */
+export type BillingApiAddonItemsResponse = {
+  appId: BillingApiAppId;
+  subjectType: BillingApiSubjectType;
+  subjectId: BillingApiSubjectId;
+  items: BillingApiAddonItem[];
+  syncedAt: string;
+};
+
 export type BillingApiHandoffRequest = {
   actor: BillingApiActor;
   planCode?: string;
@@ -171,9 +189,18 @@ export type BillingApiHandoffRequest = {
   returnUrlOverride?: string;
 };
 
-export type BillingApiAddonQuantityUpdateRequest = {
+/** 変更対象だけを指定するアドオン数量の部分更新です。`0` は期間末削除を表します。 */
+export type BillingApiAddonItemsUpdateRequest = {
   actor: BillingApiActor;
-  quantity: number;
+  items: Array<{
+    addonCode: string;
+    quantity: number;
+  }>;
+};
+
+export type BillingApiAddonItemsUpdateResponse = {
+  summary: BillingApiSummaryResponse;
+  addonItems: BillingApiAddonItemsResponse;
 };
 
 export type BillingApiHandoffResponse = {

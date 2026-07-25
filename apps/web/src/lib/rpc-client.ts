@@ -890,10 +890,16 @@ type CreateOrganizationBillingPortalInput = {
 	organizationId?: string;
 };
 
-type UpdateOrganizationBillingAddonQuantityInput = {
+type UpdateOrganizationBillingAddonItemsInput = {
 	organizationId?: string;
-	addonCode: 'staff_seat' | 'shop_slot';
-	quantity: number;
+	items: Array<{
+		addonCode: 'staff_seat' | 'shop_slot';
+		quantity: number;
+	}>;
+};
+
+type BillingAddonItemsUpdateRequestOptions = {
+	idempotencyKey: string;
 };
 
 type CreateOrganizationBillingTrialInput = {
@@ -1775,8 +1781,19 @@ export const authRpc = {
 		authFetch('/api/v1/auth/organizations/billing/checkout', { json }),
 	createOrganizationBillingPortal: (json: CreateOrganizationBillingPortalInput) =>
 		authFetch('/api/v1/auth/organizations/billing/portal', { json }),
-	updateOrganizationBillingAddonQuantity: (json: UpdateOrganizationBillingAddonQuantityInput) =>
-		authFetch('/api/v1/auth/organizations/billing/addons/quantity', { json }),
+	getOrganizationBillingAddonItems: (organizationId?: string) =>
+		authFetch('/api/v1/auth/organizations/billing/addons', {
+			query: organizationId ? { organizationId } : undefined
+		}),
+	updateOrganizationBillingAddonItems: (
+		json: UpdateOrganizationBillingAddonItemsInput,
+		options: BillingAddonItemsUpdateRequestOptions
+	) =>
+		authFetch('/api/v1/auth/organizations/billing/addons', {
+			method: 'PATCH',
+			json,
+			headers: { 'idempotency-key': options.idempotencyKey }
+		}),
 	createOrganizationBillingTrial: (json: CreateOrganizationBillingTrialInput) =>
 		authFetch('/api/v1/auth/organizations/billing/trial', { json }),
 	createOrganizationBillingPaymentMethod: (json: CreateOrganizationBillingPortalInput) =>

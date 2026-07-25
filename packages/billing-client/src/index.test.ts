@@ -132,7 +132,7 @@ describe('createBillingClient', () => {
     expect(requests[0]?.headers.get('authorization')).toBe('Bearer billing_test_key');
   });
 
-  test('updates addon quantity with subject scoped path and idempotency key', async () => {
+  test('reads and updates addon items with subject scoped paths and an idempotency key', async () => {
     const requests: Request[] = [];
     const client = createBillingClient({
       baseUrl: 'https://billing.example.com',
@@ -151,25 +151,35 @@ describe('createBillingClient', () => {
       },
     });
 
-    await client.updateAddonQuantity(
+    await client.readAddonItems({ subjectType: 'organization', subjectId: 'org_1' });
+    await client.updateAddonItems(
       { subjectType: 'organization', subjectId: 'org_1' },
-      'staff_seat',
       {
-        quantity: 2,
+        items: [
+          { addonCode: 'staff_seat', quantity: 2 },
+          { addonCode: 'shop_slot', quantity: 0 },
+        ],
         actor: { type: 'user', id: 'user_1', email: 'owner@example.com' },
       },
       { idempotencyKey: 'addon-staff-seat-2' },
     );
 
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.method).toBe('PUT');
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.method).toBe('GET');
     expect(requests[0]?.url).toBe(
-      'https://billing.example.com/api/v1/apps/reserve/subjects/organization/org_1/addon-items/staff_seat',
+      'https://billing.example.com/api/v1/apps/reserve/subjects/organization/org_1/addon-items',
     );
-    expect(requests[0]?.headers.get('authorization')).toBe('Bearer billing_test_key');
-    expect(requests[0]?.headers.get('idempotency-key')).toBe('addon-staff-seat-2');
-    await expect(requests[0]?.json()).resolves.toEqual({
-      quantity: 2,
+    expect(requests[1]?.method).toBe('PATCH');
+    expect(requests[1]?.url).toBe(
+      'https://billing.example.com/api/v1/apps/reserve/subjects/organization/org_1/addon-items',
+    );
+    expect(requests[1]?.headers.get('authorization')).toBe('Bearer billing_test_key');
+    expect(requests[1]?.headers.get('idempotency-key')).toBe('addon-staff-seat-2');
+    await expect(requests[1]?.json()).resolves.toEqual({
+      items: [
+        { addonCode: 'staff_seat', quantity: 2 },
+        { addonCode: 'shop_slot', quantity: 0 },
+      ],
       actor: { type: 'user', id: 'user_1', email: 'owner@example.com' },
     });
   });

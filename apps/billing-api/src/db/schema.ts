@@ -222,6 +222,54 @@ export const billingSubscriptionAddonItem = sqliteTable(
   ],
 );
 
+/**
+ * アドオンの数量変更を、Stripe の内部 payload を保存せずに追跡する追記型監査記録です。
+ * billing account を必須の親とし、契約がない状態で拒否した操作も記録します。
+ * idempotency key ごとに一つだけ保存し、再試行時の重複記録を防ぎます。
+ */
+export const billingAddonMutationAudit = sqliteTable(
+  'billing_addon_mutation_audit',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    billingAccountId: text('billing_account_id')
+      .notNull()
+      .references(() => billingAccount.id, { onDelete: 'cascade' }),
+    billingSubscriptionId: text('billing_subscription_id').references(
+      () => billingSubscription.id,
+      { onDelete: 'set null' },
+    ),
+    idempotencyKey: text('idempotency_key').notNull(),
+    outcome: text('outcome').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id'),
+    actorEmail: text('actor_email'),
+    requestedItemsJson: text('requested_items_json').notNull(),
+    previousItemsJson: text('previous_items_json').notNull(),
+    resultItemsJson: text('result_items_json'),
+    effectiveAt: integer('effective_at', { mode: 'timestamp_ms' }),
+    failureCode: text('failure_code'),
+    failureMessage: text('failure_message'),
+    createdAt: defaultTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_addon_mutation_audit_idempotency_uidx').on(
+      table.appId,
+      table.idempotencyKey,
+    ),
+    index('billing_addon_mutation_audit_account_created_idx').on(
+      table.billingAccountId,
+      table.createdAt,
+    ),
+    index('billing_addon_mutation_audit_subscription_created_idx').on(
+      table.billingSubscriptionId,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const billingInvoiceEvent = sqliteTable(
   'billing_invoice_event',
   {

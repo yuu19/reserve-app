@@ -1,20 +1,29 @@
 import { describe, expect, test } from 'vitest';
 import {
+  applyAddonScheduleToSubscriptionSnapshot,
   appendStripeSubscriptionSchedulePhase,
   buildAddonPriceLookupIntervals,
   buildBillingApiFeatures,
   buildStripeAddonDecreaseScheduleItems,
+  buildStripeSubscriptionItemsUpdateParams,
   createBillingApiApp,
+  hasMixedImmediateAndScheduledAddonChanges,
   hasBillingApiCredentialScope,
+  isAddonItemUpdateChanged,
   isBillingTestClockEnvironmentEnabled,
   isSupportedStripeBillingEventType,
   parseBillingApiCredentialScopes,
   readStripeInvoiceEventSnapshot,
   readStripeTestClockSnapshot,
   readStripeSubscriptionSnapshot,
+  resolveAddonProviderPriceId,
+  resolveAddonScheduleReuse,
   resolveTestClockAdvanceTarget,
+  shouldExposeAddonItemsForSubscriptionStatus,
+  shouldReleaseAddonSchedule,
   toInvoiceEventResponse,
 } from './app.js';
+import { billingAddonMutationAudit } from './db/schema.js';
 
 describe('createBillingApiApp', () => {
   test('returns health status', async () => {
@@ -22,6 +31,17 @@ describe('createBillingApiApp', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  test('keeps the legacy single-addon update route during the batch rollout', () => {
+    expect(createBillingApiApp().routes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: 'PUT',
+          path: '/api/v1/apps/:appId/subjects/:subjectType/:subjectId/addon-items/:addonCode',
+        }),
+      ]),
+    );
   });
 
   test('builds feature map from currently effective entitlements', () => {
@@ -263,6 +283,28 @@ describe('createBillingApiApp', () => {
     ]);
   });
 
+  test('guards immediate addon increases against incomplete proration payments', () => {
+    const params = buildStripeSubscriptionItemsUpdateParams([
+      {
+        providerSubscriptionItemId: 'si_staff',
+        providerPriceId: 'price_staff_seat_monthly',
+        quantity: 3,
+      },
+      {
+        providerSubscriptionItemId: null,
+        providerPriceId: 'price_shop_slot_monthly',
+        quantity: 2,
+      },
+    ]);
+
+    expect(params.get('payment_behavior')).toBe('error_if_incomplete');
+    expect(params.get('proration_behavior')).toBe('create_prorations');
+    expect(params.get('items[0][id]')).toBe('si_staff');
+    expect(params.get('items[0][quantity]')).toBe('3');
+    expect(params.get('items[1][price]')).toBe('price_shop_slot_monthly');
+    expect(params.get('items[1][quantity]')).toBe('2');
+  });
+
   test('uses duration instead of removed iterations for future subscription schedule phases', () => {
     const params = new URLSearchParams();
 
@@ -278,6 +320,174 @@ describe('createBillingApiApp', () => {
     expect(params.has('phases[1][iterations]')).toBe(false);
     expect(params.get('phases[1][duration][interval]')).toBe('month');
     expect(params.get('phases[1][duration][interval_count]')).toBe('1');
+  });
+
+  test('reuses only a Schedule owned by an addon change', () => {
+    expect(
+      resolveAddonScheduleReuse({
+        currentProviderScheduleId: 'sub_schedule_unrelated',
+        addonOwnedScheduleId: null,
+      }),
+    ).toEqual({ scheduleId: null, conflict: true });
+    expect(
+      resolveAddonScheduleReuse({
+        currentProviderScheduleId: 'sub_schedule_addon',
+        addonOwnedScheduleId: 'sub_schedule_addon',
+      }),
+    ).toEqual({ scheduleId: 'sub_schedule_addon', conflict: false });
+    expect(
+      resolveAddonScheduleReuse({
+        currentProviderScheduleId: null,
+        addonOwnedScheduleId: 'sub_schedule_addon',
+      }),
+    ).toEqual({ scheduleId: 'sub_schedule_addon', conflict: false });
+  });
+
+  test('releases an addon-owned schedule when no decrease remains', () => {
+    expect(
+      shouldReleaseAddonSchedule({
+        pendingTargetCount: 0,
+        addonOwnedScheduleId: 'sub_schedule_addon',
+      }),
+    ).toBe(true);
+    expect(
+      shouldReleaseAddonSchedule({
+        pendingTargetCount: 1,
+        addonOwnedScheduleId: 'sub_schedule_addon',
+      }),
+    ).toBe(false);
+    expect(
+      shouldReleaseAddonSchedule({
+        pendingTargetCount: 0,
+        addonOwnedScheduleId: null,
+      }),
+    ).toBe(false);
+  });
+
+  test('rejects immediate increases when the mutation also requires schedule reconciliation', () => {
+    expect(
+      hasMixedImmediateAndScheduledAddonChanges({
+        immediateItemCount: 1,
+        requiresSchedule: true,
+      }),
+    ).toBe(true);
+    expect(
+      hasMixedImmediateAndScheduledAddonChanges({
+        immediateItemCount: 2,
+        requiresSchedule: false,
+      }),
+    ).toBe(false);
+    expect(
+      hasMixedImmediateAndScheduledAddonChanges({
+        immediateItemCount: 0,
+        requiresSchedule: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('scopes addon mutation audits to an account without requiring a subscription', () => {
+    expect(billingAddonMutationAudit.billingAccountId.notNull).toBe(true);
+    expect(billingAddonMutationAudit.billingSubscriptionId.notNull).toBe(false);
+  });
+
+  test('applies the reconciled addon schedule without replacing the known subscription state', () => {
+    const subscription = readStripeSubscriptionSnapshot({
+      id: 'sub_123',
+      customer: 'cus_123',
+      schedule: null,
+      status: 'active',
+      current_period_start: 1_780_000_000,
+      current_period_end: 1_782_592_000,
+      cancel_at_period_end: false,
+      metadata: {},
+      items: {
+        data: [
+          {
+            id: 'si_base',
+            quantity: 1,
+            price: {
+              id: 'price_monthly',
+              recurring: { interval: 'month' },
+            },
+          },
+        ],
+      },
+    });
+    expect(subscription).not.toBeNull();
+
+    const scheduled = applyAddonScheduleToSubscriptionSnapshot({
+      subscription: subscription!,
+      providerScheduleId: 'sub_schedule_addon',
+    });
+    const released = applyAddonScheduleToSubscriptionSnapshot({
+      subscription: scheduled,
+      providerScheduleId: null,
+    });
+
+    expect(scheduled).toEqual({
+      ...subscription,
+      providerScheduleId: 'sub_schedule_addon',
+    });
+    expect(released).toEqual(subscription);
+  });
+
+  test('exposes persisted addon items only for active subscriptions', () => {
+    expect(shouldExposeAddonItemsForSubscriptionStatus('active')).toBe(true);
+    expect(shouldExposeAddonItemsForSubscriptionStatus('trialing')).toBe(false);
+    expect(shouldExposeAddonItemsForSubscriptionStatus('past_due')).toBe(false);
+    expect(shouldExposeAddonItemsForSubscriptionStatus('unpaid')).toBe(false);
+    expect(shouldExposeAddonItemsForSubscriptionStatus('canceled')).toBe(false);
+    expect(shouldExposeAddonItemsForSubscriptionStatus(null)).toBe(false);
+  });
+
+  test('uses the active catalog price when reactivating an inactive addon', () => {
+    expect(
+      resolveAddonProviderPriceId({
+        currentItemStatus: 'inactive',
+        currentProviderPriceId: 'price_retired',
+        activeProviderPriceId: 'price_current',
+        quantity: 1,
+      }),
+    ).toBe('price_current');
+    expect(
+      resolveAddonProviderPriceId({
+        currentItemStatus: 'inactive',
+        currentProviderPriceId: 'price_retired',
+        activeProviderPriceId: 'price_current',
+        quantity: 0,
+      }),
+    ).toBe('price_retired');
+  });
+
+  test('treats an absent zero-quantity addon as unchanged before provider resolution', () => {
+    expect(
+      isAddonItemUpdateChanged({
+        requestedQuantity: 0,
+        currentQuantity: 0,
+        pendingQuantity: null,
+      }),
+    ).toBe(false);
+    expect(
+      isAddonItemUpdateChanged({
+        requestedQuantity: 2,
+        currentQuantity: 2,
+        pendingQuantity: null,
+      }),
+    ).toBe(false);
+    expect(
+      isAddonItemUpdateChanged({
+        requestedQuantity: 2,
+        currentQuantity: 2,
+        pendingQuantity: 1,
+      }),
+    ).toBe(true);
+    expect(
+      isAddonItemUpdateChanged({
+        requestedQuantity: 1,
+        currentQuantity: 0,
+        pendingQuantity: null,
+      }),
+    ).toBe(true);
   });
 
   test('normalizes Stripe invoice payload for invoice event history', () => {

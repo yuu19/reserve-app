@@ -1,6 +1,9 @@
 import type {
   BillingApiAccount,
-  BillingApiAddonQuantityUpdateRequest,
+  BillingApiAddonItem,
+  BillingApiAddonItemsResponse,
+  BillingApiAddonItemsUpdateRequest,
+  BillingApiAddonItemsUpdateResponse,
   BillingApiAdvanceTestClockScenarioRequest,
   BillingApiActor,
   BillingApiBillingContact,
@@ -197,6 +200,12 @@ const readPositiveInteger = (value: unknown): number | null => {
   const parsed =
     typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const readNonNegativeInteger = (value: unknown): number | null => {
+  const parsed =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
 const readStripeExpandableId = (value: unknown): string | null => {
@@ -544,64 +553,55 @@ const updateStripeSubscriptionDefaultPaymentMethod = async ({
   });
 };
 
-const createStripeSubscriptionItem = async ({
+export type StripeSubscriptionItemUpdateInput = {
+  providerSubscriptionItemId: string | null;
+  providerPriceId: string;
+  quantity: number;
+};
+
+/** 即時増数を、支払い失敗時に適用しないStripe Subscription更新へ変換します。 */
+export const buildStripeSubscriptionItemsUpdateParams = (
+  items: StripeSubscriptionItemUpdateInput[],
+): URLSearchParams => {
+  const params = new URLSearchParams();
+  params.set('payment_behavior', 'error_if_incomplete');
+  params.set('proration_behavior', 'create_prorations');
+  for (const [index, item] of items.entries()) {
+    if (item.providerSubscriptionItemId) {
+      params.set(`items[${index}][id]`, item.providerSubscriptionItemId);
+    } else {
+      params.set(`items[${index}][price]`, item.providerPriceId);
+    }
+    params.set(`items[${index}][quantity]`, String(item.quantity));
+  }
+  return params;
+};
+
+/** 複数の即時増数を一つのStripe Subscription更新として反映します。 */
+const updateStripeSubscriptionItems = async ({
   env,
   subscriptionId,
-  priceId,
-  quantity,
+  items,
   idempotencyKey,
 }: {
   env: BillingApiBindings;
   subscriptionId: string;
-  priceId: string;
-  quantity: number;
+  items: StripeSubscriptionItemUpdateInput[];
   idempotencyKey: string;
-}) => {
-  const params = new URLSearchParams();
-  params.set('subscription', subscriptionId);
-  params.set('price', priceId);
-  params.set('quantity', String(quantity));
-  params.set('payment_behavior', 'error_if_incomplete');
-  params.set('proration_behavior', 'create_prorations');
-  const payload = await postStripeForm({
-    env,
-    path: 'subscription_items',
-    params,
-    idempotencyKey,
-  });
-  const id = readString(readObject(payload).id);
-  if (!id) {
-    throw new Error('Invalid Stripe subscription item response.');
+}): Promise<StripeSubscriptionSnapshot> => {
+  const params = buildStripeSubscriptionItemsUpdateParams(items);
+  const snapshot = readStripeSubscriptionSnapshot(
+    await postStripeForm({
+      env,
+      path: `subscriptions/${encodeURIComponent(subscriptionId)}`,
+      params,
+      idempotencyKey,
+    }),
+  );
+  if (!snapshot) {
+    throw new Error('Invalid Stripe subscription response.');
   }
-  return { id };
-};
-
-const updateStripeSubscriptionItemQuantity = async ({
-  env,
-  subscriptionItemId,
-  quantity,
-  idempotencyKey,
-}: {
-  env: BillingApiBindings;
-  subscriptionItemId: string;
-  quantity: number;
-  idempotencyKey: string;
-}) => {
-  const params = new URLSearchParams();
-  params.set('quantity', String(quantity));
-  params.set('payment_behavior', 'error_if_incomplete');
-  params.set('proration_behavior', 'create_prorations');
-  const payload = await postStripeForm({
-    env,
-    path: `subscription_items/${encodeURIComponent(subscriptionItemId)}`,
-    params,
-    idempotencyKey,
-  });
-  const id = readString(readObject(payload).id);
-  if (!id) {
-    throw new Error('Invalid Stripe subscription item response.');
-  }
-  return { id };
+  return snapshot;
 };
 
 type StripeSubscriptionSchedulePhaseItemInput = {
@@ -636,10 +636,7 @@ export const appendStripeSubscriptionSchedulePhase = ({
     params.set(`phases[${phaseIndex}][end_date]`, String(toUnixSeconds(endDate)));
   } else if (durationInterval) {
     params.set(`phases[${phaseIndex}][duration][interval]`, durationInterval);
-    params.set(
-      `phases[${phaseIndex}][duration][interval_count]`,
-      String(durationIntervalCount),
-    );
+    params.set(`phases[${phaseIndex}][duration][interval_count]`, String(durationIntervalCount));
   }
   params.set(`phases[${phaseIndex}][proration_behavior]`, 'none');
   for (const [itemIndex, item] of items.entries()) {
@@ -1941,12 +1938,19 @@ const validateHandoffRequest = ({
   };
 };
 
-type AddonQuantityUpdateRequest = BillingApiAddonQuantityUpdateRequest & {
+type AddonItemsUpdateRequest = BillingApiAddonItemsUpdateRequest & {
+  actor: BillingApiActor;
+  items: Array<{ addonCode: string; quantity: number }>;
+};
+
+type LegacyAddonQuantityUpdateRequest = {
   actor: BillingApiActor;
   quantity: number;
 };
 
-const validateAddonQuantityUpdateRequest = (body: unknown): AddonQuantityUpdateRequest | null => {
+const validateLegacyAddonQuantityUpdateRequest = (
+  body: unknown,
+): LegacyAddonQuantityUpdateRequest | null => {
   const record = readObject(body);
   const actor = readActor(record.actor);
   const quantity = readPositiveInteger(record.quantity);
@@ -1956,9 +1960,59 @@ const validateAddonQuantityUpdateRequest = (body: unknown): AddonQuantityUpdateR
   return { actor, quantity };
 };
 
+const validateAddonItemsUpdateRequest = (body: unknown): AddonItemsUpdateRequest | null => {
+  const record = readObject(body);
+  const actor = readActor(record.actor);
+  const rawItems = Array.isArray(record.items) ? record.items : [];
+  if (!actor || rawItems.length === 0 || rawItems.length > 20) {
+    return null;
+  }
+  const items = rawItems
+    .map((value) => {
+      const item = readObject(value);
+      const addonCode = readString(item.addonCode);
+      const quantity = readNonNegativeInteger(item.quantity);
+      return addonCode && quantity !== null && quantity <= 999 ? { addonCode, quantity } : null;
+    })
+    .filter((item): item is { addonCode: string; quantity: number } => item !== null);
+  if (
+    items.length !== rawItems.length ||
+    new Set(items.map((item) => item.addonCode)).size !== items.length
+  ) {
+    return null;
+  }
+  return { actor, items };
+};
+
 export const buildAddonPriceLookupIntervals = (
   subscriptionInterval: 'month' | 'year' | null,
 ): ('month' | 'year')[] => (subscriptionInterval === 'year' ? ['year', 'month'] : ['month']);
+
+export const resolveAddonProviderPriceId = ({
+  currentItemStatus,
+  currentProviderPriceId,
+  activeProviderPriceId,
+  quantity,
+}: {
+  currentItemStatus: 'active' | 'inactive' | null;
+  currentProviderPriceId: string | null;
+  activeProviderPriceId: string | null;
+  quantity: number;
+}): string | null =>
+  quantity > 0 && currentItemStatus !== 'active'
+    ? activeProviderPriceId
+    : (currentProviderPriceId ?? activeProviderPriceId);
+
+/** 未作成行を数量0として扱い、pendingがある同値要求だけは予約取消の変更として扱います。 */
+export const isAddonItemUpdateChanged = ({
+  requestedQuantity,
+  currentQuantity,
+  pendingQuantity,
+}: {
+  requestedQuantity: number;
+  currentQuantity: number;
+  pendingQuantity: number | null;
+}): boolean => requestedQuantity !== currentQuantity || pendingQuantity !== null;
 
 const validateUrl = (value: string): string | null => {
   try {
@@ -2405,13 +2459,21 @@ const toStripeMutationError = (error: unknown): JsonResult<BillingApiErrorRespon
         status: 503,
         body: errorBody('provider_not_configured', 'Stripe secret key is not configured.'),
       }
-    : {
-        status: 502,
-        body: errorBody(
-          'internal_error',
-          error instanceof Error ? error.message : 'Stripe billing mutation failed.',
-        ),
-      };
+    : error instanceof Error && error.message === 'STRIPE_ADDON_SCHEDULE_CONFLICT'
+      ? {
+          status: 409,
+          body: errorBody(
+            'bad_request',
+            'Addon changes cannot replace a Stripe schedule managed by another billing change.',
+          ),
+        }
+      : {
+          status: 502,
+          body: errorBody(
+            'internal_error',
+            error instanceof Error ? error.message : 'Stripe billing mutation failed.',
+          ),
+        };
 
 const readSubscriptionAddonItemRows = async ({
   db,
@@ -2424,6 +2486,32 @@ const readSubscriptionAddonItemRows = async ({
     .select()
     .from(dbSchema.billingSubscriptionAddonItem)
     .where(eq(dbSchema.billingSubscriptionAddonItem.billingSubscriptionId, subscriptionId));
+
+const toAddonItemResponse = (
+  item: typeof dbSchema.billingSubscriptionAddonItem.$inferSelect,
+): BillingApiAddonItem => ({
+  addonCode: item.addonCode,
+  quantity: item.quantity,
+  status: item.status === 'active' ? 'active' : 'inactive',
+  pendingQuantity: item.pendingQuantity,
+  pendingEffectiveAt: toIso(item.pendingEffectiveAt),
+});
+
+const buildAddonItemsResponse = ({
+  subject,
+  items,
+}: {
+  subject: typeof dbSchema.billingSubject.$inferSelect;
+  items: (typeof dbSchema.billingSubscriptionAddonItem.$inferSelect)[];
+}): BillingApiAddonItemsResponse => ({
+  appId: subject.appId,
+  subjectType: subject.subjectType,
+  subjectId: subject.subjectId,
+  items: items
+    .map(toAddonItemResponse)
+    .sort((left, right) => left.addonCode.localeCompare(right.addonCode)),
+  syncedAt: now().toISOString(),
+});
 
 const toStripeSubscriptionScheduleItems = (
   subscription: StripeSubscriptionSnapshot,
@@ -2442,44 +2530,72 @@ const readPendingAddonScheduleId = (
   addonItems: (typeof dbSchema.billingSubscriptionAddonItem.$inferSelect)[],
 ) => addonItems.find((item) => item.pendingProviderScheduleId)?.pendingProviderScheduleId ?? null;
 
-const reconcileStripeAddonDecreaseSchedule = async ({
+export const resolveAddonScheduleReuse = ({
+  currentProviderScheduleId,
+  addonOwnedScheduleId,
+}: {
+  currentProviderScheduleId: string | null;
+  addonOwnedScheduleId: string | null;
+}): { scheduleId: string | null; conflict: boolean } => {
+  if (currentProviderScheduleId !== null && currentProviderScheduleId !== addonOwnedScheduleId) {
+    return { scheduleId: null, conflict: true };
+  }
+  return { scheduleId: addonOwnedScheduleId, conflict: false };
+};
+
+export const shouldReleaseAddonSchedule = ({
+  pendingTargetCount,
+  addonOwnedScheduleId,
+}: {
+  pendingTargetCount: number;
+  addonOwnedScheduleId: string | null;
+}): boolean => pendingTargetCount === 0 && addonOwnedScheduleId !== null;
+
+export const hasMixedImmediateAndScheduledAddonChanges = ({
+  immediateItemCount,
+  requiresSchedule,
+}: {
+  immediateItemCount: number;
+  requiresSchedule: boolean;
+}): boolean => immediateItemCount > 0 && requiresSchedule;
+
+export const applyAddonScheduleToSubscriptionSnapshot = ({
+  subscription,
+  providerScheduleId,
+}: {
+  subscription: StripeSubscriptionSnapshot;
+  providerScheduleId: string | null;
+}): StripeSubscriptionSnapshot => ({
+  ...subscription,
+  providerScheduleId,
+});
+
+export const shouldExposeAddonItemsForSubscriptionStatus = (status: string | null): boolean =>
+  status === 'active';
+
+const reconcileStripeAddonSchedule = async ({
   env,
   providerSubscriptionId,
   stripeSubscription,
-  addonItems,
-  pendingTargets,
+  existingScheduleId,
+  currentItems,
+  futureItems,
   idempotencyKey,
 }: {
   env: BillingApiBindings;
   providerSubscriptionId: string;
   stripeSubscription: StripeSubscriptionSnapshot;
-  addonItems: (typeof dbSchema.billingSubscriptionAddonItem.$inferSelect)[];
-  pendingTargets: StripeAddonDecreaseScheduleTarget[];
+  existingScheduleId: string | null;
+  currentItems: StripeSubscriptionSchedulePhaseItemInput[];
+  futureItems: StripeSubscriptionSchedulePhaseItemInput[];
   idempotencyKey: string;
-}): Promise<string | null> => {
-  const existingScheduleId = readPendingAddonScheduleId(addonItems);
-  if (pendingTargets.length === 0) {
-    if (existingScheduleId) {
-      await releaseStripeSubscriptionSchedule({
-        env,
-        scheduleId: existingScheduleId,
-        idempotencyKey: `${idempotencyKey}:schedule_release:${existingScheduleId}`,
-      });
-    }
-    return null;
-  }
-
+}): Promise<string> => {
   const currentPeriodStart = stripeSubscription.currentPeriodStart;
   const currentPeriodEnd = stripeSubscription.currentPeriodEnd;
   const interval = stripeSubscription.interval === 'year' ? 'year' : 'month';
   if (!currentPeriodStart || !currentPeriodEnd) {
     throw new Error('Stripe subscription period is not available for addon decrease scheduling.');
   }
-  const currentItems = toStripeSubscriptionScheduleItems(stripeSubscription);
-  const futureItems = buildStripeAddonDecreaseScheduleItems({
-    currentItems,
-    targets: pendingTargets,
-  });
   if (currentItems.length === 0 || futureItems.length === 0) {
     throw new Error('Stripe subscription items are not available for addon decrease scheduling.');
   }
@@ -2504,7 +2620,528 @@ const reconcileStripeAddonDecreaseSchedule = async ({
   return scheduleId;
 };
 
-const updateAddonQuantity = async ({
+const readActiveAddonPrice = async ({
+  db,
+  appId,
+  addonCode,
+  interval,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  addonCode: string;
+  interval: 'month' | 'year' | null;
+}) => {
+  for (const candidateInterval of buildAddonPriceLookupIntervals(interval)) {
+    const addonPrice = await readActiveAddonPriceByCode({
+      db,
+      appId,
+      addonCode,
+      interval: candidateInterval,
+    });
+    if (addonPrice) {
+      return addonPrice;
+    }
+  }
+  return null;
+};
+
+type ResolvedAddonItemUpdate = {
+  addonCode: string;
+  quantity: number;
+  currentQuantity: number;
+  currentItem: typeof dbSchema.billingSubscriptionAddonItem.$inferSelect | null;
+  providerPriceId: string;
+};
+
+const persistAddonPendingState = async ({
+  db,
+  addonItems,
+  resolvedItems,
+  requestedAddonCodes,
+  scheduleId,
+  effectiveAt,
+  timestamp,
+}: {
+  db: BillingApiDatabase;
+  addonItems: (typeof dbSchema.billingSubscriptionAddonItem.$inferSelect)[];
+  resolvedItems: ResolvedAddonItemUpdate[];
+  requestedAddonCodes: ReadonlySet<string>;
+  scheduleId: string | null;
+  effectiveAt: Date | null;
+  timestamp: Date;
+}) => {
+  const addonItemByCode = new Map(addonItems.map((item) => [item.addonCode, item]));
+  const decreases = resolvedItems.filter((item) => item.quantity < item.currentQuantity);
+  for (const item of decreases) {
+    const addonItem = addonItemByCode.get(item.addonCode);
+    if (!addonItem) {
+      continue;
+    }
+    await db
+      .update(dbSchema.billingSubscriptionAddonItem)
+      .set({
+        pendingQuantity: item.quantity,
+        pendingEffectiveAt: effectiveAt,
+        pendingProviderScheduleId: scheduleId,
+        pendingRequestedAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .where(eq(dbSchema.billingSubscriptionAddonItem.id, addonItem.id));
+  }
+  if (scheduleId) {
+    for (const addonItem of addonItems) {
+      if (!requestedAddonCodes.has(addonItem.addonCode) && addonItem.pendingQuantity !== null) {
+        await db
+          .update(dbSchema.billingSubscriptionAddonItem)
+          .set({ pendingProviderScheduleId: scheduleId, updatedAt: timestamp })
+          .where(eq(dbSchema.billingSubscriptionAddonItem.id, addonItem.id));
+      }
+    }
+  }
+  for (const item of resolvedItems) {
+    if (item.quantity < item.currentQuantity) {
+      continue;
+    }
+    const addonItem = addonItemByCode.get(item.addonCode);
+    if (!addonItem) {
+      continue;
+    }
+    await db
+      .update(dbSchema.billingSubscriptionAddonItem)
+      .set({
+        pendingQuantity: null,
+        pendingEffectiveAt: null,
+        pendingProviderScheduleId: null,
+        pendingRequestedAt: null,
+        updatedAt: timestamp,
+      })
+      .where(eq(dbSchema.billingSubscriptionAddonItem.id, addonItem.id));
+  }
+};
+
+const recordAddonMutationAudit = async ({
+  db,
+  appId,
+  billingAccountId,
+  billingSubscriptionId,
+  idempotencyKey,
+  request,
+  previousItems,
+  resultItems,
+  outcome,
+  effectiveAt,
+  failure,
+}: {
+  db: BillingApiDatabase;
+  appId: string;
+  billingAccountId: string;
+  billingSubscriptionId: string | null;
+  idempotencyKey: string;
+  request: AddonItemsUpdateRequest;
+  previousItems: BillingApiAddonItem[];
+  resultItems: BillingApiAddonItem[] | null;
+  outcome: 'succeeded' | 'failed';
+  effectiveAt: Date | null;
+  failure?: BillingApiErrorResponse['error'];
+}) => {
+  await db
+    .insert(dbSchema.billingAddonMutationAudit)
+    .values({
+      id: createId(),
+      appId,
+      billingAccountId,
+      billingSubscriptionId,
+      idempotencyKey,
+      outcome,
+      actorType: request.actor.type,
+      actorId: request.actor.id,
+      actorEmail: request.actor.email ?? null,
+      requestedItemsJson: JSON.stringify(request.items),
+      previousItemsJson: JSON.stringify(previousItems),
+      resultItemsJson: resultItems ? JSON.stringify(resultItems) : null,
+      effectiveAt,
+      failureCode: failure?.code ?? null,
+      failureMessage: failure?.message ?? null,
+      createdAt: now(),
+    })
+    .onConflictDoNothing();
+};
+
+const updateAddonItems = async ({
+  db,
+  env,
+  appId,
+  subjectType,
+  subjectId,
+  body,
+  idempotencyKey,
+}: {
+  db: BillingApiDatabase;
+  env: BillingApiBindings;
+  appId: string;
+  subjectType: string;
+  subjectId: string;
+  body: unknown;
+  idempotencyKey: string;
+}): Promise<JsonResult<BillingApiAddonItemsUpdateResponse | BillingApiErrorResponse>> => {
+  const request = validateAddonItemsUpdateRequest(body);
+  if (!request) {
+    return {
+      status: 400,
+      body: errorBody('bad_request', 'Valid actor and unique addon items are required.'),
+    };
+  }
+  const bundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
+  if (!bundle) {
+    return { status: 404, body: errorBody('subject_not_found', 'Billing subject is not synced.') };
+  }
+  const subscription = bundle.subscription;
+  if (
+    !subscription ||
+    subscription.planCode !== 'premium' ||
+    subscription.status !== 'active' ||
+    subscription.priceResolution !== 'known' ||
+    !subscription.providerSubscriptionId ||
+    !bundle.account.providerCustomerId
+  ) {
+    const failure = {
+      status: 409,
+      body: errorBody('bad_request', 'Addon updates require an active paid premium subscription.'),
+    };
+    const existingItems = subscription
+      ? await readSubscriptionAddonItemRows({
+          db,
+          subscriptionId: subscription.id,
+        })
+      : [];
+    await recordAddonMutationAudit({
+      db,
+      appId,
+      billingAccountId: bundle.account.id,
+      billingSubscriptionId: subscription?.id ?? null,
+      idempotencyKey,
+      request,
+      previousItems: existingItems.map(toAddonItemResponse),
+      resultItems: null,
+      outcome: 'failed',
+      effectiveAt: null,
+      failure: failure.body.error,
+    });
+    return failure;
+  }
+  const addonItems = await readSubscriptionAddonItemRows({ db, subscriptionId: subscription.id });
+  const previousItems = addonItems.map(toAddonItemResponse);
+  const currentItemByCode = new Map(addonItems.map((item) => [item.addonCode, item]));
+  const resolvedItems: ResolvedAddonItemUpdate[] = [];
+
+  for (const item of request.items) {
+    const currentItem = currentItemByCode.get(item.addonCode) ?? null;
+    const currentQuantity = currentItem?.status === 'active' ? currentItem.quantity : 0;
+    if (
+      !isAddonItemUpdateChanged({
+        requestedQuantity: item.quantity,
+        currentQuantity,
+        pendingQuantity: currentItem?.pendingQuantity ?? null,
+      })
+    ) {
+      continue;
+    }
+    const activeAddonPrice = await readActiveAddonPrice({
+      db,
+      appId,
+      addonCode: item.addonCode,
+      interval:
+        subscription.interval === 'year'
+          ? 'year'
+          : subscription.interval === 'month'
+            ? 'month'
+            : null,
+    });
+    const providerPriceId = resolveAddonProviderPriceId({
+      currentItemStatus:
+        currentItem?.status === 'active' ? 'active' : currentItem ? 'inactive' : null,
+      currentProviderPriceId: currentItem?.providerPriceId ?? null,
+      activeProviderPriceId: activeAddonPrice?.providerPriceId ?? null,
+      quantity: item.quantity,
+    });
+    if (!providerPriceId || (!activeAddonPrice && item.quantity > 0)) {
+      const activeCatalogRequired = !activeAddonPrice && item.quantity > 0;
+      const failure = {
+        status: activeCatalogRequired ? 400 : 503,
+        body: errorBody(
+          activeCatalogRequired ? 'bad_request' : 'provider_not_configured',
+          activeCatalogRequired
+            ? 'An active addon catalog price is required for a positive quantity.'
+            : 'Stripe addon price id is not configured.',
+        ),
+      };
+      await recordAddonMutationAudit({
+        db,
+        appId,
+        billingAccountId: bundle.account.id,
+        billingSubscriptionId: subscription.id,
+        idempotencyKey,
+        request,
+        previousItems,
+        resultItems: null,
+        outcome: 'failed',
+        effectiveAt: null,
+        failure: failure.body.error,
+      });
+      return failure;
+    }
+    resolvedItems.push({
+      addonCode: item.addonCode,
+      quantity: item.quantity,
+      currentQuantity,
+      currentItem,
+      providerPriceId,
+    });
+  }
+
+  const changedItems = resolvedItems;
+  if (changedItems.length === 0) {
+    const summary = buildSummaryResponse({
+      env,
+      subject: bundle.subject,
+      account: bundle.account,
+      subscription: bundle.subscription,
+      entitlements: bundle.entitlements,
+    });
+    const addonItemsResponse = buildAddonItemsResponse({
+      subject: bundle.subject,
+      items: addonItems,
+    });
+    await recordAddonMutationAudit({
+      db,
+      appId,
+      billingAccountId: bundle.account.id,
+      billingSubscriptionId: subscription.id,
+      idempotencyKey,
+      request,
+      previousItems,
+      resultItems: addonItemsResponse.items,
+      outcome: 'succeeded',
+      effectiveAt: null,
+    });
+    return { status: 200, body: { summary, addonItems: addonItemsResponse } };
+  }
+
+  let mutationStatePersisted = false;
+  try {
+    const immediateItems = changedItems.filter((item) => item.quantity > item.currentQuantity);
+    const requestedByCode = new Map(resolvedItems.map((item) => [item.addonCode, item]));
+    const requestedAddonCodes = new Set(requestedByCode.keys());
+    const pendingTargets = addonItems
+      .map((item): StripeAddonDecreaseScheduleTarget | null => {
+        const requested = requestedByCode.get(item.addonCode);
+        if (requested) {
+          return requested.quantity < requested.currentQuantity
+            ? { providerPriceId: requested.providerPriceId, quantity: requested.quantity }
+            : null;
+        }
+        return item.pendingQuantity !== null && item.providerPriceId
+          ? { providerPriceId: item.providerPriceId, quantity: item.pendingQuantity }
+          : null;
+      })
+      .filter((item): item is StripeAddonDecreaseScheduleTarget => item !== null);
+    const hasPendingCancellation = changedItems.some(
+      (item) => item.currentItem?.pendingQuantity !== null && item.quantity >= item.currentQuantity,
+    );
+    const addonOwnedScheduleId = readPendingAddonScheduleId(addonItems);
+    const requiresSchedule =
+      pendingTargets.length > 0 ||
+      (addonOwnedScheduleId !== null && (immediateItems.length > 0 || hasPendingCancellation));
+    if (
+      hasMixedImmediateAndScheduledAddonChanges({
+        immediateItemCount: immediateItems.length,
+        requiresSchedule,
+      })
+    ) {
+      const failure = {
+        status: 409,
+        body: errorBody(
+          'bad_request',
+          'Immediate addon increases and period-end addon changes must use separate requests.',
+        ),
+      };
+      await recordAddonMutationAudit({
+        db,
+        appId,
+        billingAccountId: bundle.account.id,
+        billingSubscriptionId: subscription.id,
+        idempotencyKey,
+        request,
+        previousItems,
+        resultItems: null,
+        outcome: 'failed',
+        effectiveAt: null,
+        failure: failure.body.error,
+      });
+      return failure;
+    }
+    let stripeSubscription: StripeSubscriptionSnapshot;
+    let effectiveAt: Date | null = null;
+    let scheduleId: string | null = null;
+
+    if (requiresSchedule) {
+      const currentSnapshot = await retrieveStripeSubscriptionSnapshot({
+        env,
+        subscriptionId: subscription.providerSubscriptionId,
+      });
+      const scheduleReuse = resolveAddonScheduleReuse({
+        currentProviderScheduleId: currentSnapshot.providerScheduleId,
+        addonOwnedScheduleId,
+      });
+      if (scheduleReuse.conflict) {
+        throw new Error('STRIPE_ADDON_SCHEDULE_CONFLICT');
+      }
+
+      const currentItems = toStripeSubscriptionScheduleItems(currentSnapshot);
+      const futureItems = buildStripeAddonDecreaseScheduleItems({
+        currentItems,
+        targets: pendingTargets,
+      });
+      scheduleId = await reconcileStripeAddonSchedule({
+        env,
+        providerSubscriptionId: subscription.providerSubscriptionId,
+        stripeSubscription: currentSnapshot,
+        existingScheduleId: scheduleReuse.scheduleId,
+        currentItems,
+        futureItems,
+        idempotencyKey: `${idempotencyKey}:addon_schedule`,
+      });
+      effectiveAt = pendingTargets.length > 0 ? currentSnapshot.currentPeriodEnd : null;
+      if (
+        shouldReleaseAddonSchedule({
+          pendingTargetCount: pendingTargets.length,
+          addonOwnedScheduleId,
+        })
+      ) {
+        await releaseStripeSubscriptionSchedule({
+          env,
+          scheduleId,
+          idempotencyKey: `${idempotencyKey}:addon_schedule_release`,
+        });
+        scheduleId = null;
+        effectiveAt = null;
+      }
+      // Stripe is already mutated; persist ownership or release before another network call can fail.
+      await persistAddonPendingState({
+        db,
+        addonItems,
+        resolvedItems,
+        requestedAddonCodes,
+        scheduleId,
+        effectiveAt,
+        timestamp: now(),
+      });
+      mutationStatePersisted = true;
+      stripeSubscription = applyAddonScheduleToSubscriptionSnapshot({
+        subscription: currentSnapshot,
+        providerScheduleId: scheduleId,
+      });
+    } else {
+      stripeSubscription = await updateStripeSubscriptionItems({
+        env,
+        subscriptionId: subscription.providerSubscriptionId,
+        items: immediateItems.map((item) => ({
+          providerSubscriptionItemId:
+            item.currentItem?.status === 'active'
+              ? item.currentItem.providerSubscriptionItemId
+              : null,
+          providerPriceId: item.providerPriceId,
+          quantity: item.quantity,
+        })),
+        idempotencyKey: `${idempotencyKey}:addon_items`,
+      });
+    }
+
+    await upsertSubscriptionFromStripe({ db, bundle, subscription: stripeSubscription });
+    mutationStatePersisted = true;
+    const timestamp = now();
+    const refreshedItems = await readSubscriptionAddonItemRows({
+      db,
+      subscriptionId: subscription.id,
+    });
+    await persistAddonPendingState({
+      db,
+      addonItems: refreshedItems,
+      resolvedItems,
+      requestedAddonCodes,
+      scheduleId,
+      effectiveAt,
+      timestamp,
+    });
+  } catch (error) {
+    const failure = toStripeMutationError(error);
+    const resultItems = mutationStatePersisted
+      ? (
+          await readSubscriptionAddonItemRows({
+            db,
+            subscriptionId: subscription.id,
+          })
+        ).map(toAddonItemResponse)
+      : null;
+    await recordAddonMutationAudit({
+      db,
+      appId,
+      billingAccountId: bundle.account.id,
+      billingSubscriptionId: subscription.id,
+      idempotencyKey,
+      request,
+      previousItems,
+      resultItems,
+      outcome: 'failed',
+      effectiveAt: null,
+      failure: failure.body.error,
+    });
+    return failure;
+  }
+
+  const updatedBundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
+  if (!updatedBundle) {
+    return {
+      status: 500,
+      body: errorBody('internal_error', 'Failed to read updated billing state.'),
+    };
+  }
+  const updatedItems = await readSubscriptionAddonItemRows({
+    db,
+    subscriptionId: updatedBundle.subscription?.id ?? subscription.id,
+  });
+  const summary = buildSummaryResponse({
+    env,
+    subject: updatedBundle.subject,
+    account: updatedBundle.account,
+    subscription: updatedBundle.subscription,
+    entitlements: updatedBundle.entitlements,
+  });
+  const addonItemsResponse = buildAddonItemsResponse({
+    subject: updatedBundle.subject,
+    items: updatedItems,
+  });
+  await recordAddonMutationAudit({
+    db,
+    appId,
+    billingAccountId: bundle.account.id,
+    billingSubscriptionId: subscription.id,
+    idempotencyKey,
+    request,
+    previousItems,
+    resultItems: addonItemsResponse.items,
+    outcome: 'succeeded',
+    effectiveAt: addonItemsResponse.items.some((item) => item.pendingQuantity !== null)
+      ? (updatedBundle.subscription?.currentPeriodEnd ?? null)
+      : null,
+  });
+  return {
+    status: 200,
+    body: { summary, addonItems: addonItemsResponse },
+  };
+};
+
+const updateLegacyAddonQuantity = async ({
   db,
   env,
   appId,
@@ -2523,194 +3160,29 @@ const updateAddonQuantity = async ({
   body: unknown;
   idempotencyKey: string;
 }): Promise<JsonResult<BillingApiSummaryResponse | BillingApiErrorResponse>> => {
-  const request = validateAddonQuantityUpdateRequest(body);
+  const request = validateLegacyAddonQuantityUpdateRequest(body);
   if (!request) {
     return {
       status: 400,
       body: errorBody('bad_request', 'Valid actor and quantity are required.'),
     };
   }
-  const bundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
-  if (!bundle) {
-    return { status: 404, body: errorBody('subject_not_found', 'Billing subject is not synced.') };
+  const result = await updateAddonItems({
+    db,
+    env,
+    appId,
+    subjectType,
+    subjectId,
+    body: {
+      actor: request.actor,
+      items: [{ addonCode, quantity: request.quantity }],
+    },
+    idempotencyKey,
+  });
+  if ('summary' in result.body) {
+    return { status: result.status, body: result.body.summary };
   }
-  const subscription = bundle.subscription;
-  if (
-    !subscription ||
-    subscription.planCode !== 'premium' ||
-    subscription.status !== 'active' ||
-    subscription.priceResolution !== 'known' ||
-    !subscription.providerSubscriptionId ||
-    !bundle.account.providerCustomerId
-  ) {
-    return {
-      status: 409,
-      body: errorBody(
-        'bad_request',
-        'Addon quantity updates require an active paid premium subscription.',
-      ),
-    };
-  }
-  let addonPrice: Awaited<ReturnType<typeof readActiveAddonPriceByCode>> | null = null;
-  for (const interval of buildAddonPriceLookupIntervals(
-    subscription.interval === 'year' ? 'year' : 'month',
-  )) {
-    addonPrice = await readActiveAddonPriceByCode({
-      db,
-      appId,
-      addonCode,
-      interval,
-    });
-    if (addonPrice) {
-      break;
-    }
-  }
-  if (!addonPrice) {
-    return { status: 400, body: errorBody('bad_request', 'Active addon price was not found.') };
-  }
-  if (!addonPrice.providerPriceId) {
-    return {
-      status: 503,
-      body: errorBody('provider_not_configured', 'Stripe addon price id is not configured.'),
-    };
-  }
-  const addonProviderPriceId = addonPrice.providerPriceId;
-  let addonItems = await readSubscriptionAddonItemRows({ db, subscriptionId: subscription.id });
-  let currentAddonItem = addonItems.find((item) => item.addonCode === addonCode) ?? null;
-  const currentQuantity =
-    currentAddonItem && currentAddonItem.status === 'active' ? currentAddonItem.quantity : 0;
-  const hadPendingAddonDecrease = addonItems.some((item) => item.pendingQuantity !== null);
-
-  try {
-    let stripeSubscription: StripeSubscriptionSnapshot | null = null;
-    if (request.quantity > currentQuantity) {
-      if (currentAddonItem?.status === 'active' && currentAddonItem.providerSubscriptionItemId) {
-        await updateStripeSubscriptionItemQuantity({
-          env,
-          subscriptionItemId: currentAddonItem.providerSubscriptionItemId,
-          quantity: request.quantity,
-          idempotencyKey: `${idempotencyKey}:addon_item_update:${addonCode}:${request.quantity}`,
-        });
-      } else {
-        await createStripeSubscriptionItem({
-          env,
-          subscriptionId: subscription.providerSubscriptionId,
-          priceId: addonPrice.providerPriceId,
-          quantity: request.quantity,
-          idempotencyKey: `${idempotencyKey}:addon_item_create:${addonCode}:${request.quantity}`,
-        });
-      }
-      stripeSubscription = await retrieveStripeSubscriptionSnapshot({
-        env,
-        subscriptionId: subscription.providerSubscriptionId,
-      });
-      await upsertSubscriptionFromStripe({ db, bundle, subscription: stripeSubscription });
-    }
-
-    if (
-      request.quantity < currentQuantity ||
-      currentAddonItem?.pendingQuantity !== null ||
-      (request.quantity > currentQuantity && hadPendingAddonDecrease)
-    ) {
-      stripeSubscription ??= await retrieveStripeSubscriptionSnapshot({
-        env,
-        subscriptionId: subscription.providerSubscriptionId,
-      });
-      const effectiveAt = stripeSubscription.currentPeriodEnd;
-      if (request.quantity < currentQuantity && !effectiveAt) {
-        return {
-          status: 409,
-          body: errorBody(
-            'bad_request',
-            'Addon quantity decrease requires a known subscription period end.',
-          ),
-        };
-      }
-
-      addonItems = await readSubscriptionAddonItemRows({ db, subscriptionId: subscription.id });
-      currentAddonItem = addonItems.find((item) => item.addonCode === addonCode) ?? currentAddonItem;
-      const pendingTargets = addonItems
-        .map((item): StripeAddonDecreaseScheduleTarget | null => {
-          if (item.addonCode === addonCode) {
-            return request.quantity < currentQuantity
-              ? {
-                  providerPriceId: addonProviderPriceId,
-                  quantity: request.quantity,
-                }
-              : null;
-          }
-          return item.pendingQuantity !== null && item.providerPriceId
-            ? {
-                providerPriceId: item.providerPriceId,
-                quantity: item.pendingQuantity,
-              }
-            : null;
-        })
-        .filter((item): item is StripeAddonDecreaseScheduleTarget => item !== null);
-
-      const scheduleId = await reconcileStripeAddonDecreaseSchedule({
-        env,
-        providerSubscriptionId: subscription.providerSubscriptionId,
-        stripeSubscription,
-        addonItems,
-        pendingTargets,
-        idempotencyKey: `${idempotencyKey}:addon_decrease`,
-      });
-      const timestamp = now();
-      if (currentAddonItem) {
-        await db
-          .update(dbSchema.billingSubscriptionAddonItem)
-          .set(
-            request.quantity < currentQuantity
-              ? {
-                  pendingQuantity: request.quantity,
-                  pendingEffectiveAt: effectiveAt,
-                  pendingProviderScheduleId: scheduleId,
-                  pendingRequestedAt: timestamp,
-                  updatedAt: timestamp,
-                }
-              : {
-                  pendingQuantity: null,
-                  pendingEffectiveAt: null,
-                  pendingProviderScheduleId: null,
-                  pendingRequestedAt: null,
-                  updatedAt: timestamp,
-                },
-          )
-          .where(eq(dbSchema.billingSubscriptionAddonItem.id, currentAddonItem.id));
-      }
-      if (scheduleId) {
-        for (const item of addonItems) {
-          if (item.addonCode !== addonCode && item.pendingQuantity !== null) {
-            await db
-              .update(dbSchema.billingSubscriptionAddonItem)
-              .set({ pendingProviderScheduleId: scheduleId, updatedAt: timestamp })
-              .where(eq(dbSchema.billingSubscriptionAddonItem.id, item.id));
-          }
-        }
-      }
-    }
-  } catch (error) {
-    return toStripeMutationError(error);
-  }
-
-  const updatedBundle = await readSubjectBundle({ db, appId, subjectType, subjectId });
-  if (!updatedBundle) {
-    return {
-      status: 500,
-      body: errorBody('internal_error', 'Failed to read updated billing state.'),
-    };
-  }
-  return {
-    status: 200,
-    body: buildSummaryResponse({
-      env,
-      subject: updatedBundle.subject,
-      account: updatedBundle.account,
-      subscription: updatedBundle.subscription,
-      entitlements: updatedBundle.entitlements,
-    }),
-  };
+  return { status: result.status, body: result.body };
 };
 
 export const isBillingTestClockEnvironmentEnabled = (env: BillingApiBindings): boolean =>
@@ -3858,6 +4330,7 @@ type StripeBillingMetadata = {
 type StripeSubscriptionSnapshot = {
   id: string;
   customerId: string | null;
+  providerScheduleId: string | null;
   status: BillingApiSubscriptionStatus;
   providerPriceId: string | null;
   interval: 'month' | 'year' | null;
@@ -4061,6 +4534,7 @@ export const readStripeSubscriptionSnapshot = (
   return {
     id,
     customerId: readStripeExpandableId(subscription.customer),
+    providerScheduleId: readStripeExpandableId(subscription.schedule),
     status: normalizeStripeSubscriptionStatus(readString(subscription.status)),
     providerPriceId: readString(price.id),
     interval,
@@ -4438,22 +4912,26 @@ const syncSubscriptionAddonItemsFromStripe = async ({
           providerPriceId: item.providerPriceId,
           quantity: item.quantity,
           status: item.quantity > 0 ? 'active' : 'inactive',
-          pendingQuantity: pendingApplied ? null : existing?.pendingQuantity ?? null,
-          pendingEffectiveAt: pendingApplied ? null : existing?.pendingEffectiveAt ?? null,
+          pendingQuantity: pendingApplied ? null : (existing?.pendingQuantity ?? null),
+          pendingEffectiveAt: pendingApplied ? null : (existing?.pendingEffectiveAt ?? null),
           pendingProviderScheduleId: pendingApplied
             ? null
-            : existing?.pendingProviderScheduleId ?? null,
-          pendingRequestedAt: pendingApplied ? null : existing?.pendingRequestedAt ?? null,
+            : (existing?.pendingProviderScheduleId ?? null),
+          pendingRequestedAt: pendingApplied ? null : (existing?.pendingRequestedAt ?? null),
           updatedAt: timestamp,
         },
       });
   }
 
   for (const existing of existingItems) {
-    if (!seenAddonCodes.has(existing.addonCode) && existing.status === 'active') {
+    if (
+      !seenAddonCodes.has(existing.addonCode) &&
+      (existing.status === 'active' || existing.providerSubscriptionItemId !== null)
+    ) {
       await db
         .update(dbSchema.billingSubscriptionAddonItem)
         .set({
+          providerSubscriptionItemId: null,
           quantity: 0,
           status: 'inactive',
           pendingQuantity: null,
@@ -4585,6 +5063,7 @@ const upsertSubscriptionFromStripe = async ({
     billingAccountId: bundle.account.id,
     provider: 'stripe',
     providerSubscriptionId: subscription.id,
+    providerScheduleId: subscription.providerScheduleId,
     planCode,
     priceCode: knownPrice?.priceCode ?? null,
     providerPriceId,
@@ -5168,6 +5647,31 @@ export const createBillingApiApp = () => {
     );
   });
 
+  app.get('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/addon-items', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'billing:read');
+    if (scopeError) {
+      return scopeError;
+    }
+    const bundle = await readSubjectBundle({
+      db: c.get('db'),
+      appId: c.get('appId'),
+      subjectType: c.req.param('subjectType'),
+      subjectId: c.req.param('subjectId'),
+    });
+    if (!bundle) {
+      return errorResponse(c, 404, 'subject_not_found', 'Billing subject is not synced.');
+    }
+    const items =
+      bundle.subscription && shouldExposeAddonItemsForSubscriptionStatus(bundle.subscription.status)
+        ? await readSubscriptionAddonItemRows({
+            db: c.get('db'),
+            subscriptionId: bundle.subscription.id,
+          })
+        : [];
+    return jsonResponse(c, buildAddonItemsResponse({ subject: bundle.subject, items }));
+  });
+
+  // Compatibility adapter for pre-batch backends. Remove only after PATCH callers are fully deployed.
   app.put(
     '/api/v1/apps/:appId/subjects/:subjectType/:subjectId/addon-items/:addonCode',
     async (c) => {
@@ -5181,7 +5685,7 @@ export const createBillingApiApp = () => {
         appId: c.get('appId'),
         rawBody,
         action: async (parsedBody) =>
-          updateAddonQuantity({
+          updateLegacyAddonQuantity({
             db: c.get('db'),
             env: c.env,
             appId: c.get('appId'),
@@ -5194,6 +5698,29 @@ export const createBillingApiApp = () => {
       });
     },
   );
+
+  app.patch('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/addon-items', async (c) => {
+    const scopeError = requireBillingApiScope(c, 'billing:write');
+    if (scopeError) {
+      return scopeError;
+    }
+    const rawBody = await c.req.text();
+    return runIdempotent({
+      c,
+      appId: c.get('appId'),
+      rawBody,
+      action: async (parsedBody) =>
+        updateAddonItems({
+          db: c.get('db'),
+          env: c.env,
+          appId: c.get('appId'),
+          subjectType: c.req.param('subjectType'),
+          subjectId: c.req.param('subjectId'),
+          body: parsedBody,
+          idempotencyKey: c.req.header('idempotency-key')?.trim() ?? '',
+        }),
+    });
+  });
 
   app.post('/api/v1/apps/:appId/subjects/:subjectType/:subjectId/trial', async (c) => {
     const scopeError = requireBillingApiScope(c, 'billing:write');

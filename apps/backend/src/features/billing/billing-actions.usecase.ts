@@ -21,6 +21,8 @@ import {
 import {
   buildBillingApiOrganizationSubjectSyncRequest,
   resolveBillingApiActionClient,
+  resolveBillingApiSummaryClient,
+  sha256Hex,
   toBillingApiOrganizationSubjectInput,
   type BillingApiActionClient,
   type BillingApiClientDisabledReason,
@@ -28,10 +30,11 @@ import {
 import { buildBillingActionEnvelope } from './billing.presenter.js';
 import type { BillingIdentity, BillingRouteContext } from './billing.route-context.js';
 import type {
-  OrganizationBillingAddonQuantityBody,
+  OrganizationBillingAddonItemsUpdateBody,
   OrganizationBillingCheckoutBody,
   OrganizationBillingPaymentMethodBody,
   OrganizationBillingPortalBody,
+  OrganizationBillingQuery,
   OrganizationBillingTrialBody,
   OrganizationBillingTrialCompletionBody,
 } from './billing.schemas.js';
@@ -132,13 +135,6 @@ const isBillingApiActivePremiumLifecycle = (summary: BillingApiSummaryResponse) 
   isBillingApiPremiumPlan(summary) &&
   isActivePremiumSubscriptionStatus(readBillingApiActionSubscriptionStatus(summary));
 
-const isBillingApiPaidActivePremiumSubscription = (summary: BillingApiSummaryResponse) =>
-  isBillingApiPremiumPlan(summary) &&
-  summary.subscription?.status === 'active' &&
-  summary.subscription.priceResolution === 'known' &&
-  Boolean(summary.subscription.providerSubscriptionId) &&
-  Boolean(summary.account.providerCustomerId);
-
 const operationConflictResult = async ({
   ctx,
   organizationId,
@@ -232,6 +228,16 @@ const toBillingApiActionDisabledMessage = (disabledReason: BillingApiClientDisab
     return 'Billing API key is not configured.';
   }
   return 'Billing API actions are disabled.';
+};
+
+const toBillingApiSummaryDisabledMessage = (disabledReason: BillingApiClientDisabledReason) => {
+  if (disabledReason === 'missing_base_url') {
+    return 'Billing API base URL is not configured.';
+  }
+  if (disabledReason === 'missing_api_key') {
+    return 'Billing API key is not configured.';
+  }
+  return 'Billing API summary is disabled.';
 };
 
 const billingApiActionUnavailableResult = async ({
@@ -1117,14 +1123,76 @@ export const createSubscriptionUpdatePortalHandoff = async ({
   });
 };
 
-export const updateOrganizationBillingAddonQuantity = async ({
+export const readOrganizationBillingAddonItems = async ({
   ctx,
-  body,
+  query,
   headers,
 }: {
   ctx: BillingRouteContext;
-  body: OrganizationBillingAddonQuantityBody;
+  query: OrganizationBillingQuery;
   headers: Headers;
+}): Promise<JsonRouteResult> => {
+  const ownerContext = await resolveOwnerActionContext({
+    ctx,
+    headers,
+    requestedOrganizationId: query.organizationId,
+  });
+  if (!ownerContext.ok) {
+    return ownerContext.result;
+  }
+  const { identity, organizationId } = ownerContext;
+  const billingApiSummaryClient = resolveBillingApiSummaryClient({ env: ctx.env });
+  if (!billingApiSummaryClient.enabled) {
+    return jsonResult(
+      { message: toBillingApiSummaryDisabledMessage(billingApiSummaryClient.disabledReason) },
+      422,
+    );
+  }
+
+  try {
+    const subject = await buildBillingApiActionSubject({ ctx, identity, organizationId });
+    const billingSubject = toBillingApiOrganizationSubjectInput(subject);
+    const syncBody = buildBillingApiOrganizationSubjectSyncRequest({
+      subject,
+      source: 'reserve-app-backend-summary',
+      contactRole: 'current_billing_owner',
+    });
+    const syncBodyHash = await sha256Hex(JSON.stringify(syncBody));
+    await billingApiSummaryClient.client.syncSubject(billingSubject, syncBody, {
+      idempotencyKey: `reserve-addon-items-read-sync:${organizationId}:${syncBodyHash.slice(0, 16)}`,
+    });
+    const addonItems = await billingApiSummaryClient.client.readAddonItems(billingSubject);
+    return jsonResult(
+      {
+        organizationId,
+        items: addonItems.items,
+        syncedAt: addonItems.syncedAt,
+      },
+      200,
+    );
+  } catch (error) {
+    return jsonResult(
+      {
+        message: toBillingOperationFailureMessage(
+          error,
+          'Billing API addon items are unavailable.',
+        ),
+      },
+      503,
+    );
+  }
+};
+
+export const updateOrganizationBillingAddonItems = async ({
+  ctx,
+  body,
+  headers,
+  idempotencyKey,
+}: {
+  ctx: BillingRouteContext;
+  body: OrganizationBillingAddonItemsUpdateBody;
+  headers: Headers;
+  idempotencyKey: string;
 }): Promise<JsonRouteResult> => {
   const ownerContext = await resolveOwnerActionContext({
     ctx,
@@ -1136,6 +1204,10 @@ export const updateOrganizationBillingAddonQuantity = async ({
   }
   const { identity, organizationId, role } = ownerContext;
   const billingApiActionClient = resolveBillingApiActionClient({ env: ctx.env });
+  const canonicalItems = body.items
+    .slice()
+    .sort((left, right) => left.addonCode.localeCompare(right.addonCode));
+  const idempotencyKeyHash = (await sha256Hex(idempotencyKey)).slice(0, 32);
 
   if (!billingApiActionClient.enabled) {
     return billingApiActionUnavailableResult({
@@ -1146,44 +1218,29 @@ export const updateOrganizationBillingAddonQuantity = async ({
     });
   }
 
-  const billingApiSummary = await readRequiredBillingApiActionSummary({
-    ctx,
-    identity,
-    organizationId,
-    role,
-    client: billingApiActionClient.client,
-    idempotencyKeySuffix: `addon-quantity-precondition:${body.addonCode}`,
-  });
-  if (!billingApiSummary.ok) {
-    return billingApiSummary.result;
-  }
-  if (!isBillingApiPaidActivePremiumSubscription(billingApiSummary.summary)) {
-    return jsonResult(
-      await buildActionEnvelope(ctx, {
-        organizationId,
-        role,
-        status: 'conflict',
-        message: 'Addon updates require an active paid premium subscription.',
-        billingApiSummaryResponse: billingApiSummary.summary,
-      }),
-      409,
-    );
-  }
-
   try {
-    const summary = await billingApiActionClient.client.updateAddonQuantity(
-      billingApiSummary.subject.billingSubject,
-      body.addonCode,
+    const subject = await buildBillingApiActionSubject({ ctx, identity, organizationId });
+    const billingSubject = toBillingApiOrganizationSubjectInput(subject);
+    const syncBody = buildBillingApiOrganizationSubjectSyncRequest({
+      subject,
+      source: 'reserve-app-backend-action',
+      contactRole: 'current_billing_actor',
+    });
+    const syncBodyHash = await sha256Hex(JSON.stringify(syncBody));
+    await billingApiActionClient.client.syncSubject(billingSubject, syncBody, {
+      idempotencyKey: `reserve-addon-items-sync:${organizationId}:${syncBodyHash.slice(0, 16)}`,
+    });
+    const result = await billingApiActionClient.client.updateAddonItems(
+      billingSubject,
       {
-        quantity: body.quantity,
+        items: canonicalItems,
         actor: {
           type: 'user',
           id: identity.userId,
-          email: identity.email,
         },
       },
       {
-        idempotencyKey: `reserve-addon-quantity:${organizationId}:${body.addonCode}:${body.quantity}:${identity.userId}`,
+        idempotencyKey: `reserve-addon-items:${organizationId}:${identity.userId}:${idempotencyKeyHash}`,
       },
     );
     return jsonResult(
@@ -1191,8 +1248,8 @@ export const updateOrganizationBillingAddonQuantity = async ({
         organizationId,
         role,
         status: 'succeeded',
-        message: 'Addon quantity updated.',
-        billingApiSummaryResponse: summary,
+        message: 'Addon quantities updated.',
+        billingApiSummaryResponse: result.summary,
       }),
       200,
     );
@@ -1204,7 +1261,6 @@ export const updateOrganizationBillingAddonQuantity = async ({
         role,
         status: failure.actionStatus,
         message: failure.message,
-        billingApiSummaryResponse: billingApiSummary.summary,
       }),
       failure.statusCode,
     );

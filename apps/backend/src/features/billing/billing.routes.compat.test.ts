@@ -12,6 +12,7 @@ import {
   getOrganizationBillingRoute,
   internalBillingTestClockScenarioAdvanceBodySchema,
   internalBillingTestClockScenarioCreateBodySchema,
+  organizationBillingAddonItemsIdempotencyHeadersSchema,
   organizationBillingActionResponseSchema,
   organizationBillingCheckoutBodySchema,
 } from './billing.schemas.js';
@@ -130,6 +131,27 @@ describe('課金ルート互換性', () => {
       },
       url: 'https://stripe.test/checkout',
     });
+  });
+
+  it('addon 更新の Idempotency-Key は必須かつ安全な文字だけを許可する', () => {
+    expect(
+      organizationBillingAddonItemsIdempotencyHeadersSchema.parse({
+        'idempotency-key': '019f657a-32d3-7fd2-8339-5ea257d20479',
+      }),
+    ).toEqual({
+      'idempotency-key': '019f657a-32d3-7fd2-8339-5ea257d20479',
+    });
+    expect(organizationBillingAddonItemsIdempotencyHeadersSchema.safeParse({}).success).toBe(false);
+    expect(
+      organizationBillingAddonItemsIdempotencyHeadersSchema.safeParse({
+        'idempotency-key': 'contains spaces',
+      }).success,
+    ).toBe(false);
+    expect(
+      organizationBillingAddonItemsIdempotencyHeadersSchema.safeParse({
+        'idempotency-key': 'a'.repeat(129),
+      }).success,
+    ).toBe(false);
   });
 
   it('Billing API Test Clock リクエストのワイヤー形状を維持する', () => {

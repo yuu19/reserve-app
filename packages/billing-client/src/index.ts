@@ -1,7 +1,9 @@
 import type {
   BillingApiEntitlementsResponse,
   BillingApiErrorResponse,
-  BillingApiAddonQuantityUpdateRequest,
+  BillingApiAddonItemsResponse,
+  BillingApiAddonItemsUpdateRequest,
+  BillingApiAddonItemsUpdateResponse,
   BillingApiAdvanceTestClockScenarioRequest,
   BillingApiCreateTestClockScenarioRequest,
   BillingApiHandoffRequest,
@@ -69,7 +71,7 @@ export const createBillingClient = ({
     body,
     idempotencyKey,
   }: {
-    method: 'GET' | 'POST' | 'PUT';
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH';
     path: string;
     body?: unknown;
     idempotencyKey?: string;
@@ -200,15 +202,21 @@ export const createBillingClient = ({
       });
     },
 
-    updateAddonQuantity(
+    readAddonItems(subject: BillingClientSubjectInput) {
+      return request<BillingApiAddonItemsResponse>({
+        method: 'GET',
+        path: `${subjectPath(subject)}/addon-items`,
+      });
+    },
+
+    updateAddonItems(
       subject: BillingClientSubjectInput,
-      addonCode: string,
-      body: BillingApiAddonQuantityUpdateRequest,
+      body: BillingApiAddonItemsUpdateRequest,
       options: BillingClientRequestOptions,
     ) {
-      return request<BillingApiSummaryResponse>({
-        method: 'PUT',
-        path: `${subjectPath(subject)}/addon-items/${encodeSegment(addonCode)}`,
+      return request<BillingApiAddonItemsUpdateResponse>({
+        method: 'PATCH',
+        path: `${subjectPath(subject)}/addon-items`,
         body,
         idempotencyKey: options.idempotencyKey,
       });

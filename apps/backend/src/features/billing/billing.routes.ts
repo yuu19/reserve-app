@@ -9,8 +9,9 @@ import {
   createSetupCheckoutHandoff,
   createSubscriptionCheckoutHandoff,
   createSubscriptionUpdatePortalHandoff,
+  readOrganizationBillingAddonItems,
   startTrialSubscription,
-  updateOrganizationBillingAddonQuantity,
+  updateOrganizationBillingAddonItems,
 } from './billing-actions.usecase.js';
 import {
   createBillingRouteContext,
@@ -24,7 +25,8 @@ import {
   createOrganizationBillingPortalRoute,
   createOrganizationBillingTrialCompletionRoute,
   createOrganizationBillingTrialRoute,
-  updateOrganizationBillingAddonQuantityRoute,
+  getOrganizationBillingAddonItemsRoute,
+  updateOrganizationBillingAddonItemsRoute,
   advanceInternalBillingTestClockScenarioRoute,
   createInternalBillingTestClockScenarioRoute,
   getInternalBillingTestClockScenarioRoute,
@@ -117,13 +119,25 @@ export const registerBillingRoutes = (
     ),
   );
 
-  authRoutes.openapi(updateOrganizationBillingAddonQuantityRoute, async (c) =>
+  authRoutes.openapi(getOrganizationBillingAddonItemsRoute, async (c) =>
     jsonBillingRouteResult(
       c,
-      await updateOrganizationBillingAddonQuantity({
+      await readOrganizationBillingAddonItems({
+        ctx,
+        query: c.req.valid('query'),
+        headers: c.req.raw.headers,
+      }),
+    ),
+  );
+
+  authRoutes.openapi(updateOrganizationBillingAddonItemsRoute, async (c) =>
+    jsonBillingRouteResult(
+      c,
+      await updateOrganizationBillingAddonItems({
         ctx,
         body: c.req.valid('json'),
         headers: c.req.raw.headers,
+        idempotencyKey: c.req.valid('header')['idempotency-key'],
       }),
     ),
   );
