@@ -1,6 +1,6 @@
 # 共有 Billing API 設計メモ
 
-最終更新: 2026-06-22
+最終更新: 2026-07-25
 
 ## この文書の扱い
 
@@ -174,6 +174,59 @@ reserve-app は、この情報を見て、スタッフ追加、店舗追加、�
 これにより、Billing API の一時障害時でも短時間の読み取りは耐えられます。
 一方で、古い契約状態を長時間信頼し続けることは避けます。
 
+## SaaS backend との同期方向
+
+組織情報は各 SaaS backend を正本とします。
+契約、支払い、addon、entitlement は Billing API を正本とします。
+
+| データ・処理                        | 同期方向              | 方式                                        |
+| ----------------------------------- | --------------------- | ------------------------------------------- |
+| 組織名、slug、請求担当者            | backend → Billing API | 組織変更時の同期と、課金操作前の存在確認    |
+| Checkout、Portal、trial、addon 操作 | backend → Billing API | 同期 command API                            |
+| 契約、支払い、addon、entitlement    | Billing API → backend | event outbox と非同期 Worker                |
+| 課金画面の操作直後に表示する結果    | Billing API → backend | command response と version-aware projector |
+
+組織変更時の同期に失敗した場合や、初回同期より先に課金操作が届いた場合に備え、command 実行前の存在確認を残します。
+同期要求の冪等性キーは同期本文から生成します。
+組織名、slug、請求担当者が変わった場合は、新しい本文に対応する別のキーを使います。
+
+Checkout、Portal、trial、addon はデータ複製ではなく、Billing API に状態変更を依頼する command として扱います。
+backend は利用者の認証と組織権限を確認します。
+契約状態による実行可否は、課金状態の正本である Billing API が判定します。
+
+### backend projection の更新
+
+backend の課金 projection は、command response と非同期 Worker の両方から同じ projector を通して更新します。
+これにより、操作直後の read-your-write と、通常時の非同期反映を同じ更新規則で扱います。
+
+Billing API が返す command response と非同期 event は、少なくとも次の識別情報を持ちます。
+
+- event ID
+- app ID
+- subject type と subject ID
+- subject ごとに単調増加する projection version
+- 発生時刻
+- 契約、支払い、addon、entitlement の projection payload
+
+backend は受信済み event ID を記録し、同じ event の再送を重複適用しません。
+保存済みの projection version 以下の応答や event は無視します。
+新しい version だけを共通 projector で反映します。
+
+command response を反映した後に同じ version の event が届いた場合、Worker は成功扱いの no-op とします。
+version の欠落を検出した場合は、Billing API の summary を取得してから projection を再構築します。
+
+Billing API は課金状態の更新と event outbox の作成を同じトランザクションで行います。
+Worker は at-least-once で配送し、再試行上限を超えた event を dead-letter として残します。
+定期 reconciliation では Billing API の summary と backend projection を照合します。
+
+### 段階導入
+
+現行実装では、command response を課金画面の応答へ反映しています。
+event outbox、backend event inbox、projection version、共通 projector はまだ実装していません。
+
+当面は、課金操作前に subject を同期し、command response で操作直後の状態を返します。
+非同期 projection は、配送契約、migration、再試行、dead-letter、reconciliation を一つの独立 feature として追加します。
+
 ## API 境界
 
 app id は path に含めます。
@@ -220,7 +273,8 @@ Stripe に手続きを渡す操作では、API レベルの冪等性と別に、
 プラン、価格、addon、entitlement rule は、初期は code / seed 管理にします。
 実行時の参照元は Billing API の DB です。
 addon catalog は、スタッフ数や店舗数の追加購入を表現できるように、addon、addon price、addon entitlement rule を分けて持ちます。
-addon の subscription item 同期と entitlement 合成は、catalog の土台を作った後に接続します。
+addon の subscription item 同期と entitlement 合成は実装済みです。
+reserve-app の詳細な addon 契約は [Premium addon 仕様](./addon-specification.md) を参照してください。
 
 これにより、デプロイ済み API は DB の catalog を見て契約状態を判定できます。
 一方で、管理画面から自由に価格を変えるような運用は初期対象外にします。

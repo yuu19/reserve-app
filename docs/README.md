@@ -35,6 +35,8 @@
 ### 課金
 
 - [billing.md](./billing/billing.md): 現行の組織単位課金仕様。
+- [addon-specification.md](./billing/addon-specification.md): Premium addon の商品、数量変更、API、Stripe、監査、検証仕様。
+- [shared-billing-api-architecture.md](./billing/shared-billing-api-architecture.md): Billing API の責務境界と同期アーキテクチャ。
 - [assets/billing-payment-flow.mmd](./billing/assets/billing-payment-flow.mmd): 課金フロー図の Mermaid ソース。
 - [assets/billing-payment-flow.svg](./billing/assets/billing-payment-flow.svg): 課金フロー図。
 
@@ -180,7 +182,10 @@ pnpm test:watch
 ## Cloudflare Workers デプロイ
 
 ```bash
-# backend
+# Billing API (remote D1 migration -> Worker deploy)
+pnpm deploy:billing-api
+
+# backend (remote D1 migration -> Worker deploy)
 pnpm deploy:backend
 
 # web
@@ -189,20 +194,21 @@ pnpm deploy:web
 # docs
 pnpm deploy:docs
 
-# backend -> web -> docs を順番に実行
+# Billing API -> backend -> web -> docs を順番に実行
 pnpm deploy:workers
 ```
 
 ## GitHub Actions による自動デプロイ
 
-`main` ブランチへの push（または手動実行）で、本番の `backend` / `web` / `docs` を毎回まとめてデプロイします。
+`main` ブランチへの push（または手動実行）で、本番の `Billing API` / `backend` / `web` / `docs` を毎回まとめてデプロイします。
 ワークフロー: `.github/workflows/deploy-workers.yml`
 
 デプロイ前に次の検証を必ず実行します。
 
+- Billing API の test / typecheck / build
 - backend 統合テスト
 - web server test
-- backend / web / docs の production build
+- Billing API / backend / web / docs の production build
 
 通常の Worker 環境変数は各 app の `wrangler.jsonc` を正とします。
 GitHub Actions は Cloudflare secrets の同期、D1 migration、Sentry release 注入、Worker デプロイを担当します。
@@ -234,8 +240,8 @@ GitHub 変数:
 
 補足:
 
-- backend デプロイ前に `wrangler d1 migrations apply --remote` を実行します。
-- deploy job では `backend -> web -> docs` の順に反映します。
+- Billing API デプロイ前に Billing API D1 migration を、backend デプロイ前に backend D1 migration を実行します。
+- deploy job では `Billing API -> backend -> web -> docs` の順に反映します。
 - backend の `SENTRY_RELEASE` と web の `PUBLIC_SENTRY_RELEASE` は commit SHA を使います。
 - web デプロイ前ビルドで Sentry sourcemap upload を実行します。
 - Stripe webhook は `POST /api/webhooks/stripe` で受け付けます（`STRIPE_WEBHOOK_SECRET` 必須）。

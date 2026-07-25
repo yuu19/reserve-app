@@ -19,6 +19,7 @@ Billing API は契約状態と利用権限を返します。
 - Stripe billing webhook の署名確認、受領記録、契約・利用権限への反映
 - Stripe invoice/payment webhook の請求イベント履歴への反映と参照
 - product billing catalog からの plan、price、addon、entitlement rule seed SQL 生成
+- 複数 addon の数量参照と一括更新、期間末の減数・削除予約、変更監査
 
 Stripe webhook は、Checkout 完了、Subscription lifecycle、Invoice finalized/paid/payment succeeded/payment failed/payment action required を処理します。
 Price が catalog に存在しない場合は `priceResolution: "unknown"` として保存し、利用権限は空にします。
@@ -36,12 +37,12 @@ API key は `billing_app_credential` に保存した hash で検証します。
 平文の key は保存しません。
 `scopes_json` に保存した scope で、API key ごとの操作範囲も検証します。
 
-| Scope                | 許可する操作                                           |
-| -------------------- | ------------------------------------------------------ |
-| `subject:write`      | 課金対象の同期                                         |
-| `billing:read`       | summary、entitlements、invoice events の読み取り       |
-| `billing:write`      | trial、Checkout、支払い方法登録、Portal の開始         |
-| `billing:test_clock` | sandbox 専用 Test Clock scenario の作成・advance・参照 |
+| Scope                | 許可する操作                                                  |
+| -------------------- | ------------------------------------------------------------- |
+| `subject:write`      | 課金対象の同期                                                |
+| `billing:read`       | summary、entitlements、invoice events、addon items の読み取り |
+| `billing:write`      | trial、Checkout、支払い方法登録、Portal、addon items の更新   |
+| `billing:test_clock` | sandbox 専用 Test Clock scenario の作成・advance・参照        |
 
 書き込み API では `Idempotency-Key` header が必須です。
 同じ key で異なる request body を送ると conflict として拒否します。
@@ -97,7 +98,7 @@ VALUES (
 有料プランの Checkout には、`billing_plan` と `billing_price` の登録も必要です。
 `billing_price.provider_price_id` には Stripe Price ID を保存します。
 スタッフ数や店舗数の追加購入に使う addon catalog は、`billing_addon`、`billing_addon_price`、`billing_addon_entitlement_rule` に保存します。
-subscription item の同期と addon entitlement の合成は後続実装です。
+Subscription item の同期と addon entitlement の合成も、この catalog をもとに処理します。
 catalog seed SQL は `packages/product-billing-config` から生成します。
 
 ```bash
@@ -106,6 +107,28 @@ pnpm --filter @apps/billing-api run catalog:seed:sql -- --app reserve
 
 `STRIPE_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_YEARLY_PRICE_ID`、`STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID`、`STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID` を設定して実行すると、Stripe Price ID も SQL に含まれます。
 API credential はこの seed では生成しません。
+
+## アドオンの数量変更
+
+詳細な業務仕様、API 契約、Stripe 反映、監査、実装状況は [`docs/billing/addon-specification.md`](../../docs/billing/addon-specification.md) を正とします。
+
+有効な有料 Premium 契約だけが、複数 addon の目標数量をまとめて変更できます。
+読み取り API は契約状態にかかわらず呼び出せますが、アドオン明細は有効な契約の場合だけ返します。
+Stripe の内部 ID は返しません。
+
+| 操作           | API                                                                         | 結果                                                 |
+| -------------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 数量の参照     | `GET /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/addon-items`   | 現在数量、状態、期間末に反映する予定数量と日時を返す |
+| 数量の一括更新 | `PATCH /api/v1/apps/{appId}/subjects/{subjectType}/{subjectId}/addon-items` | `items` の addon code ごとに目標数量を適用する       |
+
+更新 body には、重複しない `items` と操作者を指定します。`quantity: 0` は削除予約です。
+増加は Stripe の日割り計算を伴って直ちに反映します。減少と削除は現在の請求期間の終了時に反映します。
+期間末変更を増加後の現在数量まで戻すと、予約を取り消します。
+即時増加と期間末の変更は、同じ更新要求には指定できません。別々の更新要求に分けてください。
+同時に指定した場合は、Stripe を変更せずに `409 bad_request` を返します。
+
+変更の要求、操作者、変更前後の安全な要約、反映予定時刻、成功または失敗は `billing_addon_mutation_audit` に追記します。
+Stripe の raw payload は保存しません。
 
 ## API credential
 
