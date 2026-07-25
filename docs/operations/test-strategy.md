@@ -175,8 +175,9 @@ pnpm --filter @repo/e2e test:e2e:billing
 Stripe 課金 E2E は、実際の Stripe test mode と Test Clock を使って契約状態の遷移を確認する。
 通常の PR ごとの web E2E には含めない。
 
-実行には Stripe test mode のキーと Premium 価格 ID が必要。  
+実行には Stripe test mode のキー、Premium 価格 ID、スタッフ数・店舗数 addon の価格 ID が必要。
 現在の `test:e2e:billing` は Billing API Test Clock scenario を実行し、成功更新、支払い失敗、支払い方法なしの trial 終了、同じ Stripe event の複数回再送をまとめて確認する。
+addon では、複数の即時増加、即時増加と期間末変更の混在拒否、分割した期間末削除、期間終了後の利用上限と変更監査の反映も確認する。
 Billing API の Test Clock scenario を明示して確認する場合も次を実行できる。
 
 ```bash
@@ -191,9 +192,9 @@ pnpm --filter @repo/e2e test:e2e:billing-legacy-stripe-clock
 
 実装メモ:
 
-- 秘密情報は GitHub Secrets の `STRIPE_E2E_SECRET_KEY`、`STRIPE_E2E_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_E2E_PREMIUM_YEARLY_PRICE_ID` に置く。
+- 秘密情報は GitHub Secrets の `STRIPE_E2E_SECRET_KEY`、`STRIPE_E2E_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_E2E_PREMIUM_YEARLY_PRICE_ID`、`STRIPE_E2E_STAFF_SEAT_MONTHLY_PRICE_ID`、`STRIPE_E2E_SHOP_SLOT_MONTHLY_PRICE_ID` に置く。
 - webhook 署名の検証値を明示したい場合は `STRIPE_E2E_WEBHOOK_SECRET` を置く。
-- CI では既存の `STRIPE_SECRET_KEY`、`STRIPE_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_YEARLY_PRICE_ID`、`E2E_STRIPE_WEBHOOK_SECRET` へ割り当てて実行する。
+- CI では既存の `STRIPE_SECRET_KEY`、`STRIPE_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_YEARLY_PRICE_ID`、`STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID`、`STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID`、`E2E_STRIPE_WEBHOOK_SECRET` へ割り当てて実行する。
 - Billing API 用の local D1 migration、catalog seed、`billing:test_clock` scope 付き API key は `packages/e2e/scripts/prepare-billing-api-e2e.mjs` が準備する。
 - 実行時は `BILLING_E2E_ENABLED=true` を明示する。秘密情報がない環境ではこの E2E を必須 CI にしない。
 

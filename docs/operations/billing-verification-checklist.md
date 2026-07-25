@@ -33,6 +33,8 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
 | Stripe test mode account / workspace |      |
 | 使用した monthly Price ID            |      |
 | 使用した yearly Price ID             |      |
+| 使用した staff addon Price ID        |      |
+| 使用した shop addon Price ID         |      |
 | 使用した Webhook endpoint            |      |
 | GitHub Actions run                   |      |
 | 備考                                 |      |
@@ -40,7 +42,7 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
 - [ ] 対象 commit と検証環境を記録した。
   - 期待結果: 後から同じコード、同じ環境、同じ Stripe test mode 設定を特定できる。
   - 記録:
-- [ ] Stripe test mode の Price ID と Webhook endpoint を記録した。
+- [ ] Stripe test mode の Premium/addon Price ID と Webhook endpoint を記録した。
   - 期待結果: secret や raw payload を残さず、検証に使った Stripe 設定だけを追跡できる。
   - 記録:
 - [ ] Stripe secret、カード番号、税務詳細、raw payload を記録していないことを確認した。
@@ -73,10 +75,10 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
   - 期待結果: 対象限定照合と全体照合が期待頻度で実行される。
   - 記録:
 - [ ] 必要な secrets と vars が検証環境に設定済みである。
-  - 期待結果: `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、`STRIPE_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_YEARLY_PRICE_ID`、`STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED`、`WEB_BASE_URL`、`RESEND_API_KEY`、`RESEND_FROM_EMAIL` が検証用途で揃っている。
+  - 期待結果: `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`、`STRIPE_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_YEARLY_PRICE_ID`、`STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID`、`STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID`、`STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED`、`WEB_BASE_URL`、`RESEND_API_KEY`、`RESEND_FROM_EMAIL` が検証用途で揃っている。
   - 記録:
 - [ ] Stripe 課金 E2E の GitHub Secrets が設定済みである。
-  - 期待結果: `STRIPE_E2E_SECRET_KEY`、`STRIPE_E2E_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_E2E_PREMIUM_YEARLY_PRICE_ID`、必要に応じて `STRIPE_E2E_WEBHOOK_SECRET` が使える。
+  - 期待結果: `STRIPE_E2E_SECRET_KEY`、`STRIPE_E2E_PREMIUM_MONTHLY_PRICE_ID`、`STRIPE_E2E_PREMIUM_YEARLY_PRICE_ID`、`STRIPE_E2E_STAFF_SEAT_MONTHLY_PRICE_ID`、`STRIPE_E2E_SHOP_SLOT_MONTHLY_PRICE_ID`、必要に応じて `STRIPE_E2E_WEBHOOK_SECRET` が使える。
   - 記録:
 
 実装メモ:
@@ -117,7 +119,7 @@ Stripe secret、カード番号、税務詳細、Stripe の raw payload はこ�
   - 記録:
 - [ ] Stripe 課金 E2E が検証環境または GitHub Actions で成功している。
   - 実行例: `BILLING_E2E_ENABLED=true pnpm --filter @repo/e2e test:e2e:billing`
-  - 期待結果: Billing API Test Clock scenario で、Test Clock を使った有料更新成功、支払い失敗、支払い方法なしの trial 終了の主要遷移が通る。
+  - 期待結果: Billing API Test Clock scenario で、有料更新成功、支払い失敗、支払い方法なしの trial 終了、addon の即時増加・期間末削除・利用上限・監査記録の主要遷移が通る。
   - 記録:
 - [ ] Billing API Test Clock scenario E2E が検証環境で成功している。
   - 実行例: `BILLING_E2E_ENABLED=true pnpm --filter @repo/e2e test:e2e:billing-api-clock`

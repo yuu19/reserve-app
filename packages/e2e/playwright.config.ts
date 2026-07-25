@@ -55,12 +55,16 @@ const writeBackendEnvFile = () => {
       process.env.STRIPE_WEBHOOK_SECRET?.trim() ||
       process.env.E2E_STRIPE_WEBHOOK_SECRET?.trim() ||
       'whsec_reserve_app_local_e2e';
+    const staffSeatMonthlyPriceId = requiredEnv('STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID');
+    const shopSlotMonthlyPriceId = requiredEnv('STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID');
 
     Object.assign(values, {
       STRIPE_SECRET_KEY: stripeSecretKey,
       STRIPE_WEBHOOK_SECRET: webhookSecret,
       STRIPE_PREMIUM_MONTHLY_PRICE_ID: requiredEnv('STRIPE_PREMIUM_MONTHLY_PRICE_ID'),
       STRIPE_PREMIUM_YEARLY_PRICE_ID: requiredEnv('STRIPE_PREMIUM_YEARLY_PRICE_ID'),
+      STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID: staffSeatMonthlyPriceId,
+      STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID: shopSlotMonthlyPriceId,
       STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED: 'true',
       BILLING_API_ACTIONS_ENABLED: 'true',
       BILLING_API_SUMMARY_ENABLED: 'true',

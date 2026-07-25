@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import type { APIRequestContext, BrowserContext, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
@@ -23,6 +25,7 @@ export const webhookSecret =
   'whsec_reserve_app_local_e2e';
 /** E2E 専用 test hook header に渡す shared secret。 */
 export const e2eTestSecret = process.env.E2E_TEST_SECRET?.trim() || 'reserve-app-e2e-secret';
+const repoRoot = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 type JsonRecord = Record<string, unknown>;
 
@@ -40,6 +43,7 @@ type StripeCustomer = {
 type StripeSubscription = {
   id: string;
   customer: string;
+  schedule?: string | null;
   status: string;
   current_period_end?: number;
   trial_end?: number | null;
@@ -131,6 +135,36 @@ export type BillingApiSummaryPayload = {
     entitlements: unknown[];
     evaluatedAt: string;
     timeSource: 'server' | 'stripe_test_clock';
+  };
+};
+
+export type BillingApiAddonItemsPayload = {
+  appId: string;
+  subjectType: string;
+  subjectId: string;
+  items: Array<{
+    addonCode: string;
+    quantity: number;
+    status: 'active' | 'inactive';
+    pendingQuantity: number | null;
+    pendingEffectiveAt: string | null;
+  }>;
+  syncedAt: string;
+};
+
+type BillingApiAddonMutationAuditRow = {
+  outcome: 'succeeded' | 'failed';
+  actor_id: string | null;
+  requested_items_json: string;
+  result_items_json: string | null;
+  effective_at: number | null;
+  failure_code: string | null;
+};
+
+export type BillingApiErrorPayload = {
+  error: {
+    code: string;
+    message: string;
   };
 };
 
@@ -802,6 +836,144 @@ export const readBillingApiSummary = async ({
   });
   await expectStatus(response, 200);
   return (await response.json()) as BillingApiSummaryPayload;
+};
+
+/** Billing API から addon の現在数量と期間末変更予定を取得する。 */
+export const readBillingApiAddonItems = async ({
+  request,
+  subject,
+}: {
+  request: APIRequestContext;
+  subject: BillingApiSubjectInput;
+}) => {
+  const response = await request.get(`${billingApiSubjectPath(subject)}/addon-items`, {
+    headers: billingApiHeaders(),
+  });
+  await expectStatus(response, 200);
+  return (await response.json()) as BillingApiAddonItemsPayload;
+};
+
+const requestBillingApiAddonItemsUpdate = ({
+  request,
+  subject,
+  items,
+  idempotencyKey,
+}: {
+  request: APIRequestContext;
+  subject: BillingApiSubjectInput;
+  items: Array<{ addonCode: string; quantity: number }>;
+  idempotencyKey: string;
+}) =>
+  request.patch(`${billingApiSubjectPath(subject)}/addon-items`, {
+    headers: {
+      ...billingApiHeaders(idempotencyKey),
+      'content-type': 'application/json',
+    },
+    data: {
+      items,
+      actor: {
+        type: 'system',
+        id: 'billing-api-e2e',
+        email: 'billing-api-e2e@example.com',
+      },
+    },
+  });
+
+/** Billing API に複数 addon の目標数量を一括送信する。 */
+export const updateBillingApiAddonItems = async ({
+  request,
+  subject,
+  items,
+  idempotencyKey,
+}: {
+  request: APIRequestContext;
+  subject: BillingApiSubjectInput;
+  items: Array<{ addonCode: string; quantity: number }>;
+  idempotencyKey: string;
+}) => {
+  const response = await requestBillingApiAddonItemsUpdate({
+    request,
+    subject,
+    items,
+    idempotencyKey,
+  });
+  await expectStatus(response, 200);
+  return (await response.json()) as {
+    summary: BillingApiSummaryPayload;
+    addonItems: BillingApiAddonItemsPayload;
+  };
+};
+
+/** Billing API の addon 更新が期待した業務エラーを返すことを確認する。 */
+export const updateBillingApiAddonItemsExpectingError = async ({
+  request,
+  subject,
+  items,
+  idempotencyKey,
+  expectedStatus,
+}: {
+  request: APIRequestContext;
+  subject: BillingApiSubjectInput;
+  items: Array<{ addonCode: string; quantity: number }>;
+  idempotencyKey: string;
+  expectedStatus: number;
+}) => {
+  const response = await requestBillingApiAddonItemsUpdate({
+    request,
+    subject,
+    items,
+    idempotencyKey,
+  });
+  await expectStatus(response, expectedStatus);
+  return (await response.json()) as BillingApiErrorPayload;
+};
+
+/**
+ * Local D1 に保存された addon 変更監査記録を読み取る。
+ * Stripe payload は選択せず、E2E の監査 assertion に必要な最小列だけを返す。
+ */
+export const readBillingApiAddonMutationAudits = ({
+  subject,
+}: {
+  subject: BillingApiSubjectInput;
+}): BillingApiAddonMutationAuditRow[] => {
+  const sqlString = (value: string) => `'${value.replaceAll("'", "''")}'`;
+  const command = `SELECT audit.outcome, audit.actor_id, audit.requested_items_json, audit.result_items_json, audit.effective_at, audit.failure_code
+FROM billing_addon_mutation_audit AS audit
+INNER JOIN billing_account AS account ON account.id = audit.billing_account_id
+INNER JOIN billing_subject AS subject ON subject.id = account.subject_row_id
+WHERE subject.app_id = 'reserve'
+  AND subject.subject_type = ${sqlString(subject.subjectType)}
+  AND subject.subject_id = ${sqlString(subject.subjectId)}
+ORDER BY audit.created_at ASC`;
+  const output = execFileSync(
+    'pnpm',
+    [
+      '--filter',
+      '@apps/billing-api',
+      'exec',
+      'wrangler',
+      'd1',
+      'execute',
+      'reserve-billing-api',
+      '--local',
+      '--persist-to',
+      '../../.wrangler/e2e',
+      '--command',
+      command,
+      '--json',
+    ],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: `${repoRoot}/.wrangler/e2e/config`,
+      },
+    },
+  );
+  const payload = JSON.parse(output) as Array<{ results?: BillingApiAddonMutationAuditRow[] }>;
+  return payload.flatMap((entry) => entry.results ?? []);
 };
 
 /**

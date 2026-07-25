@@ -53,8 +53,8 @@ const webhookSecret =
   'whsec_reserve_app_local_e2e';
 const premiumMonthlyPriceId = requiredEnv('STRIPE_PREMIUM_MONTHLY_PRICE_ID');
 const premiumYearlyPriceId = requiredEnv('STRIPE_PREMIUM_YEARLY_PRICE_ID');
-const staffSeatMonthlyPriceId = process.env.STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID?.trim() || '';
-const shopSlotMonthlyPriceId = process.env.STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID?.trim() || '';
+const staffSeatMonthlyPriceId = requiredEnv('STRIPE_STAFF_SEAT_MONTHLY_PRICE_ID');
+const shopSlotMonthlyPriceId = requiredEnv('STRIPE_SHOP_SLOT_MONTHLY_PRICE_ID');
 
 Object.assign(process.env, {
   STRIPE_PREMIUM_MONTHLY_PRICE_ID: premiumMonthlyPriceId,
