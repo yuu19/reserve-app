@@ -43,7 +43,7 @@ export type BillingApiActionClientResolution = BillingApiClientResolution<Billin
 
 export type BillingApiSummaryClient = Pick<
   BillingApiClient,
-  'syncSubject' | 'readSummary' | 'readAddonItems'
+  'syncSubject' | 'readSummary' | 'readAddonItems' | 'readInvoiceEvents'
 >;
 
 export type BillingApiSummaryClientResolution = BillingApiClientResolution<BillingApiSummaryClient>;

@@ -4,6 +4,7 @@ import {
   appendStripeSubscriptionSchedulePhase,
   buildAddonPriceLookupIntervals,
   buildBillingApiFeatures,
+  composeEntitlementRules,
   buildStripeAddonDecreaseScheduleItems,
   buildStripeSubscriptionItemsUpdateParams,
   createBillingApiApp,
@@ -11,19 +12,22 @@ import {
   hasBillingApiCredentialScope,
   isAddonItemUpdateChanged,
   isBillingTestClockEnvironmentEnabled,
+  isOwnedAddonScheduleMetadata,
   isSupportedStripeBillingEventType,
   parseBillingApiCredentialScopes,
   readStripeInvoiceEventSnapshot,
+  readStripeSubscriptionScheduleSnapshot,
   readStripeTestClockSnapshot,
   readStripeSubscriptionSnapshot,
   resolveAddonProviderPriceId,
   resolveAddonScheduleReuse,
   resolveTestClockAdvanceTarget,
   shouldExposeAddonItemsForSubscriptionStatus,
+  shouldCacheIdempotentResponse,
   shouldReleaseAddonSchedule,
   toInvoiceEventResponse,
 } from './app.js';
-import { billingAddonMutationAudit } from './db/schema.js';
+import { billingAddonMutationAudit, billingAddonScheduleAttempt } from './db/schema.js';
 
 describe('createBillingApiApp', () => {
   test('returns health status', async () => {
@@ -93,6 +97,35 @@ describe('createBillingApiApp', () => {
       staffLimit: 10,
       onlinePayment: true,
     });
+  });
+
+  test('composes addon entitlements from the incoming provider snapshot quantity', () => {
+    const rules = composeEntitlementRules({
+      planRules: [
+        {
+          entitlementKey: 'staffLimit',
+          valueType: 'number',
+          valueJson: '10',
+        },
+      ],
+      addonRules: [
+        {
+          addonCode: 'staff_seat',
+          entitlementKey: 'staffLimit',
+          valueJson: '2',
+          aggregation: 'increment',
+        },
+      ],
+      addonItems: [{ addonCode: 'staff_seat', quantity: 3 }],
+    });
+
+    expect(rules).toEqual([
+      {
+        entitlementKey: 'staffLimit',
+        valueType: 'number',
+        valueJson: '16',
+      },
+    ]);
   });
 
   test('parses supported credential scopes and ignores unknown values', () => {
@@ -257,7 +290,56 @@ describe('createBillingApiApp', () => {
 
   test('supports invoice finalized webhook as a billing event', () => {
     expect(isSupportedStripeBillingEventType('invoice.finalized')).toBe(true);
+    expect(isSupportedStripeBillingEventType('subscription_schedule.updated')).toBe(true);
     expect(isSupportedStripeBillingEventType('customer.subscription.trial_will_end')).toBe(false);
+  });
+
+  test('reads and validates addon schedule ownership metadata', () => {
+    const schedule = readStripeSubscriptionScheduleSnapshot({
+      id: 'sub_sched_1',
+      subscription: 'sub_1',
+      status: 'active',
+      metadata: {
+        billingManagedBy: 'reserve_billing_api_addon',
+        billingAppId: 'reserve',
+        billingSubjectType: 'organization',
+        billingSubjectId: 'org_1',
+        billingAccountId: 'account_1',
+        billingSubscriptionId: 'subscription_1',
+        billingAddonAttemptId: 'attempt_1',
+      },
+    });
+
+    expect(schedule).not.toBeNull();
+    expect(schedule?.providerSubscriptionId).toBe('sub_1');
+    expect(
+      isOwnedAddonScheduleMetadata({
+        metadata: schedule!.metadata,
+        appId: 'reserve',
+        subjectType: 'organization',
+        subjectId: 'org_1',
+        billingAccountId: 'account_1',
+        billingSubscriptionId: 'subscription_1',
+      }),
+    ).toBe(true);
+    expect(
+      isOwnedAddonScheduleMetadata({
+        metadata: schedule!.metadata,
+        appId: 'reserve',
+        subjectType: 'organization',
+        subjectId: 'org_other',
+        billingAccountId: 'account_1',
+        billingSubscriptionId: 'subscription_1',
+      }),
+    ).toBe(false);
+  });
+
+  test('does not freeze retryable server failures in the idempotency response cache', () => {
+    expect(shouldCacheIdempotentResponse(200)).toBe(true);
+    expect(shouldCacheIdempotentResponse(409)).toBe(true);
+    expect(shouldCacheIdempotentResponse(499)).toBe(true);
+    expect(shouldCacheIdempotentResponse(500)).toBe(false);
+    expect(shouldCacheIdempotentResponse(503)).toBe(false);
   });
 
   test('prefers yearly addon prices but falls back to monthly addon prices', () => {
@@ -388,6 +470,8 @@ describe('createBillingApiApp', () => {
   test('scopes addon mutation audits to an account without requiring a subscription', () => {
     expect(billingAddonMutationAudit.billingAccountId.notNull).toBe(true);
     expect(billingAddonMutationAudit.billingSubscriptionId.notNull).toBe(false);
+    expect(billingAddonScheduleAttempt.billingSubscriptionId.notNull).toBe(true);
+    expect(billingAddonScheduleAttempt.targetItemsJson.notNull).toBe(true);
   });
 
   test('applies the reconciled addon schedule without replacing the known subscription state', () => {

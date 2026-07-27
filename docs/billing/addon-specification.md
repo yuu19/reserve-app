@@ -409,7 +409,9 @@ Billing API は、app と `Idempotency-Key` の組み合わせで response を�
 同じ key を異なる request に再利用した場合は、`409 idempotency_conflict` を返します。
 既定の保存期間は 24 時間です。
 
-成功 response だけでなく、業務エラーと provider エラーの response も保存します。
+成功 response と、入力不正や競合などの確定した業務エラーを保存します。
+一時的な provider 障害や内部保存失敗を表す 5xx response は保存しません。
+同じ key で再送すると、完了していない処理を再開します。
 
 ## 13. 競合制御
 
@@ -429,7 +431,8 @@ addon 一覧と更新 response に、subject 単位で単調増加する `versio
 同じ冪等性キーの再送では、version を再判定する前に保存済み response を返します。
 これにより、成功 response を受け取れなかった再送が、新しい version を理由に失敗することを防ぎます。
 
-この version は、将来の command response と非同期 Worker が共有する projection version と統一します。
+この version は、課金イベント配送で実装済みの subject revision と同じ連番を利用します。
+将来 command response と backend projection を接続するときも、この連番を共有します。
 
 ## 14. Stripe Subscription Schedule
 
@@ -443,6 +446,15 @@ Billing API は addon 変更が作成した Schedule ID を保持します。
 一部の予約を取り消した場合は、残る予約だけで Schedule を更新します。
 すべての期間末変更を取り消した場合は、addon 用 Schedule を release します。
 
+Schedule には、Billing API が管理する対象と操作を識別する metadata を付けます。
+Billing API は、Stripe への反映前に操作記録を作成します。
+Stripe 反映後に契約状態の保存が失敗しても、同じ冪等性キーの再送または
+`subscription_schedule.*` webhook から期間末変更を復元します。
+
+操作記録は `processing`、`provider_applied`、`committed`、`failed` の状態を持ちます。
+顧客向けの期間末変更と課金イベントは同じ D1 batch で確定します。
+操作記録は外部処理の回復用であり、顧客向け状態の代わりにはしません。
+
 Schedule の将来 phase では `duration.interval` と `duration.interval_count` を使います。
 削除済みの `iterations` parameter は使いません。
 
@@ -454,6 +466,11 @@ Stripe webhook を受信すると、Billing API は Subscription item を addon 
 - Stripe から消えた addon item は数量 0、`inactive` にします。
 - 期間末変更が適用済みなら pending 状態を消します。
 - 有効な addon 数量と addon entitlement rule から利用上限を再計算します。
+- Schedule の作成、更新、release、完了通知から未確定の期間末変更を復元します。
+
+addon 明細と entitlement は、同じ Stripe Subscription snapshot から計算します。
+期間末変更を予約しただけでは、現在の利用上限を減らしません。
+期間末到達後の snapshot に新しい数量が現れた時点で利用上限を更新します。
 
 期間末直前の API response と、期間末後の webhook 反映には時間差があり得ます。
 正本は Billing API が webhook を処理した後の addon 明細と entitlement です。
@@ -513,6 +530,9 @@ Billing API の unit test は、少なくとも次を確認します。
 - 日割り増加で `error_if_incomplete` と `create_prorations` を使う
 - Schedule phase で `duration` を使う
 - addon 所有 Schedule だけを再利用する
+- Schedule metadata が同じ課金対象を示す場合に所有権を復元する
+- 5xx response を冪等性キャッシュへ固定しない
+- Stripe の現在数量から addon entitlement を合成する
 - 予約がなくなった場合に Schedule を release する
 - 即時増加と期間末変更の混在を拒否する
 - 非 active Subscription の addon 明細を公開しない

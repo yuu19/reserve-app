@@ -25,6 +25,17 @@
     "BILLING_TEST_CLOCKS_ENABLED": "false",
     "BILLING_API_ENV": "production",
   },
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "BILLING_EVENT_QUEUE",
+        "queue": "reserve-billing-events",
+      },
+    ],
+  },
   "d1_databases": [
     {
       "binding": "DB",

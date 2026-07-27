@@ -66,6 +66,7 @@ export const billingSubject = sqliteTable(
     billingName: text('billing_name'),
     billingContactsJson: text('billing_contacts_json').default('[]').notNull(),
     metadataJson: text('metadata_json').default('{}').notNull(),
+    eventRevision: integer('event_revision').default(0).notNull(),
     createdAt: defaultTimestampMs(),
     updatedAt: defaultUpdatedTimestampMs(),
   },
@@ -76,6 +77,52 @@ export const billingSubject = sqliteTable(
       table.subjectId,
     ),
     index('billing_subject_party_idx').on(table.partyId),
+  ],
+);
+
+export const billingEventOutbox = sqliteTable(
+  'billing_event_outbox',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    subjectRowId: text('subject_row_id')
+      .notNull()
+      .references(() => billingSubject.id, { onDelete: 'cascade' }),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    revision: integer('revision').notNull(),
+    eventType: text('event_type').notNull(),
+    reason: text('reason').notNull(),
+    payloadJson: text('payload_json').notNull(),
+    deliveryMode: text('delivery_mode').default('production').notNull(),
+    dispatchStatus: text('dispatch_status').default('pending').notNull(),
+    dispatchAttempts: integer('dispatch_attempts').default(0).notNull(),
+    nextAttemptAt: integer('next_attempt_at', { mode: 'timestamp_ms' }).notNull(),
+    lastAttemptAt: integer('last_attempt_at', { mode: 'timestamp_ms' }),
+    publishedAt: integer('published_at', { mode: 'timestamp_ms' }),
+    failureReason: text('failure_reason'),
+    occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_event_outbox_subject_revision_uidx').on(
+      table.subjectRowId,
+      table.revision,
+    ),
+    index('billing_event_outbox_dispatch_idx').on(
+      table.dispatchStatus,
+      table.nextAttemptAt,
+      table.createdAt,
+    ),
+    index('billing_event_outbox_subject_idx').on(
+      table.appId,
+      table.subjectType,
+      table.subjectId,
+      table.revision,
+    ),
   ],
 );
 
@@ -267,6 +314,52 @@ export const billingAddonMutationAudit = sqliteTable(
       table.billingSubscriptionId,
       table.createdAt,
     ),
+  ],
+);
+
+/**
+ * Stripe Subscription Schedule を伴う addon 操作の回復記録です。
+ *
+ * 顧客向けの pending state とは分離し、Stripe 反映後に subject state と outbox の
+ * commit が失敗しても、同じ idempotency key または webhook から処理を再開できるようにします。
+ */
+export const billingAddonScheduleAttempt = sqliteTable(
+  'billing_addon_schedule_attempt',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id')
+      .notNull()
+      .references(() => billingApp.id, { onDelete: 'cascade' }),
+    billingAccountId: text('billing_account_id')
+      .notNull()
+      .references(() => billingAccount.id, { onDelete: 'cascade' }),
+    billingSubscriptionId: text('billing_subscription_id')
+      .notNull()
+      .references(() => billingSubscription.id, { onDelete: 'cascade' }),
+    providerSubscriptionId: text('provider_subscription_id').notNull(),
+    providerScheduleId: text('provider_schedule_id'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    action: text('action').notNull(),
+    state: text('state').default('processing').notNull(),
+    targetItemsJson: text('target_items_json').default('[]').notNull(),
+    effectiveAt: integer('effective_at', { mode: 'timestamp_ms' }),
+    failureReason: text('failure_reason'),
+    providerAppliedAt: integer('provider_applied_at', { mode: 'timestamp_ms' }),
+    committedAt: integer('committed_at', { mode: 'timestamp_ms' }),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_addon_schedule_attempt_idempotency_uidx').on(
+      table.appId,
+      table.idempotencyKey,
+    ),
+    index('billing_addon_schedule_attempt_subscription_state_idx').on(
+      table.billingSubscriptionId,
+      table.state,
+      table.updatedAt,
+    ),
+    index('billing_addon_schedule_attempt_provider_schedule_idx').on(table.providerScheduleId),
   ],
 );
 

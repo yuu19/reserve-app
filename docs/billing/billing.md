@@ -1,6 +1,6 @@
 # 課金仕様
 
-最終更新: 2026-05-07
+最終更新: 2026-07-26
 
 ## 1. 目的
 
@@ -23,6 +23,9 @@ Premium 契約は Stripe で扱う。
 
 回数券の Stripe 決済は、将来 Stripe Connect で各組織の Stripe アカウントへ入金できる形を整えてから扱う。  
 ここでは、組織単位のプレミアム契約を扱う。
+
+契約変更の配送と支払い問題通知の境界は
+[`Billing API の課金イベント配送`](./billing-api-event-outbox.md) を参照する。
 
 ## 2. 契約状態
 
@@ -425,6 +428,8 @@ Stripe Dashboard では、次の状態を確認する。
 - 請求書・支払いイベント履歴の正本: [`billing_invoice_event`](../../apps/billing-api/src/db/schema.ts)
 - 請求書・領収書の参照: [`billing_document_reference`](../../apps/backend/src/infra/db/schema.ts)
 - Stripe 通知の処理履歴: [`billing_provider_event`](../../apps/backend/src/infra/db/schema.ts)
+- 課金変更の配送待ち: [`billing_event_outbox`](../../apps/billing-api/src/db/schema.ts)
+- 課金変更の受信履歴と処理位置: [`billing_event_inbox`](../../apps/backend/src/infra/db/schema.ts)、[`billing_event_consumer_cursor`](../../apps/backend/src/infra/db/schema.ts)
 - owner 向け通知履歴: [`billing_notification`](../../apps/backend/src/infra/db/schema.ts)
 - 契約変更の監査履歴: [`billing_audit_event`](../../apps/backend/src/infra/db/schema.ts)
 - Stripe とアプリの状態差分: [`billing_signal`](../../apps/backend/src/infra/db/schema.ts)
@@ -437,6 +442,7 @@ Stripe Dashboard では、次の状態を確認する。
 - [`STRIPE_PREMIUM_YEARLY_PRICE_ID`](../../apps/backend/.env.example)
 - [`STRIPE_PREMIUM_TRIAL_SUBSCRIPTION_ENABLED`](../../apps/backend/.env.example)
 - [`BILLING_API_WEBHOOK_FORWARD_ENABLED`](../../apps/backend/wrangler.jsonc)
+- [`BILLING_EVENT_NOTIFICATIONS_ENABLED`](../../apps/backend/wrangler.jsonc)
 - [`BILLING_API_BASE_URL`](../../apps/backend/wrangler.jsonc)
 - [`STRIPE_BILLING_PRODUCT_NAME`](../../apps/backend/.env.example)
 - [`STRIPE_BILLING_MONTHLY_LOOKUP_KEY`](../../apps/backend/.env.example)

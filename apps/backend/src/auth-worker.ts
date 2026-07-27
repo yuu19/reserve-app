@@ -113,6 +113,7 @@ export type BackendWorkerEnv = AuthRuntimeEnv & {
   BILLING_API_TEST_CLOCKS_ENABLED?: string;
   BILLING_API_TEST_CLOCKS_ENV?: string;
   BILLING_API_WEBHOOK_FORWARD_ENABLED?: string;
+  BILLING_EVENT_NOTIFICATIONS_ENABLED?: string;
   BILLING_API_BASE_URL?: string;
   BILLING_API_KEY?: string;
   E2E_TESTING_ENABLED?: string;

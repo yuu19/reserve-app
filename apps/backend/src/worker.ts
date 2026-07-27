@@ -9,6 +9,10 @@ import {
   reconcileRiskyOrganizationBillingStates,
   sendPastDueGraceExpiryReminders,
 } from './domain/billing/organization-billing-maintenance.js';
+import {
+  consumeBillingEventBatch,
+  type BillingEventMessageBatch,
+} from './domain/billing/billing-event-consumer.js';
 import { createApp } from './app/create-app.js';
 import { createOrganizationLogoService } from './infra/storage/organization-logo-service.js';
 import { createServiceImageUploadService } from './infra/storage/service-image-upload-service.js';
@@ -85,6 +89,14 @@ const handler = {
           ]
         : [];
     ctx.waitUntil(Promise.all([...reminderJobs, ...dailyJobs]));
+  },
+  async queue(batch: BillingEventMessageBatch, env: BackendWorkerEnv): Promise<void> {
+    const runtime = getWorkerRuntime(env);
+    await consumeBillingEventBatch({
+      database: runtime.database,
+      env: runtime.env,
+      batch,
+    });
   },
 };
 

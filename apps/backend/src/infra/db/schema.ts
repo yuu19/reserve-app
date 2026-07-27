@@ -125,6 +125,65 @@ export {
   billingTables,
 } from '@repo/saas-billing-drizzle/schema';
 
+export const billingEventInbox = sqliteTable(
+  'billing_event_inbox',
+  {
+    id: text('id').primaryKey(),
+    eventId: text('event_id').notNull(),
+    schemaVersion: integer('schema_version').notNull(),
+    appId: text('app_id').notNull(),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    revision: integer('revision').notNull(),
+    reason: text('reason').notNull(),
+    payloadJson: text('payload_json').notNull(),
+    processingStatus: text('processing_status').default('received').notNull(),
+    outcome: text('outcome'),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    lastError: text('last_error'),
+    leaseToken: text('lease_token'),
+    leaseExpiresAt: integer('lease_expires_at', { mode: 'timestamp_ms' }),
+    receivedAt: integer('received_at', { mode: 'timestamp_ms' }).notNull(),
+    processedAt: integer('processed_at', { mode: 'timestamp_ms' }),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_event_inbox_event_uidx').on(table.eventId),
+    uniqueIndex('billing_event_inbox_subject_revision_uidx').on(
+      table.appId,
+      table.subjectType,
+      table.subjectId,
+      table.revision,
+    ),
+    index('billing_event_inbox_status_idx').on(
+      table.processingStatus,
+      table.leaseExpiresAt,
+      table.receivedAt,
+    ),
+  ],
+);
+
+export const billingEventConsumerCursor = sqliteTable(
+  'billing_event_consumer_cursor',
+  {
+    id: text('id').primaryKey(),
+    appId: text('app_id').notNull(),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    lastRevision: integer('last_revision').default(0).notNull(),
+    createdAt: defaultTimestampMs(),
+    updatedAt: defaultUpdatedTimestampMs(),
+  },
+  (table) => [
+    uniqueIndex('billing_event_consumer_cursor_subject_uidx').on(
+      table.appId,
+      table.subjectType,
+      table.subjectId,
+    ),
+  ],
+);
+
 export const store = sqliteTable(
   'store',
   {

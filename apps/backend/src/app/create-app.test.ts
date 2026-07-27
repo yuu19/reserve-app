@@ -102,6 +102,19 @@ describe('createApp Stripe webhook Billing API forwarding', () => {
         },
       }),
     ).toBe(true);
+
+    expect(
+      shouldForwardStripeBillingWebhookToBillingApi({
+        id: 'evt_schedule_updated',
+        type: 'subscription_schedule.updated',
+        data: {
+          object: {
+            id: 'sub_sched_1',
+            subscription: 'sub_1',
+          },
+        },
+      }),
+    ).toBe(true);
   });
 
   it('署名検証後に raw Stripe webhook body を Billing API へ転送する', async () => {

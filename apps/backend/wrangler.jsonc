@@ -55,6 +55,7 @@
     "BILLING_API_TEST_CLOCKS_ENABLED": "false",
     "BILLING_API_TEST_CLOCKS_ENV": "production",
     "BILLING_API_WEBHOOK_FORWARD_ENABLED": "true",
+    "BILLING_EVENT_NOTIFICATIONS_ENABLED": "false",
     "BILLING_API_BASE_URL": "https://reserve-billing-api.yusuke-kusi1028.workers.dev",
     "ORG_LOGO_MAX_UPLOAD_BYTES": "5242880",
     "ORG_LOGO_PUBLIC_BASE_URL": "",
@@ -73,6 +74,17 @@
       "custom_domain": true,
     },
   ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "reserve-billing-events",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 8,
+        "dead_letter_queue": "reserve-billing-events-dlq",
+      },
+    ],
+  },
   "d1_databases": [
     {
       "binding": "DB",

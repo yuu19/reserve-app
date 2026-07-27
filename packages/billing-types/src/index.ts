@@ -48,6 +48,7 @@ export type BillingApiSubject = {
   appId: BillingApiAppId;
   subjectType: BillingApiSubjectType;
   subjectId: BillingApiSubjectId;
+  revision: number;
   status: BillingApiSubjectStatus;
   displayName: string;
   billingEmail: string | null;
@@ -56,6 +57,53 @@ export type BillingApiSubject = {
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+};
+
+export type BillingSubjectChangedReason =
+  | 'stripe.checkout.session.completed'
+  | 'stripe.customer.subscription.created'
+  | 'stripe.customer.subscription.updated'
+  | 'stripe.customer.subscription.deleted'
+  | 'stripe.subscription_schedule.created'
+  | 'stripe.subscription_schedule.updated'
+  | 'stripe.subscription_schedule.released'
+  | 'stripe.subscription_schedule.completed'
+  | 'stripe.invoice.finalized'
+  | 'stripe.invoice.paid'
+  | 'stripe.invoice.payment_succeeded'
+  | 'stripe.invoice.payment_failed'
+  | 'stripe.invoice.payment_action_required'
+  | 'command.trial.started'
+  | 'command.trial.completed'
+  | 'command.addon.updated';
+
+export type BillingSubjectChangedEvent = {
+  schemaVersion: 1;
+  eventId: string;
+  eventType: 'billing.subject.changed.v1';
+  appId: BillingApiAppId;
+  subject: {
+    type: BillingApiSubjectType;
+    id: BillingApiSubjectId;
+    revision: number;
+  };
+  reason: BillingSubjectChangedReason;
+  affectedResources: Array<'account' | 'subscription' | 'entitlements' | 'invoice' | 'addons'>;
+  occurredAt: string;
+  provider: {
+    name: 'stripe';
+    eventId: string | null;
+    customerId: string | null;
+    subscriptionId: string | null;
+  };
+  invoiceEvent: {
+    id: string;
+    type: BillingApiInvoiceEventType;
+    providerInvoiceId: string | null;
+    providerPaymentIntentId: string | null;
+    providerStatus: string | null;
+    occurredAt: string | null;
+  } | null;
 };
 
 export type BillingApiAccount = {
