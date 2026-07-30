@@ -1,6 +1,6 @@
 # Billing API 保守性改善計画
 
-最終更新: 2026-07-30
+最終更新: 2026-07-31
 
 ## この文書の扱い
 
@@ -12,6 +12,16 @@
 - 現行のイベント配送は [billing-api-event-outbox.md](../billing-api-event-outbox.md) を参照してください。
 - 本計画の各項目は、実装と検証が完了するまで「目標」として扱います。
 - 実装完了後は現行仕様文書へ結果を反映し、この文書を `docs/history/` へ移します。
+
+この計画とcutover runbookの責務は次のように分けます。
+
+| 文書                                                                | 正本とする内容                                                               |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 本計画                                                              | アーキテクチャ上の不変条件、実装マイルストーン、リスクと必須テストの対応関係 |
+| [cutover runbook](./billing-api-maintainability-cutover-runbook.md) | resource名、対象環境、切替順序、中止条件、再実行手順、実施証跡               |
+
+リスク表は追跡用indexであり、設計本文やマイルストーンを上書きしません。
+両文書または同一文書内に矛盾がある場合は、どちらかを暗黙に優先せず、実装開始前に文書不備として修正します。
 
 ## 目的
 
@@ -97,7 +107,7 @@ Billing API の正本性と障害回復能力を維持しながら、次の問�
 - addon Schedule操作の回復記録
 - Stripe Test Clockによる実サービス検証
 
-### Phase 0で直す正しさの問題
+### Milestone 0で直す正しさの問題
 
 構造分割より先に、次の正しさの問題を修正します。
 
@@ -107,7 +117,7 @@ Billing API の正本性と障害回復能力を維持しながら、次の問�
 4. `billing_api_idempotency.expires_at`を保存しているが、再利用判定と削除に使っていない。
 5. 同じ冪等性キーの同時requestを原子的にclaimしていない。
 
-### 後続フェーズで解消する境界・運用上の問題
+### 後続マイルストーンで解消する境界・運用上の問題
 
 次の問題は、先に共有契約または新しいQueue構成を確定する必要があります。
 
@@ -115,37 +125,36 @@ Billing API の正本性と障害回復能力を維持しながら、次の問�
 2. DLQに到達したBilling Eventをアプリ内で調査・復旧する経路がない。
 3. Entitlement responseの`syncedAt`がStripeとの最終同期時刻ではなく、応答生成時刻になっている。
 
-実行時契約検証はPhase 1、高リスク対象のprovider照合はPhase 3、DLQからの復旧はPhase 8の完了条件にします。
+実行時契約検証はMilestone 1、高リスク対象のprovider照合はMilestone 3、DLQからの復旧はMilestone 6の完了条件にします。
 
-## 実装対応表（正本）
+## リスク・検証対応表
 
-本計画の実装範囲、必須テスト、完了判定は次の表を正本とします。
-設計説明、Phase説明、runbookと表の内容が矛盾する場合は、この表を優先します。
+次の表は、リスク、最終的に閉じるマイルストーン、必須テスト、完了条件を追跡するためのindexです。
 
 - リスクIDは実装、PR、検証記録で共通して使用します。
 - 「必須テスト」は[必須テスト定義](#必須テスト定義)のIDを参照します。
 - 各リスクは、対象実装に加えて必須テストが成功し、完了条件を示す証跡を残した時点で完了です。
-- Phase全体は、そのPhaseを最終実装Phaseとするリスクがすべて完了した時点で完了です。
+- マイルストーン全体は、そのマイルストーンを完了地点とするリスクがすべて完了した時点で完了です。
 - 移行・切替操作は[Billing API 保守性改善 cutover runbook](./billing-api-maintainability-cutover-runbook.md)に従います。
 
-| ID  | リスク                                                                                               | 実装Phase | 必須テスト         | 完了条件                                                                                                                                                        |
-| --- | ---------------------------------------------------------------------------------------------------- | --------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R01 | Schedule eventの欠落、順序逆転、古いWebhookによってpending状態が退行する                             | Phase 0   | T01、T02、T05      | `subscription_schedule.canceled`を含む対象eventが共有契約と処理対象に入り、最新Stripe snapshotに基づく遷移が終端状態や別attemptを退行させない                   |
-| R02 | Consumerが取得済みsummaryではなく古いBackend投影を再読込し、誤った通知を判断する                     | Phase 0   | T01、T08           | 通知判断が同一処理内で取得・検証したBilling API summaryだけを使用し、古い投影を参照しない                                                                       |
-| R03 | API冪等性の期限切れ、同時実行、lease回収が未定義で、処理が重複または固定化する                       | Phase 0   | T03                | 同一keyの同時claimが1件に収束し、request hash競合、24時間後の再利用、lease切れ回収、5xx後の再試行が実D1上で確認できる                                           |
-| R04 | 状態、revision、event outboxが部分的に確定する                                                       | Phase 0   | T03                | command成功時は3要素が同じD1 batchで確定し、注入した失敗時はいずれも部分確定しない                                                                              |
-| R05 | HTTP／Queue境界が型assertionだけに依存し、不正payloadや未知versionを内部へ通す                       | Phase 1   | T04                | Billing API、Billing Client、Queue consumerが共有schemaでruntime validationし、不正responseと未知schema versionを境界で拒否する                                 |
-| R06 | route、use case、domain、D1、Stripe処理が巨大moduleへ集中し、変更影響が広がる                        | Phase 2   | T01、T11           | Billing API内のvertical sliceへ分割し、外部I/Oの具体実装の結合を`create-app.ts`へ限定して、既存route contractを維持したまま`app.ts`を廃止する                   |
-| R07 | Billing webhookのBackend転送と直接受信が併存し、所有境界と重複排除が曖昧になる                       | Phase 8   | T04、T05、T10      | Billing用Stripe eventをBilling APIが直接受信し、provider event claimで重複を1件へ収束させ、Backendには旧ticket checkoutだけが残る                               |
-| R08 | `syncedAt`が応答生成時刻で更新され、Stripeとの同期欠落を新鮮と誤認する                               | Phase 3   | T05、T07、T10      | `syncedAt`はprovider照合成功時だけ進み、全件巡回を行わず、高リスク対象の15分照合と`refresh=if_stale`による対象別回復が確認できる                                |
-| R09 | revisionを増やさない通知eventが状態eventや別通知と一意制約で衝突する                                 | Phase 4   | T03、T04、T06      | 状態変更は`subject + revision`、通知要求は`subject + notification kind + trigger key`を基準に重複排除し、一方の失敗が他方のcursorを停止させない                 |
-| R10 | Queue契約切替中に旧payloadが新consumerへ混入する                                                     | Phase 7   | T04、T06、T09      | 開発データを破棄してversion付き新Queueへ一括切替し、新Queueには新schemaだけが存在する。旧payloadのdrainや互換consumerを必要としない                             |
-| R11 | retry上限到達eventを調査・復旧できず、古いpayloadの再適用で状態を壊す                                | Phase 8   | T06、T09           | DLQ eventをD1、Sentry、既存Billing調査機能で追跡でき、DLQ ID指定の状態再同期または通知再判定を実行できる                                                        |
-| R12 | Entitlement投影から有効期間とprovider鮮度が失われ、期限切れPremiumを許可する                         | Phase 5   | T07、T10           | 投影がrevision、有効期間、`syncedAt`、評価時刻、鮮度上限、照合時刻を保持し、有効期間外または鮮度超過時はread-through後も修復不能なら対象操作をfail-closedにする |
-| R13 | Billing event処理とメール配信retryが結合し、ACK後の通知消失またはResend障害によるevent再実行が起きる | Phase 6   | T06、T08           | recipient単位の通知判断と1件のOutboxを同一batchで保存してからACKし、同じOutboxを再試行し、Logを1 attemptにつき1行だけ保持する                                   |
-| R14 | 通知履歴が旧Billing aggregateを参照し、履歴を保ったまま旧tableを削除できない                         | Phase 9   | T08、T09           | 通知3テーブルをorganization／subject基準へ移行し、1:1:N関係と履歴の件数、欠損、一意性、参照結果を確認してから`billing_account`を削除する                        |
-| R15 | 旧転送、shadow、fallback、移行flag、旧route／schemaが残り、実行経路が二重化する                      | Phase 9   | T01、T04、T09、T11 | 廃止対象名の参照がmigration履歴とhistory文書以外で0件となり、Billing API未設定時にも旧Billing処理へfallbackしない                                               |
-| R16 | local fakeだけで完了扱いし、実Stripe、Queue復旧、現行仕様文書との差異を見逃す                        | Phase 10  | T09、T10、T12      | cutover検証記録と主要Test Clock scenarioが成功し、現行仕様・運用文書を実装結果へ更新して本計画をhistoryへ移す                                                   |
+| ID  | リスク                                                                                               | 完了地点    | 必須テスト         | 完了条件                                                                                                                                                        |
+| --- | ---------------------------------------------------------------------------------------------------- | ----------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R01 | Schedule eventの欠落、順序逆転、古いWebhookによってpending状態が退行する                             | Milestone 0 | T01、T02、T05      | `subscription_schedule.canceled`を含む対象eventが共有契約と処理対象に入り、最新Stripe snapshotに基づく遷移が終端状態や別attemptを退行させない                   |
+| R02 | Consumerが取得済みsummaryではなく古いBackend投影を再読込し、誤った通知を判断する                     | Milestone 0 | T01、T08           | 通知判断が同一処理内で取得・検証したBilling API summaryだけを使用し、古い投影を参照しない                                                                       |
+| R03 | API冪等性の期限切れ、同時実行、lease回収が未定義で、処理が重複または固定化する                       | Milestone 0 | T03                | 同一keyの同時claimが1件に収束し、request hash競合、24時間後の再利用、lease切れ回収、5xx後の再試行が実D1上で確認できる                                           |
+| R04 | 状態、revision、event outboxが部分的に確定する                                                       | Milestone 0 | T03                | command成功時は3要素が同じD1 batchで確定し、注入した失敗時はいずれも部分確定しない                                                                              |
+| R05 | HTTP／Queue境界が型assertionだけに依存し、不正payloadや未知versionを内部へ通す                       | Milestone 1 | T04                | Billing API、Billing Client、Queue consumerが共有schemaでruntime validationし、不正responseと未知schema versionを境界で拒否する                                 |
+| R06 | route、use case、domain、D1、Stripe処理が巨大moduleへ集中し、変更影響が広がる                        | Milestone 2 | T01、T11           | Billing API内のvertical sliceへ分割し、外部I/Oの具体実装の結合を`create-app.ts`へ限定して、既存route contractを維持したまま`app.ts`を廃止する                   |
+| R07 | Billing webhookのBackend転送と直接受信が併存し、所有境界と重複排除が曖昧になる                       | Milestone 6 | T04、T05、T10a     | Billing用Stripe eventをBilling APIが直接受信し、provider event claimで重複を1件へ収束させ、Backendには旧ticket checkoutだけが残る                               |
+| R08 | `syncedAt`が応答生成時刻で更新され、Stripeとの同期欠落を新鮮と誤認する                               | Milestone 3 | T05、T07、T10a     | `syncedAt`はprovider照合成功時だけ進み、全件巡回を行わず、高リスク対象の15分照合と`refresh=if_stale`による対象別回復が確認できる                                |
+| R09 | revisionを増やさない通知eventが状態eventや別通知と一意制約で衝突する                                 | Milestone 5 | T03、T04、T06      | 状態変更は`subject + revision`、通知要求は`subject + notification kind + trigger key`を基準に重複排除し、一方の失敗が他方のcursorを停止させない                 |
+| R10 | Queue契約切替中に旧payloadが新consumerへ混入する                                                     | Milestone 6 | T04、T06、T09      | 開発データを破棄してversion付き新Queueへ一括切替し、新Queueには新schemaだけが存在する。旧payloadのdrainや互換consumerを必要としない                             |
+| R11 | retry上限到達eventを調査・復旧できず、古いpayloadの再適用で状態を壊す                                | Milestone 6 | T06、T09           | DLQ eventをD1、Sentry、既存Billing調査機能で追跡でき、DLQ ID指定の状態再同期または通知再判定を実行できる                                                        |
+| R12 | Entitlement投影から有効期間とprovider鮮度が失われ、期限切れPremiumを許可する                         | Milestone 4 | T07、T10a          | 投影がrevision、有効期間、`syncedAt`、評価時刻、鮮度上限、照合時刻を保持し、有効期間外または鮮度超過時はread-through後も修復不能なら対象操作をfail-closedにする |
+| R13 | Billing event処理とメール配信retryが結合し、ACK後の通知消失またはResend障害によるevent再実行が起きる | Milestone 5 | T06、T08           | recipient単位の通知判断と1件のOutboxを同一batchで保存してからACKし、同じOutboxを再試行し、Logを1 attemptにつき1行だけ保持する                                   |
+| R14 | 通知履歴が旧Billing aggregateを参照し、履歴を保ったまま旧tableを削除できない                         | Milestone 7 | T08、T09           | 通知3テーブルをorganization／subject基準へ移行し、1:1:N関係と履歴の件数、欠損、一意性、参照結果を確認してから`billing_account`を削除する                        |
+| R15 | 旧転送、shadow、fallback、移行flag、旧route／schemaが残り、実行経路が二重化する                      | Milestone 7 | T01、T04、T09、T11 | 廃止対象名の参照がmigration履歴とhistory文書以外で0件となり、Billing API未設定時にも旧Billing処理へfallbackしない                                               |
+| R16 | local fakeだけで完了扱いし、実Stripe、Queue復旧、現行仕様文書との差異を見逃す                        | Milestone 8 | T09、T10b、T12     | cutover検証記録とTest Clock全scenarioが成功し、現行仕様・運用文書を実装結果へ更新して本計画をhistoryへ移す                                                      |
 
 ## 採用する設計
 
@@ -218,21 +227,21 @@ app/create-app -> features + infra
 Schedule操作はdiscriminated unionと純粋な状態遷移関数で表現します。
 XState等の新しいstate machine依存は追加しません。
 
-概念上の状態は少なくとも次を区別します。
+`billingAddonScheduleAttempt.state`は、この処理がprovider副作用とD1確定のどこまで進んだかだけを表します。
 
 ```text
 processing
 provider_applied
 committed
 failed
-released
-completed
-canceled
 ```
 
-遷移関数は現在状態、操作、attempt ID、Stripeの最新Schedule snapshotを受け取り、次の状態と必要なeffectを返します。
+Stripe Subscription Scheduleの`status`はattempt stateへ混ぜず、毎回取得する最新snapshotの入力として扱います。
+診断に必要な場合だけ、最後に観測したprovider statusと観測時刻を監査情報として保存します。ローカル遷移の正本にはしません。
 
-- 終端状態からpending状態へ戻さない。
+遷移関数はattempt、Stripeの最新Schedule snapshot、pending Scheduleの所有情報を受け取り、次のattempt stateと必要なeffectを返します。
+
+- `committed`または`failed`から`processing`へ戻さない。
 - 別attemptが所有するScheduleを更新しない。
 - provider更新前のattemptをWebhookだけで成功扱いしない。
 - 同じsnapshotの再適用はno-opにする。
@@ -270,6 +279,24 @@ event family handlerはStripe snapshotからdomain commandを作り、保存す�
 
 対応対象へ`subscription_schedule.canceled`と`customer.subscription.trial_will_end`を追加します。
 `trial_will_end`は状態変更として扱わず、通知要求として扱います。
+
+#### Provider照合の共通境界
+
+Webhook、Billing command完了後、15分Cron、`refresh=if_stale`は、起動方法が異なっても同じprovider照合判断を使います。
+巨大な共通use caseへ統合せず、次の2層だけを共有します。
+
+1. `decideProviderReconciliation`は、現在の課金状態とStripeから取得した最新snapshotを受け取り、次の状態、変更内容、鮮度更新結果、必要なeffectを返す純粋関数とする。
+2. feature-localなstore interfaceは、共通の照合結果と、呼出元固有のSchedule attempt、invoice、provider event記録を一つのD1 batchで保存する。
+
+各entry pointには次の責務だけを残します。
+
+- Webhook: 署名確認、event claim、subject解決、最新snapshot取得、provider event結果の補足
+- Billing command: command固有のStripe操作、最新snapshot取得、operation／Schedule attemptの補足
+- 15分Cron: 高リスクsubjectの抽出、最新snapshot取得、処理上限と観測
+- `refresh=if_stale`: 鮮度判定、対象subjectの最新snapshot取得、HTTP errorへの変換
+
+純粋関数はStripe API、D1、Queueを呼び出しません。
+store interfaceはentry pointごとに分岐した状態遷移を再実装せず、同じ照合結果を原子的に保存します。
 
 #### Provider鮮度と`syncedAt`
 
@@ -482,6 +509,19 @@ Consumerの責務は次までです。
 
 メール送信とResend再試行はNotification Outbox workerが担当します。
 
+#### 段階的な移行順序
+
+予約通知とBilling通知を同時に書き換えません。
+次の順序で、各段階の既存挙動をintegration testで固定してから進めます。
+
+1. 予約通知moduleから配信claim、lease、backoff、Resend呼出し、結果記録を配信engineへ抽出する。この段階では予約通知のschemaと挙動を変更しない。
+2. Notification Outbox／Logを発生元モデルへ一般化し、予約通知を新しいsource表現へ移す。予約通知の件数、再試行、管理画面の参照結果に差分がないことを確認する。
+3. Billingの通知判断、Notification Outbox作成、organization単位の履歴／内部調査を追加し、`notification_requested`を専用preview Queueでend-to-endに検証する。
+4. 既存`billing_notification`をbackfillし、件数、欠損、一意性、参照結果を確認してから、直接Resend呼出しと旧retry列を削除する。
+
+Milestone 5は手順1〜3までを完了し、通知要求のend-to-end経路を成立させます。
+手順4と旧実装の削除は正式切替後のMilestone 7で行います。
+
 #### Notification Outboxの一般化
 
 既存`notification_outbox`をBackend内部の共通配信基盤へ一般化します。
@@ -583,7 +623,7 @@ Stripe生payload、secret、不要なprovider responseを保存しません。
 #### 既存履歴の移行
 
 既存履歴は削除しません。
-Phase 6で`billing_account`とjoinしてorganizationをbackfillし、次を確認してからtableを再構築します。
+Milestone 7で`billing_account`とjoinしてorganizationをbackfillし、次を確認してからtableを再構築します。
 
 - 移行前後の履歴件数が一致する。
 - organizationを解決できない履歴が0件である。
@@ -632,7 +672,7 @@ operation attempt、Schedule attempt、監査履歴はAPI response cacheのTTL�
 
 ### 8. DLQと復旧
 
-`reserve-billing-events-dlq`にconsumerを設定し、再試行上限を超えたeventをBackend D1へ保存します。
+version付き専用DLQにconsumerを設定し、再試行上限を超えたeventをBackend D1へ保存します。
 
 記録内容:
 
@@ -677,52 +717,55 @@ Sentryに記録したorganization IDとDLQ IDから対象を確認できるよ�
 
 削除時はimport、環境変数、Wrangler設定、テスト、運用文書を同じ変更で整理します。
 
-## 実装フェーズ
+## 実装マイルストーン
 
-Phaseは実装順序だけを表します。
-各Phaseの完了判定は、[実装対応表（正本）](#実装対応表正本)に記載した対象リスクの完了条件だけで行います。
+マイルストーンは、単独で検証可能な実装単位と順序を表します。
+Milestone 4と5は、contractやconsumerを長期間休眠させず、専用preview Queue上でproducerからBackendの永続化までend-to-endに成立させます。
 
-| Phase    | 目的                                   | 対象リスク         | 主な変更                                                                                            |
-| -------- | -------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------- |
-| Phase 0  | 構造変更前に正しさを固定する           | R01〜R04           | Schedule回復、通知summary参照、API冪等性、D1原子性、現行route characterization                      |
-| Phase 1  | 共有contractと外部I/O境界を作る        | R05、R06の境界準備 | 共有Zod schema、runtime validation、必要な外部I/Oだけのfeature-local interface、fake Stripe adapter |
-| Phase 2  | Billing APIをvertical sliceへ分割する  | R06、R07の受信準備 | subject、trial、addon、handoff、webhook、test clockのfeature化と`app.ts`廃止                        |
-| Phase 3  | provider鮮度と対象別回復を実装する     | R08                | `provider_synced_at`、高リスク対象の15分照合、`refresh=if_stale`、`503 provider_unavailable`        |
-| Phase 4  | Event v2契約と保存制約を準備する       | R09                | event union、trigger key、Outbox／Inboxの条件付き一意制約、contract test                            |
-| Phase 5  | Backendの最小投影consumerを作る        | R12                | Entitlement投影、有効期間、鮮度、revision gap、認可時read-through                                   |
-| Phase 6  | 通知判断と配信jobを分離する            | R13、R14の移行準備 | recipient単位の通知判断、共通Outbox、1 attempt 1 Log、既存履歴backfill                              |
-| Phase 7  | Queue v2へ一括切替する                 | R10                | 新Queue／DLQ、新producer／consumer binding、開発用Billing API D1再作成                              |
-| Phase 8  | Stripe直接WebhookとDLQ復旧を有効化する | R07、R11           | 直接endpoint、Backend転送停止、Sentry／inspection、2種類の復旧action                                |
-| Phase 9  | 旧実装とschemaを撤去する               | R14、R15           | 旧Billing投影、転送、shadow、fallback、flag、単一addon routeの削除                                  |
-| Phase 10 | 実サービス検証と文書昇格を行う         | R16                | Stripe Test Clock、復旧確認、現行仕様更新、計画のhistory化                                          |
+| Milestone   | 目的                                                         | 対象リスク         | 主な変更                                                                                            |
+| ----------- | ------------------------------------------------------------ | ------------------ | --------------------------------------------------------------------------------------------------- |
+| Milestone 0 | 構造変更前に正しさを固定する                                 | R01〜R04           | Schedule回復、通知summary参照、API冪等性、D1原子性、現行route characterization                      |
+| Milestone 1 | 共有contractと外部I/O境界を作る                              | R05、R06の境界準備 | 共有Zod schema、runtime validation、必要な外部I/Oだけのfeature-local interface、fake Stripe adapter |
+| Milestone 2 | Billing APIをvertical sliceへ分割する                        | R06、R07の受信準備 | subject、trial、addon、handoff、webhook、test clockのfeature化と`app.ts`廃止                        |
+| Milestone 3 | provider照合境界、鮮度、対象別回復を実装する                 | R08                | 共通の純粋な照合判断、entry point別store、`provider_synced_at`、15分照合、`refresh=if_stale`        |
+| Milestone 4 | `state_changed`と最小Entitlement投影をend-to-endに成立させる | R12、R09の状態側   | 専用preview Queue、状態eventのOutbox／Inbox、投影、有効期間、鮮度、revision gap、認可時read-through |
+| Milestone 5 | 通知基盤を段階移行し`notification_requested`を成立させる     | R09、R13           | 予約配信engine抽出、Outbox／Log一般化、通知event、recipient単位判断、organization単位inspection     |
+| Milestone 6 | QueueとStripe webhookを正式切替し、DLQ復旧を有効化する       | R07、R10、R11      | version付きQueue／DLQへの切替、直接endpoint、Backend転送停止、Sentry／inspection、2種類の復旧action |
+| Milestone 7 | 通知履歴を移行し、旧実装とschemaを撤去する                   | R14、R15           | Billing通知backfill、旧retry列、旧Billing投影、shadow、fallback、flag、単一addon routeの削除        |
+| Milestone 8 | 全外部回帰と文書昇格を行う                                   | R16                | Test Clock全scenario、復旧確認、現行仕様更新、計画のhistory化                                       |
 
 機械的なmodule移動と挙動変更は同じcommitへ混在させません。
-Phase 7以降の環境変更は、[cutover runbook](./billing-api-maintainability-cutover-runbook.md)に記載した対象確認と証跡を満たす場合だけ実施します。
-Phase 4ではEvent v2のcontractと保存処理を準備しますが、Queue v2への送信はPhase 7まで有効化しません。
-Phase 5とPhase 6のconsumerはfixtureとintegration testで検証し、Phase 7で新Queue bindingを有効化します。
+Milestone 4では`state_changed`だけを専用preview Queueへ流し、Backend投影と認可時read-throughまで検証します。
+Milestone 5では同じQueue契約へ`notification_requested`を追加し、通知判断、Outbox、Logまで検証します。
+両方が完了するまで正式なQueue binding切替と旧resource破棄は行いません。
+旧payloadのdrain、互換consumer、maintenance機構は作りません。
+Milestone 4以降のpreview resource準備とMilestone 6以降の正式切替は、[cutover runbook](./billing-api-maintainability-cutover-runbook.md)に記載した対象確認と証跡を満たす場合だけ実施します。
 
 ## 必須テスト定義
 
 対応表のテストIDは次を意味します。
 テスト名や配置は実装中に変更できますが、ここで定義した検証責務は減らしません。
 
-| ID  | 種別                          | 検証責務                                                                                                                                                |
-| --- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| T01 | HTTP characterization         | 17 routeのpath、認証、主要success／error status、response contract、互換維持対象の挙動                                                                  |
-| T02 | Domain unit                   | Entitlement合成、addon更新分類、Schedule状態遷移、event mapping、通知要否、retryable／terminal分類                                                      |
-| T03 | D1 integration                | API冪等性claim、lease、expiry、attempt確認後の回復、状態・revision・outbox原子性、event identity制約、障害注入                                          |
-| T04 | Contract                      | Billing APIのrequest／response、Billing Client runtime parse、`refresh=if_stale`、`provider_unavailable`、Event v2、未知version、不正payload、PII非包含 |
-| T05 | D1＋fake Stripe integration   | provider event claim、Schedule順序逆転、Stripe成功後のD1失敗、`syncedAt`、高リスク抽出、15分照合、対象別refresh                                         |
-| T06 | Queue／DLQ integration        | inbox、cursor、重複、順序逆転、通知eventとの独立性、DLQ保存、inspection、2種類の復旧action、ACK境界                                                     |
-| T07 | Entitlement integration       | 有効期間、provider鮮度、`refresh=if_stale`、revision gap、`validUntil`到達、`provider_unavailable`時の限定fail-closed                                   |
-| T08 | Notification integration      | 判断とOutboxの原子保存、1:1:N制約、trigger key、recipient単位dedupe、同一Outbox再送、1 attempt 1 Log、履歴backfill                                      |
-| T09 | Migration／cutover rehearsal  | migration replay、通知履歴の件数・欠損・一意性、開発D1再作成、新Queue限定配送、旧resource破棄、seed再実行                                               |
-| T10 | Stripe Test Clock E2E         | trial終了、月次更新、支払い失敗・回復、支払い方法なし、addon増減、Schedule終端、event再送                                                               |
-| T11 | Architecture check            | vertical sliceの依存方向、不要な`ports.ts`／一テーブル一repositoryの不在、共有core未導入、具体adapterのcomposition root限定                             |
-| T12 | Documentation／evidence check | runbook証跡、Sentryと内部調査結果、現行仕様・運用文書への反映、検証レベルの明示                                                                         |
+| ID   | 種別                          | 検証責務                                                                                                                                                            |
+| ---- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T01  | HTTP characterization         | 17 routeのpath、認証、主要success／error status、response contract、互換維持対象の挙動                                                                              |
+| T02  | Domain unit                   | Entitlement合成、addon更新分類、Schedule状態遷移、event mapping、通知要否、retryable／terminal分類                                                                  |
+| T03  | D1 integration                | API冪等性claim、lease、expiry、attempt確認後の回復、状態・revision・outbox原子性、event identity制約、障害注入                                                      |
+| T04  | Contract                      | Billing APIのrequest／response、Billing Client runtime parse、`refresh=if_stale`、`provider_unavailable`、Event v2、未知version、不正payload、Event v2へのPII非包含 |
+| T05  | D1＋fake Stripe integration   | provider event claim、Schedule順序逆転、Stripe成功後のD1失敗、`syncedAt`、高リスク抽出、15分照合、対象別refresh                                                     |
+| T06  | Queue／DLQ integration        | inbox、cursor、重複、順序逆転、通知eventとの独立性、DLQ保存、inspection、2種類の復旧action、ACK境界                                                                 |
+| T07  | Entitlement integration       | 有効期間、provider鮮度、`refresh=if_stale`、revision gap、`validUntil`到達、`provider_unavailable`時の限定fail-closed                                               |
+| T08  | Notification integration      | 判断とOutboxの原子保存、1:1:N制約、trigger key、recipient単位dedupe、同一Outbox再送、1 attempt 1 Log、履歴backfill                                                  |
+| T09  | Migration／cutover rehearsal  | migration replay、通知履歴の件数・欠損・一意性、開発D1再作成、新Queue限定配送、旧resource破棄、seed再実行                                                           |
+| T10a | Stripe Test Clock対象E2E      | 対象マイルストーンに関係するscenarioだけを実行し、provider鮮度、状態投影、直接Webhook、event再送を後続実装前に確認する                                              |
+| T10b | Stripe Test Clock全回帰       | trial終了、月次更新、支払い失敗・回復、支払い方法なし、addon増減、Schedule終端、event再送の全scenario                                                               |
+| T11  | Architecture check            | vertical sliceの依存方向、不要な`ports.ts`／一テーブル一repositoryの不在、共有core未導入、具体adapterのcomposition root限定                                         |
+| T12  | Documentation／evidence check | runbook証跡、Sentryと内部調査結果、現行仕様・運用文書への反映、検証レベルの明示                                                                                     |
 
 T03、T05〜T09は、対象migrationを先頭から適用したD1で実行します。
-T10は通常CIから分離し、検証環境で実行します。
+T10aとT10bは通常CIから分離し、検証環境で実行します。
+T10aはMilestone 3〜4でprovider鮮度と状態投影に関係するscenario、Milestone 6で直接Webhookとevent再送に関係するscenarioを実行します。
+T10bはMilestone 8で全scenarioを実行します。
 local fake Stripeの成功を、実Stripe確認済みとは表現しません。
 
 ## 移行・切替
@@ -743,12 +786,12 @@ Backend D1全体はresetせず、organization、store、予約、認証、既存
 作業中はBilling操作の停止を許容し、失敗時は新D1を再作成してseedからやり直します。
 
 通常の`deploy:workers`だけでresource確認を省略しません。
-新Queueは`reserve-billing-events-v2`、新DLQは`reserve-billing-events-v2-dlq`とし、互換性のないcontract変更ではQueue名のversionも更新します。
+具体的なQueue／DLQ名と対象IDはcutover runbookだけに記載し、互換性のないcontract変更ではQueue名のversionも更新します。
 
 ## 完了判定
 
-本計画の完了条件は、[実装対応表（正本）](#実装対応表正本)のR01〜R16がすべて完了していることです。
-Phase末尾の独立した完了条件や、この表と重複する総合チェックリストは設けません。
+本計画の完了条件は、[リスク・検証対応表](#リスク検証対応表)のR01〜R16がすべて完了していることです。
+マイルストーン末尾の独立した完了条件や、この表と重複する総合チェックリストは設けません。
 
 完了時は、各リスクIDについて次の証跡をPR、検証記録、またはrunbook実施記録から追跡できるようにします。
 
@@ -765,5 +808,6 @@ Phase末尾の独立した完了条件や、この表と重複する総合チェ
 - QueueとWebhookの配送順を前提にしない。
 - Queue ACKを通知jobの永続化より先に行わない。
 - Billing API障害を無料機能や他組織へ波及させない。
-- PII、Stripe生payload、secretをevent、監査、ログへ保存しない。
+- PIIはQueue event、監査、application logへ保存しない。recipient-scopedな通知判断、Outbox、Logには配信と調査に必要な最小限だけを保存する。
+- Stripe生payload、secretをevent、監査、通知table、application logへ保存しない。
 - 実装済み、ローカル検証済み、実Stripe確認済み、デプロイ済みを区別して記録する。

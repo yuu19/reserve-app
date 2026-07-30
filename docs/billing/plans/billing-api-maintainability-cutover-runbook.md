@@ -1,14 +1,16 @@
 # Billing API 保守性改善 cutover runbook
 
-最終更新: 2026-07-30
+最終更新: 2026-07-31
 
 ## この文書の扱い
 
-この文書は、[Billing API 保守性改善計画](./billing-api-maintainability.md)のPhase 7以降で使う、開発／preview環境向けの切替手順です。
+この文書は、[Billing API 保守性改善計画](./billing-api-maintainability.md)のMilestone 4〜5で使う専用preview Queueの準備と、Milestone 6以降の正式切替を扱う開発／preview環境向けの手順です。
 現行の運用手順ではありません。
-必要な実装Phaseが完了するまで実行しません。
+必要な実装マイルストーンが完了するまで実行しません。
 
-- 実装範囲、必須テスト、完了判定は改善計画の「実装対応表（正本）」を優先します。
+- アーキテクチャ上の不変条件、実装マイルストーン、リスクと必須テストの対応関係は改善計画を正とします。
+- resource名、対象環境、切替順序、中止条件、再実行手順、実施証跡はこのrunbookを正とします。
+- 両文書に矛盾がある場合は、どちらかを暗黙に優先せず、切替開始前に文書不備として修正します。
 - Billing APIの旧契約データ、旧outbox、旧Queue backlogは移行しません。
 - 作業中はBilling操作が停止してよいものとします。
 - 一時的なmaintenance flagやWebhook保留応答は実装しません。
@@ -58,22 +60,40 @@ Backend D1は作り直しません。
 
 raw API key、Stripe secret、Webhook signing secretは記録へ貼り付けません。
 
-## 開始条件
+## Milestone 4〜5: preview準備とend-to-end検証
 
-次を一つでも満たさない場合は、切替を開始しません。
+### Backend D1
 
-- 対象環境がdevelopmentまたはpreviewである。
-- Billing APIの既存契約データを破棄してよい。
-- 改善計画のPhase 0〜6が完了している。
-- T01〜T08、T11が対象commitで成功している。
-- T09を同じ構成のdevelopment環境でrehearsal済みである。
-- Billing APIとBackendのmigrationを空のD1へ先頭から適用できる。
-- Backend D1のbackupまたは復旧可能なexportを取得している。
-- 新Queueには新schemaだけを送信することをcontract testで確認している。
-- 旧ticket checkoutのrouteとStripe event設定を特定している。
-- Sentry、Queue metrics、D1、Stripe event deliveryを作業中に確認できる。
+Backend D1全体はresetしません。
 
-## 事前rehearsal
+1. Milestone 4で最小Entitlement投影とDLQ記録のmigrationを適用する。
+2. Milestone 5で予約通知から配信engineを抽出し、schemaと挙動に差分がないことを確認する。
+3. 一般化したNotification Outbox／Logのmigrationを適用し、`billing_notification`へorganization、subject snapshot、trigger key、dedupe key、Outbox参照を追加する。
+4. 予約通知を一般化したOutbox／Logへ移し、件数、再試行、管理画面の参照結果に差分がないことを確認する。
+5. 新しいBilling通知だけをorganization基準で保存し、owner向け履歴と内部調査で参照できることを確認する。
+
+この時点では既存`billing_notification`をbackfillせず、`billing_account`、旧retry列、直接Resend呼出し、旧Billing投影tableも削除しません。
+
+### 新しいBilling API D1
+
+1. 対象がdevelopment／preview環境であることをdatabase IDまで照合する。
+2. 新schema用のD1を作成する。
+3. migrationを先頭から適用する。
+4. app、catalog、price、addon、redirect templateをseedする。
+5. API credentialを再発行してsecret storeへ登録する。
+6. migration version、seed件数、catalog／price対応を記録する。
+
+### 新Queueとconsumer
+
+1. `reserve-billing-events-v2`と`reserve-billing-events-v2-dlq`を作成する。
+2. 専用preview bindingで新Queueだけを読むBackend consumerを準備する。
+3. retry上限とDLQ bindingを確認する。
+4. Milestone 4ではtest subjectの`state_changed`だけを送信し、runtime validation、inbox、cursor、Entitlement投影、認可時read-throughを確認する。
+5. Milestone 5では`notification_requested`を追加し、状態eventとの独立性、通知判断、Notification Outbox／Logを確認する。
+6. 旧schemaのfixtureが拒否され、業務状態を変更しないことを確認する。
+7. Milestone 6までは旧producer／consumerの正式bindingを変更せず、専用preview経路をtest subjectに限定する。
+
+## 正式切替rehearsal
 
 development環境で次を最後まで実行します。
 
@@ -88,51 +108,25 @@ development環境で次を最後まで実行します。
 9. 新Billing API D1を削除し、migrationとseedから再作成する。
 
 T09の結果には、commit、migration、resource、開始・終了時刻、件数、失敗内容を残します。
+rehearsalのbackfill結果は検証証跡であり、対象環境の実移行はMilestone 7まで行いません。
 
-## 事前準備
+## 正式切替の開始条件
 
-### Backend D1
+次を一つでも満たさない場合は、切替を開始しません。
 
-Backend D1全体はresetしません。
+- 対象環境がdevelopmentまたはpreviewである。
+- Billing APIの既存契約データを破棄してよい。
+- 改善計画のMilestone 0〜5が完了している。
+- T01〜T08、T11が対象commitで成功している。
+- Milestone 3〜4に対応するT10aが検証環境で成功している。
+- T09を同じ構成のdevelopment環境でrehearsal済みである。
+- Billing APIとBackendのmigrationを空のD1へ先頭から適用できる。
+- Backend D1のbackupまたは復旧可能なexportを取得している。
+- 新Queueには新schemaだけを送信することをcontract testで確認している。
+- 旧ticket checkoutのrouteとStripe event設定を特定している。
+- Sentry、Queue metrics、D1、Stripe event deliveryを作業中に確認できる。
 
-1. 最小Entitlement投影、DLQ記録、一般化したNotification Outbox／Logのmigrationを適用する。
-2. `billing_notification`へorganization、subject snapshot、trigger key、dedupe key、Outbox参照を追加する。
-3. `billing_account`とのjoinで既存通知履歴をbackfillする。
-4. 次の結果を保存する。
-
-| 検証項目                                | 期待値 |
-| --------------------------------------- | ------ |
-| 移行前後のBilling通知履歴件数           | 一致   |
-| organizationを解決できない履歴          | 0件    |
-| subjectを解決できない履歴               | 0件    |
-| `billing_notification.dedupe_key`の衝突 | 0件    |
-| Billing通知判断とOutboxの1:1違反        | 0件    |
-| Outboxとattempt number単位Logの重複     | 0件    |
-| organization基準のowner向け参照差分     | 0件    |
-| organization基準の内部調査参照差分      | 0件    |
-| 既存予約通知のOutbox／Log件数差分       | 0件    |
-
-この時点では`billing_account`と旧Billing投影tableを削除しません。
-
-### 新しいBilling API D1
-
-1. 対象がdevelopment／preview環境であることをdatabase IDまで照合する。
-2. 新schema用のD1を作成する。
-3. migrationを先頭から適用する。
-4. app、catalog、price、addon、redirect templateをseedする。
-5. API credentialを再発行してsecret storeへ登録する。
-6. migration version、seed件数、catalog／price対応を記録する。
-
-### 新Queueとconsumer
-
-1. `reserve-billing-events-v2`と`reserve-billing-events-v2-dlq`を作成する。
-2. 新Queueだけを読むBackend consumerを準備する。
-3. retry上限とDLQ bindingを確認する。
-4. fixtureでruntime validation、inbox、cursor、投影、通知Outboxを確認する。
-5. 旧schemaのfixtureが拒否され、業務状態を変更しないことを確認する。
-6. Billing API producerを有効化するまでは新Queueを空にする。
-
-## Phase 7: Queue v2切替
+## 正式切替1: Queue v2
 
 ### 1. 旧resourceを記録する
 
@@ -156,8 +150,8 @@ Backend D1全体はresetしません。
 
 ### 3. 新consumerを配置する
 
-Backendを、新Queueと新DLQだけを読むbindingで配置します。
-新Queueが空であることを確認します。
+Backendを、新Queueと新DLQだけを読む正式bindingで配置します。
+専用preview経路で検証したschema versionだけが残っていることを確認します。
 
 ### 4. 新Billing APIを配置する
 
@@ -185,7 +179,7 @@ Backendを、新Queueと新DLQだけを読むbindingで配置します。
 
 旧schema payloadが1件でも見つかった場合は、新Billing API D1を再作成して手順3からやり直します。
 
-## Phase 8: 直接WebhookとDLQ
+## 正式切替2: 直接WebhookとDLQ
 
 ### 1. Stripe endpointを分離する
 
@@ -211,6 +205,7 @@ Billing metadataを持つCheckoutはBilling API、ticket metadataを持つChecko
 - 状態変更がQueue v2を経由してBackend投影へ届く。
 - `trial_will_end`がrecipient単位の通知判断とOutboxを作る。
 - 旧ticket checkoutがBackendで継続する。
+- 直接Webhookとevent再送に対応するT10aが成功する。
 
 ### 4. DLQ復旧を確認する
 
@@ -236,8 +231,38 @@ Billing metadataを持つCheckoutはBilling API、ticket metadataを持つChecko
 
 条件を満たしたら、旧Queue／DLQと旧Billing API D1を対象IDを再確認して削除します。
 
-Backend D1の旧Billing tableはPhase 9で削除します。
-通知履歴の件数、欠損、一意性、1:1:N関係、owner／内部調査結果を確認してからtable rebuild／drop migrationを適用します。
+## Milestone 7: 通知履歴移行と旧実装撤去
+
+1. `billing_account`とのjoinで既存`billing_notification`へorganization、subject、trigger key、dedupe key、Outbox参照をbackfillする。
+2. 次の結果を保存する。
+
+| 検証項目                                | 期待値 |
+| --------------------------------------- | ------ |
+| 移行前後のBilling通知履歴件数           | 一致   |
+| organizationを解決できない履歴          | 0件    |
+| subjectを解決できない履歴               | 0件    |
+| `billing_notification.dedupe_key`の衝突 | 0件    |
+| Billing通知判断とOutboxの1:1違反        | 0件    |
+| Outboxとattempt number単位Logの重複     | 0件    |
+| organization基準のowner向け参照差分     | 0件    |
+| organization基準の内部調査参照差分      | 0件    |
+| 既存予約通知のOutbox／Log件数差分       | 0件    |
+
+3. 検証成功後に、Billing通知の直接Resend呼出しと旧retry列を削除する。
+4. R14、R15の参照ゼロ確認後に、`billing_account`と旧Billing投影tableのrebuild／drop migrationを適用する。
+
+一つでも期待値を満たさない場合はtableを削除せず、backfillと参照実装を修正して再検証します。
+
+## 最終検証と文書昇格
+
+Milestone 7のcleanup後、Milestone 8として次を実施します。
+
+1. T10bのTest Clock全scenarioを対象commitと切替後resourceで実行する。
+2. Queue／DLQ復旧、Sentry、organization単位の内部調査結果を再確認する。
+3. T12に従い、現行仕様・運用文書を実装結果へ更新する。
+4. R01〜R16の証跡が揃ったことを確認してから、改善計画をhistoryへ移す。
+
+T10bが失敗した場合は、実Stripe確認済みまたは計画完了として記録しません。
 
 ## 中止条件と再実行
 
@@ -260,7 +285,7 @@ Backend D1の旧Billing tableはPhase 9で削除します。
 3. 原因を修正する。
 4. 新Billing API D1を再作成する。
 5. migration、seed、credential設定、test subject作成をやり直す。
-6. Phase 7の手順3から再実行する。
+6. 「正式切替1: Queue v2」の手順3から再実行する。
 
 ## 実施記録テンプレート
 
@@ -296,12 +321,12 @@ commit／deploy version:
 - owner／内部調査差分:
 
 リスク別証跡:
-- R07 / T04,T05,T10:
+- R07 / T04,T05,T10a:
 - R10 / T04,T06,T09:
 - R11 / T06,T09:
 - R14 / T08,T09:
 - R15 / T01,T04,T09,T11:
-- R16 / T09,T10,T12:
+- R16 / T09,T10b,T12:
 
 再作成の有無:
 中止条件の該当:
