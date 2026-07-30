@@ -37,6 +37,8 @@
 - [billing.md](./billing/billing.md): 現行の組織単位課金仕様。
 - [addon-specification.md](./billing/addon-specification.md): Premium addon の商品、数量変更、API、Stripe、監査、検証仕様。
 - [shared-billing-api-architecture.md](./billing/shared-billing-api-architecture.md): Billing API の責務境界と同期アーキテクチャ。
+- [plans/billing-api-maintainability.md](./billing/plans/billing-api-maintainability.md): Billing API と接続境界の保守性改善計画。実装完了までは現行仕様として扱わない。
+- [plans/billing-api-maintainability-cutover-runbook.md](./billing/plans/billing-api-maintainability-cutover-runbook.md): 保守性改善計画の開発／preview環境向け切替手順。実装前は実行しない。
 - [assets/billing-payment-flow.mmd](./billing/assets/billing-payment-flow.mmd): 課金フロー図の Mermaid ソース。
 - [assets/billing-payment-flow.svg](./billing/assets/billing-payment-flow.svg): 課金フロー図。
 
